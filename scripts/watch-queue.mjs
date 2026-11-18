@@ -5,21 +5,27 @@
 // Each line is { "instance", "id", "itemId", "action" }.
 // A drive that waits for its review bot gets one more line with "event": "review-arrived" when the review is
 // there, or "review-timeout" after 30 minutes. The watcher reads the PR once a minute per waiting drive.
+// A PR with an automatic review gets lines with "action": "auto_review": "event": "offer-accepted" when its author
+// reacted positively to the format offer, "offer-reply" with "at" when he commented after it, and "re-requested"
+// with "at" when he re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
 import { mkdirSync, watch } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readAutoReviews, watchEvents, watchedRecords } from "./lib/auto-review.mjs";
 import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
-import { instanceName, instanceNames, instancesDir, withInstance } from "./lib/config.mjs";
+import { autoReviewOf, instanceName, instanceNames, instancesDir, loadInstance, withInstance } from "./lib/config.mjs";
 import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
-import { fetchItem } from "./snapshot.mjs";
+import { fetchItem, fetchOfferFacts } from "./snapshot.mjs";
 
 const RESCAN_MS = 5000;
 const DEBOUNCE_MS = 100;
 // GARY_DRIVE_POLL_MS shortens the poll in tests
 const DRIVE_POLL_MS = Number(process.env.GARY_DRIVE_POLL_MS) || 60000;
 export const DRIVE_WAIT_MS = 30 * 60000;
+// GARY_OFFER_POLL_MS shortens the poll of the automatic reviews in tests
+const OFFER_POLL_MS = Number(process.env.GARY_OFFER_POLL_MS) || 180000;
 
 /**
  * What a waiting drive waits for: "review-arrived" when its review bot reviewed or commented after the request,
@@ -108,6 +114,40 @@ export async function main(argv) {
 	let drivesRunning = Promise.resolve();
 	const queueDrives = () => (drivesRunning = drivesRunning.then(scanDrives));
 
+	// One line per answer to an automatic review
+	const reviewEvents = new Set();
+	async function scanAutoReviews() {
+		for (const instance of instances()) {
+			if (isInstancePaused(instance)) continue;
+			let watched = [];
+			try {
+				const i = loadInstance(instance);
+				if (!autoReviewOf(i.config, i.profile).enabled) continue;
+				watched = watchedRecords(await readAutoReviews(instance));
+			} catch (e) {
+				console.error(`Reading the automatic reviews of ${instance} failed: ${e.message}`);
+			}
+			for (const { itemId, record } of watched) {
+				let events = [];
+				try {
+					const url = record.offer?.url ?? record.reviews.at(-1).url;
+					events = watchEvents(record, await withInstance(instance, () => fetchOfferFacts(record.number, url, record.repo)));
+				} catch (e) {
+					// The next poll reads it again
+					console.error(`Reading PR #${record.number} of ${instance} failed: ${e.message}`);
+				}
+				for (const ev of events) {
+					const key = `${instance}/${itemId}/${ev.event}/${ev.at ?? ""}`;
+					if (reviewEvents.has(key)) continue;
+					reviewEvents.add(key);
+					process.stdout.write(JSON.stringify({ instance, id: `auto-review-${itemId}`, itemId, action: "auto_review", pr: record.number, ...ev }) + "\n");
+				}
+			}
+		}
+	}
+	let reviewsRunning = Promise.resolve();
+	const queueAutoReviews = () => (reviewsRunning = reviewsRunning.then(scanAutoReviews));
+
 	async function scan() {
 		const found = (await Promise.all(instances().map(scanOne))).flat();
 		found.sort((a, b) => String(a.doc.createdAt ?? "").localeCompare(String(b.doc.createdAt ?? "")) || a.key.localeCompare(b.key));
@@ -123,6 +163,7 @@ export async function main(argv) {
 
 	await queueScan();
 	await queueDrives();
+	await queueAutoReviews();
 	if (once) process.exit(0);
 
 	let timer = null;
@@ -139,6 +180,7 @@ export async function main(argv) {
 	// fs.watch can miss a rename, and --all picks up new instances, so rescan on a timer too
 	setInterval(queueScan, RESCAN_MS);
 	setInterval(queueDrives, DRIVE_POLL_MS);
+	setInterval(queueAutoReviews, OFFER_POLL_MS);
 	process.on("SIGTERM", () => process.exit(0));
 	process.on("SIGINT", () => process.exit(0));
 }

@@ -17,6 +17,7 @@ const COMMANDS = {
 	fixes: ["../scripts/fixes-cli.mjs", "fixesMain", "The fix state of every issue and discussion: a running fix job or a fix PR. --json"],
 	"fix-record": ["../scripts/fixes-cli.mjs", "recordMain", "Record a fix PR: fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer"],
 	"fix-review": ["../scripts/fix-review.mjs", "main", "The review rounds of a fix PR Gary opened: fix-review start --pr <n> --sha <sha> --run <run> | finish --pr <n> --outcome done|stopped --reason <text>. --dry-run"],
+	"auto-review": ["../scripts/auto-review.mjs", "main", "The one automatic first review on a contributor PR: auto-review check|post|accept|reply|rerequest --pr <n> … | list. Off unless config.json turns it on"],
 	claim: ["../scripts/claims-cli.mjs", "claimMain", "Claim work on an item: claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>]. Exit 3 when another run holds it"],
 	release: ["../scripts/claims-cli.mjs", "releaseMain", "Release a claim: release <itemId> <fix|review|push> --run <run>"],
 	claims: ["../scripts/claims-cli.mjs", "claimsMain", "List the claims of the instance. --json"],

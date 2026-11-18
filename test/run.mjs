@@ -20,6 +20,7 @@ const SUITES = [
 	["node", "claims.test.mjs"],
 	["node", "fixes.test.mjs"],
 	["node", "fix-review.test.mjs"],
+	["node", "auto-review.test.mjs"],
 	["zsh", "sharing.test.zsh"],
 	["zsh", "validate.test.zsh"],
 ];

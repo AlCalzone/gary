@@ -52,6 +52,26 @@ export function fixReviewOf(config, profile) {
 
 export const FAST_TIERS = ["off", "shadow", "on"];
 
+// The kinds of PR that may get the one automatic first review. `config` means the PR only touches the profile's autoReviewPaths.config
+export const AUTO_REVIEW_KINDS = ["config"];
+export const AUTO_REVIEW_DEFAULTS = { enabled: false, kinds: ["config"], maxPerRun: 3 };
+
+/**
+ * The automatic first review on contributor PRs: `{ enabled, kinds, maxPerRun, reason }`.
+ * `enabled` is false when the config does not turn it on or when it cannot run, and `reason` then says why.
+ * `kinds` holds only the kinds the profile names paths for.
+ */
+export function autoReviewOf(config, profile) {
+	const set = { ...AUTO_REVIEW_DEFAULTS, ...(config.autoReview ?? {}) };
+	const off = (reason) => ({ ...set, enabled: false, reason });
+	if (set.enabled !== true) return off(config.autoReview ? "autoReview.enabled is false in config.json" : null);
+	if (!config.bot && config.allowOwnTokenPushes !== true) return off("no account may post a review: there is no bot and allowOwnTokenPushes is false");
+	if (set.maxPerRun === 0) return off("autoReview.maxPerRun is 0");
+	const kinds = set.kinds.filter((k) => (profile.autoReviewPaths?.[k] ?? []).length > 0);
+	if (!kinds.length) return off(`the profile names no autoReviewPaths for ${set.kinds.join(", ") || "any kind"}`);
+	return { ...set, kinds, reason: null };
+}
+
 export const PROFILE_DEFAULTS = {
 	maintainers: [],
 	botLogins: [],
@@ -63,6 +83,8 @@ export const PROFILE_DEFAULTS = {
 	requiredTools: [],
 	automatedComments: [],
 	aiAuthors: [],
+	autoReviewPaths: {},
+	formatCommand: null,
 };
 
 // The longest comment text an automatedComments pattern runs against. It bounds the cost of a slow pattern
@@ -277,7 +299,7 @@ const isStringList = (v, pattern) => Array.isArray(v) && v.every((s) => typeof s
 export function checkConfig(data) {
 	const errors = [];
 	const unknown = [];
-	const known = ["profile", "me", "checkout", "fixReview", ...Object.keys(CONFIG_DEFAULTS)];
+	const known = ["profile", "me", "checkout", "fixReview", "autoReview", ...Object.keys(CONFIG_DEFAULTS)];
 	for (const key of Object.keys(data)) {
 		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
 		else check(unknown, known.includes(key), `unknown field "${key}"`);
@@ -310,6 +332,17 @@ export function checkConfig(data) {
 			check(errors, fr.requestAs === undefined || FIX_REVIEW_REQUESTERS.includes(fr.requestAs), `"fixReview.requestAs" must be one of ${FIX_REVIEW_REQUESTERS.join(", ")}`);
 			check(errors, fr.maxRounds === undefined || isInt(fr.maxRounds, 1, 3), `"fixReview.maxRounds" must be 1, 2 or 3`);
 			check(errors, fr.markReady === undefined || typeof fr.markReady === "boolean", `"fixReview.markReady" must be true or false`);
+		}
+	}
+	const ar = data.autoReview;
+	if (ar !== undefined) {
+		if (!ar || typeof ar !== "object" || Array.isArray(ar)) {
+			errors.push(`"autoReview" must be { "enabled", "kinds", "maxPerRun" }`);
+		} else {
+			for (const key of Object.keys(ar)) check(unknown, Object.keys(AUTO_REVIEW_DEFAULTS).includes(key), `unknown field "autoReview.${key}"`);
+			check(errors, ar.enabled === undefined || typeof ar.enabled === "boolean", `"autoReview.enabled" must be true or false`);
+			check(errors, ar.kinds === undefined || (Array.isArray(ar.kinds) && ar.kinds.every((k) => AUTO_REVIEW_KINDS.includes(k))), `"autoReview.kinds" must be a list with only ${AUTO_REVIEW_KINDS.join(", ")}`);
+			check(errors, ar.maxPerRun === undefined || isInt(ar.maxPerRun, 0, 50), `"autoReview.maxPerRun" must be a whole number from 0 to 50`);
 		}
 	}
 	return { errors, unknown };
@@ -368,6 +401,18 @@ export function checkProfile(data) {
 		`"botCommands" must map command names to the text to post`,
 	);
 	checkAutomatedComments(data.automatedComments, errors, unknown);
+	const paths = data.autoReviewPaths;
+	if (paths !== undefined) {
+		if (!paths || typeof paths !== "object" || Array.isArray(paths)) errors.push(`"autoReviewPaths" must map a kind to a list of globs, like { "config": ["config/devices/**"] }`);
+		else {
+			for (const [kind, globs] of Object.entries(paths)) {
+				if (!AUTO_REVIEW_KINDS.includes(kind)) unknown.push(`unknown field "autoReviewPaths.${kind}"`);
+				else check(errors, isStringList(globs), `"autoReviewPaths.${kind}" must be a list of globs`);
+			}
+		}
+	}
+	const cmd = data.formatCommand;
+	check(errors, cmd === undefined || cmd === null || (typeof cmd === "string" && cmd.trim().length > 0 && cmd.length <= 200 && !/[`\n\r]/.test(cmd)), `"formatCommand" must be the one-line command a contributor runs to format, at most 200 characters, without backticks`);
 	return { errors, unknown };
 }
 

@@ -10,5 +10,7 @@
 	"botCommands": {},
 	"requiredTools": [],
 	"automatedComments": [],
-	"aiAuthors": []
+	"aiAuthors": [],
+	"autoReviewPaths": { "config": [] },
+	"formatCommand": null
 }

@@ -238,6 +238,12 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .agent-banner.quiet { background: transparent; box-shadow: none; padding: 0; color: var(--muted); font-size: 13.5px; }
 .fix-for { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; color: var(--muted); }
 .fix-for[hidden] { display: none; }
+/* The automatic review a contributor PR got: what was asked, and what happened since */
+.auto-review { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
+.auto-review[hidden] { display: none; }
+.auto-review .ar-lead { margin: 0; color: var(--fg); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.auto-review ul { margin: 0; padding-left: 1.2em; }
+.auto-review li { overflow-wrap: anywhere; }
 .status.opened { color: var(--muted); }
 .status.opened .i, .head-done .i { width: 15px; height: 15px; color: var(--ok); flex: none; }
 .head-done { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 12px; font-size: 13px; color: var(--muted); white-space: nowrap; }
@@ -943,6 +949,7 @@ textarea {
       <div class="meta" id="d-meta"></div>
       <div class="agent-banner" id="d-fix" role="status" hidden></div>
       <p class="fix-for" id="d-fix-for" hidden></p>
+      <div class="auto-review" id="d-auto" hidden></div>
       <div class="story" id="d-story" hidden></div>
       <div class="reviews" id="d-reviews" hidden></div>
       <div class="d-sec" id="d-threads" hidden></div>
@@ -1628,6 +1635,45 @@ function renderHandled(rows) {
 }
 
 const fixParkedEls = {};
+const autoWaitEls = {};
+
+// The one review a contributor PR got without a click, as the server serves it
+function autoReviewOf(d) {
+  const a = d && d.autoReview && typeof d.autoReview === "object" ? d.autoReview : null;
+  return a && Number.isFinite(parseTime(a.at)) ? a : null;
+}
+// While the contributor has the next move, the PR stays out of the plan
+const autoWaiting = (d) => autoReviewOf(d)?.waiting === true;
+const AUTO_WAITING_TEXT = "Reviewed automatically, waiting for the contributor";
+const AUTO_CHANGES = { pushed: "the author pushed", replied: "the author replied", "re-requested": "the author re-requested a review", formatted: "the formatting was pushed", maintainer: "a maintainer joined the thread" };
+
+function renderAutoWaiting(rows) {
+  if (!autoWaitEls.el) return;
+  autoWaitEls.el.hidden = rows.length === 0;
+  autoWaitEls.count.textContent = "Reviewed automatically, waiting: " + rows.length;
+  autoWaitEls.list.replaceChildren(...rows.map(([key, d]) => {
+    const open = h("button", { class: "btn quiet small", type: "button", text: "Open", "data-focus-key": "autowait:" + key });
+    open.addEventListener("click", () => openDetail(key));
+    return quietRow(key, d, timeEl(autoReviewOf(d).at, "reviewed "), open);
+  }));
+}
+
+// The block above the story: what the automatic review asked, and what changed since
+function renderAutoReview(d) {
+  const el = document.getElementById("d-auto");
+  const a = autoReviewOf(d);
+  el.hidden = !a;
+  if (!a) return el.replaceChildren();
+  const changed = (Array.isArray(a.changed) ? a.changed : []).map((c) => AUTO_CHANGES[str(c)]).filter(Boolean);
+  const lead = a.waiting === true ? AUTO_WAITING_TEXT + "." : "Reviewed automatically." + (changed.length ? " Since then " + changed.join(", ") + "." : "");
+  const asked = (Array.isArray(a.asked) ? a.asked : []).map(str).filter(Boolean);
+  const offer = a.offer && typeof a.offer === "object" ? { open: "It offered to push the formatting. No answer yet.", accepted: "The author accepted the offer to push the formatting.", closed: "The offer to push the formatting is closed.", named: "It named the format command." }[str(a.offer.state)] : null;
+  el.replaceChildren(
+    h("p", { class: "ar-lead" }, h("span", { text: lead }), timeEl(a.at, ""), isGithubUrl(str(a.url)) ? h("a", { href: str(a.url), target: "_blank", rel: "noopener noreferrer", text: "View review", "data-focus-key": "auto:review" }) : null),
+    asked.length ? h("span", { text: "It asked for:" }) : null,
+    asked.length ? h("ul", null, ...asked.map((t) => h("li", null, richText(t)))) : null,
+    offer ? h("span", { text: offer }) : null);
+}
 
 // Issues and discussions whose fix is in progress. The fix PR's own item carries the work until it is merged or closed
 function renderFixParked(rows) {
@@ -1702,6 +1748,7 @@ function buildSections() {
 
   Object.assign(handledEls, quietLine("handled"));
   Object.assign(fixParkedEls, quietLine("fix-parked"));
+  Object.assign(autoWaitEls, quietLine("auto-waiting"));
 
   for (const g of GROUPS) {
     const list = h("div", { class: "list" });
@@ -2310,6 +2357,7 @@ function renderListNow() {
   const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
   const handledRows = [];
   const fixParkedRows = [];
+  const autoWaitRows = [];
   for (const [id, d] of state.items) {
     if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
     if (d.hidden === true && !state.filters.showHidden) continue;
@@ -2320,6 +2368,10 @@ function renderListNow() {
     }
     if (fixParked(d)) {
       fixParkedRows.push([id, d]);
+      continue;
+    }
+    if (autoWaiting(d)) {
+      autoWaitRows.push([id, d]);
       continue;
     }
     const dim = isHiddenItem(d);
@@ -2371,6 +2423,7 @@ function renderListNow() {
   els.board.classList.toggle("combined", combinedView());
   renderHandled(handledRows);
   renderFixParked(fixParkedRows);
+  renderAutoWaiting(autoWaitRows);
 
   // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
   for (const m of els.board.querySelectorAll(".r-meta")) {
@@ -2483,6 +2536,7 @@ function renderDetailHead(d, dim) {
     type ? stateBadge([type[0], "muted", type[1], null, type[1]]) : null,
     badges,
     autofixBadge(d),
+    autoReviewOf(d) ? h("span", { class: "tag auto-review-tag", text: autoWaiting(d) ? AUTO_WAITING_TEXT : "Reviewed automatically" }) : null,
     labels.map((l) => h("span", { class: "tag label", text: str(l) })),
     timeEl(d.updatedAt, "updated "),
   ].flat().filter(Boolean);
@@ -2497,6 +2551,7 @@ function renderDetailInfo(d) {
   detail.story.replaceChildren(...story.split(/\n\s*\n/).map((para) => h("p", null, richText(para))));
   detail.story.hidden = !story;
   detail.verdict.hidden = !verdict;
+  renderAutoReview(d);
   renderRounds(d);
 
   const badges = reviewBadges(d);
@@ -4591,7 +4646,8 @@ function subscribe(db) {
       const d = doc.data();
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
       // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
-      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d))) next.set(doc.id, d);
+      // A PR that waits after its automatic review stays loaded too, so the waiting line can list it
+      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d) || autoWaiting(d))) next.set(doc.id, d);
       // Once the server carries the mark, it decides, including clearing it after the next run
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
@@ -4682,7 +4738,7 @@ async function boot() {
   setupDetail();
   setupRowKeys();
   buildSections();
-  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el, fixParkedEls.el);
+  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el, fixParkedEls.el, autoWaitEls.el);
   renderConnection();
   render();
 

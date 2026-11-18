@@ -125,3 +125,16 @@ export function servedRoute(route, item) {
 	const title = typeof route.title === "string" ? route.title.replace(/^Take over\b/, "Change") : route.title;
 	return { ...route, type: "revise", title };
 }
+
+/**
+ * The body GitHub gets for one inline review comment: its text, then a suggestion block when it has `suggestion`.
+ * The fence is one backtick longer than the longest backtick run that starts a line of the suggestion, and at least three.
+ */
+export function commentBody(comment) {
+	const text = typeof comment?.text === "string" ? comment.text : "";
+	if (typeof comment?.suggestion !== "string") return text;
+	const longest = Math.max(0, ...comment.suggestion.split("\n").map((l) => /^`*/.exec(l)[0].length));
+	const fence = "`".repeat(Math.max(3, longest + 1));
+	const block = `${fence}suggestion\n${comment.suggestion}\n${fence}`;
+	return text ? `${text}\n\n${block}` : block;
+}

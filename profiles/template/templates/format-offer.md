@@ -1,0 +1,1 @@
+<!-- The paragraph in an automatic review that offers to push the formatter's changes. Gary's code appends the text below this comment and replaces {files} with the count, like "2 files". Say that a thumbs-up on the review or a reply accepts. Leave the file without text to keep the default. -->

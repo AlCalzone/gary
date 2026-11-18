@@ -5,8 +5,9 @@ import { join, matchesGlob } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
-import { aiFacts, buildTimeline, issueFacts, prFacts, sizeFacts, speakerFacts } from "./lib/facts.mjs";
-import { graphql } from "./lib/gh.mjs";
+import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
+import { aiFacts, buildTimeline, issueFacts, lastEventBy, prFacts, reviewRequestsFor, sizeFacts, speakerFacts } from "./lib/facts.mjs";
+import { graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
@@ -47,9 +48,15 @@ const REVIEW_STATE_FIELDS = `
 	nodes { author { login __typename } state submittedAt url }
 `;
 
+// The "Re-request review" button of a PR creates one of these
+const REVIEW_REQUEST_EVENTS = `reviewRequestEvents: timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 30) {
+					nodes { ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } } } }
+				}`;
+
 const PR_FIELDS = `
-				number title url body createdAt updatedAt isDraft state
+				number title url body createdAt updatedAt isDraft state maintainerCanModify
 				author { login __typename } authorAssociation
+				${REVIEW_REQUEST_EVENTS}
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
 				headRefOid headRefName baseRefName reviewDecision mergeable
@@ -160,6 +167,51 @@ const DISCUSSION_QUERY = `query($owner: String!, $name: String!, $after: String)
 	}
 }`;
 
+// The answer to a format offer: the reactions on the review that made it, and the comments after it
+const OFFER_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $number) {
+			state headRefOid maintainerCanModify
+			offerReviews: reviews(last: 30) { nodes { url reactions(first: 50) { nodes { content createdAt user { login } } } } }
+			offerComments: comments(last: 30) { nodes { url createdAt body author { login } } }
+			${REVIEW_REQUEST_EVENTS}
+		}
+	}
+}`;
+
+/**
+ * Reads what a PR with an automatic review shows since: `{ state, headSha, maintainerCanModify, reactions, comments, reReviewRequests }`.
+ * `reactions` are the ones on the review at `reviewUrl`, as `[{ content, user, at }]`. `comments` are the PR's last
+ * 30 comments as `[{ at, author, url, body }]`. Everything in them is untrusted text.
+ */
+export async function fetchOfferFacts(number, reviewUrl, repo = loadProfile().repo) {
+	if (!allowedRepo(instanceName(), repo)) throw new Error(`${repo} is not a repository of instance ${instanceName()}`);
+	const { owner, name } = repoParts(repo);
+	const data = await withRetry(() => graphql(OFFER_QUERY, { owner, name, number }));
+	const pr = data.repository?.pullRequest;
+	if (!pr) throw new Error(`pr #${number} not found in ${owner}/${name}`);
+	const review = (pr.offerReviews?.nodes ?? []).find((r) => r.url === reviewUrl);
+	return {
+		state: String(pr.state ?? "").toLowerCase(),
+		headSha: pr.headRefOid,
+		maintainerCanModify: pr.maintainerCanModify === true,
+		reactions: (review?.reactions?.nodes ?? []).map((r) => ({ content: r.content, user: r.user?.login ?? "ghost", at: r.createdAt })),
+		comments: (pr.offerComments?.nodes ?? []).map((c) => ({ at: c.createdAt, author: c.author?.login ?? "ghost", url: c.url, body: trim(c.body) })),
+		reReviewRequests: reviewRequestsFor(pr, writeLogin()),
+	};
+}
+
+/** Marks the PR nodes that have an automatic review with its record, and reads the answer to an open format offer. */
+async function attachAutoReviews(prNodes) {
+	const records = await readAutoReviews();
+	await Promise.all(prNodes.map(async (node) => {
+		const record = records[`pr-${node.number}`];
+		if (!lastReview(record)) return;
+		node.autoReviewRecord = record;
+		if (record.offer?.state === "open") node.offerFacts = await fetchOfferFacts(node.number, record.offer.url);
+	}));
+}
+
 const ITEM_QUERIES = {
 	pr: ["pullRequest", PR_FIELDS],
 	issue: ["issue", ISSUE_FIELDS],
@@ -187,6 +239,7 @@ export async function main(argv = []) {
 	await Promise.all([
 		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
 		...discussions.nodes.map(fetchRemainingReplies),
+		attachAutoReviews(readyPrs),
 	]);
 	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
@@ -267,7 +320,7 @@ export async function fetchItem(kind, number, repo = loadProfile().repo) {
 	const classify = authorClassifier(maintainerLogins(), botLogins());
 	const ctx = factsContext();
 	if (kind === "pr") {
-		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node)]);
+		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node), attachAutoReviews([node])]);
 		return withFacts("pr", node, toPr(node, classify, loadProfile().sensitivePaths), ctx);
 	}
 	if (kind === "issue") return withFacts("issue", node, toIssue(node, classify), ctx);
@@ -313,6 +366,8 @@ function baselineEntry(item) {
 		lastThemAt: item.facts?.lastThemAt ?? null,
 		// The fix state of issues and discussions reads these
 		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
+		// The board reads these to tell whether a PR with an automatic review still waits for its contributor
+		...(item.autoReview && { autoReview: item.autoReview }),
 		...(item.closingPrs && { closingPrs: item.closingPrs }),
 		...(item.referencingPrs && { referencingPrs: item.referencingPrs }),
 	};
@@ -362,6 +417,8 @@ function factsContext() {
 	const bot = loadConfig().bot?.login;
 	return {
 		us: [...new Set([...maintainerLogins(), ...botLogins()])],
+		maintainers: maintainerLogins(),
+		writeLogin: writeLogin(),
 		patterns: profile.automatedComments ?? [],
 		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [], own: bot ?? null },
 	};
@@ -398,7 +455,29 @@ function withFacts(kind, node, entry, ctx) {
 		...(kind === "pr" ? { ...prFacts(entry), ...sizeFacts(node), ...aiFacts(node, ctx.ai) } : issueFacts(entry, timeline)),
 		...(kind === "discussion" && { answerable: node.category?.isAnswerable === true, answerChosen: node.isAnswered === true }),
 	};
-	return { ...entry, facts };
+	if (kind !== "pr") return { ...entry, facts };
+	facts.maintainerCanModify = node.maintainerCanModify === true;
+	facts.lastAuthorAt = lastEventBy(timeline, node.author?.login);
+	const requests = reviewRequestsFor(node, ctx.writeLogin);
+	if (requests.length) facts.reReviewRequests = requests;
+	const record = node.autoReviewRecord;
+	if (!record) return { ...entry, facts };
+	const withTimeline = { ...entry, facts };
+	const last = lastReview(record);
+	const offer = record.offer;
+	if (offer?.state === "open" && node.offerFacts) {
+		const answer = offerAnswer(offer, node.offerFacts, entry.author);
+		// The replies are the author's own words after the offer. They are data for the agent that judges them
+		facts.formatOffer = { at: offer.at, url: offer.url, kind: offer.kind, acceptedByReaction: answer.accepted, replies: answer.replies };
+	}
+	return {
+		...withTimeline,
+		autoReview: {
+			lastAuthorAt: facts.lastAuthorAt,
+			maintainerAt: maintainerJoinedAt(withTimeline, { maintainers: ctx.maintainers, ownReviewUrls: record.reviews.map((r) => r.url) }),
+			reRequestedAt: reRequestedAt(withTimeline, last.at),
+		},
+	};
 }
 
 /** Replaces the inline replies of a discussion's comments with all of them when the inline page was short. */
