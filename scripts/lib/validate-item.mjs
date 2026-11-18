@@ -135,6 +135,8 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 			err("route-unavailable", `${where}: ${route.type} needs a bot account or allowOwnTokenPushes in this setup`);
 		}
 
+		if (params.alsoLabel !== undefined) checkAlsoLabel(route, params.alsoLabel, profile, where, err);
+
 		switch (route.type) {
 			case "review": {
 				if (!REVIEW_EVENTS.includes(params.event)) err("review-event", `${where}: params.event must be one of ${REVIEW_EVENTS.join(", ")}`);
@@ -245,6 +247,23 @@ function checkSuggestion(c, where, err, warn) {
 	if (c.diffHunk !== undefined && !(typeof c.diffHunk === "string" && c.diffHunk.startsWith("@@"))) {
 		err("suggestion-hunk", `${where}: diffHunk must start with an @@ header`);
 	}
+}
+
+// The labels a reply or request_logs route also sets, offered as a second button or applied after the post
+function checkAlsoLabel(route, also, profile, where, err) {
+	if (route.type !== "reply" && route.type !== "request_logs") return err("also-label", `${where}: alsoLabel is only for reply and request_logs routes`);
+	const strings = (v) => v === undefined || (Array.isArray(v) && v.every(isString));
+	if (!isObject(also) || Object.keys(also).some((k) => !["add", "remove"].includes(k)) || !strings(also.add) || !strings(also.remove)) {
+		return err("also-label", `${where}: params.alsoLabel must be { add?: [label], remove?: [label] }`);
+	}
+	const add = also.add ?? [];
+	const remove = also.remove ?? [];
+	if (!add.length && !remove.length) err("also-label", `${where}: params.alsoLabel needs at least one label`);
+	const allowed = new Set((profile.autoLabels ?? []).map((x) => x.toLowerCase()));
+	const outside = [...add, ...remove].filter((x) => !allowed.has(x.toLowerCase()));
+	if (outside.length) err("also-label-not-auto", `${where}: params.alsoLabel may only name the profile's autoLabels, not ${outside.map((x) => `"${x}"`).join(", ")}`);
+	const both = add.filter((x) => remove.some((y) => y.toLowerCase() === x.toLowerCase()));
+	if (both.length) err("also-label", `${where}: params.alsoLabel adds and removes ${both.join(", ")}`);
 }
 
 // What the project's autofix would change in a PR, from the mechanical check before the review

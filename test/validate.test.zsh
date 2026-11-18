@@ -62,7 +62,7 @@ expect "merge sets the field" 0 '"priority": 3' cat $ITEMS/pr-12.json
 mk replace2 "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"Thanks\",\"recommended\":true}]}"
 expect "a replace with its own priority keeps it" 0 '"priority": 1' zsh -c "node $B put items pr-12 $H/replace2.json > /dev/null; cat $ITEMS/pr-12.json"
 expect "a replace that breaks a rule is refused" 1 "hint" zsh -c "sed 's/\"hint\":\"Reply: thanks\"/\"hint\":\"Other\"/' $H/replace2.json > $H/r3.json; node $B put items pr-12 $H/r3.json"
-node $B put items pr-12 $H/good.json > /dev/null
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 
 bad_case() { # name, pattern, json
 	mk case "$3"
@@ -84,7 +84,7 @@ bad_case "address_review without thread ids" "every thread needs an id" "{$BASE,
 bad_case "address_review on a contributor PR" "Use take_over on a contributor PR" "{${BASE/maintainer/contributor},\"hint\":\"Fix: x\",\"threads\":[{\"id\":\"PRRT_1\",\"verdict\":\"valid\"}],\"routes\":[{\"id\":\"r1\",\"type\":\"address_review\",\"title\":\"Fix: x\",\"as\":\"agent\",\"recommended\":true}]}"
 mk case "{${BASE/maintainer/contributor},\"takenOver\":true,\"hint\":\"Fix: x\",\"threads\":[{\"id\":\"PRRT_1\",\"verdict\":\"valid\"}],\"routes\":[{\"id\":\"r1\",\"type\":\"address_review\",\"title\":\"Fix: x\",\"as\":\"agent\",\"recommended\":true}]}"
 expect "address_review on a taken-over contributor PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
-node $B put items pr-12 $H/good.json > /dev/null
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 bad_case "drive on a contributor PR" "taken-over PRs" "{${BASE/maintainer/contributor},\"hint\":\"Drive: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"drive\",\"title\":\"Drive: x\",\"as\":\"agent\",\"recommended\":true}]}"
 bad_case "take_over replace without callout" "needs a callout" "{$BASE,\"hint\":\"Take over: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"take_over\",\"title\":\"Take over: x\",\"as\":\"agent\",\"params\":{\"mode\":\"replace\"},\"recommended\":true}]}"
 bad_case "finding names no route" 'names no route' "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[$R1],\"findings\":[{\"severity\":\"major\",\"text\":\"x\",\"routeId\":\"r3\"}]}"
@@ -102,7 +102,7 @@ bad_case "blocked with another route" "exactly one route, of type open" "{$BASE,
 bad_case "blocked with a bad reason" "blocked must be" "{$BASE,\"hint\":\"Open: on GitHub\",\"blocked\":{\"reason\":\"tired\",\"at\":\"2026-11-18T08:00:00Z\"},\"routes\":[$OPEN]}"
 bad_case "open with text" "no text and no params" "{$BASE,\"hint\":\"Open: on GitHub\",\"routes\":[{\"id\":\"r1\",\"type\":\"open\",\"title\":\"Open: on GitHub\",\"as\":\"me\",\"text\":\"hi\",\"recommended\":true}]}"
 bad_case "open as bot" "is not allowed for open" "{$BASE,\"hint\":\"Open: on GitHub\",\"routes\":[{\"id\":\"r1\",\"type\":\"open\",\"title\":\"Open: on GitHub\",\"as\":\"bot\",\"recommended\":true}]}"
-node $B put items pr-12 $H/good.json > /dev/null
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 mk case "{${BASE/\"kind\":\"pr\",\"number\":12/\"kind\":\"issue\",\"number\":21},\"hint\":\"Move: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"move\",\"title\":\"Move: x\",\"params\":{\"to\":\"other-repo\"},\"recommended\":true}]}"
 expect "put refuses: move target outside relatedRepos" 1 "not in the profile's relatedRepos" node $B put items issue-21 $H/case.json
 expect "put takes any opaque id" 0 '"ok":true' node $B put items some.item_1 $H/good.json
@@ -156,6 +156,19 @@ node $B put --no-validate items foreign.1 $H/case.json > /dev/null 2>&1
 expect "action refuses an item of a foreign repo" 1 "acme/other is not a repository of instance widgets" zsh -c "print '{\"itemId\":\"foreign.1\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
 expect "action refuses an unknown itemId" 1 "is not on the board" zsh -c "print '{\"itemId\":\"nope\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
 node $B put items foreign.1 --delete > /dev/null 2>&1
+
+# alsoLabel on reply and request_logs routes
+also() { mk also "{$BASE,\"hint\":\"Reply: log\",\"routes\":[{\"id\":\"r1\",\"type\":\"$1\",\"title\":\"Reply: log\",\"as\":\"bot\",\"text\":\"Log?\",\"recommended\":true,\"params\":{\"alsoLabel\":$2}}]}"; node $B put items pr-12 $H/also.json }
+expect "alsoLabel on a reply" 0 '"ok":true' also reply '{"add":["needs-info"]}'
+expect "alsoLabel on request_logs" 0 '"ok":true' also request_logs '{"remove":["needs-info"]}'
+expect "alsoLabel only names autoLabels" 1 "may only name the profile's autoLabels" also reply '{"add":["bug"]}'
+expect "alsoLabel needs a label" 1 "needs at least one label" also reply '{"add":[],"remove":[]}'
+expect "alsoLabel adds and removes one label" 1 "adds and removes needs-info" also reply '{"add":["needs-info"],"remove":["needs-info"]}'
+expect "alsoLabel has only add and remove" 1 "must be { add?: [label], remove?: [label] }" also reply '{"add":["needs-info"],"set":["x"]}'
+expect "alsoLabel lists strings" 1 "must be { add?: [label], remove?: [label] }" also reply '{"add":"needs-info"}'
+mk also2 "{$BASE,\"hint\":\"Reopen: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"reopen\",\"title\":\"Reopen: x\",\"as\":\"bot\",\"recommended\":true,\"params\":{\"alsoLabel\":{\"add\":[\"needs-info\"]}}}]}"
+expect "alsoLabel is only for reply and request_logs" 1 "alsoLabel is only for reply and request_logs routes" node $B put items pr-12 $H/also2.json
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 
 # gary action --autonomous
 act() { print -r -- "$1" | node $B action --dry-run $2 }

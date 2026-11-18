@@ -118,8 +118,8 @@ async function commentExists(commentId) {
  */
 export async function checkFresh({ instance, ...request }) {
 	if (instance) return withInstance(instance, () => checkFresh(request));
-	const { action, kind, number, item, params, force = false } = request;
-	if (!GUARDED_ACTIONS.has(action) && action !== "react") return { ok: true };
+	const { action, kind, number, item, params, force = false, openOnly = false } = request;
+	if (!GUARDED_ACTIONS.has(action) && action !== "react" && !openOnly) return { ok: true };
 	const repo = item?.repo ?? loadProfile().repo;
 	if (!allowedRepo(instanceName(), repo)) return { ok: false, reason: `${repo} is not a repository of instance ${instanceName()}`, forceable: false };
 	let thread;
@@ -129,6 +129,8 @@ export async function checkFresh({ instance, ...request }) {
 		return { ok: false, reason: `Could not check the thread on GitHub: ${e.message}`, forceable: false };
 	}
 	const live = { state: thread.state, stateReason: thread.stateReason ?? null };
+	// With openOnly, newer comments and a moved head are fine. Only a closed or merged thread is refused
+	if (openOnly) return thread.state === "OPEN" ? { ok: true, ...live } : { ok: false, reason: `#${number} is ${thread.state === "MERGED" ? "already merged" : "closed"}.`, forceable: false, ...live };
 	if (action === "react") {
 		const commentId = params?.commentId;
 		if (typeof commentId === "string") {

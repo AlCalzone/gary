@@ -247,8 +247,8 @@ Rules:
 
 | type | allowed `as` | params | what the click does |
 | --- | --- | --- | --- |
-| `reply` | `me` (default), `bot` | | `me`: copy `text`, open the thread. `bot`: post `text` |
-| `request_logs` | `bot`, `me` | | post `text`, a request for logs or details (template `request-logs`). `me` is accepted in every account mode and is always prefill |
+| `reply` | `me` (default), `bot` | `alsoLabel`: `{ add, remove }`, optional | `me`: copy `text`, open the thread. `bot`: post `text`. With `alsoLabel` see below |
+| `request_logs` | `bot`, `me` | `alsoLabel`, as for `reply` | post `text`, a request for logs or details (template `request-logs`). `me` is accepted in every account mode and is always prefill |
 | `close` | `me` | `reason`: `completed`, `not_planned`, `duplicate`. `duplicateOf`: number, with `duplicate` | copy `text` when present, open the thread. He closes there with that reason. For a PR there is no reason |
 | `reopen` | `bot` (default), `me` | | `bot`: reopen, and post `text` first when present. `me`: copy `text`, open the thread |
 | `merge` | `me` | | copy `text` when present, open the PR page |
@@ -270,6 +270,10 @@ The click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/ac
 - `follow_up`: `{ title }` when the maintainer edited it.
 - `drive`: `{ maxRounds }`, 1 to 3, when the maintainer changed it.
 - `move` to a repo: `{ mode: "transfer" | "close" }`. Required. `close` needs a non-empty `text`. The two buttons share one route, so after one ran the other is refused.
+- `reply` and `request_logs` with `alsoLabel`, run as the bot: `{ alsoLabel: true | false }`, default true. True sets the labels right after the post succeeded, in the same click.
+- The label button of a `reply` or `request_logs` route with `alsoLabel`: `{ part: "label" }` and nothing else, sent without `text` and `draftHash`.
+
+`alsoLabel` holds the labels a reply or log request also sets, like `{ "add": ["needs-info"] }`. Every label is one of the profile's `autoLabels`, at least one is named, and none is in both lists. When the maintainer posts the text himself, the card shows a second button next to the copy button. That button runs the `label` action with exactly the route's `alsoLabel`, as the bot, or under his own login in `own` mode. It is refused without a bot and without `allowOwnTokenPushes`, while paused, when the settings are invalid, and when the thread is closed or merged. Newer comments do not block it. It has its own done state: the served route carries `labelDone: { status, result }` next to `done`, and a repeat answers 409. Its key is the labels and the item's `reviewedAt`. Its action doc has `part: "label"`, `labelHash`, `action: "label"` and the labels as `params`, and no `draftHash`. The button logs no decision. A bot route that also set labels records them in its action doc as `label: { params, status, result }`. A label failure after a successful post keeps the click done and answers `{ ok: true, result, warning: "Posted. The label could not be set: …" }`.
 
 The server checks every id and value in `input` against the route and the item. It refuses a route whose actor is `me` or `unavailable`, every merge, and a route that already ran or was queued with the same draft (409). The draft hash covers the route's stored text, its params and the item's `reviewedAt`. When the routine rewrote the route after the page showed it, the server answers that the board is out of date.
 
@@ -284,7 +288,7 @@ Routes with `as: "me"` never reach GitHub through the server and get no action d
 One page serves every instance. `GET /api/state` returns `{ board, items, proposals }`:
 
 - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos, repoUrl, bot, accountMode, paused, relatedRepos, botCommands, reviewBots } ] }`. `title` is the profile's `name`, `bot` is `{ login, avatarUrl }` or `null`. The page takes links, avatars, bot names, bot commands and new-issue URLs from the item's own instance entry, never from one global repo.
-- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields. Routes carry `actor`, `draftHash`, `done` and `refused`.
+- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` on a route with `alsoLabel` whose label button ran.
 - `proposals[]`: the open proposals, each with `instance`.
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
@@ -312,6 +316,7 @@ The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
+- `params.alsoLabel` only on `reply` and `request_logs`, as `{ add?, remove? }` with at least one label, every label in `autoLabels`, and no label in both lists.
 - `autofix`, only on PRs, is `{ changes, files, lines, tools }` with `changes` true exactly when `files` is above 0. A `format` route needs `autofix.changes: true` and a `reviewedSha`, and has no text and no params.
 - `wants` is `{ labels?: { add?, remove? }, assignees? }`. Every label in it is one of the profile's `autoLabels`, no label is both added and removed, and `wantsReason` is required with `wants` and refused without it.
 - A review comment with `suggestion` has `original` with exactly `line - startLine + 1` lines (1 without `startLine`), no ```` ```suggestion ```` fence in `text`, and a `diffHunk`, when present, that starts with `@@`.
@@ -497,6 +502,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `agent_note` | `text` | the note of "Analyze again", or the instruction text of an agent route |
 | `snoozed` | `days`, or `untilActivity: true` | the maintainer snoozed or hid the item |
 | `dismissed_proposal` | `proposal: { id, title, target, file }`, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
+| `skipped_label` | `route: { type, title }`, `labels: { add, remove }` | a bot `reply` or `request_logs` with `alsoLabel` ran with `input.alsoLabel: false` |
 
 The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", snooze and hide. Routes with `as: "me"` never reach `/api/action`. The page reports their use to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
 
