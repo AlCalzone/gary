@@ -5,7 +5,7 @@ import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, f
 const KINDS = ["pr", "issue", "discussion"];
 const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
 const SECTIONS = ["active", "easy", "almost", "review", "deferred", "hardware"];
-const EFFORTS = [1, 2, 5, 10, 15, 30, 60];
+const EFFORTS = [1, 2, 5, 10, 15, 30, 60, 120];
 const DEPTHS = ["quick", "full", "pending"];
 export const CLASSIFIERS = ["fast", "standard", "full"];
 const CI = ["passing", "failing", "pending", "none"];
@@ -57,6 +57,9 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);
 	}
 	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
+	if (item.lastEventUrl !== undefined && !(typeof item.lastEventUrl === "string" && typeof item.url === "string" && item.lastEventUrl.startsWith(item.url + "#"))) {
+		err("lastEventUrl", "lastEventUrl must be a URL of the item's own thread, its url followed by #anchor");
+	}
 	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
 		err("labels", "labels must be a list of strings");
@@ -134,6 +137,8 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		else if (actors.every((a) => a === "unavailable")) {
 			err("route-unavailable", `${where}: ${route.type} needs a bot account or allowOwnTokenPushes in this setup`);
 		}
+
+		if (params.alsoLabel !== undefined) checkAlsoLabel(route, params.alsoLabel, profile, where, err);
 
 		switch (route.type) {
 			case "review": {
@@ -245,6 +250,23 @@ function checkSuggestion(c, where, err, warn) {
 	if (c.diffHunk !== undefined && !(typeof c.diffHunk === "string" && c.diffHunk.startsWith("@@"))) {
 		err("suggestion-hunk", `${where}: diffHunk must start with an @@ header`);
 	}
+}
+
+// The labels a reply or request_logs route also sets, offered as a second button or applied after the post
+function checkAlsoLabel(route, also, profile, where, err) {
+	if (route.type !== "reply" && route.type !== "request_logs") return err("also-label", `${where}: alsoLabel is only for reply and request_logs routes`);
+	const strings = (v) => v === undefined || (Array.isArray(v) && v.every(isString));
+	if (!isObject(also) || Object.keys(also).some((k) => !["add", "remove"].includes(k)) || !strings(also.add) || !strings(also.remove)) {
+		return err("also-label", `${where}: params.alsoLabel must be { add?: [label], remove?: [label] }`);
+	}
+	const add = also.add ?? [];
+	const remove = also.remove ?? [];
+	if (!add.length && !remove.length) err("also-label", `${where}: params.alsoLabel needs at least one label`);
+	const allowed = new Set((profile.autoLabels ?? []).map((x) => x.toLowerCase()));
+	const outside = [...add, ...remove].filter((x) => !allowed.has(x.toLowerCase()));
+	if (outside.length) err("also-label-not-auto", `${where}: params.alsoLabel may only name the profile's autoLabels, not ${outside.map((x) => `"${x}"`).join(", ")}`);
+	const both = add.filter((x) => remove.some((y) => y.toLowerCase() === x.toLowerCase()));
+	if (both.length) err("also-label", `${where}: params.alsoLabel adds and removes ${both.join(", ")}`);
 }
 
 // What the project's autofix would change in a PR, from the mechanical check before the review

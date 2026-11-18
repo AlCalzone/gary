@@ -134,8 +134,32 @@ export function validateInput(route, item, input) {
 		return { title: input.title.trim() };
 	}
 
+	if (route.type === "reply" || route.type === "request_logs") {
+		const also = labelParams(route);
+		checkKeys(input, also ? ["alsoLabel", "part"] : [], "input");
+		if (input.part !== undefined && input.part !== "label") throw new Refusal('input.part must be "label".');
+		if (input.alsoLabel !== undefined && typeof input.alsoLabel !== "boolean") throw new Refusal("input.alsoLabel must be true or false.");
+		return { ...(input.part && { part: input.part }), ...(also && { alsoLabel: input.alsoLabel ?? true }) };
+	}
+
 	checkKeys(input, [], "input");
 	return {};
+}
+
+/** The `label` params of a route's `alsoLabel`, with the empty lists left out, or null when it has none. */
+export function labelParams(route) {
+	if (route?.type !== "reply" && route?.type !== "request_logs") return null;
+	const also = route.params?.alsoLabel;
+	if (!isObject(also)) return null;
+	const list = (v) => (Array.isArray(v) ? v.filter((l) => typeof l === "string" && l) : []);
+	const out = { ...(list(also.add).length && { add: list(also.add) }), ...(list(also.remove).length && { remove: list(also.remove) }) };
+	return Object.keys(out).length ? out : null;
+}
+
+/** Fingerprint of a route's label button. It changes when the labels change or the item is reviewed again. */
+export function labelHash(route, item) {
+	const reviewedAt = typeof item?.reviewedAt === "string" ? item.reviewedAt : "";
+	return createHash("sha256").update(JSON.stringify(labelParams(route)) + "\u0000" + reviewedAt).digest("hex").slice(0, 16);
 }
 
 /**
@@ -197,8 +221,10 @@ export function planRoute(route, item, input, text, mode = "bot") {
 
 	switch (route.type) {
 		case "reply":
-		case "request_logs":
-			return { steps: [{ action: "comment", params: {}, text }], guard: { action: "comment", params: {} } };
+		case "request_logs": {
+			const labels = chosen.alsoLabel ? labelParams(route) : null;
+			return { steps: [{ action: "comment", params: {}, text }], guard: { action: "comment", params: {} }, ...(labels && { labelAfter: labels }) };
+		}
 		case "review": {
 			const comments = (Array.isArray(params.comments) ? params.comments : [])
 				.filter((c) => chosen.commentIds.includes(c.id))
@@ -738,6 +764,16 @@ export async function startBoardServer({
 		return out;
 	}
 
+	// The label buttons that ran, keyed by item, route and label hash. Failed ones are served too
+	function labelsByKey(name, actions) {
+		const out = new Map();
+		const sorted = actions.map((a) => a.data).filter((a) => a.part === "label" && typeof a.routeId === "string" && typeof a.labelHash === "string").sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+		for (const a of sorted) {
+			out.set(`${name}|${a.itemId}|${a.routeId}|${a.labelHash}`, { status: a.status, result: typeof a.result === "string" ? a.result : "" });
+		}
+		return out;
+	}
+
 	const modeOf = (name) => settingsOf(name).mode ?? "none";
 
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
@@ -748,6 +784,7 @@ export async function startBoardServer({
 		const mode = current ?? "none";
 		const [items, actions] = await Promise.all([readCollection(name, "items"), readCollection(name, "actions")]);
 		const clicked = clickedByKey(name, actions);
+		const labelled = labelsByKey(name, actions);
 		return items.map(({ id, data }) => ({
 			...data,
 			liveState: liveStates.get(`${name}/${id}`),
@@ -755,7 +792,8 @@ export async function startBoardServer({
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
 				const ran = clicked.get(key) ?? (doneKeys.has(key) ? { status: "done", result: "", finishedAt: null } : undefined);
-				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key) };
+				const labelDone = labelParams(route) ? labelled.get(`${name}|${id}|${route.id}|${labelHash(route, data)}`) : undefined;
+				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...(labelDone && { labelDone }) };
 			}),
 			instance: name,
 			id,
@@ -993,6 +1031,7 @@ export async function startBoardServer({
 		const { error: settingsError } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
 		const { itemId, routeId, text, force, input } = body;
+		if (isObject(input) && input.part !== undefined) return handleLabelPart(name, body);
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
 		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) {
@@ -1067,6 +1106,17 @@ export async function startBoardServer({
 			logRouteDecisions(name, itemId, item, route, draft, input, false);
 			const [first] = plan.steps;
 			let outcome = await runAction({ instance: name, repo, ...first, kind, number, dryRun });
+			let labelRun = null;
+			if (outcome.ok && plan.labelAfter) {
+				const label = await runAction({ instance: name, repo, action: "label", params: plan.labelAfter, kind, number, dryRun });
+				labelRun = { params: plan.labelAfter, status: label.ok ? "done" : "failed", result: typeof label.result === "string" ? label.result : JSON.stringify(label.result) };
+				if (!label.ok) {
+					// The post went out, so the click counts as done and a repeat cannot post twice
+					outcome = { ...outcome, warning: `Posted. The label could not be set: ${label.result}` };
+				} else if (dryRun) {
+					outcome = { ok: true, result: { dryRun: true, invocations: [...outcome.result.invocations, ...(label.result?.invocations ?? [])] } };
+				}
+			}
 			if (outcome.ok && plan.followUp) {
 				const issueUrl = dryRun ? null : outcome.result;
 				const issueNumber = /\/issues\/(\d+)$/.exec(issueUrl ?? "")?.[1];
@@ -1097,11 +1147,73 @@ export async function startBoardServer({
 				via: "server",
 				finishedAt: new Date().toISOString(),
 				result: typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result),
+				...(labelRun && { label: labelRun }),
 			});
 			if (outcome.ok) {
 				doneKeys.add(key);
 				refusals.delete(key);
 			}
+			schedulePush(name, "items");
+			return [200, outcome];
+		});
+	}
+
+	/**
+	 * Runs the label button of a route with `alsoLabel`: exactly the route's labels, as the bot or under the own
+	 * login. It is no route choice, so it logs no decision.
+	 */
+	async function handleLabelPart(name, body) {
+		const { itemId, routeId, input, force } = body;
+		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
+		if (body.text !== undefined) return [400, { ok: false, result: "The label button sends no text." }];
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const item = await readJson(itemFile(name, itemId));
+			const route = item && routesOf(item).find((r) => r.id === routeId);
+			if (!route) return outdated;
+			const labels = labelParams(route);
+			if (!labels) return [200, { ok: false, result: "This route sets no labels." }];
+			if (!allowedRepo(name, item.repo)) {
+				return [200, { ok: false, result: typeof item.repo === "string" ? `${item.repo} is not a repository of instance ${name}. Nothing was sent.` : "The item names no repository. Nothing was sent." }];
+			}
+			try {
+				const chosen = validateInput(route, item, input);
+				if (chosen.part !== "label" || input.alsoLabel !== undefined) throw new Refusal('The label button sends only input.part "label".');
+			} catch (e) {
+				if (e instanceof Refusal) return [200, { ok: false, result: e.message }];
+				throw e;
+			}
+			const mode = modeOf(name);
+			if (mode === "none") return [200, { ok: false, result: "Setting the labels needs a bot account, or allowOwnTokenPushes in config.json to run it under your own gh login." }];
+			const hash = labelHash(route, item);
+			const key = `${name}|${itemId}|${routeId}|${hash}`;
+			if (doneKeys.has(`label|${key}`) || labelsByKey(name, await readCollection(name, "actions")).get(key)?.status === "done") {
+				return [409, { ok: false, result: "These labels are already set. The board shows the result.", duplicate: true }];
+			}
+			if (isPaused(served.get(name).state)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
+			const { kind, number, repo } = item;
+			const fresh = await checkFresh({ instance: name, action: "label", params: labels, kind, number, item, force: force === true, openOnly: true });
+			if (fresh.state) {
+				liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
+				schedulePush(name, "items");
+			}
+			if (!fresh.ok) return [200, { ok: false, result: fresh.reason, stale: true, forceable: false }];
+			const outcome = await runAction({ instance: name, repo, action: "label", params: labels, kind, number, dryRun });
+			await logClick(name, itemId, {
+				routeId,
+				route: route.type,
+				part: "label",
+				labelHash: hash,
+				createdAt: new Date().toISOString(),
+				action: "label",
+				params: labels,
+				text: "",
+				status: outcome.ok ? "done" : "failed",
+				via: "server",
+				finishedAt: new Date().toISOString(),
+				result: typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result),
+			});
+			if (outcome.ok) doneKeys.add(`label|${key}`);
 			schedulePush(name, "items");
 			return [200, outcome];
 		});
@@ -1125,6 +1237,7 @@ export async function startBoardServer({
 		} catch {
 			// planRoute validated the same input already
 		}
+		if (!agent && chosen.alsoLabel === false) decide(name, "skipped_label", itemId, item, { route: brief(route), labels: labelParams(route) });
 		const threads = new Map((Array.isArray(item.threads) ? item.threads : []).map((t) => [t?.id, t]));
 		for (const d of chosen.decisions ?? []) {
 			const thread = threads.get(d.threadId) ?? {};

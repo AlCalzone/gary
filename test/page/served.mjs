@@ -126,7 +126,7 @@ try {
 	// Probe items with routes, written as files like the routine does
 	const PR = "https://github.com/acme/widgets/pull/12";
 	const ISSUE = "https://github.com/acme/widgets/issues/21";
-	const probe = (kind, number, url, extra) => ({ kind, number, repo: "acme/widgets", title: "Probe " + number, url, author: "someone", authorType: "contributor", section: "easy", priority: 0, effortMinutes: 1, reviewDepth: "full", reviewedAt: new Date(Date.now() - 3600000).toISOString(), ...extra });
+	const probe = (kind, number, url, extra) => ({ kind, number, repo: "acme/widgets", state: "Probe item.", title: "Probe " + number, url, author: "someone", authorType: "contributor", section: "easy", priority: 0, effortMinutes: 1, reviewDepth: "full", reviewedAt: new Date(Date.now() - 3600000).toISOString(), ...extra });
 	const writeProbes = () => {
 		writeFileSync(itemFile("pr-12"), JSON.stringify(probe("pr", 12, PR, {
 			// address_review needs a taken-over contributor PR
@@ -244,9 +244,10 @@ try {
 	await press("Confirm: ask for a debug log as widgets-bot");
 	ok("closed thread refused on the card", await until(`/is closed/.test(${openCardText})`, 8000));
 	ok("close row shows Already closed", await until(`/Already closed/.test(document.querySelectorAll("#d-routes .card")[2].textContent) && !${rowButton(2, "Open GitHub to close")}`, 8000));
+	// The list waits for the dialog, so the row shows the new state once it closes
+	await closeItem();
 	await revealAll();
 	ok("kind icon follows the live state", await until(`document.querySelector('.row[data-id="widgets/issue-21"] .r-kind svg')?.getAttribute("aria-label") === "Issue, closed as completed"`));
-	await closeItem();
 	setStub({});
 
 	// Routes in his name: the board copies and opens GitHub, the server is never asked to write
@@ -260,11 +261,11 @@ try {
 	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.value += " (edited)"; ta.dispatchEvent(new Event("input"));`);
 	await press("Copy reply, open GitHub");
 	ok("me route: clipboard gets the edited text", await until(`String(window.__clip).endsWith(" (edited)")`));
-	ok("me route: opens the thread with the anchor", await until(`window.__opened[0] === ${JSON.stringify(ISSUE + "#issuecomment-new")}`));
+	ok("me route: an issue without comments opens its plain URL", await until(`window.__opened[0] === ${JSON.stringify(ISSUE)}`));
 	ok("me route: no /api/action request", await ev(`return window.__apiCalls === 0;`));
 	await sleep(500);
 	ok("me route: no action doc", !actionFiles().some((a) => a.itemId === "issue-21" && a.routeId === "r1"));
-	ok("me route: opened mark shown", await until(`/opened/.test(${openCardText})`));
+	ok("me route: opened mark shown", await until(`!!document.querySelector('#d-routes .card.open .opened-mark[aria-label="You opened this on GitHub today"] svg')`));
 	await clickCard(3);
 	await press("Open GitHub to file the issue");
 	ok("me follow_up opens the new-issue form", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/new?title=A%20%26%20B&body=Line%201")`));
@@ -408,6 +409,52 @@ try {
 	writeFileSync(profileFile, goodProfile);
 	ok("fixed settings remove the banner", await until(`!document.querySelector("#settings-notes .settings-banner")`, 10000));
 
+	// Label button next to a prefill, and the label checkbox on a bot post
+	const LABEL = { add: ["needs-info"], remove: [] };
+	writeFileSync(itemFile("issue-22"), JSON.stringify(probe("issue", 22, "https://github.com/acme/widgets/issues/22", {
+		hint: "Ask: debug log", routes: [{ id: "r1", type: "request_logs", as: "me", title: "Ask: debug log", recommended: true, text: "Please attach a debug log.", params: { alsoLabel: LABEL } }],
+	})));
+	await until(`!!state.items.get("widgets/issue-22")`);
+	await openItem("issue-22");
+	const labelBtn = `document.querySelector("#d-routes .card.open .label-btn")`;
+	ok("label: the prefill card has the label button", await until(`${labelBtn}?.textContent === "Add label: needs-info"`));
+	await ev(`${labelBtn}.click();`);
+	ok("label: the server sets exactly the route's label", await fileUntil(() => actionFiles().some((a) => a.itemId === "issue-22" && a.part === "label" && a.status === "done")));
+	ok("label: the button reads Label added from the server's state", await until(`${labelBtn}?.textContent === "Label added" && ${labelBtn}.disabled`, 8000));
+	await closeItem();
+	await openItem("issue-22");
+	ok("label: still done after reopening", await until(`${labelBtn}?.textContent === "Label added"`));
+	await closeItem();
+	writeFileSync(itemFile("issue-22"), JSON.stringify(probe("issue", 22, "https://github.com/acme/widgets/issues/22", {
+		hint: "Ask: debug log", routes: [{ id: "r1", type: "request_logs", as: "bot", title: "Ask: debug log", recommended: true, text: "Please attach a debug log, please.", params: { alsoLabel: LABEL } }],
+	})));
+	await until(`state.items.get("widgets/issue-22")?.routes?.[0]?.as === "bot"`);
+	await openItem("issue-22");
+	ok("bot: the checkbox is on", await ev(`return document.querySelector("#d-routes .card.open .also-label input")?.checked === true;`));
+	await press("Ask for a debug log");
+	await until(`!!${cardButton("Confirm: ask for a debug log as widgets-bot")}`);
+	await press("Confirm: ask for a debug log as widgets-bot");
+	ok("bot: the post also sets the label", await fileUntil(() => actionFiles().some((a) => a.itemId === "issue-22" && a.part !== "label" && a.status === "done" && JSON.stringify(a.label ?? a).includes("needs-info"))));
+	await closeItem();
+
+	// Analyze again while an analysis is queued
+	writeFileSync(join(BOARD, "actions", "issue-24-q.json"), JSON.stringify({ itemId: "issue-24", action: "reanalyze", status: "queued", via: "queue", createdAt: new Date().toISOString(), finishedAt: null, params: {}, text: "", result: "" }));
+	await openItem("issue-24");
+	ok("analyzing: the footer button reads Analyzing…", await until(`document.querySelector("#d-foot .foot-analyze")?.textContent === "Analyzing…"`, 8000));
+	await closeItem();
+
+	// The agent rewrites the open item; the list waits for the dialog
+	await revealAll();
+	await openItem("issue-24");
+	const rowOf = (id) => `(document.querySelector('.row[data-id="widgets/${id}"]')?.closest("[id^=group-]")?.id ?? "none")`;
+	const before26 = JSON.stringify(await ev(`return ${rowOf("issue-26")};`));
+	await put("issue-24", { reviewedAt: new Date().toISOString(), hint: "Reply: thanks, it is fixed", routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks, it is fixed", recommended: true, text: "Thanks, this is fixed." }] });
+	await put("issue-26", { section: "deferred" });
+	ok("a rewrite shows the update line with the previous hint", await until(`!document.getElementById("d-updated").hidden && /Before: Reply: thanks/.test(document.getElementById("d-updated").textContent)`, 8000));
+	ok("the list does not move while the dialog is open", await ev(`return ${rowOf("issue-26")} === ${before26};`));
+	await closeItem();
+	ok("closing applies the change", await until(`${rowOf("issue-26")} !== ${before26}`));
+
 	// Paused: gary pause and gary resume change the header live, server writes are refused calmly
 	const gary = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: ENV, encoding: "utf8" });
 	writeFileSync(itemFile("issue-29"), JSON.stringify(probe("issue", 29, "https://github.com/acme/widgets/issues/29", {
@@ -512,6 +559,9 @@ try {
 	await settle();
 	ok("next planned item moves up", (await ids("quick")) === "issue-2,issue-3,issue-4,issue-5,issue-6");
 	ok("handled time counts as spent", await ev(`return document.querySelector("#plan .sum").textContent === "10 min of 6 h";`));
+	setActions([["issue-1-2", { itemId: "issue-1", action: "reanalyze", status: "done", via: "queue", createdAt: iso(60000), finishedAt: iso(30000), params: {}, text: "", result: "" }]]);
+	await settle();
+	ok("a finished re-analysis returns the item to its place by priority", (await ids("quick")) === "issue-1,issue-2,issue-3,issue-4,issue-5");
 	setActions([]);
 
 	setItems(Array.from({ length: 25 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "almost", 60, i + 1, i === 0 ? { hint: "Maybe reply that a PR is welcome" } : {})]));

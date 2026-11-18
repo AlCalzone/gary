@@ -44,7 +44,7 @@ Keep `question` findings as questions to the contributor only when the contribut
 
 ## Things to leave out
 
-- Praise, thanks paragraphs and "Great work!". A short "Thanks!" on an approval is the exception.
+- Praise, thanks paragraphs and "Great work!". One exception: a short thanks at the start of a closing message or an approval is fine when the person did something for us, like confirming a fix, testing a build or sending the log that settled it. "Thanks for confirming! Closing this."
 - Restating what the reporter wrote.
 - Speculation presented as a fact. Say "I think" or leave it out.
 - Promises about timelines.

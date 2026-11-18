@@ -132,6 +132,14 @@ t.check("the plain report prints the counts and the disagreements", /^4 pairs/m.
 r = gary("shadow", "report", "--since", "yesterday");
 t.check("shadow report refuses a bad --since", r.status !== 0 && /--since needs an ISO time/.test(r.stderr + r.stdout), r.stderr);
 
+// lastEventUrl on items
+r = gary("put", "items", "pr-12", file({ ...BASE, url: "https://github.com/acme/widgets/pull/12", lastEventUrl: "https://github.com/acme/widgets/pull/12#issuecomment-9" }));
+t.check("an item takes lastEventUrl in its own thread", r.status === 0, r.stdout + r.stderr);
+for (const bad of ["https://github.com/acme/widgets/pull/120#issuecomment-9", "https://github.com/acme/widgets/pull/12", "https://example.com/x", 5]) {
+	r = gary("put", "items", "pr-12", file({ ...BASE, url: "https://github.com/acme/widgets/pull/12", lastEventUrl: bad }));
+	t.check(`lastEventUrl ${JSON.stringify(bad)} is refused`, r.status === 1 && /lastEventUrl must be a URL of the item's own thread/.test(r.stdout), r.stdout);
+}
+
 // classifiedBy on items
 r = gary("put", "items", "pr-12", file({ ...BASE, classifiedBy: "fast" }));
 t.check("an item takes classifiedBy", r.status === 0, r.stdout + r.stderr);

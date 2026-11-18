@@ -24,8 +24,8 @@ A thread that is closed on GitHub never reaches the board. The snapshot only fet
 
 An open thread whose problem is solved is done. That covers a reporter who fixed it themselves, a workaround that worked, and a merged fix. Classify it as `easy` with `solved: true` and effort 1 or 2. Write `state` as the outcome, like `Reporter fixed it by clearing the cache.` The recommended route is `close` as `me` with reason `completed`:
 
-- The reporter's last comment only reports success or says thanks: no `text`, hint `Close: solved`. A written reply to "thanks, it works now" is noise.
-- There is something worth saying, like the release that contains the fix: a one-line `text`.
+- The route carries a brief closing message (`item-doc.md`, `close`), like `Good to hear that clearing the cache fixed it. Closing this.` Name the release that contains the fix when there is one, and what to do if the problem returns when that helps. Hint `Close: solved`.
+- Leave the text out only when our side's last comment already closes the thread in words.
 - A discussion with a correct answer that is not marked: a `chore` route with `answer_discussion` and that comment's `commentId` instead, because a discussion is done once the answer is marked.
 
 A follow-up idea is welcome when it is useful. It passes when all three hold:
@@ -142,16 +142,18 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 `priority` is 1 for the top of a section. The maintainer works a section from the top, so cheap decisions come first. Order within a section:
 
+In every section, other people come before our own work: first items by outside contributors and reporters, then items by the maintainer himself, then items by bots and agents. Someone outside is waiting on the first group, and nobody waits on the others. Within each of these groups:
+
 - `active`: longest wait first.
 - `easy`: lowest `effortMinutes` first, then merges, closes, answers.
-- `almost` and `review`: lowest `effortMinutes` first, then contributor items before bot items, then highest `waitingDays`.
+- `almost` and `review`: lowest `effortMinutes` first, then highest `waitingDays`.
 - `deferred` and `hardware`: newest `updatedAt` first.
 
 ## Autonomous labels and assignments
 
 Write these into the item's `wants` with a `wantsReason` (`item-doc.md`). The routine applies them every run with `gary action --autonomous <file>` (`label` with `params.add` or `params.remove`, `assign` with `params.assignees`) until the snapshot shows them. `--autonomous` makes the code refuse labels outside `autoLabels`. Only labels in the profile's `autoLabels` qualify, and only under the conditions the profile's rules state. Each change records a fact that is already true on GitHub. A label that states a judgment becomes a `chore` route with `action: "label"`, and only when the label is the whole job.
 
-A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before. "Waiting on the reporter" also covers a message that asked them to try something and report back.
+A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before. The reply route that makes the request carries the same label in `params.alsoLabel` (`item-doc.md`), so one click can post and label. `wants` stays the fallback for a reply he posted without that button: it holds the label only once the request is visible on the timeline. `wants` and `alsoLabel` never point in opposite directions: a label one adds, the other never removes. "Waiting on the reporter" also covers a message that asked them to try something and report back.
 
 The `reason` of every autonomous action describes the last exchange on the timeline correctly: who asked what, who answered, what is open now. Example: `The maintainer asked for a re-interview log. The reporter sent it in a reply. The maintainer then asked them to upgrade and report back, which is open.`
 

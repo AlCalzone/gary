@@ -131,6 +131,21 @@ window.makeRouteFixtures = (iso) => {
       routes: [{ id: "r1", type: "reply", as: "bot", title: "Post analysis: the key is written after the reboot", recommended: true, draftHash: "h1",
         text: "## What happened\n\nThe hub rebooted while it wrote the network key, so the key on disk is empty.\n\n## Why\n\nThe write is not atomic. A power cut between truncate and write leaves an empty file.\n\n## What you can do\n\n1. Restore the key from your backup.\n2. Update to 4.2, which writes the key atomically.\n\n## What we change\n\nWe add a check at startup that warns about an empty key file." }],
     }),
+    issue(9490, {
+      title: "Hub does not wake the thermostat for a setpoint change",
+      author: "someone",
+      story: "The reporter attached no log, and the setting he changed is not in the summary.",
+      state: "We need a debug log before anyone can look.",
+      routes: [{ id: "r1", type: "request_logs", as: "me", actor: "me", title: "Ask: driver log on debug", recommended: true, draftHash: "h1",
+        text: "Please make a driver log on loglevel `debug` and attach it here.", params: { alsoLabel: { add: ["waiting for info ⏳"], remove: [] } } }],
+    }),
+    issue(9491, {
+      title: "Scene button triggers twice",
+      author: "someone",
+      state: "A log will show whether the device sends the event twice.",
+      routes: [{ id: "r1", type: "request_logs", as: "bot", title: "Ask: driver log on debug", recommended: true, draftHash: "h1",
+        text: "Please make a driver log on loglevel `debug` and attach it here.", params: { alsoLabel: { add: ["waiting for info ⏳"], remove: [] } } }],
+    }),
     issue(9481, {
       title: "Hub crashes when a sensor reports a negative temperature",
       author: "someone",

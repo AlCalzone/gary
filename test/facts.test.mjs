@@ -46,6 +46,10 @@ t.check("the timeline keeps the newest 200 events and says it is truncated", big
 t.check("a timeline with every event is not truncated", f.buildTimeline(many.slice(0, 10), ctx).timelineTruncated === false);
 t.check("the text an automated pattern sees is capped", !f.isAutomated("x".repeat(30000) + "<!-- LOGFILE_COMMENT_TAG -->", AUTOMATED) && f.isAutomated("<!-- LOGFILE_COMMENT_TAG -->" + "x".repeat(30000), AUTOMATED));
 
+const withUrls = f.buildTimeline([{ ...ev(0, "hubot", "opened"), url: "u0" }, { ...ev(2, BOT, "comment", "<!-- LOGFILE_COMMENT_TAG -->"), url: "u2" }, { ...ev(1, ME), url: "u1" }], ctx);
+t.check("lastEventUrl is the newest event's url, automated ones included", withUrls.lastEventUrl === "u2" && withUrls.timeline.every((e) => e.url === undefined), withUrls);
+t.check("lastEventUrl is null with only the opening post", f.buildTimeline([{ ...ev(0, "hubot", "opened"), url: "u0" }], ctx).lastEventUrl === null);
+
 const pr = { ci: "passing", mergeable: "MERGEABLE", files: ["package.json", "yarn.lock"], changedFileCount: 2, reviewSummary: [{ author: ME, state: "approved" }] };
 let p = f.prFacts(pr);
 t.check("a PR that changes only manifests and lock files is dependency-only and clean", p.dependencyOnly && p.isClean && p.ciGreen && JSON.stringify(p.approvedBy) === `["${ME}"]` && p.openThreadCount === 0 && !p.touchesSensitive, p);
@@ -78,9 +82,13 @@ t.check("PR facts come from the entry", pr12.facts?.touchesSensitive === true &&
 const issue = item("issue", "23");
 t.check("the bot's log feedback does not count as our turn", issue.facts?.lastSpeaker === "them" && issue.facts.waitingOn === "us" && issue.facts.timeline.at(-1).side === "automated" && issue.facts.authorIsUs === false, issue.facts);
 t.check("issue facts are there", issue.facts?.hasClosingPr === false && item("issue", "22").facts?.hasClosingPr === true);
+t.check("lastEventUrl points at the newest comment, also an automated one", issue.facts?.lastEventUrl === "https://github.com/acme/widgets/issues/23#issuecomment-333", issue.facts?.lastEventUrl);
+t.check("lastEventUrl of a PR can be a review", pr12.facts?.lastEventUrl === "https://github.com/acme/widgets/pull/12#pullrequestreview-2", pr12.facts?.lastEventUrl);
+t.check("lastEventUrl is absent without comments", dep.facts && !("lastEventUrl" in dep.facts), dep.facts);
 const disc = item("discussion", "35");
 const replies = disc.facts?.timeline.filter((e) => e.kind === "reply") ?? [];
 t.check("more replies than the inline page are fetched", replies.length === 3 && !disc.facts.timelineTruncated && disc.facts.waitingOn === "us", disc.facts ?? disc);
+t.check("lastEventUrl of a discussion is the newest fetched reply", disc.facts?.lastEventUrl === "https://github.com/acme/widgets/discussions/35#discussioncomment-507", disc.facts?.lastEventUrl);
 t.check("discussion facts are there", disc.facts?.isAnswered === false && disc.facts.hasClosingPr === false);
 
 const snap = gary("snapshot");
@@ -90,6 +98,7 @@ try {
 } catch {
 	out = { error: snap.stdout + snap.stderr };
 }
+t.check("the full snapshot carries lastEventUrl too", out.changed?.find((e) => e.id === "issue-23")?.facts.lastEventUrl === "https://github.com/acme/widgets/issues/23#issuecomment-333");
 t.check("every snapshot entry has facts", out.changed?.length > 0 && out.changed.every((e) => e.facts && Array.isArray(e.facts.timeline) && typeof e.facts.waitingOn === "string"), out);
 t.check("the full snapshot fetches the missing replies too", out.changed?.find((e) => e.id === "disc-35")?.facts.timeline.filter((e) => e.kind === "reply").length === 3, out.changed?.find((e) => e.id === "disc-35"));
 const pending = JSON.parse(readFileSync(join(root, "instances", "widgets", "state", "snapshot.pending.json"), "utf8"));

@@ -33,12 +33,12 @@ const THREAD_FIELDS = `
 	nodes {
 		id isResolved isOutdated path line originalLine
 		comments(first: 1) { nodes { author { login __typename } createdAt url body } }
-		allComments: comments(last: ${TIMELINE_THREAD_COMMENTS}) { totalCount nodes { author { login __typename } createdAt body } }
+		allComments: comments(last: ${TIMELINE_THREAD_COMMENTS}) { totalCount nodes { author { login __typename } createdAt body url } }
 	}
 `;
 
 // Light comment lists for the facts timeline. Bodies are needed only to spot automated comments
-const TIMELINE_COMMENTS = `timelineComments: comments(last: ${TIMELINE_PAGE}) { totalCount nodes { author { login __typename } createdAt body } }`;
+const TIMELINE_COMMENTS = `timelineComments: comments(last: ${TIMELINE_PAGE}) { totalCount nodes { author { login __typename } createdAt body url } }`;
 
 const REVIEW_STATE_FIELDS = `
 	pageInfo { hasNextPage endCursor }
@@ -133,8 +133,8 @@ const DISCUSSION_FIELDS = `
 				timelineComments: comments(last: ${TIMELINE_PAGE}) {
 					totalCount
 					nodes {
-						id author { login __typename } createdAt body
-						replies(last: ${TIMELINE_REPLIES}) { totalCount nodes { author { login __typename } createdAt body } }
+						id author { login __typename } createdAt body url
+						replies(last: ${TIMELINE_REPLIES}) { totalCount nodes { author { login __typename } createdAt body url } }
 					}
 				}
 `;
@@ -142,7 +142,7 @@ const DISCUSSION_FIELDS = `
 const MORE_REPLIES_QUERY = `query($id: ID!, $after: String) {
 	node(id: $id) {
 		... on DiscussionComment {
-			replies(first: 100, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { author { login __typename } createdAt body } }
+			replies(first: 100, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { author { login __typename } createdAt body url } }
 		}
 	}
 }`;
@@ -316,24 +316,24 @@ function withFacts(kind, node, entry, ctx) {
 	const comments = node.timelineComments ?? node.comments;
 	let truncated = (comments?.totalCount ?? 0) > (comments?.nodes?.length ?? 0);
 	for (const c of comments?.nodes ?? []) {
-		events.push({ at: c.createdAt, author: c.author, body: c.body, kind: "comment" });
+		events.push({ at: c.createdAt, author: c.author, body: c.body, url: c.url, kind: "comment" });
 		if (c.replies) {
-			for (const r of c.replies.nodes ?? []) events.push({ at: r.createdAt, author: r.author, body: r.body, kind: "reply" });
+			for (const r of c.replies.nodes ?? []) events.push({ at: r.createdAt, author: r.author, body: r.body, url: r.url, kind: "reply" });
 			if ((c.replies.totalCount ?? 0) > (c.replies.nodes?.length ?? 0)) truncated = true;
 		}
 	}
 	if (kind === "pr") {
 		for (const r of node.allReviews?.nodes ?? []) {
-			if (r.submittedAt) events.push({ at: r.submittedAt, author: r.author, body: "", kind: "review" });
+			if (r.submittedAt) events.push({ at: r.submittedAt, author: r.author, body: "", url: r.url, kind: "review" });
 		}
 		for (const t of node.reviewThreads?.nodes ?? []) {
 			const all = t.allComments ?? t.comments;
-			for (const c of all?.nodes ?? []) events.push({ at: c.createdAt, author: c.author, body: c.body, kind: "thread_comment" });
+			for (const c of all?.nodes ?? []) events.push({ at: c.createdAt, author: c.author, body: c.body, url: c.url, kind: "thread_comment" });
 			if ((all?.totalCount ?? 0) > (all?.nodes?.length ?? 0)) truncated = true;
 		}
 	}
-	const { timeline, timelineTruncated } = buildTimeline(events, ctx, { truncated });
-	const facts = { timeline, ...(timelineTruncated && { timelineTruncated }), ...speakerFacts(timeline), ...(kind === "pr" ? prFacts(entry) : issueFacts(entry, timeline)) };
+	const { timeline, timelineTruncated, lastEventUrl } = buildTimeline(events, ctx, { truncated });
+	const facts = { timeline, ...(timelineTruncated && { timelineTruncated }), ...(lastEventUrl && { lastEventUrl }), ...speakerFacts(timeline), ...(kind === "pr" ? prFacts(entry) : issueFacts(entry, timeline)) };
 	return { ...entry, facts };
 }
 

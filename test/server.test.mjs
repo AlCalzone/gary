@@ -99,6 +99,19 @@ const items = {
 	},
 	"issue-23": { kind: "issue", repo: "acme/gadgets", number: 23, title: "foreign repo", reviewedAt, routes: [{ id: "r1", type: "reply", as: "bot", text: "x" }] },
 	"issue-25": { kind: "issue", number: 25, title: "no repo", reviewedAt, routes: [{ id: "r1", type: "reply", as: "bot", text: "x" }] },
+	"issue-40": {
+		kind: "issue", repo: REPO, number: 21, title: "needs a log", reviewedAt, hint: "Reply: plain",
+		routes: [
+			{ id: "r1", type: "reply", title: "Reply: ask for a log", text: "Please attach a log.", params: { alsoLabel: { add: ["needs-info"] } } },
+			{ id: "r2", type: "request_logs", title: "Ask: log, as bot", as: "bot", text: "BOT_ASKS_LOG", params: { alsoLabel: { add: ["needs-info"], remove: ["bug"] } } },
+			{ id: "r3", type: "request_logs", title: "Ask: log, no label", as: "bot", text: "BOT_ASKS_NO_LABEL", params: { alsoLabel: { add: ["needs-info"] } } },
+			{ id: "r4", type: "reply", title: "Reply: plain", as: "bot", recommended: true, text: "Plain" },
+			{ id: "r5", type: "request_logs", title: "Ask: missing label", as: "bot", text: "BOT_ASKS_MISSING", params: { alsoLabel: { add: ["waiting-for-info"] } } },
+			{ id: "r6", type: "request_logs", title: "Ask: bad input", as: "bot", text: "x", params: { alsoLabel: { add: ["needs-info"] } } },
+			{ id: "r7", type: "reply", title: "Reply: no labels", as: "bot", text: "x" },
+		],
+	},
+	"issue-41": { kind: "issue", repo: REPO, number: 20, title: "closed", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { add: ["needs-info"] } } }] },
 };
 for (const [id, data] of Object.entries(items)) writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(data));
 writeFileSync(join(BOARD, "items", "issue-30.json"), JSON.stringify({ kind: "issue", repo: REPO, number: 21, title: "t", reviewedAt, hint: "Reply: hi", routes: [{ id: "r1", type: "reply", title: "Reply: hi", as: "bot", recommended: true, text: "Hi from widgets" }] }));
@@ -116,6 +129,8 @@ const gadgetItems = {
 	"pr-12": { kind: "pr", repo: "acme/gadgets", number: 12, title: "gadgets PR", authorType: "maintainer", reviewedAt, hint: "Reply: gadgets", routes: [{ id: "r1", type: "reply", title: "Reply: gadgets", as: "bot", recommended: true, text: "Hi from gadgets" }] },
 	"issue-90": { kind: "issue", repo: "acme/gadgets", number: 90, title: "only in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }, { id: "r2", type: "request_logs", title: "Ask: log", as: "bot", text: "Log?" }] },
 	"issue-91": { kind: "issue", repo: REPO, number: 91, title: "widgets repo in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }] },
+	"issue-92": { kind: "issue", repo: "acme/gadgets", number: 22, title: "label in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { add: ["needs-info"] } } }] },
+	"issue-93": { kind: "issue", repo: "acme/gadgets", number: 21, title: "own login", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { remove: ["bug"] } } }] },
 };
 for (const [id, data] of Object.entries(gadgetItems)) writeFileSync(join(GBOARD, "items", id + ".json"), JSON.stringify(data));
 writeFileSync(join(GBOARD, "meta.json"), JSON.stringify({ lastRunSummary: "gadgets run" }));
@@ -124,10 +139,12 @@ writeFileSync(stubFile, JSON.stringify({
 	"*": { state: "OPEN" },
 	"issue-22": { state: "OPEN", comments: [{ author: { login: "someone", __typename: "User" }, at: later }] },
 	"issue-20": { state: "CLOSED" },
+	"acme/widgets#20": { state: "CLOSED" },
 }));
+const ghLog = join(T, "gh.log");
 
 const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-run", "--port", String(PORT)], {
-	env: { ...env, GARY_GUARD_STUB: stubFile },
+	env: { ...env, GARY_GUARD_STUB: stubFile, FAKE_GH_LOG: ghLog },
 	stdio: ["ignore", "inherit", "pipe"],
 });
 process.on("exit", () => child.kill("SIGTERM"));
@@ -256,6 +273,39 @@ await expect("take_over push is queued", "pr-12", "r8", {}, (r) => r.data.ok && 
 await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", {}, (r) => r.data.ok && r.data.queued);
 await expect("a repeated agent click gets 409", "issue-21", "r8", {}, (r) => r.status === 409);
 
+// alsoLabel: the label button next to a prefill reply, and labels right after a bot post
+let r;
+const labelClick = (instance, itemId, routeId, extra = {}) => api("/api/action", { instance, itemId, routeId, input: { part: "label" }, ...extra });
+check("a prefill route with alsoLabel is served as me without labelDone", served["issue-40"].routes[0].actor === "me" && served["issue-40"].routes[0].labelDone === undefined, served["issue-40"].routes[0]);
+r = await click("issue-40", "r1");
+check("the reply text of a prefill route still stays the maintainer's", refused(/yours to do on GitHub/)(r), r);
+r = await labelClick("widgets", "issue-40", "r1", { input: { part: "label", alsoLabel: true } });
+check("the label button takes only input.part", r.data.ok === false && /only input.part/.test(r.data.result), r);
+r = await labelClick("widgets", "issue-40", "r1", { input: { part: "label", add: ["bug"] } });
+check("the label button takes no labels from the client", r.data.ok === false && /unknown field "add"/.test(r.data.result), r);
+r = await labelClick("widgets", "issue-40", "r1", { input: { part: "text" } });
+check("input.part must be label", r.data.ok === false && /input.part must be "label"/.test(r.data.result), r);
+r = await labelClick("widgets", "issue-40", "r1", { text: "x" });
+check("the label button sends no text", r.status === 400, r);
+r = await labelClick("widgets", "issue-40", "r4");
+check("a route without alsoLabel has no label button", r.data.ok === false && /sets no labels/.test(r.data.result), r);
+r = await labelClick("widgets", "issue-41", "r1");
+check("the label button refuses a closed thread", r.data.ok === false && r.data.stale === true && /closed/.test(r.data.result), r);
+r = await labelClick("widgets", "issue-40", "r1");
+check("the label button sets exactly the route's labels as the bot", r.data.ok === true && invocations(r).includes("addLabelsToLabelable") && invocations(r).includes("LA_info") && !invocations(r).includes("removeLabelsFromLabelable") && !invocations(r).includes("addComment"), r);
+r = await labelClick("widgets", "issue-40", "r1");
+check("a repeat of the label button gets 409", r.status === 409 && r.data.duplicate === true, r);
+r = await click("issue-40", "r2");
+check("a bot post with alsoLabel sets the labels after the post", r.data.ok === true && /addComment[\s\S]*BOT_ASKS_LOG[\s\S]*addLabelsToLabelable[\s\S]*removeLabelsFromLabelable/.test(invocations(r)), r);
+r = await click("issue-40", "r3", { input: { alsoLabel: false } });
+check("an unticked label posts only the text", r.data.ok === true && invocations(r).includes("BOT_ASKS_NO_LABEL") && !invocations(r).includes("Labelable"), r);
+r = await click("issue-40", "r5");
+check("a label failure after a post keeps the post a success", r.data.ok === true && /^Posted\. The label could not be set: .*waiting-for-info/.test(r.data.warning ?? ""), r);
+r = await click("issue-40", "r6", { input: { alsoLabel: "yes" } });
+check("input.alsoLabel must be a boolean", refused(/input.alsoLabel must be true or false/)(r), r);
+r = await click("issue-40", "r7", { input: { alsoLabel: false } });
+check("input.alsoLabel needs a route with alsoLabel", refused(/unknown field "alsoLabel"/)(r), r);
+
 // Action log
 await new Promise((r) => setTimeout(r, 300));
 const docs = readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8")));
@@ -266,6 +316,14 @@ const sf = byRoute("issue-21", "r8")[0];
 check("start_fix doc carries text and finding only", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2"}', sf);
 check("drive doc", byRoute("pr-13", "r1")[0]?.params?.maxRounds === 3 && byRoute("pr-12", "r11")[0]?.params?.maxRounds === 2, docs.filter((d) => d.action === "drive"));
 check("take_over default doc", byRoute("pr-12", "r12")[0]?.params?.mode === "push", byRoute("pr-12", "r12"));
+const labelDoc = byRoute("issue-40", "r1")[0];
+check("the label button writes its own action doc", byRoute("issue-40", "r1").length === 1 && labelDoc.part === "label" && labelDoc.action === "label" && labelDoc.status === "done" && labelDoc.via === "server" && /^[0-9a-f]{16}$/.test(labelDoc.labelHash) && labelDoc.draftHash === undefined && JSON.stringify(labelDoc.params) === '{"add":["needs-info"]}', labelDoc);
+check("a bot post doc records the labels too", byRoute("issue-40", "r2")[0]?.status === "done" && byRoute("issue-40", "r2")[0].label?.status === "done" && JSON.stringify(byRoute("issue-40", "r2")[0].label.params) === '{"add":["needs-info"],"remove":["bug"]}', byRoute("issue-40", "r2"));
+check("a failed label is recorded next to the done post", byRoute("issue-40", "r5")[0]?.status === "done" && byRoute("issue-40", "r5")[0].label?.status === "failed" && /waiting-for-info/.test(byRoute("issue-40", "r5")[0].label.result), byRoute("issue-40", "r5"));
+check("an unticked label records no label run", byRoute("issue-40", "r3")[0]?.status === "done" && byRoute("issue-40", "r3")[0].label === undefined, byRoute("issue-40", "r3"));
+const wLog = readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.itemId === "issue-40");
+check("unticking the label logs skipped_label with the route and the labels", wLog.some((e) => e.type === "skipped_label" && e.route.type === "request_logs" && e.route.title === "Ask: log, no label" && JSON.stringify(e.labels) === '{"add":["needs-info"]}'), wLog);
+check("the label button logs no decision", !wLog.some((e) => e.chosen?.title === "Reply: ask for a log" || e.route?.title === "Reply: ask for a log") && wLog.filter((e) => e.type === "skipped_label").length === 1, wLog);
 const fmt = byRoute("pr-14", "r3")[0];
 check("format doc is queued with the reviewed head", fmt?.status === "queued" && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
 check("format does not take the PR over", JSON.parse(readFileSync(join(BOARD, "items", "pr-14.json"), "utf8")).takenOver === undefined);
@@ -280,6 +338,8 @@ const after = Object.fromEntries((await api("/api/state")).data.items.filter((i)
 const r1 = after["pr-12"].routes.find((r) => r.id === "r1");
 check("state marks a ran route as done", r1.done?.status === "done", r1);
 check("state marks a queued route", after["pr-12"].routes.find((r) => r.id === "r2").done?.status === "queued");
+const labelled = after["issue-40"].routes[0];
+check("state serves labelDone next to done", labelled.labelDone?.status === "done" && typeof labelled.labelDone.result === "string" && labelled.done === undefined, labelled);
 
 
 // Suggestions in inline review comments
@@ -365,7 +425,7 @@ check("an item without a repo is served with ref null", itemOf("widgets", "issue
 check("state has no actions and meta", multi.actions === undefined && multi.meta === undefined && Object.keys(multi).sort().join() === "board,items,proposals");
 
 const gHash = (id, routeId) => itemOf("gadgets", id).routes.find((r) => r.id === routeId).draftHash;
-let r = await api("/api/action", { instance: "widgets", itemId: "issue-90", routeId: "r1", draftHash: gHash("issue-90", "r1") });
+r = await api("/api/action", { instance: "widgets", itemId: "issue-90", routeId: "r1", draftHash: gHash("issue-90", "r1") });
 check("an item id of gadgets is outdated on widgets", r.data.ok === false && r.data.outdated === true, r);
 r = await api("/api/action", { instance: "widgets", itemId: "pr-12", routeId: "r4", draftHash: gHash("pr-12", "r1") });
 check("a draft hash of gadgets' pr-12 does not run widgets' pr-12", r.data.ok === false && r.data.outdated === true, r);
@@ -391,12 +451,30 @@ multi = (await api("/api/state")).data;
 check("only gadgets shows paused", entry("gadgets").paused === true && entry("widgets").paused === false);
 r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r1", draftHash: gHash("pr-12", "r1") });
 check("a gadgets bot click is refused while gadgets is paused", r.data.ok === false && r.data.paused === true, r);
+r = await labelClick("gadgets", "issue-92", "r1");
+check("the label button is refused while paused", r.data.ok === false && r.data.paused === true, r);
 r = await api("/api/action", { instance: "widgets", itemId: "issue-30", routeId: "r1", draftHash: itemOf("widgets", "issue-30").routes[0].draftHash });
 check("a widgets bot click still runs", r.data.ok === true && JSON.stringify(r.data.result.invocations).includes("Hi from widgets"), r);
 writeFileSync(join(gadgets.home, "state", "control.json"), JSON.stringify({ paused: false }));
 await sleep(300);
 r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r1", draftHash: gHash("pr-12", "r1") });
 check("after resume the gadgets click runs against its own item", r.data.ok === true && JSON.stringify(r.data.result.invocations).includes("Hi from gadgets"), r);
+writeFileSync(ghLog, "");
+r = await labelClick("gadgets", "issue-92", "r1");
+const labelLookups = readFileSync(ghLog, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l).stdin).filter((q) => q.includes("label(name:"));
+check("the label button of a gadgets item labels in acme/gadgets", r.data.ok === true && labelLookups.length > 0 && labelLookups.every((q) => JSON.parse(q).variables.owner === "acme" && JSON.parse(q).variables.name === "gadgets"), { r, labelLookups });
+const gConfig = join(gadgets.home, "config.json");
+const gConfigText = readFileSync(gConfig, "utf8");
+writeFileSync(gConfig, JSON.stringify({ ...JSON.parse(gConfigText), bot: null }));
+await sleep(300);
+r = await labelClick("gadgets", "issue-93", "r1");
+check("the label button needs a bot or own-token pushes", r.data.ok === false && /needs a bot account, or allowOwnTokenPushes/.test(r.data.result), r);
+writeFileSync(gConfig, JSON.stringify({ ...JSON.parse(gConfigText), bot: null, allowOwnTokenPushes: true }));
+await sleep(300);
+r = await labelClick("gadgets", "issue-93", "r1");
+check("the label button runs under the own login in own mode", r.data.ok === true && invocations(r).includes("removeLabelsFromLabelable"), r);
+writeFileSync(gConfig, gConfigText);
+await sleep(300);
 r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r1", draftHash: gHash("pr-12", "r1") });
 check("a repeat on gadgets gets 409", r.status === 409, r);
 r = await api("/api/action", { instance: "widgets", itemId: "issue-30", routeId: "r1", draftHash: itemOf("widgets", "issue-30").routes[0].draftHash });
@@ -493,6 +571,8 @@ check("the instance keeps its last valid settings and items", entry("gadgets")?.
 check("health still lists it", (await (await fetch(base + "/api/health")).json()).instances.includes("gadgets"));
 r = await api("/api/action", { instance: "gadgets", itemId: "issue-90", routeId: "r1", draftHash: gHash("issue-90", "r1") });
 check("a bot click is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result) && /"repo" must look like/.test(r.data.settingsError), r);
+r = await labelClick("gadgets", "issue-93", "r1");
+check("the label button is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result), r);
 r = await api("/api/db", { instance: "gadgets", op: "update", path: "items/issue-90", data: { priority: 2 } });
 check("board-only writes keep working", r.status === 200, r);
 r = await api("/api/action", { instance: "gadgets", action: "dismiss_proposal", proposalId: "learn-none" });
