@@ -248,7 +248,7 @@ const ITEM_USAGE = "Usage: gary item <id> | gary item <pr|issue|discussion> <num
 export async function itemMain(argv) {
 	const r = argv.indexOf("--repo");
 	const repo = r >= 0 ? argv[r + 1] : undefined;
-	const args = argv.filter((_, i) => i !== r && i !== r + 1);
+	const args = r < 0 ? argv : argv.filter((_, i) => i !== r && i !== r + 1);
 	let entry;
 	if (args.length === 1) {
 		if (!ID_PATTERN.test(args[0])) throw new Error(ITEM_USAGE);

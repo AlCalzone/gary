@@ -69,7 +69,7 @@ for pat in '"repo" must look like' '"maintainers" must be' '"reviewBots" may onl
 	expect "profile validation: $pat" 2 "$pat" env GARY_HOME=$H/badprofile node $B snapshot
 done
 mkdir -p $H/badconfig/instances/widgets; print '{"profile":"x","me":"octocat","bot":{"login":"octocat"},"port":0,"typo":1}' > $H/badconfig/instances/widgets/config.json
-for pat in 'must be null or' 'must be a port number' 'unknown field' 'typo'; do
+for pat in 'must be null or' 'belongs in the root config' 'unknown field' 'typo'; do
 	expect "config validation: $pat" 2 "$pat" env GARY_HOME=$H/badconfig node $B paths
 done
 mkdir -p $H/notjson/instances/widgets; print '{' > $H/notjson/instances/widgets/config.json
