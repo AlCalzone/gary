@@ -363,6 +363,13 @@
 				"type": "reopen",
 				"as": "bot",
 				"title": "Reopen"
+			},
+			{
+				"id": "r4",
+				"type": "revise",
+				"as": "agent",
+				"title": "Change: add the timeout test",
+				"text": "Add a test for the timeout branch in waitForWakeup()."
 			}
 		],
 		"repo": "acme/widgets"
