@@ -77,6 +77,7 @@ Check `<state>/control.json`. When Gary is paused (`gary pause`), the run still 
 - Every autonomous label or assign from step 4a still goes through `gary action --autonomous`. Take the refusal ("Gary is paused. Nothing was sent.") and record the intended action in `<run>/would-have.json` as `[{ itemId, action, params, reason }]`.
 - No review round of a fix PR runs. `gary fix-review` refuses with exit code 4, and the step goes into `would-have.json` with `action: "fix_review"`.
 - Step 7 starts no fix agent and pushes nothing. Each fix it would attempt goes into `would-have.json` with `action: "start_fix"`, `params: { routeId }` and the route's `why` as `reason`.
+- No automatic review goes out. `gary auto-review post` exits with code 4 and records the step in `would-have.json` itself, with `action: "auto_review"`.
 - Queued agent requests stay queued and unclaimed.
 - Line 1 of the run summary says `Paused.` and counts the would-have actions per kind, like `Paused. Would have: 4 label, 1 assign, 1 start_fix.`
 
@@ -102,9 +103,12 @@ For the hourly job, read all action files, keep those with `status: "queued"`, a
 2. Agent requests run outside the budget. The master usually starts a worker per request within seconds, so most are claimed already. Mark each one `done` after the item file is written, or `failed` with the reason.
    - `full_review` and `reanalyze` go onto the full-review list of step 5. Pass a `reanalyze` text to the subagent as the maintainer's instruction.
    - A `full_review` with `params.by: "fix"` ends the review rounds of a fix PR. The PR has no board item yet. Get its snapshot entry with `gary item pr <params.number> --repo <params.repo>`, and take the item id from that entry. Pass the review subagent the entry, `params.rounds`, `params.outcome`, `params.ready` and the action's `text`, which says why the rounds ended. The item it returns carries `rounds` copied from the params, a `state` that names how the rounds ended, and one `question` finding per comment a round left `open`. A `stopped` outcome means the PR is still a draft: `state` says why it stopped. `gary put` adds `fixFor` itself.
+   - A `full_review` with `params.by: "auto_review"` means the PR's author re-requested the automatic review. Review the PR like any other, then run step 6a for it.
    - `start_fix` comes from a `follow_up` route with `as: "agent"`. It goes onto the fix list of step 7, outside `maxAutoFixesPerRun`. Pass `text` and `params.finding` to the subagent.
    - `address_review`, `take_over`, `revise` and `format`: start one subagent per request right away, with the `triage-review-pr` skill in the matching mode. Pass the action file path, the item file path, the paths from `gary paths` and a fresh scratch subdirectory. These run in parallel with the rest of the run, because each works in its own worktree. The subagent returns `{ status, result, resultParts, item }`. Copy `status`, `result` and `resultParts` into the action file, and validate `item` like any returned doc before writing it in step 8. In a request job, write the item right away, so the subagent's CI poll can update it.
    - `drive`: run one round the same way, with the drive mode and the state file path `<state>/drive/<itemId>.json`. A round that returns `status: "waiting"` keeps the action file claimed and leaves the state file in place. The queue watcher notices the review within a minute, and the master starts the next round as a new request job. Only the final round's `{ status, result, item }` goes into the action file and the item. A drive whose action has `params.by: "fix"` belongs to a fix PR's review rounds: it has no item file, and it ends through `gary fix-review finish`, as `drive.md` describes.
+   - A `format` request with `params.by: "auto_review"` is the format job the PR's author accepted. It runs like a clicked one.
+   - A job with `action: "auto_review"` and `event: "offer-reply"` has no action file. The PR's author commented after the offer to push the formatting. Start one subagent with the `triage-review-pr` skill in the `offer-reply` mode and pass it `pr`, `at` and the paths. It judges the comment and records the judgement with `gary auto-review reply`. Write its one line to `summary.txt`.
 3. Board-only actions (`dismiss`, `snooze`) are applied by the server. If one is queued anyway, apply its effect to the item file and mark it done.
 4. Write back `status`, `finishedAt` and `result` (comment URL or error message).
 
@@ -148,6 +152,10 @@ Compute one hash over the rule files you read: the core references for the insta
 - Mark every item with `reviewDepth: "full"` as a full-review candidate, oldest `reviewedAt` first, within the normal `maxFullReviewsPerRun`. The rest waits for later runs, because their `rulesHash` in `meta.json` stays behind until they are reviewed. Keep the list of those items in `meta.json` as `rulesPending` and work it down first in later runs.
 
 The summary gets the line `Rules changed: re-classified N quick items, M full reviews queued.`
+
+### 4e. PRs that wait for their contributor
+
+Run `gary auto-review list --json`. `states` holds, per PR with an automatic review, what the board shows: `waiting` and `changed`. Take every item with `waiting: true` out of `changed` for this run: do not classify it and do not review it again. Our own review made it show up as changed, and its stored doc with the unposted findings stays as it is. An item whose `changed` lists `pushed`, `replied` or `re-requested` is the contributor's next move: it goes through steps 5 and 6 like any changed PR, and the review subagent gets the record's last review, so the item says what was asked and what changed since.
 
 ### 5. Classify and choose reviews
 
@@ -207,6 +215,18 @@ When the retry is stopped too, do not retry in this or a later run. Write this f
 - exactly one route: `{ "id": "r1", "type": "open", "title": "Decide yourself: agent could not analyze this", "as": "me", "recommended": true }`, without text, and the same string as `hint`.
 
 A blocked item is left out of every later full-review list. It is retried only when the maintainer clicks "Analyze again", which queues a `reanalyze`. That request clears `blocked` and the failure count, starts on the full model again, and falls back to Sonnet the same way. The same applies to request jobs.
+
+### 6a. Automatic first review
+
+Skip this step unless `gary doctor --json` or the config shows `autoReview.enabled: true`.
+
+For each PR that got a full review in this run, after its item is written with `gary put` (write these items now, ahead of step 8):
+
+1. Run `gary auto-review check --pr <n> --sha <reviewedSha> --run <run>`. `qualifies: false` ends the step for this PR. Do not second-guess a refusal.
+2. Ask the review subagent's result for its automatic review doc, `<scratch>/auto-review.json`, as `triage-review-pr` writes it (`references/auto-review.md`). No doc means the review had nothing certain to say.
+3. Run `gary auto-review post --pr <n> --sha <reviewedSha> --run <run> --file <doc>`. The command enforces every rule: the setting, the kind of PR, the author, drafts, maintainer activity, one review per PR, the limit per run, the pause and the check of the doc. Exit code 0 means posted, 3 a refusal, 4 paused.
+
+Never post such a review any other way, and never loosen a doc the command refused: a finding it refuses stays on the board item for the maintainer. Add one line to the run summary: `Auto reviews: 2 posted, 1 refused (pr-512: maintainer-active).`
 
 ### 7. Auto-fixes
 

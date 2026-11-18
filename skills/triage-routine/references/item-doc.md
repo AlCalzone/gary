@@ -120,6 +120,14 @@ Severities:
 
 `routeId` names the one route whose card shows the finding as its reason, like the `follow_up` or `take_over` route that acts on it. A finding can support more than one route. It still has at most one `routeId`, and the other routes mention it in their `why`. A `review` route carries its findings itself, in `params.comments` and the summary `text`, so those findings need no `routeId`. Every `routeId` must name a route in the same doc.
 
+`certain: true` marks a finding you are certain about and can show. It needs `evidence`, the concrete case in one sentence of at most 400 characters:
+
+```json
+{ "severity": "major", "text": "Parameter 3 allows 0 to 255, but the manual lists 0 to 99.", "ref": "config/devices/acme/w1.json:12", "certain": true, "evidence": "The value 200 passes the range check and the device rejects it." }
+```
+
+A finding is certain only when one of these shows it: an input that is accepted and should not be, a symbol without users, a doc comment that contradicts the code, or a violation of a rule from the project's own rule files or tools. Everything else stays without `certain`: a question about the approach, taste, a specification question, and whatever you would phrase with "I think". A `question` or an `idea` is never certain. Only certain findings can go out in an automatic first review (SPEC.md, "Automatic first review"). The others stay on the item for the maintainer's own review, and so do the certain ones.
+
 A `follow_up` route sets `params.finding` to the 0-based index of its finding in `findings`. The routine passes that finding to the fix agent. Keep the order of `findings` stable after you set the index.
 
 A finding that carries a `follow_up` route is two sentences: what to change, and what it buys. Example: `Log the request ID when an upload is rejected. Reports like this one would then name the failing request right away.` The route's title stays short and does not restate it, like `File issue: log rejected request ID`.
@@ -201,6 +209,8 @@ A PR we control is a PR by the maintainer, by the bot, by another bot or with `a
 - **`format`**: `as: "agent"`, title `Format: fix formatting and lint`, no text. Offered when `autofix.changes` is true and the bot can push to the PR branch. One click applies exactly the autofix result as one commit by the bot. When formatting is the only problem of an otherwise clean PR, it is the recommended route and the item is `easy`. Otherwise it is a quiet alternative.
 - **`chore`**: one bot action from the list in SPEC.md, with that action's params in `params`. Example: `{ "type": "chore", "as": "bot", "params": { "action": "answer_discussion", "commentId": "DC_kwDO…" } }`. Use it as the recommended route only when the chore is the whole job, like marking the correct answer on a discussion or rerunning a flaky CI job.
 
+A PR that got an automatic first review keeps its routes and all its findings. The board takes it out of the plan by itself while it waits for the contributor, and says "Reviewed automatically, waiting for the contributor" on it. Do not write that sentence into `state` or `story`, because the board knows when it stops being true. When the PR comes back after the contributor pushed or replied, `story` says what the automatic review asked for and what changed since.
+
 An item without routes is not shown on the board. It keeps its `section` as classified, `story`, `findings` and `threads`. It has no `hint` and no `effortMinutes`, and `state` says why nothing is to do, like `Waits for the reporter's debug log.` When you rewrite an item that had a hint, send `"hint": null` and `"effortMinutes": null`, so no old placeholder survives. Write no routes, and never a placeholder route, in these cases:
 
 - **It needs analysis first**: a quick classification that cannot name the right action yet, or a PR with `unjudged` threads. Set `reviewDepth: "pending"`. The routine analyzes such items on its own, before any other optional review. A quick classification that can already name the right action, like merging a green dependency update, writes that route.
@@ -221,7 +231,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 3. `section` is one of `active`, `easy`, `almost`, `review`, `deferred`, `hardware`.
 4. `reviewDepth` is `full`, or `pending` with no routes when the subagent could not finish. A blocked item is the exception: `pending`, a `blocked` field, and exactly one `open` route. For PRs, `reviewedSha` is a 40-character SHA.
 5. `state` is a non-empty string of at most 25 words that names no action: no imperative, no "merge", "close" or "reply" as the thing to do. `story` is a non-empty string of at most 90 words. With routes: `effortMinutes` is one of 1, 2, 5, 10, 15, 30, 60, and `hint` is a non-empty string of at most 60 characters, starts with a verb from the hint list and has no "maybe". Without routes: no `hint` and no `effortMinutes`.
-6. `findings`, when present, is an array of objects with `severity` from the list above and a non-empty `text`. Every `routeId` names a route in this doc that is not a `review`. A finding that points to a `follow_up` route has exactly two sentences. Every `follow_up` route's `params.finding` is a valid index into `findings`.
+6. `findings`, when present, is an array of objects with `severity` from the list above and a non-empty `text`. A finding with `certain: true` has an `evidence` of at most 400 characters and a severity of `blocker`, `major` or `minor`. Every `routeId` names a route in this doc that is not a `review`. A finding that points to a `follow_up` route has exactly two sentences. Every `follow_up` route's `params.finding` is a valid index into `findings`.
 7. `threads`, for PRs, has one entry per open thread in the snapshot, each with `id`, `summary` and a `verdict` of `valid`, `optional`, `wrong` or `unjudged`. `valid` and `wrong` have a `note`.
 8. `routes` has 0 to 4 entries with ids `r1` to `r4`, each used once. With routes, exactly one has `recommended: true`, and its `title` equals `hint`. Every `title` has at most 60 characters. An item with an `unjudged` thread has no routes. An item at `reviewDepth: "pending"` has no routes, unless the route needs no analysis, like a merge of a green dependency update.
 8a. No `merge` route and no `review` route with `event: "approve"` while a `valid` thread is open.

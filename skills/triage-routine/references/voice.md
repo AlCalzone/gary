@@ -31,6 +31,16 @@ A `review` route posts one review: the summary `text` as the body and `params.co
 - A problem that appears in several places is one finding with one inline comment per place.
 - A clean PR's approval is a short "Thanks!".
 
+## Automatic first review
+
+One review per contributor PR can go out without the maintainer's click, when the instance turns it on. It is the bot speaking for the project, so it holds only what is certain:
+
+- The summary states what is wrong as facts, one short line per finding without a diff line, and nothing else. No greeting, no thanks, no opening line about suggestions, no "I think", no question.
+- Each finding names the problem and the concrete case that shows it. A finding you cannot show stays on the board.
+- Inline comments follow the rules for reviews and suggestions in this file.
+- Do not write the closing sentence and do not mention formatting. The command appends both from the profile's templates: the offer to push the formatter's changes, and "A maintainer will review this PR after these are addressed."
+- No mention of the routine, the board or an AI, and no promise about when the maintainer looks.
+
 ## Suggestions
 
 - The range covers exactly the lines the replacement replaces, no more and no fewer. `original` holds those lines, and `suggestion` replaces all of them.

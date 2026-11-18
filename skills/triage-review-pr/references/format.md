@@ -1,6 +1,6 @@
 # Mode: format
 
-The maintainer clicked `format` on a PR. You apply exactly the autofix result to the PR's branch as one commit, and nothing else.
+The maintainer clicked `format` on a PR, or the PR's author accepted the offer of the automatic first review. The action's `params.by` is `auto_review` then, and everything below holds the same way. You apply exactly the autofix result to the PR's branch as one commit, and nothing else.
 
 `format` is not a take-over. It sets no `takenOver`, and it unlocks neither `drive` nor `address_review`. It is the one exception in the rule "Who may push to a PR" in `<core>/skills/triage-routine/references/item-doc.md`, because it changes only what the project's own tools would change.
 

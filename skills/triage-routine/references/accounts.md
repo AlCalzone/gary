@@ -17,6 +17,10 @@ Who writes to GitHub depends on the home `config.json`. SPEC.md "Accounts" is th
 - Without a bot, routes without a prefill (inline review comments, `move` to a repo, `chore`) appear only with `allowOwnTokenPushes: true`. They keep `as: "bot"`. The server runs them under the maintainer's login, and the card shows his avatar.
 - `address_review`, `take_over`, `revise`, `drive` and `follow_up` with `as: "agent"` push code. Offer them only with a bot or with `allowOwnTokenPushes: true`.
 
+## The automatic first review
+
+`gary auto-review post` sends its review as the bot, or with `allowOwnTokenPushes: true` under the maintainer's `gh` login. Without either it is off. Never post such a review with `gh` or `gary action` yourself: the command is the only path, and it enforces the rules.
+
 ## Running writes
 
 Every GitHub write that is not a `gary action` call runs under the writing identity:

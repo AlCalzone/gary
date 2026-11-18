@@ -12,7 +12,7 @@ The examples below use the project `acme/widgets`, the maintainer `octocat` and 
 - **Author tags**: `maintainer` (the profile's `maintainers` and `me`), `bot` (the profile's `botLogins`, the configured bot and every GitHub App), `copilot` (GitHub's Copilot coding agent), `contributor` (everyone else). All are included and filterable.
 - **Review depth**: tiered. Every changed item gets a quick classification. Contributor PRs and active issues get a full review. The profile's `rules/review.md` names the project's own review skills and tools.
 - **Budget per run**: at most `maxFullReviewsPerRun` full reviews and `maxAutoFixesPerRun` auto-fix attempts. Remaining changed items get `reviewDepth: "pending"`. At most `maxPendingAutoFixes` fixes the routine started on its own are pending at a time, see "Fix limit".
-- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. On Gary's own fix PRs, the ones recorded in `fixes.json`, and only there, three more things happen without a click when `fixReview` is on: requesting the Copilot review, pushing the commits of the review rounds to the fix branch with the replies in its review threads, and marking the PR ready for review. See "Fix review rounds". Merging, approving and closing stay the maintainer's, on these PRs too. Everything else needs a click. The routine passes `--autonomous` to `gary action` for every label and assign change nobody clicked, and the code then refuses labels outside `autoLabels` and every other action.
+- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. On Gary's own fix PRs, the ones recorded in `fixes.json`, and only there, three more things happen without a click when `fixReview` is on: requesting the Copilot review, pushing the commits of the review rounds to the fix branch with the replies in its review threads, and marking the PR ready for review. See "Fix review rounds". Merging, approving and closing stay the maintainer's, on these PRs too. With `autoReview` on, one more thing happens without a click: a contributor's PR of a configured kind gets one review, see "Automatic first review". It is off by default. Everything else needs a click. The routine passes `--autonomous` to `gary action` for every label and assign change nobody clicked, and the code then refuses labels outside `autoLabels` and every other action.
 - **Board server**: one `server/server.mjs` per machine serves every instance on `127.0.0.1` at the `port` from the root `config.json`. It runs inside the `gary` MCP server of the master session, which starts it with `board_start`, or standalone with `gary serve`. Other sessions leave it alone. It watches every instance's board store, picks up new instances without a restart and pushes changes to the open page.
 - **Buttons**: a click on a bot route makes the server run it live through `scripts/lib/actions.mjs`. When GitHub cannot be reached, the action fails, the board shows the error, and the maintainer can click again. Agent requests are always queued.
 - **Confirmation**: merge, close and any posting of public text need a second confirm click on the board.
@@ -60,6 +60,7 @@ Gary has three layers, one place for each kind of change.
     learn.json           the learning cursor
     opened.json          the `as: "me"` buttons he used, per item and route, see Routes
     failures.json        failed triage count per item, kept by the routine
+    auto-reviews.json    the automatic reviews Gary posted and their format offers, see "Automatic first review"
     runs/<run>/          one directory per worker run, named by its UTC timestamp, which the master picks. summary.txt is the
                          worker's result, would-have.json the writes a paused run intended
     drive/<itemId>.json  a waiting drive: its round state plus repo and number, which the queue watcher polls
@@ -67,7 +68,7 @@ Gary has three layers, one place for each kind of change.
 <profile>/               one directory per project, named by `profile` in config.json. A team can share it
   profile.json           facts the code needs
   rules/                 classification.md, voice.md, review.md, issues.md
-  templates/             canned texts, like request-logs.md and reopen-elsewhere.md
+  templates/             canned texts, like request-logs.md and reopen-elsewhere.md, and the fixed texts of the automatic review
 ```
 
 The core contains no repo name, no account name and no absolute path. It works as a Claude Code plugin and from a plain git clone. In a plugin install Claude Code puts `bin/` on the Bash PATH and starts the MCP server from `.mcp.json`. For a clone, `gary setup` links the skills into `~/.claude/skills`, links the launcher into `~/.local/bin` and registers the MCP server with `claude mcp add --scope user gary`.
@@ -88,11 +89,12 @@ The core contains no repo name, no account name and no absolute path. It works a
   "maxAutoFixesPerRun": 2,
   "maxPendingAutoFixes": 10,       // how many fixes the routine started on its own may be pending at a time. 0 turns automatic fixes off
   "fixReview": { "reviewer": "copilot", "requestAs": "me", "maxRounds": 3, "markReady": true },   // the review rounds a fix PR of Gary gets on its own, see "Fix review rounds"
-  "fastTier": "off"                // off | shadow | on: whether simple items get a smaller model. shadow runs both and records them for `gary shadow report`
+  "fastTier": "off",               // off | shadow | on: whether simple items get a smaller model. shadow runs both and records them for `gary shadow report`
+  "autoReview": { "enabled": false, "kinds": ["config"], "maxPerRun": 3 }   // the one review a contributor PR gets without a click, see "Automatic first review"
 }
 ```
 
-`profile` and `me` are required. The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `reviewer` is `copilot` or `off`, `requestAs` is `me` or `bot`, `maxRounds` is 1 to 3, and fields left out take their default. A value outside these lists is an error. It is also off when the profile's `reviewBots` does not list `copilot`, or when `requestAs` is `bot` without a bot. `gary doctor` says which case holds. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
+`profile` and `me` are required. The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `reviewer` is `copilot` or `off`, `requestAs` is `me` or `bot`, `maxRounds` is 1 to 3, and fields left out take their default. A value outside these lists is an error. It is also off when the profile's `reviewBots` does not list `copilot`, or when `requestAs` is `bot` without a bot. `gary doctor` says which case holds. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
 
 Code looks up an instance through `loadInstance(name)`. Its allowed repos are the profile's one `repo`, and `allowedRepo(instance, repo)`, `checkoutFor(instance, repo)` and `rulesFor(instance, repo, topic)` answer per repo. For `maintainer` they return the configured checkout and the profile's `rules/<topic>.md`. The skills read that file directly.
 
@@ -113,11 +115,13 @@ Code looks up an instance through `loadInstance(name)`. Its allowed repos are th
   "automatedComments": [           // comments a workflow posts on its own. They do not count as anyone's turn in the snapshot facts
     { "name": "logfile feedback", "pattern": "<!-- LOGFILE_COMMENT_TAG -->", "origin": "the workflow that posts it" }
   ],
-  "aiAuthors": ["devin"]           // extra names of AI agents for facts.aiAuthored, matched as case-insensitive parts of a commit author's name or login
+  "aiAuthors": ["devin"],          // extra names of AI agents for facts.aiAuthored, matched as case-insensitive parts of a commit author's name or login
+  "autoReviewPaths": { "config": ["config/devices/**"] },   // globs per kind of PR that may get an automatic review. A PR is of a kind when every changed file matches one of its globs
+  "formatCommand": "npm run fmt"   // or null: the one-line command a contributor runs to format. The automatic review names it when it cannot offer to push
 }
 ```
 
-`name` and `repo` are required. Unknown fields are handled like in config.json. An `automatedComments` entry has `name`, `pattern` and an optional `origin`. `pattern` is a JavaScript regular expression of at most 500 characters, without flags, tested against the first 20000 characters of the comment body with leading white space removed. Validation compiles it and refuses one that does not compile or nests quantifiers like `(a+)+`.
+`name` and `repo` are required. Unknown fields are handled like in config.json. An `automatedComments` entry has `name`, `pattern` and an optional `origin`. `pattern` is a JavaScript regular expression of at most 500 characters, without flags, tested against the first 20000 characters of the comment body with leading white space removed. Validation compiles it and refuses one that does not compile or nests quantifiers like `(a+)+`. `autoReviewPaths` maps a kind to a list of globs. A kind this version does not know is an unknown field. `formatCommand` has at most 200 characters, one line, no backtick.
 
 A long-running process, like the board server, keeps the last valid settings of an instance when its config.json or profile.json breaks. `loadInstance` then returns them with `settingsError` naming the problem, and `settingsWarnings` lists unknown fields. An instance whose settings were never valid in the process is listed by `listInstances` with `valid: false`, no repos and its `settingsError`, and serves no items.
 
@@ -152,7 +156,7 @@ Two older layouts are moved by commands, never silently:
 - `gary put items <id> <file>`, `gary put --merge items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run. Without `--merge` the file is the complete item and replaces the stored one. Only the maintainer's `hidden` and `snoozedUntil` carry over, and `priority` when the file has none. With `--merge` only the fields in the file change, and `null` removes a field. Both modes validate the resulting item, see Validation. A merge that touches none of `routes`, `threads`, `hint`, `findings`, `wants` and `wantsReason` is not validated. `gary put meta` checks `rulesHash` and `rulesPending`. `--no-validate` skips the check, for migrations.
 - `gary validate [<id> ...] [--json]`: run the same validation over the stored items, read-only. Without ids it checks all of them and groups the problems.
 - `gary action [--dry-run] [--check-fresh] [--autonomous] [file]`: run one GitHub action from a JSON file or stdin. `--autonomous` marks an action nobody clicked: only `label` within `autoLabels` and `assign` may run.
-- `gary watch-queue [--all] [--once]`: print queued agent requests as JSON lines, `{ "instance", "id", "itemId", "action" }`. `--all` follows every instance, also ones added later, and is what the master runs.
+- `gary watch-queue [--all] [--once]`: print queued agent requests as JSON lines, `{ "instance", "id", "itemId", "action" }`. `--all` follows every instance, also ones added later, and is what the master runs. It also prints the drive events of "Fix review rounds" and the `auto_review` lines of "Automatic first review".
 - `gary serve [--watch] [--dry-run]`: run the one board server in the foreground.
 - `gary migrate`: move instances to the single-server layout, see Instances. Safe to run again.
 - `gary pause [--all]`, `gary resume [--all]`: set and clear the pause switch of the instance, or of every instance, see Pause.
@@ -167,13 +171,14 @@ Two older layouts are moved by commands, never silently:
 - `gary claims [--json]`: list the claims with `itemId`, `kind`, `run`, `at`, `expiresAt` and `expired`.
 - `gary fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer`: record a fix PR Gary opened in `<state>/fixes.json`, `{ <itemId>: [{ number, url, branch, run, startedBy, at }] }`. The autofix skill calls it right after `gh pr create`.
 - `gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run]` and `gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--dry-run]`: start and end the review rounds of a fix PR Gary opened, see "Fix review rounds". Both refuse a PR that is not in `fixes.json`, and both exit 4 and write nothing while the instance is paused. `--dry-run` prints the GitHub writes and the docs it would write.
+- `gary auto-review check|post|accept|reply|rerequest|list`: the one automatic first review on a contributor PR and its format offer, see "Automatic first review". Exit 3 means a rule refused, exit 4 that the instance is paused.
 - `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
 - `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
 - `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
 - `gary put proposals <id> <file>`: write one rule proposal, validated. `gary put learn <file>`: write the learn cursor.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the fast tier, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
+- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the fast tier, the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
 
 Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
@@ -201,6 +206,7 @@ While paused:
 - the server refuses every click that would write to GitHub with `{ ok: false, result: "Gary is paused. Nothing was sent.", paused: true }`, and writes no action doc,
 - `gary action` refuses every action with the same result, also with `--dry-run` and `--autonomous`,
 - agent routes are still queued, but `gary watch-queue` and `gary watch-queue --all` print nothing of that instance, so the master session starts nothing for it. The requests appear when the pause ends,
+- `gary auto-review post` posts nothing and records the step in the run's `would-have.json`. `accept`, `reply --agrees yes` and `rerequest` queue nothing and exit 4,
 - board-only actions keep working: dismiss, snooze, `dismiss_route`, `accept_proposal`, `dismiss_proposal` and `/api/decision`.
 
 `board.instances[].paused` in `/api/state` and in `use("board")` shows the switch per instance. The event stream sends a `board` event with the full board object when a `control.json` changes. `gary doctor` reports the state.
@@ -329,7 +335,9 @@ The page keeps filters and drafts in localStorage under keys prefixed `gary:<ins
 
 The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`almost`, `review`) and "When you have time" (`deferred`, `hardware`, snoozed items). A chip on each row names the section. The page shows at most the time budget (6 hours by default, set on the board), filled in group order by `priority`, using `effortMinutes`. An item that does not fit is skipped. Items handled today count as spent time. "Quick & Easy" shows at most 5 rows at a time. More rows appear only on click. The default view shows no backlog counts.
 
-An issue or discussion whose served `fix` has `parked: true` is in no plan group and adds no minutes to the plan. The fix PR's own item, the one with `fixFor`, carries the work. Below the groups a quiet line "Has a fix in progress: N" lists these items. It expands to one row per item with the fix chip and an "Open" button, like the line "Handled, waiting for the next run". A handled item is listed only there. The page keeps a parked item loaded also when it has no routes, so "Open on board" in the fix PR's dialog still opens it, and its dialog shows the fix banner.
+An issue or discussion whose served `fix` has `parked: true` is in no plan group and adds no minutes to the plan. The fix PR's own item, the one with `fixFor`, carries the work. Below the groups a quiet line "Has a fix in progress: N" lists these items. It expands to one row per item with the fix chip and an "Open" button, like the line "Handled, waiting for the next run". A handled item is listed only there.
+
+A PR whose served `autoReview` has `waiting: true` is in no plan group and adds no minutes either. A third quiet line "Reviewed automatically, waiting: N" lists these PRs, each with an "Open" button. The dialog of a PR with an `autoReview` shows a tag in the meta row, "Reviewed automatically, waiting for the contributor" or "Reviewed automatically", and a block above the story: the same words, a link to the review, what it asked for, the state of the format offer, and once the wait ended what changed since, like "Since then the author pushed". The page keeps a parked item loaded also when it has no routes, so "Open on board" in the fix PR's dialog still opens it, and its dialog shows the fix banner.
 
 ## Validation
 
@@ -346,6 +354,7 @@ An issue or discussion whose served `fix` has `parked: true` is in no plan group
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
+- `findings[].certain` is true or false. A finding with `certain: true` needs `evidence`, the concrete case that shows the problem, in at most 400 characters. A `question` or an `idea` is never certain.
 - `effortMinutes` is required and one of 1, 2, 5, 10, 15, 30, 60 and 120. The message names the allowed values.
 - `params.alsoAnswer` only on `close` routes of items with `kind: "discussion"`, with a node id, a `url` that starts with the item's `url` and `#`, and a `gist` of at most 200 characters.
 - `handled` is `{ at, routeId, routeType, verified }` with a `verified` from its list. `fixFor` only on PRs, as `{ itemId, ref }`.
@@ -405,7 +414,8 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "isAnswered": false,             // discussions, from the snapshot
   "solved": false,                 // issues and discussions: the agent thinks it is resolved
   "findings": [                    // optional, full reviews only
-    { "severity": "blocker", "text": "…", "ref": "src/…:123", "routeId": "r2" }   // blocker | major | minor | idea | question. routeId is optional
+    { "severity": "blocker", "text": "…", "ref": "src/…:123", "routeId": "r2" },   // blocker | major | minor | idea | question. routeId is optional
+    { "severity": "major", "text": "…", "ref": "…", "certain": true, "evidence": "The value 200 passes the range check and the device rejects it." }   // certain and evidence are optional. Only such a finding may go out in an automatic review
   ],
   "routes": [ … ],                // see Routes
   "pushed": { "action": "take_over", "sha": "…", "at": "ISO" },   // PRs: the agent's last push and the head it made. action is take_over, revise, address_review, drive or format
@@ -440,6 +450,8 @@ The server serves derived state on items, never stored:
 - `working: { kind: "fix" | "review" | "push", action, since }` while an unexpired claim, a queued or claimed agent request, or a waiting drive (`<state>/drive/<itemId>.json`) exists. Push work wins over other kinds, then the oldest. `action` is the agent action, missing for a bare claim.
 - `fix` on issues and discussions: `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy: "routine" | "maintainer" | "other", since, parked }`. `parked` says that the fix keeps the item out of the day plan: true for `working`, and for `draft` and `open` until the other side writes. That is the case when the snapshot entry's `lastThemAt` is later than `since`, the time Gary recorded the fix PR. A fix PR without a recorded time has no `since`, so it parks the item until it is merged or closed. `merged` and `closed` never park. Sources, strongest first: a `fix` claim or a queued `start_fix` request (`working`, the maintainer when a request is queued, else the routine), Gary's records in `fixes.json`, the snapshot's `closingPrs` of an issue in any state, and for a discussion the PRs that name it by URL or as `#<number>`. The PR's own snapshot entry gives its live fields. A recorded PR that no source shows counts as open. With several PRs an open or draft one wins, then merged, then closed.
 
+- `autoReview` on PRs with a record in `<state>/auto-reviews.json`: `{ at, url, sha, event, count, asked, offer: { kind, state, at }, waiting, changed }`. `asked` holds the texts of the findings the last automatic review posted. `changed` lists what happened since it, from the snapshot entry: `pushed` (the head differs from the reviewed one and is not our own format commit), `replied` (the PR's author commented, replied or reviewed), `re-requested`, `formatted` (our format commit made the head of a PR whose review had no findings) and `maintainer` (a maintainer commented or reviewed). `waiting` is true while `changed` is empty. The reply that accepted the format offer is no `replied`.
+
 #### Fix limit
 
 `maxPendingAutoFixes` (default 10) limits the fixes the routine started on its own that are pending: a fix job of the routine that runs, or a fix PR recorded with `startedBy: "routine"` whose state is `draft` or `open`. A fix the maintainer started with a click never counts and is never refused by the limit. A merged or closed fix PR frees its slot. `gary claim <itemId> fix` without `--request` takes the claim, counts, and gives the claim back with exit 3 when the count is above the limit, so two runs that claim at once never pass it together. Per run the routine starts at most `min(maxAutoFixesPerRun, maxPendingAutoFixes - pending)` fixes. `0` turns automatic fixes off, like `maxAutoFixesPerRun: 0`. A pending fix of the routine is served with `fix.limit: { pending, max }`, and the line "Has a fix in progress" shows it as "automatic: 3 of 10".
@@ -467,6 +479,86 @@ No step waits for the hourly run:
 | PR item on the board | the review worker's `gary put`, pushed over the event stream | under a second after the write |
 
 While the instance is paused none of this runs: no fix starts, `gary fix-review` refuses with exit 4, the watcher prints nothing for the instance, and the worker records the step in `would-have.json`.
+
+#### Automatic first review
+
+A contributor's PR can get one review without a click, so it had a review before the maintainer first looks at it. This is the only case where a review reaches a contributor without his click. It is off unless the instance's `autoReview.enabled` is true.
+
+`gary auto-review post --pr <n> --sha <head> --run <run> --file <review.json> [--dry-run]` is the only way such a review goes out. The routine worker calls it after the full review of a PR, and the command enforces every rule itself. It reads the PR fresh from GitHub and refuses with exit 3 and `{ ok: false, posted: false, refused: <code>, result }`:
+
+| code | rule |
+| --- | --- |
+| `off` | `autoReview` is not enabled, no account may post, or the profile names no paths for the kinds |
+| `settings` | the instance runs on its last valid settings because the files on disk are broken |
+| `not-open`, `draft` | the PR is closed, merged or a draft |
+| `author` | the PR is by a maintainer, the bot, another bot or Copilot, or it is a fix PR of Gary. Only `authorType: "contributor"` qualifies |
+| `ai-authored` | `facts.aiAuthored` is true |
+| `sensitive` | the PR touches one of the profile's `sensitivePaths` |
+| `kind` | not every changed file matches the `autoReviewPaths` of one of the `kinds`, or the PR changes more files than the snapshot lists |
+| `head-moved` | the PR head is not `--sha` |
+| `timeline-truncated` | the thread is longer than the snapshot reads, so nothing proves that no maintainer joined |
+| `maintainer-active` | a maintainer commented or reviewed on the PR, at any time. From then on the thread is his. The automatic review itself does not count, also when it went out under his login in `own` mode |
+| `already-reviewed` | the PR has an automatic review, and its author did not re-request one since |
+| `run-limit` | the run already posted `maxPerRun` automatic reviews. A paused or dry run counts the steps in its `would-have.json` |
+| `invalid-review` | the review doc breaks a rule below. `problems` lists each one |
+| `item` | the board item of the PR holds no full review of `--sha`. The item is written first |
+| `clean` | the doc has no finding and there is no format offer to make. A clean PR gets no automatic review and goes to the plan with its decision route |
+| `pushing`, `claimed` | an agent is changing the PR, or another run holds its `review` claim |
+
+The command takes the item's `review` claim for the post. A claim the same run already holds stays, any other is released after the post.
+
+The review doc is `{ summary, findings, comments }`:
+
+- `findings` holds only what the agent is certain about and can show: `{ severity, text, ref, certain: true, evidence }`. `evidence` is the concrete case in one sentence, like an input that is accepted and should not be, a symbol without users, a doc comment that contradicts the code, or a violation of a project rule or tool. `severity` is `blocker`, `major` or `minor`. A finding without `certain: true` or without `evidence`, a `question`, an `idea`, a text that ends in a question mark, and wording of a guess like "I think", "maybe" or "probably" in a finding, the summary or a comment are refused.
+- `comments` are inline comments like those of a `review` route, each with `finding`, the index of the finding it belongs to. Suggestions follow the rules of review comments.
+- Questions about the approach, taste, specification questions and everything else the agent is not certain about are not in the doc. They stay as `findings` on the board item, for the maintainer's own review.
+- Formatting is never a finding and never a comment.
+
+What goes out is one PR review on `--sha`, as the bot or in `own` mode under the maintainer's login:
+
+- With at least one finding the event is `request_changes`. The body is `summary`, then the paragraph about formatting when there is one, then one fixed sentence from the profile's `templates/auto-review-closing.md`, default "A maintainer will review this PR after these are addressed."
+- Without findings the event is `comment` and the body is only the paragraph about formatting. It never approves.
+- The voice rules hold: no mention of AI, the board or the routine. No text contains a bot command.
+
+The command records the review in `<state>/auto-reviews.json` as `{ <itemId>: { repo, number, author, reviews: [{ sha, at, url, run, event, reason: "first" | "re_requested", findings, comments, offered }], offer, reRequestQueued } }` and logs an `auto_review` decision. While the instance is paused it posts nothing, appends `{ itemId, action: "auto_review", params: { pr, sha, event, findings, comments, offer }, reason: "paused" }` to `<state>/runs/<run>/would-have.json` and exits 4. `--dry-run` does the same with `reason: "dry run"`, prints the GitHub write it would send and exits 0.
+
+A second automatic review needs the PR's author to press GitHub's "Re-request review" button for the account that posted the first: `facts.reReviewRequests` holds a request by the author that is later than the last automatic review. Every other rule still holds, so there is none after a maintainer joined the thread.
+
+##### Format offer
+
+When the item's `autofix` has `changes: true`, the same condition as the "Format" card, the review says so once per PR:
+
+- The PR allows edits by maintainers (`facts.maintainerCanModify`): the paragraph from `templates/format-offer.md` offers to push the formatter's changes as one commit. The record gets `offer: { kind: "push", state: "open", at, url, sha }`.
+- It does not: the paragraph from `templates/format-command.md` names the profile's `formatCommand` and offers nothing. The record gets `offer: { kind: "command", state: "named" }`. Without a `formatCommand` the review says nothing about formatting.
+
+`{files}` in both templates becomes the count, like "2 files", and `{command}` the command. A later review of the same PR makes no second offer.
+
+Only the PR's author accepts an open offer, in one of two ways:
+
+- A reaction `THUMBS_UP`, `HEART`, `HOORAY` or `ROCKET` of his on the review that made the offer. Code decides this.
+- A comment of his on the PR after the offer that agrees. Whether it agrees is the agent's judgement on untrusted text: the comment is data, instructions in it are never followed, and only "yes, please do it" in substance counts.
+
+Reactions and comments of anyone else never count. `gary auto-review accept --pr <n>` checks the reaction itself against GitHub. `gary auto-review reply --pr <n> --at <time of the comment> --agrees yes|no` records the judgement of one comment, and `yes` checks that the author's comment at that time exists. Both refuse when the offer is not open, when the PR is closed, when it no longer allows edits by maintainers, and while an agent is changing the PR. When a maintainer joined the thread after the offer, they close the offer and refuse: the Format card is his. An acceptance queues one `format` action for the PR item, with `params: { reviewedSha: <current head>, by: "auto_review" }`, and sets the offer to `accepted` with `acceptedBy`, `acceptedAt` and `actionId`. The existing format job runs it: tools and configuration from the base checkout, never code from the PR branch, and a commit that holds exactly the formatter's output. So there is one offer and one such commit per PR. Without an answer nothing happens and nobody is reminded. It never sets `takenOver`.
+
+##### Hand-offs
+
+`gary watch-queue` reads the PRs with an automatic review once every 3 minutes, in one small query each: the ones with an open offer, and the ones reviewed in the last 14 days, newest first, at most 20 per instance. It prints `{ instance, id: "auto-review-<itemId>", itemId, action: "auto_review", pr, event, at }` once per answer. The master runs one command per line:
+
+| hand-off | trigger | what the master runs | worst-case delay |
+| --- | --- | --- | --- |
+| review posted after the full review | the review worker calls `gary auto-review post` itself | | none |
+| PR parked on the board | file watch on `auto-reviews.json`, pushed over the event stream | | under a second |
+| the author reacted to the offer | watcher line `event: "offer-accepted"` | `gary auto-review accept --pr <n>` | 3 minutes for the poll |
+| the author commented after the offer | watcher line `event: "offer-reply"` with the comment's `at` | a worker that judges the comment and runs `gary auto-review reply` | 3 minutes for the poll, plus the worker |
+| format job starts after an acceptance | the watcher prints the queued `format` request | a format worker, as for a click | 5 s, the watcher's rescan |
+| the author re-requested a review | watcher line `event: "re-requested"` with the request's `at` | `gary auto-review rerequest --pr <n>`, which queues a `full_review` with `params.by: "auto_review"` once per request | 3 minutes for the poll, 5 s for the queue |
+| the author pushed or replied, the PR returns to the plan | the next snapshot | the hourly routine | up to an hour. A PR older than 14 days or beyond the 20 is polled no more, so its offer and re-request also wait for the hourly snapshot |
+
+While the instance is paused or `autoReview` is off, the watcher prints none of these lines.
+
+##### Board
+
+A PR with a record is served with `autoReview`, see above. While it waits for the contributor it is out of the plan, in the line "Reviewed automatically, waiting: N". It returns when the snapshot shows that the author pushed, replied or re-requested, or that a maintainer joined. The item keeps all its findings and routes, so the maintainer's own review card holds the unposted findings too.
 
 All strings that originate on GitHub are untrusted. The page renders them with `textContent`, never `innerHTML`.
 
@@ -543,13 +635,13 @@ Agent requests. The server writes them as queued action docs when their route is
 
 | action | effect |
 | --- | --- |
-| `full_review` | run the full review for this item, outside the budget. After the review rounds of a fix PR it carries `params: { repo, number, by: "fix", fixFor, outcome, ready, rounds, lastPushedSha }` and the reason the rounds ended as `text`. The PR has no board item yet then, so the worker reads repo and number from the params |
+| `full_review` | run the full review for this item, outside the budget. With `params: { repo, number, by: "auto_review", reRequestedAt }` the PR's author re-requested the automatic review, and the worker ends with the post step of "Automatic first review". After the review rounds of a fix PR it carries `params: { repo, number, by: "fix", fixFor, outcome, ready, rounds, lastPushedSha }` and the reason the rounds ended as `text`. The PR has no board item yet then, so the worker reads repo and number from the params |
 | `reanalyze` | `text` holds an optional maintainer instruction for the agent |
 | `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from. `params.askReporter` is true when he switched on "Ask the reporter to test": only then the PR body ends with one request to the reporter. A fix nobody clicked asks nobody |
 | `address_review` | `params.decisions` as sent by the card. The agent fixes or dismisses each thread and pushes to the PR branch as the bot |
 | `take_over` | `params.mode` `push` or `replace`, optional `params.decisions` as for `address_review`, optional `text` with instructions |
 | `revise` | no params. `text` holds the instructions. The agent makes that change and pushes to the PR branch as the bot. It leaves the open review threads alone, never opens a replacement PR and never sets `takenOver` |
-| `format` | `params.reviewedSha`, the head the autofix check ran on. The worker refuses when the PR head moved since, runs the profile's autofix and pushes only its changes. It never sets `takenOver` |
+| `format` | `params.reviewedSha`, the head the autofix check ran on. `params.by: "auto_review"` marks the job the PR's author accepted, which `gary auto-review` queues and no click starts. The worker refuses when the PR head moved since, runs the profile's autofix and pushes only its changes. It never sets `takenOver` |
 | `drive` | `params.maxRounds`. `params.by: "fix"` with `params.fixFor` marks the review rounds of a fix PR, which `gary fix-review start` writes and no click starts. When it ends the agent writes `rounds: [{ n, fixed: ["…"], dismissed: [{ summary, reason }], open: ["…"] }]` into the item and the fitting routes: merge when nothing is open, otherwise a review or address_review card. The dialog shows the rounds as a short summary |
 
 A worker that pushed writes `result`, the URL of its last commit, and `resultParts: { commits: [url], threads: [{ url, resolved }] }` into the action doc. The page shows a finished agent job by name, "Take-over done", "Change done", "Review addressed", "Drive done" or "Formatted", and its result as short text with links, like "Pushed 1 commit · replied in 1 thread, resolved". A doc without `resultParts` shows its `result` string, with GraphQL node ids removed. No text for the maintainer carries a node id.
@@ -562,7 +654,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 
 ### Decision log
 
-`<state>/decisions.jsonl`, append-only, one JSON object per line. Only the server writes it, one entry at a time. Every entry has these fields, plus the fields of its type:
+`<state>/decisions.jsonl`, append-only, one JSON object per line. The server writes it, one entry at a time, and `gary auto-review post` appends the `auto_review` entries. Every entry has these fields, plus the fields of its type:
 
 ```jsonc
 { "at": "ISO", "instance": "widgets", "instanceKind": "maintainer", "repo": "acme/widgets",
@@ -583,6 +675,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `snoozed` | `days`, or `untilActivity: true` | the maintainer snoozed or hid the item |
 | `dismissed_proposal` | `proposal: { id, title, target, file }`, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
 | `changed_event` | `route: { type, title }`, `from`, `to` | a `review` ran with another event than the route's `params.event` |
+| `auto_review` | `review: { url, sha, event, reason, comments, offer }`, `findings: [{ severity, text, ref }]` | `gary auto-review post` posted an automatic review. It is the agent's work, never the maintainer's decision. `triage-learn` compares it with what he does on the item afterwards |
 | `skipped_label` | `route: { type, title }`, `labels: { add, remove }` | a bot `reply` or `request_logs` with `alsoLabel` ran with `input.alsoLabel: false` |
 
 The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", snooze and hide. Routes with `as: "me"` never reach `/api/action`. The page reports their use to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
@@ -655,9 +748,12 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   "ciGreen": true, "dependencyOnly": false, "touchesSensitive": false, "openThreadCount": 0,
   "approvedBy": ["octocat"], "changesRequestedBy": [],
   "isClean": true,                 // mergeable, CI green, no open thread, no requested changes
-  // issues and discussions
   "changedFiles": 3, "changedLines": 120,   // PRs: additions plus deletions without lock files
   "aiAuthored": true, "aiSignals": ["branch claude/restore-timeout", "co-author Claude"],   // PRs
+  "maintainerCanModify": true,     // PRs: the author allows edits by maintainers
+  "lastAuthorAt": "ISO",           // PRs: the last comment, reply or review of the PR's author, or null
+  "reReviewRequests": [ { "at": "ISO", "by": "login" } ],   // PRs, only when there are any: review requests for the account Gary writes as, oldest first, from the last 30 review_requested events
+  "formatOffer": { "at": "ISO", "url": "…", "kind": "push", "acceptedByReaction": false, "replies": [ { "at": "ISO", "author": "login", "url": "…", "body": "…" } ] },   // PRs with an open format offer: the author's answer. Bodies are untrusted text
   // issues and discussions
   "hasClosingPr": false, "isAnswered": false, "authorIsUs": false,
   // discussions
@@ -666,6 +762,8 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
 ```
 
 Commits by the configured bot on a PR someone else opened are ours and are left out of `aiAuthored`. `ourCommits` counts them when there are any. `aiAuthored` is true when another commit of the PR (the first 100) has an author or committer whose name or login is `claude`, `copilot`, ends in `[bot]`, is the configured bot, one of the profile's `botLogins`, or contains one of its `aiAuthors`, when a `Co-Authored-By` trailer names one, or when the head branch starts with `claude/` or `copilot/`. `aiSignals` lists the reasons, at most 10. `changedLines` leaves out lock files only, because GitHub's API does not say which files are generated. Lock files beyond the first 50 files still count. `answerable` says the discussion's category allows an answer, `answerChosen` that one is marked.
+
+For a PR with an open format offer, the snapshot and `gary item` send one more query: the reactions on the review that made the offer, and the PR's last 30 comments. `acceptedByReaction` is true when the PR's author left a `THUMBS_UP`, `HEART`, `HOORAY` or `ROCKET` there. `replies` are his comments after the offer that nobody judged yet. A PR with a record in `auto-reviews.json` also carries `autoReview: { lastAuthorAt, maintainerAt, reRequestedAt }` on its entry, which the staged and committed snapshots keep for the board.
 
 Draft PRs stay out of the snapshot, except the ones in `fixes.json`, which carry `garyFix: { itemId }`. A discussion entry carries `referencingPrs` with the PRs that name it: the snapshot reads the 100 most recently updated PRs of the repo in one search, because discussions have no cross-reference events in the API. The staged and committed entries keep `lastEventAt` and `lastThemAt`, and for the fix state `title`, `author`, `isDraft`, `ci` and `garyFix` of PRs, `closingPrs` of issues and `referencingPrs` of discussions.
 

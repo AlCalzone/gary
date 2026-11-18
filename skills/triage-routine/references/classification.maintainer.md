@@ -141,6 +141,8 @@ Some items need nothing from the maintainer right now. They get no routes, and t
 
 - An issue or discussion whose decision lives on an open PR, because `facts.hasClosingPr` is true, a PR's `fixFor` names it, or a PR is clearly its companion. `state` names the PR item, like `Decided with pr-412.` The decision appears once on the board, on the PR.
 
+A contributor PR that got an automatic first review is no such item. It keeps its routes and findings, because the maintainer has not looked at it yet. The board keeps it out of the plan while it waits for the contributor (`item-doc.md`).
+
 Such an item comes back when it changes on GitHub. The one exception is a close that becomes due: after `activeMaxWaitDays` of waiting on a reporter, the recommended route is `close` with reason `not_planned`.
 
 ## Full-review candidates
