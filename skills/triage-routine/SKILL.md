@@ -138,6 +138,10 @@ Quick classification runs in subagents. Split `changed`, plus the items from ste
 
 With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board. Record both tiers per item with `gary shadow record <file>`, where the file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be `null` only when the fast tier handed up.
 
+**Sampling in `on` mode.** Each hourly run, of the items the fast tier decided itself, pick 1 in 10 at random, at least 1 when there are any, and send them to the standard tier too. Record both entries with `gary shadow record`, with `sampled: true`. Store the fast result, unless the two disagree on `section` or on the recommended route's type. Then store the standard result and name the item in the run summary.
+
+**`classifiedBy`.** Every item doc you write sets it: `fast` when the fast tier's result is stored, `standard` for the standard tier, `full` for a full review or a full issue triage. In `shadow` mode the stored result is the standard tier's, so `standard`.
+
 Then build the full-review list:
 
 1. Agent requests from step 2, outside the budget.
@@ -199,7 +203,7 @@ Write `meta.json` with `gary put meta <file>`: `lastRunAt`, `lastRunSummary`, `p
 
 Run `gary snapshot --commit` only after all items are written. If any item write failed, skip the commit. The next run then sees the same items as changed and retries them. Delete `<state>/run.lock`.
 
-Write exactly three lines to `<state>/runs/<run>/summary.txt`, and reply with the same three lines:
+Write these three lines to `<state>/runs/<run>/summary.txt`, plus the extra lines this skill names (pause, rule changes, fast tier), and reply with the same lines:
 
 ```
 Actions: 2 agent requests done, 1 queued approval failed (pr-412: head changed since the review).
@@ -207,7 +211,7 @@ Reviews: 8 full, 5 quick, 4 pending. 1 draft fix opened for issue-398.
 Top: issue-405 waits 3 days for an answer about the timeout on reconnect.
 ```
 
-Line 3 names the item at `active` priority 1. If `active` is empty, it names the first `easy` item. Use the same three lines as `lastRunSummary`.
+When `fastTier` is not `off`, add `Fast tier: decided N, handed up M, sampled S, disagreed D.`, followed by the ids of disagreeing samples. Line 3 names the item at `active` priority 1. If `active` is empty, it names the first `easy` item. Use the same three lines as `lastRunSummary`.
 
 ### 9a. Learn
 

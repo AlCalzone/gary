@@ -97,7 +97,14 @@ Only after all proposals are written, write `{ "reviewedUntil": "<at of the newe
 
 ## 5a. Fast tier evidence
 
-When the instance config has `fastTier: "shadow"`, run `gary shadow report`. With at least 40 recorded pairs, put one line into the report with its agreement numbers, like `Shadow: 52 pairs, 31 not handed up, section agreement 97 %.` When section agreement on the items the fast tier did not hand up is at least 95 percent, write one proposal titled `Let the fast model classify the obvious items`. Its `why` states the numbers. Its `text` says that the maintainer sets `fastTier` to `"on"` in the instance's `config.json`, with the file path. The proposal only states the evidence and the change. He edits the config himself. Skip it while such a proposal is open, and after a dismissal until 40 new pairs meet the bar again.
+When the instance config has `fastTier: "shadow"`, run `gary shadow report`. With at least 40 recorded pairs, put one line into the report with its agreement numbers, like `Shadow: 52 pairs, 31 not handed up, section agreement 97 %.` When section agreement on the items the fast tier did not hand up is at least 95 percent, write one proposal titled `Let the fast model classify the obvious items`. Its `why` states the numbers. Its `text` says that the maintainer sets `fastTier` to `"on"` in the instance's `config.json`, with the file path. The proposal only states the evidence and the change. He edits the config himself. Its `evidence` also lists the report's disagreements, one entry per pair that disagreed. Skip it while such a proposal is open, and after a dismissal until 40 new pairs meet the bar again.
+
+When `fastTier` is `"on"`, read `gary shadow report --week --json` on every pass. Write one proposal titled `Switch the fast tier back to shadow` when either holds:
+
+- section agreement on the last 40 pairs is below 95 percent,
+- his override rate on items with `classifiedBy: "fast"` is clearly above the one on `standard` items. State both rates in `why`.
+
+Its `text` says that he sets `fastTier` to `"shadow"` in the instance's `config.json`, with the file path. The same open and dismissed rules apply.
 
 ## 6. Report
 
