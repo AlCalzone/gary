@@ -240,6 +240,18 @@ Gary never reviews style. A full PR review runs the project's formatter and lint
 
 `reply` and `request_logs` routes may carry `params.alsoLabel: { add: [], remove: [] }`, with labels from the profile's `autoLabels`. A route that asks the reporter for something adds the profile's waiting label, and a reply after the reporter delivered removes it. On a prefill reply the board shows a second button with the bot's avatar that sets the labels. On a bot route the labels go out with the post, behind a checkbox that is on by default. `wants` remains the fallback, so a reply posted without the button still gets the label in the next run, and the two never contradict each other.
 
+## Claims
+
+`gary claim <itemId> <kind> --run <run>` (kinds `fix`, `review`, `push`) marks an item as worked on by one run. It exits with 3 when someone else holds the claim. `gary release` frees it, and `gary claims` lists the current ones. Every fix, full review or triage, take-over, address_review, drive round and format claims its item first and releases it at the end, also on failure. An autonomous fix reads the queue right before it starts and before it opens a PR, and gives way to a `start_fix` request for the same item.
+
+## Answers when closing discussions
+
+A `close` route on a discussion with `facts.answerable` and no `facts.answerChosen` carries `alsoAnswer: { commentId, url, gist }` for the comment that best answers the question. Without such a comment, the closing message states the answer.
+
+## AI-written PRs and backlog
+
+`facts.aiAuthored`, `facts.aiSignals`, `facts.changedLines` and `facts.changedFiles` describe AI-written PRs. The fast tier never decides them, and his reading time comes from the changed lines by the table in `item-doc.md`. Issues and discussions by the bot or an agent that describe doable work get one `Implement:` card in `deferred`, sorted last. Autonomous fixes take only `Start fix:` cards.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):

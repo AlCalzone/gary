@@ -11,7 +11,7 @@ Quick classification uses the snapshot data: author and author type, labels, dra
 Every snapshot entry carries `facts`, computed in code. Use them as given and never re-derive them from the thread:
 
 - `facts.timeline`: `[{ at, author, side, kind }]`, oldest first, the newest 200 events. `side` is `us`, `them`, `automated` or `bot`, and `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `facts.timelineTruncated` is set only when older events are missing. Who spoke last is `facts.lastSpeaker`, with `facts.lastUsAt` and `facts.lastThemAt`. Who we wait on is `facts.waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), and for how long `facts.waitingDays`.
-- PRs: `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
+- PRs: `facts.aiAuthored` with `facts.aiSignals`, `facts.changedLines`, `facts.changedFiles`, `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
 - Issues and discussions: `facts.hasClosingPr` (an open or merged PR closes it), `facts.isAnswered`, `facts.authorIsUs`.
 
 Read the thread text only for what was said: what was asked, what was answered, what is open. A statement like "nobody replied since" comes from `facts.lastSpeaker` and `facts.timeline`, never from reading the top-level comments. When a discussion's `replyCount` is larger than the replies in the snapshot entry and you need the wording of a reply, fetch the thread with the discussion query from the `triage-issue` skill. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
@@ -26,7 +26,7 @@ An open thread whose problem is solved is done. That covers a reporter who fixed
 
 - The route carries a brief closing message (`item-doc.md`, `close`), like `Good to hear that clearing the cache fixed it. Closing this.` Name the release that contains the fix when there is one, and what to do if the problem returns when that helps. Hint `Close: solved`.
 - Leave the text out only when our side's last comment already closes the thread in words.
-- A discussion with a correct answer that is not marked: a `chore` route with `answer_discussion` and that comment's `commentId` instead, because a discussion is done once the answer is marked.
+- A discussion with a correct answer that is not marked: a `chore` route with `answer_discussion` and that comment's `commentId` instead, because a discussion is done once the answer is marked. When the discussion is closed anyway, the `close` carries `alsoAnswer` (`item-doc.md`).
 
 A follow-up idea is welcome when it is useful. It passes when all three hold:
 
@@ -85,6 +85,8 @@ He has to think about whether to act or about the content: a behavior change, se
 
 ### `deferred`: waiting on others, or large
 
+- An issue or discussion by the bot or an agent that describes doable work: one `Implement:` card (`item-doc.md`, "Delegate to an agent"). Both tiers decide it the same way.
+
 - We wait on the reporter: `facts.waitingOn` is `them`, because our last message asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
 - Changes requested, and no new commits since that review.
 - The maintainer's own PR that his own account has not finished: merge conflicts, failing CI his change caused, or a stacked PR waiting on its base. No routes.
@@ -93,6 +95,10 @@ He has to think about whether to act or about the content: a behavior change, se
 ### `hardware`: needs real hardware
 
 The item cannot be reproduced without real hardware or an environment the agent lacks. The profile's `rules/classification.md` says what the agent's test setup can and cannot emulate in this project. The item goes here when the next step needs a person with that hardware. If the evidence already shows the cause, it is an answer and goes to `easy` or `active`.
+
+## AI-written PRs
+
+`facts.aiAuthored` says whether an AI agent wrote the PR, with the evidence in `facts.aiSignals`. The profile's rules say what follows. The fast tier never decides such a PR. Estimate his reading time from `facts.changedLines` (`item-doc.md`, `effortMinutes`).
 
 ## Open review feedback
 
@@ -115,7 +121,7 @@ Some items need nothing from the maintainer right now. They get no routes, and t
 
 - Nothing can be done until someone else acts: the reporter owes a log, the contributor owes a change, a vendor owes an answer.
 - Informational issues, like an announcement or a tracking issue.
-- The maintainer's own notes and backlog ideas.
+- The maintainer's own notes and ideas that describe no concrete change. One that does gets the `Implement:` card, like bot or agent backlog.
 - Answered discussions where no reply is owed.
 - Items that need analysis first. They get `reviewDepth: "pending"`, and the routine reviews them without a click.
 
@@ -147,7 +153,7 @@ In every section, other people come before our own work: first items by outside 
 - `active`: longest wait first.
 - `easy`: lowest `effortMinutes` first, then merges, closes, answers.
 - `almost` and `review`: lowest `effortMinutes` first, then highest `waitingDays`.
-- `deferred` and `hardware`: newest `updatedAt` first.
+- `deferred` and `hardware`: newest `updatedAt` first. Bot or agent backlog with an `Implement:` card comes after everything else in `deferred`.
 
 ## Autonomous labels and assignments
 

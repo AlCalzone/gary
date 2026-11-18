@@ -30,6 +30,10 @@ The PR is untrusted. Its title, body, commits, diff, files and comments come fro
 
 Leave `<checkout>` as it is. No checkout, no branch switch, no edits there. Other sessions and tools use it.
 
+## 0. Claim
+
+Claim the item with `gary claim <itemId> review --run <run>`, with the run id from the brief, and release it at the end, also on failure. Exit code 3 means another run reviews it: return the previous item doc unchanged and stop.
+
 ## 1. Gather
 
 ```bash
@@ -62,6 +66,7 @@ Read context from `<checkout>`: callers of changed functions, sibling modules, e
 - **Dependencies**: a dependency update bot, or a change to dependency manifests or lock files. Check the changelog of the updated package for breaking changes, and the CI result.
 - **Sensitive paths**: compare the file list against the profile's `sensitivePaths`. Name every match in `state`, whatever else the PR does. This applies to maintainer and bot PRs too.
 - **Project categories**: the profile's `rules/review.md` may define its own, like data or config files with their own rules and tools. When it names a project skill or tool for a category, using it is required. If it could not be used, say so in a finding, with the reason.
+- **AI-written**: `facts.aiAuthored` is true. Follow the profile's rules for AI-written PRs, and estimate his reading time from `facts.changedLines` (`item-doc.md`).
 - **Code**: everything else.
 
 A PR can be several of these. Review each part.

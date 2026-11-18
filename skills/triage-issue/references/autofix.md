@@ -10,6 +10,12 @@ Opening the draft PR is one of the few things the routine may do without a click
 - Push only that branch. Never push to the default branch or to any existing branch, and never to a contributor's fork.
 - Open the PR as a draft. Never mark it ready, request reviewers, comment on the issue or merge.
 
+## 0. Claim
+
+Claim the item with `gary claim <itemId> fix --run <run>`, and release it with `gary release <itemId> fix --run <run>` when you are done, also on failure. Exit code 3 means another run holds it: stop and return the item unchanged.
+
+For an autonomous fix, read the queue right before you start and again right before you open the PR. When a `start_fix` request for this item is queued or claimed, the item is the maintainer's: stop without opening a PR, release the claim, and return the item unchanged. A fix he started with instructions follows those instructions exactly. An autonomous fix uses your own approach, unless the route's `text` gives one.
+
 ## 1. Worktree
 
 ```bash

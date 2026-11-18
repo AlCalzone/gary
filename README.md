@@ -118,7 +118,7 @@ The agents read a rule in this order: the core, then the profile file of the sam
 
 ## Safety
 
-- **What reaches GitHub**: only what you clicked, plus labels from the profile's `autoLabels` and assignments that record a fact, like a draft fix PR that exists. Agents may also open a draft fix PR on a new branch. Nothing else happens without a click.
+- **What reaches GitHub**: only what you clicked, plus labels from the profile's `autoLabels` and assignments that record a fact, like a draft fix PR that exists. The routine also opens draft fix PRs on new branches without a click, up to `maxAutoFixesPerRun` per run (`0` turns this off), using the agent's own approach unless the card says otherwise. A fix you start with instructions follows your instructions exactly, and your click always wins over an autonomous attempt on the same item. Nothing else happens without a click.
 - **Under which account**: with a bot, everything Gary writes goes out as the bot. Without one, you post yourself, or Gary uses your own login when you allowed it. One action always runs under your own login: requesting a Copilot review.
 - **Never without a click**: comments, reviews, approvals, merges, closes, pushes to someone else's branch. Merges and closes are always done by you on GitHub.
 - **Untrusted content**: issue texts, PR diffs and attached files are treated as data. Instructions inside them are never followed, and agents never run code from a PR branch.
