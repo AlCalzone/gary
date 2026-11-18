@@ -130,6 +130,24 @@ expect "validate counts" 1 "2 items checked, 1 fail" node $B validate
 expect "validate one id" 1 "1 items checked, 1 fail" node $B validate pr-12
 expect "validate --json" 1 '"failed": 1' node $B validate --json
 
+# Review comments with a suggestion
+rv() { print -r -- "{$BASE,\"hint\":\"Comment: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"review\",\"title\":\"Comment: x\",\"as\":\"bot\",\"params\":{\"event\":\"comment\",\"comments\":[$1]},\"recommended\":true}]}" > $H/case.json }
+rv '{"id":"c1","path":"a.ts","startLine":23,"line":25,"text":"Use the helper","original":"a\nb\nc","suggestion":"helper()","diffHunk":"@@ -20,6 +20,6 @@\n a"}'
+expect "a suggestion with original over the marked lines is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x","original":"a","suggestion":"b"}'
+expect "a one-line suggestion without startLine is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","startLine":23,"line":25,"text":"x","suggestion":"b"}'
+expect "a suggestion needs original" 1 "needs original" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","startLine":23,"line":25,"text":"x","original":"a\nb","suggestion":"b"}'
+expect "original must cover the marked lines" 1 "original has 2 lines, but the comment covers 3" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x\n```suggestion\nb\n```","original":"a","suggestion":"b"}'
+expect "no fence in text next to suggestion" 1 "must not hold a suggestion fence" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x","original":"a","suggestion":"b","diffHunk":" a\n-b\n+c"}'
+expect "a diffHunk next to a suggestion starts with @@" 1 "must start with an @@ header" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x\n```suggestion\nb\n```"}'
+expect "the old fence form is a warning only" 0 "warning: pr-12: routes[0] (r1): comments[0]: text holds a suggestion fence" node $B put items pr-12 $H/case.json
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
+
 # gary action takes kind, number and repo from the stored item
 node $B put items pr-12 $H/good.json > /dev/null 2>&1
 expect "action with an itemId uses the stored doc" 0 '"id": "PR_12"' zsh -c "print '{\"itemId\":\"pr-12\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"

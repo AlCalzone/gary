@@ -142,6 +142,7 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 						if (!isObject(c) || !isString(c.id) || !isString(c.path) || !Number.isInteger(c.line) || !isString(c.text)) {
 							err("review-comment", `${where}: comments[${j}] needs id, path, line and text`);
 						} else if (ids.has(c.id)) err("review-comment-id", `${where}: comment id ${c.id} is used twice`);
+						if (isObject(c)) checkSuggestion(c, `${where}: comments[${j}]`, err, warn);
 						if (isObject(c)) ids.add(c.id);
 					});
 				}
@@ -206,6 +207,32 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 	});
 
 	return { errors, warnings };
+}
+
+const SUGGESTION_FENCE = /```suggestion\b/;
+
+/**
+ * A comment that proposes a change carries the exact lines it replaces in `original` and the new text in `suggestion`,
+ * so the page and the GitHub body show both. A fence inside `text` is the old form.
+ */
+function checkSuggestion(c, where, err, warn) {
+	if (c.suggestion === undefined) {
+		if (typeof c.text === "string" && SUGGESTION_FENCE.test(c.text)) {
+			warn("suggestion-fence", `${where}: text holds a suggestion fence. Put the replacement in suggestion and the replaced lines in original`);
+		}
+		return;
+	}
+	if (typeof c.suggestion !== "string") return err("suggestion", `${where}: suggestion must be a string`);
+	if (typeof c.original !== "string") return err("suggestion-original", `${where}: a suggestion needs original, the exact text of the lines it replaces`);
+	const lines = Number.isInteger(c.startLine) ? c.line - c.startLine + 1 : 1;
+	const have = c.original.split("\n").length;
+	if (have !== lines) {
+		err("suggestion-lines", `${where}: original has ${have} line${have === 1 ? "" : "s"}, but the comment covers ${lines}`);
+	}
+	if (typeof c.text === "string" && SUGGESTION_FENCE.test(c.text)) err("suggestion-fence", `${where}: text must not hold a suggestion fence when suggestion is set`);
+	if (c.diffHunk !== undefined && !(typeof c.diffHunk === "string" && c.diffHunk.startsWith("@@"))) {
+		err("suggestion-hunk", `${where}: diffHunk must start with an @@ header`);
+	}
 }
 
 /** Item fields whose change needs a validation of the merged item. */
