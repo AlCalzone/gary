@@ -1,0 +1,11 @@
+{
+	"name": "gary",
+	"owner": { "name": "Gary" },
+	"plugins": [
+		{
+			"name": "gary",
+			"source": "./",
+			"description": "Maintainer triage board for one GitHub repository."
+		}
+	]
+}

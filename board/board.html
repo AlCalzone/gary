@@ -1,0 +1,3298 @@
+<title>Gary</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&display=swap">
+<style>
+/* Layout: a quiet header, then one bordered block per section with its own header band; rows are single lines that end in state icons, the effort figure and the age */
+:root {
+  --tint: 5%;
+  --bg: #edf0f7;
+  --surface: #fcfcfe;
+  --surface-2: #f3f4fa;
+  --today: #eef3fd;
+  --today-line: #d8e1f6;
+  --today-hover: #e5ecfb;
+  --fg: #1d2030;
+  --muted: #525a72;
+  --faint: #636a80;
+  --line: #e2e5f0;
+  --line-strong: #cfd4e3;
+  --accent: #4560c4;
+  --accent-fg: #ffffff;
+  --accent-soft: #e3e9fb;
+  --bar-track: #dce4f7;
+  --bar: #6680d6;
+  --violet: #7652c4;
+  --act-finish: #23704b;
+  --act-close: #b23a34;
+  --act-talk: #2d5bb5;
+  --act-push: #85560a;
+  --act-think: #8a3aa8;
+  --act-agent: #1b6b6e;
+  --code-bg: #eceef5;
+  --act-away: #5a6175;
+  --cat-active: #fbe3d8;
+  --cat-easy: #dcf1e4;
+  --cat-almost: #f9eec8;
+  --cat-review: #e5e1fa;
+  --cat-deferred: #dfebf7;
+  --cat-hardware: #eee4d8;
+  --cat-snoozed: #e9e9f1;
+  --ok: #2a7a52;
+  --ok-soft: #e0f2e8;
+  --warn: #8f5d0c;
+  --warn-soft: #f8ecd6;
+  --bad: #b23a32;
+  --bad-soft: #fbe4e1;
+  --focus: #4560c4;
+  --backdrop: rgba(30, 36, 60, 0.38);
+  --shadow: rgba(40, 50, 90, 0.14);
+  --font-body: "Instrument Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-read: "Literata", Georgia, "Times New Roman", serif;
+  --r: 7px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --tint: 8%;
+    --bg: #11131b;
+    --surface: #191c27;
+    --surface-2: #202432;
+    --today: #1b2235;
+    --today-line: #2c3654;
+    --today-hover: #222a42;
+    --fg: #e8eaf2;
+    --muted: #a6adc2;
+    --faint: #878ea3;
+    --line: #2a2f3f;
+    --line-strong: #383e52;
+    --accent: #a2b5ff;
+    --accent-fg: #11131b;
+    --accent-soft: #27304d;
+    --bar-track: #2a3250;
+    --bar: #a2b5ff;
+    --violet: #c3b0f5;
+    --act-finish: #8fd4ae;
+    --act-close: #f3a39a;
+    --act-talk: #9ab8ff;
+    --act-push: #efc27c;
+    --act-think: #dda6f2;
+    --act-agent: #7fd0c9;
+    --code-bg: #272c3b;
+    --act-away: #a6adc2;
+    --cat-active: #42302a;
+    --cat-easy: #22392c;
+    --cat-almost: #3d3622;
+    --cat-review: #312c4f;
+    --cat-deferred: #223446;
+    --cat-hardware: #3a3129;
+    --cat-snoozed: #2b2c38;
+    --ok: #8fd4ae;
+    --ok-soft: #1d3529;
+    --warn: #efc27c;
+    --warn-soft: #3a2f1a;
+    --bad: #f3a39a;
+    --bad-soft: #3d2226;
+    --focus: #a2b5ff;
+    --backdrop: rgba(5, 6, 12, 0.62);
+    --shadow: rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --tint: 8%;
+  --bg: #11131b;
+  --surface: #191c27;
+  --surface-2: #202432;
+  --today: #1b2235;
+  --today-line: #2c3654;
+  --today-hover: #222a42;
+  --fg: #e8eaf2;
+  --muted: #a6adc2;
+  --faint: #878ea3;
+  --line: #2a2f3f;
+  --line-strong: #383e52;
+  --accent: #a2b5ff;
+  --accent-fg: #11131b;
+  --accent-soft: #27304d;
+  --bar-track: #2a3250;
+  --bar: #a2b5ff;
+  --violet: #c3b0f5;
+  --act-finish: #8fd4ae;
+  --act-close: #f3a39a;
+  --act-talk: #9ab8ff;
+  --act-push: #efc27c;
+  --act-think: #dda6f2;
+  --act-agent: #7fd0c9;
+  --code-bg: #272c3b;
+  --act-away: #a6adc2;
+  --cat-active: #42302a;
+  --cat-easy: #22392c;
+  --cat-almost: #3d3622;
+  --cat-review: #312c4f;
+  --cat-deferred: #223446;
+  --cat-hardware: #3a3129;
+  --cat-snoozed: #2b2c38;
+  --ok: #8fd4ae;
+  --ok-soft: #1d3529;
+  --warn: #efc27c;
+  --warn-soft: #3a2f1a;
+  --bad: #f3a39a;
+  --bad-soft: #3d2226;
+  --focus: #a2b5ff;
+  --backdrop: rgba(5, 6, 12, 0.62);
+  --shadow: rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 var(--font-body);
+}
+.wrap {
+  max-width: 960px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.i { width: 16px; height: 16px; flex: none; display: block; }
+.i.lg { width: 18px; height: 18px; }
+.ok { color: var(--ok); }
+.warn { color: var(--warn); }
+.bad { color: var(--bad); }
+.muted { color: var(--muted); }
+.accent { color: var(--accent); }
+.violet { color: var(--violet); }
+.faint { color: var(--faint); }
+.neutral { color: var(--fg); }
+
+/* Header */
+header { display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; align-items: center; gap: 14px; }
+h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
+.dry { font-size: 11.5px; font-weight: 600; color: var(--warn); padding: 1px 7px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--warn); }
+.dry[hidden] { display: none; }
+.run { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.conn { margin-left: auto; display: inline-flex; padding: 4px; color: var(--faint); }
+.conn[data-state="connected"] { color: var(--ok); }
+.conn[data-state="queued"] { color: var(--warn); }
+.controls { position: relative; }
+.ctl-btn { margin-left: 0; color: var(--muted); }
+.ctl-btn[aria-expanded="true"] { background: var(--surface); color: var(--fg); }
+.fgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 13px/1 var(--font-body);
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip .i { width: 15px; height: 15px; }
+.chip[aria-pressed="true"] { background: var(--surface); border-color: var(--surface); color: var(--fg); }
+.search {
+  width: 100%;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.ctl-btn { position: relative; }
+.ctl-btn[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.fpanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  width: min(360px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 14px 36px var(--shadow);
+}
+.fpanel .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; color: var(--fg); }
+.fpanel-group { display: flex; flex-direction: column; gap: 8px; }
+.fpanel-label { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0; }
+.toggle { display: inline-flex; gap: 8px; align-items: center; font-size: 13.5px; cursor: pointer; }
+
+/* Notices */
+.notice { padding: 16px 18px; border: 1px dashed var(--line-strong); border-radius: 12px; color: var(--muted); background: var(--surface); }
+.notice strong { color: var(--fg); font-weight: 600; display: block; margin-bottom: 2px; }
+
+/* Sections */
+#board { display: flex; flex-direction: column; gap: 20px; }
+.section {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.section h2 { font-size: 15.5px; font-weight: 600; margin: 0; letter-spacing: -0.005em; }
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--surface-2);
+}
+.plan { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 2px 2px 4px; }
+.plan .bar { margin-left: 0; flex: 1 1 160px; max-width: 320px; }
+.plan .sum { margin-left: 0; }
+.plan-done { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; color: var(--muted); font-size: 13px; }
+.bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bar-track);
+  overflow: hidden;
+}
+.bar-fill { display: block; height: 100%; background: var(--bar); border-radius: inherit; }
+.group-quick { background: var(--today); border-color: var(--today-line); }
+.group-quick > .sec-head { background: transparent; }
+.group-quick .row { border-top-color: var(--today-line); }
+.group-quick .row:hover, .group-quick .row:focus-visible { background: var(--today-hover); }
+.group > .sec-head { border-bottom: 1px solid var(--line); }
+.group-quick > .sec-head { border-bottom-color: var(--today-line); }
+.group > .sec-head h2 { font-size: 16px; }
+.cat {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.cat-active { background: var(--cat-active); }
+.cat-easy { background: var(--cat-easy); }
+.cat-almost { background: var(--cat-almost); }
+.cat-review { background: var(--cat-review); }
+.cat-deferred { background: var(--cat-deferred); }
+.cat-hardware { background: var(--cat-hardware); }
+.cat-snoozed { background: var(--cat-snoozed); }
+.show-all { margin: 4px 10px 8px; }
+.sum { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.list { display: flex; flex-direction: column; }
+.empty-section { color: var(--faint); font-size: 13px; padding: 14px 18px; }
+
+/* Rows */
+.row {
+  display: grid;
+  /* Fixed tracks only: every row is its own grid, so an auto track would sit at a different x per row */
+  grid-template-columns: 16px 16px 3.3em 4.9em minmax(0, 1fr) 7.5em 3.4em 3.6em;
+  grid-template-areas: "kind rev num cat main author effort age";
+  grid-template-rows: var(--line-h) auto;
+  align-items: start;
+  justify-items: start;
+  gap: 0 12px;
+  --line-h: 22px;
+  width: 100%;
+  min-height: 50px;
+  margin: 0;
+  padding: 12px 18px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row:first-child { border-top: 0; }
+.row:hover { background: var(--surface-2); }
+.row:focus-visible { outline-offset: -2px; background: var(--surface-2); }
+.row.dim { opacity: 0.55; }
+/* Every cell except the title block is one line tall, so it lines up with the first title line */
+.r-kind, .r-rev, .r-num, .r-cat, .r-author, .r-effort, .r-age { height: var(--line-h); display: flex; align-items: center; }
+.r-effort, .r-age { justify-self: stretch; }
+.row .r-main { grid-row: 1 / span 2; justify-self: stretch; }
+/* State icons sit on the second line, under the number and the chip */
+.r-meta {
+  grid-row: 2;
+  grid-column: 3 / 5;
+  justify-self: stretch;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  padding-top: 5px;
+  color: var(--muted);
+}
+.r-meta > * { flex: none; }
+.r-meta .i { width: 14px; height: 14px; }
+.r-kind { grid-area: kind; }
+.r-rev { grid-area: rev; }
+.r-cat { grid-area: cat; }
+.r-main { grid-area: main; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.r-author, .d-author { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 12.5px; }
+.r-author { grid-area: author; justify-self: stretch; overflow: hidden; }
+.a-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.avatar.ph { display: inline-grid; place-items: center; font-size: 10.5px; font-weight: 700; color: var(--muted); }
+.avatar.ph::before { content: attr(data-letter); }
+/* State badges in the dialog: lighter than the review badges, which are links */
+.sbadge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px 2px 5px; border-radius: 6px; font-size: 12px; font-weight: 500; line-height: 1.4; }
+.sbadge .i { width: 13px; height: 13px; }
+.sbadge.tone-ok { background: var(--ok-soft); color: var(--ok); }
+.sbadge.tone-bad { background: var(--bad-soft); color: var(--bad); }
+.sbadge.tone-warn { background: var(--warn-soft); color: var(--warn); }
+.sbadge.tone-muted, .sbadge.tone-faint { background: var(--surface-2); color: var(--muted); }
+.kind-words { font-size: 12.5px; font-weight: 600; }
+.kind-words.muted, .kind-words.neutral { color: var(--muted); }
+/* Review badges and review threads */
+.reviews { display: flex; flex-wrap: wrap; gap: 6px; }
+.rv {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+a.rv:hover { border-color: var(--muted); text-decoration: none; }
+.rv .avatar { width: 18px; height: 18px; }
+.rv .i { width: 14px; height: 14px; }
+.rv .rv-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.rv-dismissed .rv-name { text-decoration: line-through; color: var(--muted); }
+.rv-pending { border-style: dashed; color: var(--muted); }
+.threads > summary { cursor: pointer; width: max-content; max-width: 100%; font-size: 13px; font-weight: 600; color: var(--muted); }
+.threads .t-counts { font-weight: 500; color: var(--faint); margin-left: 6px; }
+.threads ul { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.threads li { display: grid; grid-template-columns: 6.2em minmax(0, 1fr); column-gap: 8px; align-items: baseline; }
+.threads li .sev { justify-self: start; }
+.t-summary { font-family: var(--font-read); font-size: 14.5px; line-height: 1.55; color: var(--fg); overflow-wrap: anywhere; }
+.t-note { font-size: 13px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.t-ref { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.t-ref code { font-family: var(--font-mono); font-size: 11.5px; }
+.r-hint {
+  --act: var(--accent);
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.r-hint .i { width: 14px; height: 14px; margin-top: 2px; color: var(--act); }
+.h-act { color: var(--act); font-weight: 500; }
+.r-hint.act-finish { --act: var(--act-finish); }
+.r-hint.act-close { --act: var(--act-close); }
+.r-hint.act-talk { --act: var(--act-talk); }
+.r-hint.act-push { --act: var(--act-push); }
+.r-hint.act-think { --act: var(--act-think); }
+.r-hint.act-agent { --act: var(--act-agent); }
+.r-hint.act-away { --act: var(--act-away); }
+.step-done { padding: 4px 0; }
+
+/* Dialog zones: reading on the dialog surface, GitHub actions on a neutral panel, agent requests on a teal tint,
+   board housekeeping in a pinned footer */
+.d-support { display: flex; flex-direction: column; gap: 12px; padding-top: 2px; font-size: 13px; color: var(--muted); }
+.d-support .fref { font-size: 11.5px; }
+/* Route cards: the recommended way forward is open, the others are one line. Each card carries a soft tint of its intent. */
+.ways { display: flex; flex-direction: column; gap: 10px; }
+.routes { display: flex; flex-direction: column; gap: 8px; }
+.card {
+  --int: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--int) 20%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--int) var(--tint), var(--surface));
+  min-width: 0;
+}
+.card.open { border-color: color-mix(in srgb, var(--int) 36%, var(--line)); box-shadow: 0 1px 2px var(--shadow); }
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+}
+button.card-head { cursor: pointer; }
+button.card-head:hover { background: color-mix(in srgb, var(--int) calc(var(--tint) + 5%), var(--surface)); }
+.card.open button.card-head { padding-bottom: 6px; border-radius: 12px 12px 0 0; }
+.card-head .r-hint { flex: 1; font-size: 14px; line-height: 20px; }
+.card.open .card-head .r-hint { font-size: 15px; }
+.card-head > .avatar, .card-head > .actor-icon { width: 20px; height: 20px; flex: none; }
+.card-head .chev { width: 16px; height: 16px; flex: none; color: var(--muted); transition: transform 0.15s ease; }
+.card.open .card-head .chev { transform: rotate(180deg); }
+button.card-head:hover .chev { color: var(--fg); }
+.card.compact .card-head { padding-block: 7px; flex-wrap: wrap; }
+.card.compact .card-actions { flex: none; }
+.card.compact > .callout, .card.compact > .z-status { margin: 0 14px 10px; }
+.card-body { display: flex; flex-direction: column; gap: 10px; padding: 0 14px 14px; min-width: 0; }
+.card-why, .card-finding, .card-text { margin: 0; font-family: var(--font-read); font-size: 15px; line-height: 1.55; color: var(--fg); max-width: 64ch; overflow-wrap: anywhere; }
+.card-label { font-size: 12px; color: var(--muted); margin-bottom: -4px; }
+.quiet-line { margin: 0; font-size: 12.5px; color: var(--muted); }
+.callout { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--fg); font-size: 13.5px; line-height: 1.5; }
+.callout .i { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--warn); }
+.callout.strong { box-shadow: inset 0 0 0 1px var(--warn); font-weight: 500; }
+.reason { align-self: flex-start; }
+.card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.editor-tools { display: flex; justify-content: flex-end; margin-top: -6px; }
+.reveal { display: flex; flex-direction: column; gap: 10px; }
+.reveal[hidden] { display: none; }
+.checklist, .decisions { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.checklist li { display: flex; gap: 8px; align-items: baseline; }
+.c-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; font-size: 14px; }
+.c-where { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.c-text { font-family: var(--font-read); line-height: 1.5; overflow-wrap: anywhere; }
+.hunk {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 6px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font: 12px/1.5 var(--font-mono);
+  color: var(--fg);
+}
+.hunk span { display: block; padding: 0 10px; white-space: pre; min-width: max-content; }
+.hunk .h-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.hunk .h-del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.hunk .h-hdr { color: var(--muted); }
+/* The agent's verdict is a quiet colored word. The maintainer's decision is a control whose chosen side is filled. */
+.vlabel { font-family: var(--font-body); font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; color: var(--muted); }
+.vlabel::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+.v-valid { color: var(--ok); }
+.v-optional { color: var(--act-talk); }
+.v-wrong { color: var(--muted); }
+.v-unjudged { color: var(--warn); }
+.vlabel.sev-bad { color: var(--bad); }
+.vlabel.sev-warn { color: var(--warn); }
+.decisions > li { display: flex; flex-direction: column; gap: 3px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--int) 14%, var(--line)); }
+.decisions > li:first-child { padding-top: 0; border-top: 0; }
+.t-head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+.seg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.seg-group { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; background: var(--surface); }
+.seg { font: 500 12.5px/1 var(--font-body); padding: 6px 12px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.seg + .seg { border-left: 1px solid var(--line-strong); }
+.seg:hover { color: var(--fg); }
+.seg[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); font-weight: 600; }
+.seg[data-v="fix"][aria-pressed="true"] { background: var(--act-agent); color: var(--surface); }
+.seg[data-v="dismiss"][aria-pressed="true"] { background: color-mix(in srgb, var(--act-close) 16%, var(--surface)); color: var(--act-close); }
+.d-note { width: 100%; font-size: 13px; padding: 6px 9px; margin-top: 4px; }
+/* Agent rounds: open points first, the history folds away */
+.rounds { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+.rounds ul, .rounds ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.rounds-open ul { margin-top: 8px; font-family: var(--font-read); font-size: 14.5px; line-height: 1.5; }
+.rounds-open li::before { content: "•"; color: var(--warn); margin-right: 8px; }
+.rounds-all summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.rounds-list { margin-top: 8px !important; gap: 10px !important; }
+.round-n { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+.rounds-list li li { line-height: 1.5; }
+/* Action buttons take the color of their intent. The actor shows as an avatar or icon inside the button. */
+.intent-finish { --int: var(--act-finish); }
+.intent-close { --int: var(--act-close); }
+.intent-push { --int: var(--act-push); }
+.intent-talk { --int: var(--act-talk); }
+.intent-agent { --int: var(--act-agent); }
+.intent-away { --int: var(--muted); }
+.intent-other { --int: var(--accent); }
+.btn[class*="intent-"] { border-color: var(--int); color: var(--int); background: var(--surface); font-weight: 600; }
+.btn[class*="intent-"]:hover:not(:disabled) { border-color: var(--int); background: var(--surface-2); }
+.btn[class*="intent-"].primary, .btn[class*="intent-"].confirm { background: var(--int); border-color: var(--int); color: var(--surface); }
+/* The second confirm keeps the intent color and adds a ring, so it reads as "are you sure" */
+.btn.confirm { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--int, var(--accent)); }
+.btn .avatar, .btn .actor-icon { width: 18px; height: 18px; flex: none; }
+.btn .actor-icon { color: inherit; }
+.me-btn { border-radius: 999px; }
+.me-btn .ext { width: 14px; height: 14px; }
+.me-note { font-size: 12.5px; color: var(--muted); }
+.me-title { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); flex-basis: 100%; min-width: 0; }
+.me-title code { font-family: var(--font-mono); font-size: 12px; color: var(--fg); overflow-wrap: anywhere; }
+.lane-switch { font: 500 12px/1 var(--font-body); padding: 4px 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.lane-switch:hover:not(:disabled) { color: var(--fg); }
+.opened-mark { font-size: 12px; color: var(--muted); }
+
+.card textarea, .card .field { background: var(--surface); }
+.z-status:empty { display: none; }
+textarea.tall { min-height: 13em; }
+textarea.short { min-height: 5.4em; }
+/* Analyze again opens above the footer, quiet like the footer itself */
+.d-analyze { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.d-analyze[hidden] { display: none; }
+.d-analyze textarea { width: 100%; background: var(--surface); font-size: 14.5px; }
+.d-analyze:not([hidden]) { animation: rise 0.16s ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .d-analyze:not([hidden]) { animation: none; } .card-head .chev { transition: none; } }
+.foot-analyze { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.foot-analyze .i { color: var(--act-agent); }
+.foot-analyze[aria-expanded="true"] { background: var(--surface); border-color: var(--line); color: var(--fg); }
+.d-foot {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 10px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  border-radius: 0 0 14px 14px;
+}
+.foot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 500 12.5px/1 var(--font-body);
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.foot-btn .i { width: 15px; height: 15px; }
+.foot-btn:hover:not(:disabled) { background: var(--surface); border-color: var(--line); color: var(--fg); }
+.foot-btn:disabled { opacity: 0.5; cursor: default; }
+.foot-btn.suggested { background: var(--surface); color: var(--fg); box-shadow: 0 0 0 2px var(--accent); }
+.foot-label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--muted); padding-left: 2px; margin-right: 2px; }
+.foot-label .i { width: 15px; height: 15px; }
+.foot-status { flex-basis: 100%; font-size: 12.5px; }
+.foot-status:empty { display: none; }
+.reload-btn { margin-left: auto; font-size: 12.5px; }
+.reload-btn:not([hidden]) + .conn { margin-left: 0; }
+.r-num { grid-area: num; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.r-title { min-width: 0; font-size: 14.5px; line-height: var(--line-h); font-weight: 500; overflow-wrap: anywhere; }
+.wait { display: inline-flex; flex: none; align-items: center; gap: 3px; white-space: nowrap; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.r-effort { grid-area: effort; justify-content: flex-end; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.r-effort b { font-size: 15px; font-weight: 700; }
+.r-effort small { font-size: 11.5px; color: var(--muted); margin-left: 2px; }
+.r-age { grid-area: age; justify-content: flex-end; color: var(--faint); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tag {
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tag.label { background: transparent; border: 1px solid var(--line-strong); }
+.tag.effort { background: var(--accent-soft); color: var(--fg); font-weight: 600; }
+
+/* Detail dialog */
+html:has(dialog.detail[open]) { overflow: hidden; }
+dialog.detail {
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(88vh, calc(100dvh - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 24px 64px var(--shadow);
+}
+dialog.detail[open] { display: flex; flex-direction: column; }
+dialog.detail::backdrop { background: var(--backdrop); }
+.d-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 24px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.d-ref { display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.iconbtn {
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.iconbtn:hover { background: var(--surface-2); color: var(--fg); }
+.d-body {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 22px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  overscroll-behavior: contain;
+}
+.d-body:focus { outline: none; }
+.d-head { display: flex; flex-direction: column; gap: 10px; }
+.d-title { font-size: 20px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
+/* Reading surface: the story, the verdict, findings and drafts use a screen serif. Controls keep the sans. */
+.story { display: flex; flex-direction: column; gap: 0.75em; max-width: 64ch; font-family: var(--font-read); font-size: 16.5px; line-height: 1.62; color: var(--fg); }
+.story p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The verdict leads into the cards: plain reading text, no box, so it never looks like something to click */
+.state { margin: 4px 0 0; max-width: 64ch; font-family: var(--font-read); font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.state[hidden] { display: none; }
+.ic { font-family: var(--font-mono); font-size: 0.84em; padding: 0.08em 0.35em; border-radius: 4px; background: var(--code-bg); color: var(--fg); overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 13px; color: var(--muted); }
+.meta time { color: var(--faint); }
+.d-sec { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.findings > summary { cursor: pointer; width: max-content; max-width: 100%; font-size: 13px; font-weight: 600; color: var(--muted); }
+.findings ul { margin: 12px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 14px; }
+.findings li { display: grid; grid-template-columns: 4.8em minmax(0, 1fr); column-gap: 8px; align-items: baseline; min-width: 0; }
+.findings li .sev { justify-self: start; }
+.f-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; max-width: 64ch; }
+.f-text { font-family: var(--font-read); font-size: 14.5px; line-height: 1.55; color: var(--fg); overflow-wrap: anywhere; white-space: pre-wrap; }
+.sev { font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.sev.bad { background: var(--bad-soft); color: var(--bad); }
+.sev.warn { background: var(--warn-soft); color: var(--warn); }
+.sev.faint { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--muted); }
+.fref { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.links { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; }
+.links > * { display: inline-flex; align-items: center; gap: 6px; }
+.links .blocked { color: var(--faint); }
+
+/* Steps */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 13.5px/1.2 var(--font-body);
+  padding: 8px 14px;
+  border-radius: var(--r);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.confirm:not([class*="intent-"]) { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--muted); padding-inline: 8px; }
+.btn.quiet:hover:not(:disabled) { color: var(--fg); border-color: transparent; text-decoration: underline; }
+.btn.small { font-size: 12.5px; padding: 6px 10px; }
+textarea, select, input[type="text"].field {
+  font: 13.5px/1.45 var(--font-body);
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 7px 10px;
+  width: 100%;
+}
+textarea {
+  resize: vertical;
+  field-sizing: content;
+  min-height: 7.5em;
+  max-height: 60vh;
+  overflow-y: auto;
+  font-family: var(--font-read);
+  font-size: 15.5px;
+  line-height: 1.6;
+  padding: 10px 12px;
+}
+
+/* Secondary actions */
+
+
+/* Status line */
+.status { font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; min-width: 0; }
+.status > span { min-width: 0; overflow-wrap: anywhere; }
+.status.queued { color: var(--warn); }
+.status.done { color: var(--ok); }
+.status.failed { color: var(--bad); }
+.status.running { color: var(--muted); }
+.status time { color: var(--faint); }
+
+@media (max-width: 560px) {
+  .wrap { padding-block: 20px 48px; }
+  .row {
+    grid-template-columns: 16px 16px 3.3em 4.9em 18px minmax(0, 1fr) 3.4em 3.4em;
+    grid-template-areas: "kind rev num cat author . effort age" ". . meta meta meta meta meta meta" "main main main main main main main main";
+    grid-template-rows: var(--line-h) auto auto;
+    padding: 12px 14px;
+    gap: 0 8px;
+  }
+  .row .r-main { grid-area: main; grid-row: 3; padding-top: 4px; }
+  .r-meta { grid-area: meta; }
+  .r-author .a-name { display: none; }
+  .sec-head { padding: 12px 14px; }
+  .empty-section { padding: 12px 14px; }
+  dialog.detail[open] {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    height: auto;
+    max-height: none;
+    margin:
+      max(8px, env(safe-area-inset-top, 0px))
+      max(8px, env(safe-area-inset-right, 0px))
+      max(8px, env(safe-area-inset-bottom, 0px))
+      max(8px, env(safe-area-inset-left, 0px));
+  }
+  .d-bar { padding-left: 16px; }
+  .findings li, .threads li { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .d-body { padding: 16px 16px 22px; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="top">
+      <h1 id="board-title">Gary</h1>
+      <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
+      <span class="run" id="run-info">Loading</span>
+      <button class="btn quiet reload-btn" id="reload" type="button" hidden>Updated, reload</button>
+      <span class="conn" id="conn" data-state="checking"></span>
+      <div class="controls" id="filters"></div>
+    </div>
+  </header>
+  <div id="notice"></div>
+  <main id="board"></main>
+</div>
+
+<dialog class="detail" id="detail" aria-labelledby="detail-title">
+  <div class="d-bar">
+    <span class="d-ref" id="d-ref"></span>
+    <button class="iconbtn" type="button" id="d-close" data-focus-key="close" aria-label="Close" title="Close"></button>
+  </div>
+  <div class="d-body" id="d-body" tabindex="-1">
+    <div class="d-head">
+      <h2 class="d-title" id="detail-title"></h2>
+      <div class="meta" id="d-meta"></div>
+      <div class="story" id="d-story" hidden></div>
+      <div class="reviews" id="d-reviews" hidden></div>
+      <div class="d-sec" id="d-threads" hidden></div>
+      <div class="d-sec rounds" id="d-rounds" hidden></div>
+    </div>
+    <section class="ways" aria-label="Ways forward">
+      <p class="state" id="d-verdict"></p>
+      <div class="routes" id="d-routes"></div>
+    </section>
+    <div class="d-support">
+      <div class="d-sec" id="d-findings"></div>
+      <section class="d-sec" id="d-links-sec" aria-label="Links">
+        <div id="d-links"></div>
+      </section>
+    </div>
+  </div>
+  <div class="d-analyze" id="d-analyze" role="group" aria-label="Analyze again" hidden></div>
+  <div class="d-foot" id="d-foot" role="group" aria-label="Put it away"></div>
+</dialog>
+
+<script>
+"use strict";
+
+const SERVER = "host:gary";
+const GITHUB_PREFIX = "https://github.com/";
+
+const SECTIONS = [
+  { id: "active", name: "Active communication", category: "Active" },
+  { id: "easy", name: "Easy wins", category: "Easy" },
+  { id: "almost", name: "Almost ready", category: "Almost" },
+  { id: "review", name: "Needs human review", category: "Review" },
+  { id: "deferred", name: "Deferred and larger projects", category: "Later" },
+  { id: "hardware", name: "Needs real hardware", category: "Hardware" },
+];
+const SECTION_ORDER = new Map(SECTIONS.map((s, i) => [s.id, i]));
+const GROUPS = [
+  { id: "quick", name: "Quick & Easy", sections: ["active", "easy"], cap: 5 },
+  { id: "after", name: "Afterwards", sections: ["almost", "review"], cap: Infinity },
+  { id: "later", name: "When you have time", sections: ["deferred", "hardware"], cap: Infinity },
+];
+const SECTION_IDS = new Set(SECTIONS.map((s) => s.id));
+const FALLBACK_SECTION = "review";
+const REVEAL_STEP = 10;
+const BUDGET_HOURS = [2, 4, 6, 8];
+const DEFAULT_BUDGET_HOURS = 6;
+const DEFAULT_EFFORT_MIN = 15;
+
+const KINDS = [
+  { id: "pr", label: "PR", title: "Pull request", icon: "pr" },
+  { id: "issue", label: "Issue", title: "Issue", icon: "issue" },
+  { id: "discussion", label: "Discussion", title: "Discussion", icon: "discussion" },
+];
+const AUTHOR_TYPES = ["maintainer", "contributor", "copilot", "bot"];
+const AUTHOR_ICONS = {
+  maintainer: ["shield", "Maintainer"],
+  copilot: ["sparkles", "Copilot"],
+  bot: ["bot", "Bot"],
+};
+const SORTS = [
+  { id: "section", label: "Section order" },
+  { id: "quickest", label: "Quickest first" },
+];
+const WAITING_CHIP_DAYS = 3;
+const DAY_MS = 86400000;
+
+const AGENT_ACTIONS = new Set(["full_review", "start_fix", "reanalyze", "apply_fixes"]);
+const BOARD_ACTIONS = new Set(["dismiss", "snooze"]);
+
+const ACTION_NAMES = {
+  comment: "comment", approve: "approve", request_changes: "request changes",
+  review_comment: "review comment", merge: "merge", ready: "mark ready",
+  close: "close", label: "labels", assign: "assign", answer_discussion: "mark answer", react: "react",
+  full_review: "analyze again", start_fix: "auto-fix", reanalyze: "analyze again", apply_fixes: "apply fixes",
+  dismiss: "dismiss", snooze: "snooze",
+};
+
+// Keys include the repo, so two boards on one machine keep their own filters, drafts and marks
+let storagePrefix = "gary:local:";
+const storeKey = (name) => storagePrefix + name;
+
+const state = {
+  db: null,
+  mcp: null,
+  dbMissing: false,
+  loadError: "",
+  slow: false,
+  loaded: { items: false, actions: false, meta: false },
+  items: new Map(),
+  latestAction: new Map(),
+  meta: null,
+  server: "checking",
+  filters: defaultFilters(),
+  drafts: new Map(),
+  confirming: new Map(),
+  busy: new Set(),
+  notes: new Map(),
+  reveal: new Map(),
+};
+
+// ---------- helpers ----------
+
+function str(v) {
+  return typeof v === "string" ? v : v == null ? "" : String(v);
+}
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k === "text") el.textContent = v;
+      else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+      else if (k === "value" || k === "disabled" || k === "checked" || k === "open") el[k] = v;
+      else el.setAttribute(k, v === true ? "" : String(v));
+    }
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    el.append(kid instanceof Node ? kid : String(kid));
+  }
+  return el;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const p = (d) => ["path", { d }];
+const c = (cx, cy, r, extra) => ["circle", { cx, cy, r, ...extra }];
+
+// Stroke icons on a 24-unit grid, after Lucide (ISC license)
+const ICONS = {
+  pr: [c(18, 18, 3), c(6, 6, 3), p("M13 6h3a2 2 0 0 1 2 2v7"), p("M6 9v12")],
+  issue: [c(12, 12, 9), c(12, 12, 1.5)],
+  discussion: [p("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")],
+  ciFail: [c(12, 12, 9), p("m15 9-6 6"), p("m9 9 6 6")],
+  ciPass: [c(12, 12, 9), p("m9 12 2 2 4-4")],
+  dashed: [c(12, 12, 9, { "stroke-dasharray": "3.5 3.6" })],
+  draft: [p("M12 20h9"), p("M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z")],
+  eye: [p("M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"), c(12, 12, 3)],
+  clock: [c(12, 12, 9), p("M12 7v5l3 2")],
+  send: [p("m22 2-7 20-4-9-9-4Z"), p("M22 2 11 13")],
+  hourglass: [p("M5 22h14"), p("M5 2h14"), p("M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"), p("M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2")],
+  check: [p("M20 6 9 17l-5-5")],
+  alert: [p("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), p("M12 9v4"), p("M12 17h.01")],
+  shield: [p("M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z")],
+  sparkles: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z")],
+  bot: [["rect", { x: 3, y: 8, width: 18, height: 12, rx: 2 }], p("M12 8V4H8"), p("M2 14h2"), p("M20 14h2"), p("M15 13v2"), p("M9 13v2")],
+  archive: [["rect", { x: 2, y: 3, width: 20, height: 5, rx: 1 }], p("M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"), p("M10 12h4")],
+  chevronDown: [p("m6 9 6 6 6-6")],
+  moon: [p("M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z")],
+  plug: [p("M12 22v-5"), p("M9 8V2"), p("M15 8V2"), p("M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z")],
+  unplug: [p("m19 5 3-3"), p("m2 22 3-3"), p("M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"), p("M7.5 13.5 10 11"), p("M10.5 16.5 13 14"), p("m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z")],
+  x: [p("M18 6 6 18"), p("m6 6 12 12")],
+  sliders: [p("M21 4h-7"), p("M10 4H3"), p("M21 12h-9"), p("M8 12H3"), p("M21 20h-5"), p("M12 20H3"), p("M14 2v4"), p("M8 10v4"), p("M16 18v4")],
+  link: [p("M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"), p("M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71")],
+  issueSolved: [c(12, 12, 9), p("m8.5 12 2.5 2.5 4.5-5")],
+  issueSlash: [c(12, 12, 9), p("m6 6 12 12")],
+  prMerged: [c(18, 18, 3), c(6, 6, 3), p("M6 21V9a9 9 0 0 0 9 9")],
+  prDraft: [c(18, 18, 3), c(6, 6, 3), p("M18 6V5"), p("M18 11v-1"), p("M6 9v12")],
+  prConflict: [c(18, 18, 3), c(6, 6, 3), p("M6 9v12"), p("M18 15v-4"), p("M18 2.5 21.5 8.5h-7Z")],
+  prClosed: [c(18, 18, 3), c(6, 6, 3), p("M6 9v12"), p("M18 11.5V15"), p("m21 3-6 6"), p("m21 9-6-6")],
+  discSolved: [p("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"), p("m8.5 10 2.5 2.5 4.5-4.5")],
+  discClosed: [p("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"), p("m14.5 7.5-5 5"), p("m9.5 7.5 5 5")],
+  changes: [p("M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"), p("M3 3v5h5")],
+  queued: [p("M3 6h11"), p("M3 12h7"), p("M3 18h6"), c(17, 16, 4.5), p("M17 13.8V16l1.4 1.2")],
+  nextStep: [p("m15 10 5 5-5 5"), p("M4 4v7a4 4 0 0 0 4 4h12")],
+  solved: [c(12, 12, 9, { "stroke-dasharray": "3.5 3.6" }), p("m8.5 12 2.5 2.5 4.5-5")],
+  doneCheck: [p("M18 6 7 17l-5-5"), p("m22 10-7.5 7.5L13 16")],
+  user: [c(12, 8, 4), p("M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1")],
+  comments: [p("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")],
+  external: [p("M15 3h6v6"), p("M10 14 21 3"), p("M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6")],
+  copy: [["rect", { x: 8, y: 8, width: 13, height: 13, rx: 2 }], p("M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2")],
+};
+
+// Build an SVG icon. With a label it gets role="img", a tooltip and an accessible name, otherwise it is hidden from assistive tech
+function icon(name, label, cls) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  const attrs = {
+    viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.8",
+    "stroke-linecap": "round", "stroke-linejoin": "round", focusable: "false",
+    class: "i" + (cls ? " " + cls : ""),
+  };
+  for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v);
+  if (label) {
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", label);
+    const t = document.createElementNS(SVG_NS, "title");
+    t.textContent = label;
+    svg.append(t);
+  } else {
+    svg.setAttribute("aria-hidden", "true");
+  }
+  for (const [tag, a] of ICONS[name] || []) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(a)) el.setAttribute(k, String(v));
+    svg.append(el);
+  }
+  return svg;
+}
+
+function isGithubUrl(u) {
+  return typeof u === "string" && u.startsWith(GITHUB_PREFIX);
+}
+
+function ghLink(url, text, cls) {
+  if (isGithubUrl(url)) {
+    return h("a", { href: url, target: "_blank", rel: "noopener noreferrer", class: cls, text });
+  }
+  return h("span", { class: cls, text });
+}
+
+function parseTime(iso) {
+  const t = Date.parse(str(iso));
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function relTime(iso, short) {
+  const t = parseTime(iso);
+  if (!Number.isFinite(t)) return "";
+  const s = Math.round((Date.now() - t) / 1000);
+  const future = s < 0;
+  const a = Math.abs(s);
+  let v;
+  if (a < 60) v = "now";
+  else if (a < 3600) v = Math.floor(a / 60) + "m";
+  else if (a < 86400) v = Math.floor(a / 3600) + "h";
+  else if (a < 86400 * 60) v = Math.floor(a / 86400) + "d";
+  else v = Math.floor(a / (86400 * 30)) + "mo";
+  if (v === "now") return short ? "now" : "just now";
+  if (short) return future ? "in " + v : v;
+  return future ? "in " + v : v + " ago";
+}
+
+function timeEl(iso, prefix, short) {
+  const t = parseTime(iso);
+  if (!Number.isFinite(t)) return null;
+  return h("time", {
+    datetime: new Date(t).toISOString(),
+    title: new Date(t).toLocaleString(),
+    "data-ts": String(t),
+    "data-prefix": prefix || "",
+    "data-short": short ? "1" : null,
+    text: (prefix || "") + relTime(iso, short),
+  });
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function defaultFilters() {
+  return {
+    kinds: KINDS.map((k) => k.id), authors: AUTHOR_TYPES.slice(), text: "", showHidden: false, sort: "section",
+    budget: DEFAULT_BUDGET_HOURS, extra: null,
+  };
+}
+
+function loadFilters() {
+  const def = defaultFilters();
+  try {
+    const raw = localStorage.getItem(storeKey("filters"));
+    if (!raw) return def;
+    const f = JSON.parse(raw);
+    return {
+      kinds: Array.isArray(f.kinds) ? f.kinds.filter((k) => KINDS.some((x) => x.id === k)) : def.kinds,
+      authors: Array.isArray(f.authors) ? f.authors.filter((a) => AUTHOR_TYPES.includes(a)) : def.authors,
+      text: typeof f.text === "string" ? f.text : "",
+      showHidden: f.showHidden === true,
+      sort: SORTS.some((x) => x.id === f.sort) ? f.sort : def.sort,
+      budget: BUDGET_HOURS.includes(f.budget) ? f.budget : def.budget,
+      extra: f.extra && typeof f.extra.day === "string" && Number.isInteger(f.extra.hours) ? { day: f.extra.day, hours: f.extra.hours } : null,
+    };
+  } catch {
+    return def;
+  }
+}
+
+function saveFilters() {
+  try {
+    localStorage.setItem(storeKey("filters"), JSON.stringify(state.filters));
+  } catch {
+    // Filters stay in memory for this visit
+  }
+}
+
+function filtersActive() {
+  const f = state.filters;
+  return f.kinds.length !== KINDS.length || f.authors.length !== AUTHOR_TYPES.length
+    || f.text.trim() !== "" || f.showHidden || f.sort !== "section";
+}
+
+function isHiddenItem(d) {
+  if (d.hidden === true) return true;
+  const until = parseTime(d.snoozedUntil);
+  return Number.isFinite(until) && until > Date.now();
+}
+
+function matchesFilters(d) {
+  const f = state.filters;
+  if (!f.kinds.includes(str(d.kind))) return false;
+  const at = AUTHOR_TYPES.includes(d.authorType) ? d.authorType : "contributor";
+  if (!f.authors.includes(at)) return false;
+  const q = f.text.trim().toLowerCase();
+  if (q) {
+    const labels = Array.isArray(d.labels) ? d.labels.map(str).join(" ") : "";
+    const hay = [str(d.title), str(d.author), "#" + str(d.number), str(d.number), labels, str(d.state)]
+      .join(" ").toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+function sectionOf(d) {
+  return SECTION_IDS.has(d.section) ? d.section : FALLBACK_SECTION;
+}
+
+function effortOf(d) {
+  return Number.isFinite(d.effortMinutes) && d.effortMinutes > 0 ? d.effortMinutes : null;
+}
+
+function formatEffort(min) {
+  const hours = Math.floor(min / 60);
+  const rest = min % 60;
+  if (!hours) return rest + " min";
+  return rest ? hours + " h " + rest + " min" : hours + " h";
+}
+
+function waitingOf(d) {
+  return Number.isFinite(d.waitingDays) && d.waitingDays >= 0 ? Math.floor(d.waitingDays) : null;
+}
+
+function planEffort(d) {
+  return effortOf(d) || DEFAULT_EFFORT_MIN;
+}
+
+function dayKey(t) {
+  const d = new Date(t);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+function recentlyDone(a) {
+  const t = parseTime(a.finishedAt || a.createdAt);
+  return a.status === "done" && Number.isFinite(t) && Date.now() - t < DAY_MS;
+}
+
+// An item counts as handled today when he opened one of its steps on GitHub today, or its latest action was created today and is queued or done
+function handledToday(id) {
+  if (itemOpenedToday(id)) return true;
+  const a = state.latestAction.get(id);
+  if (!a || (a.status !== "done" && a.status !== "queued")) return false;
+  const t = parseTime(a.createdAt);
+  return Number.isFinite(t) && dayKey(t) === dayKey(Date.now());
+}
+
+function budgetMinutes() {
+  const f = state.filters;
+  const extra = f.extra && f.extra.day === dayKey(Date.now()) ? f.extra.hours : 0;
+  return (f.budget + extra) * 60;
+}
+
+// Count every item handled today, whatever its section or filter, because that time is already gone
+function spentMinutes() {
+  let sum = 0;
+  for (const id of state.latestAction.keys()) {
+    if (!handledToday(id)) continue;
+    const d = state.items.get(id);
+    sum += d ? planEffort(d) : DEFAULT_EFFORT_MIN;
+  }
+  return sum;
+}
+
+function formatSpent(min) {
+  const hours = Math.floor(min / 60);
+  const rest = min % 60;
+  if (hours && rest) return hours + " h " + rest;
+  return formatEffort(min || 0).replace(/^0 min$/, "0 h");
+}
+
+function compareQuickest(a, b) {
+  const ea = effortOf(a.data);
+  const eb = effortOf(b.data);
+  if (ea !== eb) {
+    if (ea == null) return 1;
+    if (eb == null) return -1;
+    return ea - eb;
+  }
+  return compareItems(a, b);
+}
+
+function compareItems(a, b) {
+  const pa = Number.isFinite(a.data.priority) ? a.data.priority : 999;
+  const pb = Number.isFinite(b.data.priority) ? b.data.priority : 999;
+  if (pa !== pb) return pa - pb;
+  const ta = parseTime(a.data.updatedAt);
+  const tb = parseTime(b.data.updatedAt);
+  return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+}
+
+function draftKey(itemId, stepKey) {
+  return itemId + "/" + stepKey;
+}
+
+function getDraft(itemId, stepKey, fallback) {
+  const k = draftKey(itemId, stepKey);
+  return state.drafts.has(k) ? state.drafts.get(k) : str(fallback);
+}
+
+// ---------- header ----------
+
+const els = {
+  runInfo: document.getElementById("run-info"),
+  filters: document.getElementById("filters"),
+  conn: document.getElementById("conn"),
+  notice: document.getElementById("notice"),
+  board: document.getElementById("board"),
+};
+
+function renderHeader() {
+  const m = state.meta;
+  if (m && parseTime(m.lastRunAt)) {
+    els.runInfo.replaceChildren(timeEl(m.lastRunAt, "Last run ") || "");
+  } else {
+    els.runInfo.textContent = state.loaded.meta ? "No run yet" : "Loading";
+  }
+  if (controls.button) controls.button.dataset.active = filtersActive() ? "true" : "false";
+}
+
+const CONNECTION = {
+  connected: ["plug", "Action server connected"],
+  queued: ["unplug", "Action server offline. Clicks are queued for the next run."],
+  checking: ["dashed", "Checking the action server"],
+};
+
+function renderConnection() {
+  const [name, label] = CONNECTION[state.server] || CONNECTION.checking;
+  els.conn.dataset.state = state.server;
+  els.conn.replaceChildren(icon(name, label, "lg"));
+}
+
+function setServer(s) {
+  if (state.server === s) return;
+  state.server = s;
+  renderConnection();
+}
+
+const controls = { button: null, panel: null };
+
+function setPanelOpen(open, returnFocus) {
+  controls.panel.hidden = !open;
+  controls.button.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) controls.panel.querySelector("input, button").focus();
+  else if (returnFocus) controls.button.focus();
+}
+
+function buildFilters() {
+  const f = state.filters;
+  const changed = () => {
+    saveFilters();
+    render();
+  };
+  const chip = (content, on, toggle, title) => {
+    const b = h("button", { class: "chip", type: "button", title, "aria-pressed": on ? "true" : "false" }, content);
+    b.addEventListener("click", () => {
+      toggle();
+      b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
+      changed();
+    });
+    return b;
+  };
+  const toggleIn = (arr, v) => {
+    const i = arr.indexOf(v);
+    if (i >= 0) arr.splice(i, 1); else arr.push(v);
+  };
+  const group = (label, ...kids) => h("div", { class: "fpanel-group", role: "group", "aria-label": label },
+    h("p", { class: "fpanel-label", text: label }), h("div", { class: "fgroup" }, kids));
+
+  const search = h("input", {
+    class: "search", id: "filter-text", type: "search", placeholder: "Search title, author, number, label",
+    "aria-label": "Search", value: f.text,
+  });
+  let t;
+  search.addEventListener("input", () => {
+    f.text = search.value;
+    clearTimeout(t);
+    t = setTimeout(changed, 150);
+  });
+
+  const sortButtons = SORTS.map((o) => h("button", {
+    class: "chip", type: "button", "aria-pressed": f.sort === o.id ? "true" : "false", text: o.label,
+    onclick: () => {
+      f.sort = o.id;
+      for (const [i, b] of sortButtons.entries()) b.setAttribute("aria-pressed", SORTS[i].id === f.sort ? "true" : "false");
+      changed();
+    },
+  }));
+
+  const budgetButtons = BUDGET_HOURS.map((n) => h("button", {
+    class: "chip", type: "button", "aria-pressed": f.budget === n ? "true" : "false", text: n + " h",
+    onclick: () => {
+      f.budget = n;
+      for (const [i, b] of budgetButtons.entries()) b.setAttribute("aria-pressed", BUDGET_HOURS[i] === f.budget ? "true" : "false");
+      changed();
+    },
+  }));
+
+  const hiddenBox = h("input", { type: "checkbox", id: "show-hidden", checked: f.showHidden });
+  hiddenBox.addEventListener("change", () => {
+    f.showHidden = hiddenBox.checked;
+    changed();
+  });
+
+  const panel = h("div", { class: "fpanel", id: "fpanel", role: "dialog", "aria-label": "Search, filter and sort", hidden: true },
+    search,
+    group("Kind", KINDS.map((k) => chip([icon(k.icon), k.label], f.kinds.includes(k.id), () => toggleIn(f.kinds, k.id)))),
+    group("Author", AUTHOR_TYPES.map((a) => chip(a, f.authors.includes(a), () => toggleIn(f.authors, a)))),
+    group("Sort", sortButtons),
+    group("Time for today", budgetButtons),
+    h("label", { class: "toggle", for: "show-hidden" }, hiddenBox, "Show dismissed and snoozed"));
+
+  const button = h("button", {
+    class: "iconbtn ctl-btn", type: "button", "aria-label": "Search, filter and sort", title: "Search, filter and sort",
+    "aria-expanded": "false", "aria-controls": "fpanel",
+  }, icon("sliders", null, "lg"));
+  button.addEventListener("click", () => setPanelOpen(panel.hidden, false));
+  panel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setPanelOpen(false, true);
+    }
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!panel.hidden && !els.filters.contains(e.target)) setPanelOpen(false, false);
+  });
+
+  controls.button = button;
+  controls.panel = panel;
+  els.filters.replaceChildren(button, panel);
+}
+
+// ---------- groups ----------
+
+const groupEls = new Map();
+const planEls = {};
+
+function buildSections() {
+  planEls.fill = h("span", { class: "bar-fill" });
+  planEls.bar = h("span", { class: "bar", role: "progressbar", "aria-label": "Time spent today", "aria-valuemin": "0" }, planEls.fill);
+  planEls.spent = h("span", { class: "sum" });
+  planEls.doneText = h("span", { text: "The plan for today is done." });
+  planEls.add = h("button", { class: "btn small", type: "button", text: "Add more" });
+  planEls.add.addEventListener("click", () => {
+    const f = state.filters;
+    const today = dayKey(Date.now());
+    f.extra = { day: today, hours: (f.extra && f.extra.day === today ? f.extra.hours : 0) + 1 };
+    saveFilters();
+    render();
+  });
+  planEls.done = h("span", { class: "plan-done" }, planEls.doneText, planEls.add);
+  planEls.el = h("div", { class: "plan", id: "plan" }, planEls.bar, planEls.spent, planEls.done);
+
+  for (const g of GROUPS) {
+    const list = h("div", { class: "list" });
+    const empty = h("p", { class: "empty-section", text: "Nothing here." });
+    const more = h("button", { class: "btn quiet show-all", type: "button", text: "Show more" });
+    more.addEventListener("click", () => {
+      state.reveal.set(g.id, (state.reveal.get(g.id) || 0) + REVEAL_STEP);
+      render();
+    });
+    const el = h("section", { class: "section group group-" + g.id, id: "group-" + g.id, "aria-labelledby": "group-title-" + g.id },
+      h("div", { class: "sec-head" }, h("h2", { id: "group-title-" + g.id, text: g.name })),
+      list, empty, more);
+    groupEls.set(g.id, { el, list, empty, more });
+  }
+}
+
+// ---------- shared pieces ----------
+
+function sameDeps(a, b) {
+  return a && a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+function authorTypeOf(d) {
+  return AUTHOR_TYPES.includes(d.authorType) ? d.authorType : "contributor";
+}
+
+function severityClass(sev) {
+  const s = str(sev).toLowerCase();
+  if (s === "blocker" || s === "critical" || s === "high") return "bad";
+  if (s === "major" || s === "medium" || s === "warning") return "warn";
+  return "";
+}
+
+// Text with `backtick` spans as inline code, built from DOM nodes. An unmatched backtick stays plain text.
+function richText(text) {
+  const parts = str(text).split("`");
+  if (parts.length % 2 === 0) parts.push(parts.splice(-2).join("`"));
+  return parts.map((part, i) => (i % 2 ? h("code", { class: "ic", text: part }) : part)).filter((p) => p !== "");
+}
+
+const REVIEW_LOOK = {
+  approved: ["check", "ok", "Approved"],
+  changes_requested: ["changes", "bad", "Changes requested"],
+  commented: ["comments", "muted", "Commented"],
+  dismissed: ["x", "faint", "Dismissed"],
+  pending: ["hourglass", "faint", "Review requested"],
+};
+
+function reviewerName(login) {
+  return /^copilot-pull-request-reviewer(\[bot\])?$/i.test(login) ? "Copilot" : login;
+}
+
+// One badge per reviewer. A submitted review links to GitHub, a requested one does not.
+function reviewBadges(d) {
+  const reviews = Array.isArray(d.reviews) ? d.reviews.filter((r) => r && typeof r === "object") : [];
+  return reviews.map((r) => {
+    const st = Object.hasOwn(REVIEW_LOOK, r.state) ? r.state : "commented";
+    const [ic, cls, words] = REVIEW_LOOK[st];
+    const login = str(r.author);
+    const name = reviewerName(login) || "unknown";
+    const count = Number.isInteger(r.openThreadCount) && r.openThreadCount > 0 ? r.openThreadCount : 0;
+    const when = relTime(r.submittedAt);
+    const tip = name + ": " + words + (when ? ", " + when : "") + (count ? ". " + count + " open comment" + (count === 1 ? "" : "s") + "." : "");
+    const kids = [avatarEl(login), h("span", { class: "rv-name", text: name }), count ? h("span", { class: "rv-count", text: "· " + count }) : null, icon(ic, words, cls)];
+    if (st !== "pending" && isGithubUrl(r.url)) {
+      return h("a", { class: "rv rv-" + st, href: r.url, target: "_blank", rel: "noopener noreferrer", title: tip }, kids);
+    }
+    return h("span", { class: "rv rv-" + st, title: tip }, kids);
+  });
+}
+
+const THREAD_LOOK = {
+  valid: ["fix", "bad"],
+  optional: ["optional", ""],
+  wrong: ["not needed", "faint"],
+  unjudged: ["not judged", "faint"],
+};
+
+// Open review threads with the agent's gist and judgement. The raw comment body is never shown.
+function buildThreads(threads) {
+  const list = Array.isArray(threads) ? threads.filter((t) => t && typeof t === "object") : [];
+  if (!list.length) return null;
+  const verdictOf = (t) => (Object.hasOwn(THREAD_LOOK, t.verdict) ? t.verdict : "unjudged");
+  const counts = {};
+  for (const t of list) if (verdictOf(t) !== "unjudged") counts[verdictOf(t)] = (counts[verdictOf(t)] || 0) + 1;
+  const parts = ["valid", "optional", "wrong"].filter((v) => counts[v]).map((v) => counts[v] + " " + v);
+  return h("details", { class: "threads" },
+    h("summary", { "data-focus-key": "threads" }, list.length + " open review comment" + (list.length === 1 ? "" : "s"),
+      parts.length ? h("span", { class: "t-counts", text: parts.join(" · ") }) : null),
+    h("ul", null, list.map((t) => {
+      const [label, cls] = THREAD_LOOK[verdictOf(t)];
+      const where = str(t.path) + (Number.isInteger(t.line) ? ":" + t.line : "");
+      const refKids = [reviewerName(str(t.author)) || "unknown", where ? " · " : null, where ? h("code", { text: where }) : null];
+      return h("li", null,
+        h("span", { class: "sev " + cls, text: label }),
+        h("span", { class: "f-body" },
+          h("span", { class: "t-summary" }, richText(str(t.summary) || "No summary yet.")),
+          str(t.note) ? h("span", { class: "t-note" }, richText(t.note)) : null,
+          isGithubUrl(t.url)
+            ? h("a", { class: "t-ref", href: t.url, target: "_blank", rel: "noopener noreferrer", title: "Open this comment on GitHub" }, refKids)
+            : h("span", { class: "t-ref" }, refKids)));
+    })));
+}
+
+function buildFindings(findings) {
+  if (!Array.isArray(findings) || !findings.length) return null;
+  const counts = {};
+  for (const f of findings) {
+    const s = str(f && f.severity) || "note";
+    counts[s] = (counts[s] || 0) + 1;
+  }
+  const parts = Object.entries(counts).map(([s, n]) => n + " " + s);
+  return h("details", { class: "findings" },
+    h("summary", { "data-focus-key": "findings", text: findings.length + (findings.length === 1 ? " finding" : " findings") + " (" + parts.join(", ") + ")" }),
+    h("ul", null, findings.map((f) => {
+      const sev = str(f && f.severity) || "note";
+      return h("li", null,
+        h("span", { class: "sev " + severityClass(sev), text: sev }),
+        h("span", { class: "f-body" },
+          h("span", { class: "f-text" }, richText(f && f.text)),
+          f && f.ref ? h("span", { class: "fref", text: str(f.ref) }) : null));
+    })));
+}
+
+function buildLinks(links) {
+  if (!Array.isArray(links) || !links.length) return null;
+  return h("div", { class: "links" }, links.map((l, i) => {
+    const label = str(l && l.label) || str(l && l.url);
+    if (isGithubUrl(l && l.url)) {
+      const a = ghLink(l.url, null);
+      a.append(icon("link"), label);
+      a.dataset.focusKey = "link:" + i;
+      return a;
+    }
+    return h("span", { class: "blocked", title: "Only github.com links open from the board" }, icon("link"), label);
+  }));
+}
+
+function statusLine(id) {
+  const note = state.notes.get(id);
+  if (state.busy.has(id)) {
+    return h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the action server" }));
+  }
+  if (note) {
+    return h("div", { class: "status " + note.kind }, icon(note.kind === "failed" ? "alert" : "check"), h("span", { text: note.text }));
+  }
+  const a = state.latestAction.get(id);
+  if (!a) return null;
+  const name = ACTION_NAMES[a.action] || str(a.action);
+  const when = timeEl(a.finishedAt || a.createdAt);
+  if (a.status === "queued") {
+    const forAgent = AGENT_ACTIONS.has(a.action);
+    const analyzing = a.action === "full_review" || a.action === "reanalyze";
+    const text = forAgent ? (analyzing ? "The agent is analyzing it again" : "The agent is on it") : "Queued for next run: " + name;
+    return h("div", { class: "status queued" }, icon("queued"), h("span", { text }), when);
+  }
+  if (a.status === "done") {
+    const r = str(a.result);
+    return h("div", { class: "status done" },
+      icon("check"),
+      h("span", { text: "Done: " + name }),
+      isGithubUrl(r) ? ghLink(r, "view on GitHub") : r ? h("span", { text: r }) : null,
+      when);
+  }
+  if (a.status === "failed") {
+    return h("div", { class: "status failed" },
+      icon("alert"), h("span", { text: "Failed: " + name + (a.result ? ". " + str(a.result) : "") }), when);
+  }
+  return null;
+}
+
+// Icons that describe an item's state, most important first. Each entry is [icon, class, label, text]
+function stateIcons(id, d, dim, withPassing) {
+  const out = [];
+  // Entries are [icon, class, tooltip, inline text, badge text]. The dialog shows the badge text, list rows only the icon.
+  if (state.busy.has(id)) out.push(["send", "muted", "Sending to the action server", null, "Sending"]);
+  else {
+    const a = state.latestAction.get(id);
+    const name = a ? ACTION_NAMES[a.action] || str(a.action) : "";
+    if (a && a.status === "queued") out.push(["queued", "warn", "Queued for next run: " + name, null, "Queued"]);
+    else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
+    else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", "Done: " + name, null, "Done: " + name]);
+  }
+  const open = !isClosedThread(id, d);
+  if (d.kind === "pr" && d.ci === "failing") out.push(["ciFail", "bad", "CI failing"]);
+  const openThreads = Array.isArray(d.threads) ? d.threads.filter((t) => t && typeof t === "object").length : 0;
+  if (openThreads) out.push(["comments", "muted", openThreads + " open review comment" + (openThreads === 1 ? "" : "s"), String(openThreads), openThreads + " open comment" + (openThreads === 1 ? "" : "s")]);
+  if (d.kind === "pr" && d.ci === "pending") out.push(["dashed", "warn", "CI pending"]);
+  if (withPassing && d.kind === "pr" && d.ci === "passing") out.push(["ciPass", "ok", "CI passing"]);
+  if (open && d.solved === true && !(d.kind === "discussion" && d.isAnswered === true)) out.push(["solved", "muted", "Looks solved, still open", null, "Looks solved"]);
+  if (d.reviewDepth === "pending") out.push(["eye", "muted", "Not analyzed yet", null, "Not analyzed yet"]);
+  if (d.hidden === true) out.push(["archive", "muted", "Dismissed"]);
+  else if (dim && withPassing) {
+    const until = new Date(parseTime(d.snoozedUntil)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    out.push(["moon", "muted", "Snoozed until " + until, null, "Snoozed until " + until]);
+  }
+  return out;
+}
+
+// Dialog badge: icon plus a few words, tinted in the icon's color family
+function stateBadge([name, cls, label, , short]) {
+  return h("span", { class: "sbadge tone-" + (cls || "muted"), title: label }, icon(name, null), short || label);
+}
+
+function iconEntry([name, cls, label, text]) {
+  const svg = icon(name, label, cls);
+  return text ? h("span", { class: "wait " + cls }, svg, text) : svg;
+}
+
+const LOGIN_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
+
+function avatarEl(login, url) {
+  const placeholder = () => h("span", { class: "avatar ph", "aria-hidden": "true", "data-letter": (login[0] || "?").toUpperCase() });
+  if (!LOGIN_PATTERN.test(login)) return placeholder();
+  const img = document.createElement("img");
+  img.className = "avatar";
+  img.alt = "";
+  img.width = 18;
+  img.height = 18;
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.referrerPolicy = "no-referrer";
+  img.addEventListener("error", () => img.replaceWith(placeholder()), { once: true });
+  img.src = typeof url === "string" && /^https:\/\/(github\.com|avatars\.githubusercontent\.com)\//.test(url) ? url : "https://github.com/" + login + ".png?size=40";
+  return img;
+}
+
+function authorEl(d, cls, withType = true) {
+  const login = str(d.author);
+  const type = AUTHOR_ICONS[authorTypeOf(d)];
+  return h("span", { class: cls, title: login + (type ? ", " + type[1].toLowerCase() : "") },
+    avatarEl(login),
+    login ? h("span", { class: "a-name", text: login }) : null,
+    withType && type ? icon(type[0], type[1], "muted") : null);
+}
+
+function finishedBy(id) {
+  const a = state.latestAction.get(id);
+  return a && a.status === "done" && (a.action === "merge" || a.action === "close") ? a : null;
+}
+
+// GitHub state of the thread: a done merge or close from the board, or the server's latest read.
+function threadState(id, d) {
+  const a = finishedBy(id);
+  if (a) {
+    if (a.action === "merge") return { state: "MERGED", reason: null };
+    const reason = a.params && typeof a.params === "object" && a.params.reason === "not_planned" ? "NOT_PLANNED" : "COMPLETED";
+    return { state: "CLOSED", reason };
+  }
+  const live = d.liveState && typeof d.liveState === "object" ? d.liveState : null;
+  if (live && (live.state === "CLOSED" || live.state === "MERGED")) return { state: live.state, reason: str(live.reason) || null };
+  return { state: "OPEN", reason: null };
+}
+
+function isClosedThread(id, d) {
+  return threadState(id, d).state !== "OPEN";
+}
+
+// Kind icon: GitHub's state, and for open PRs whether they can be merged. Returns [icon, class, label]
+function kindStatus(id, d) {
+  const t = threadState(id, d);
+  if (d.kind === "pr") {
+    if (t.state === "MERGED") return ["prMerged", "violet", "Pull request, merged"];
+    if (t.state === "CLOSED") return ["prClosed", "bad", "Pull request, closed"];
+    if (d.isDraft === true) return ["prDraft", "faint", "Pull request, draft"];
+    // Open PRs show mergeability on the kind icon. The conflict shape has a warning triangle, the closed shape an X.
+    if (d.mergeable === "conflicting") return ["prConflict", "bad", "Pull request, has conflicts"];
+    if (d.mergeable === "mergeable" && d.ci !== "failing") return ["pr", "ok", "Pull request, ready"];
+    return ["pr", "muted", "Pull request, open"];
+  }
+  if (d.kind === "discussion") {
+    if (t.state !== "OPEN") return ["discClosed", "violet", "Discussion, closed"];
+    if (d.isAnswered === true) return ["discSolved", "ok", "Discussion, answered"];
+    return ["discussion", "neutral", "Discussion, open"];
+  }
+  if (t.state !== "OPEN") {
+    return t.reason === "NOT_PLANNED"
+      ? ["issueSlash", "faint", "Issue, closed as not planned"]
+      : ["issueSolved", "violet", "Issue, closed as completed"];
+  }
+  return ["issue", "ok", "Issue, open"];
+}
+
+function reviewStatus(d) {
+  if (d.kind !== "pr") return null;
+  if (d.reviewDecision === "approved") return ["check", "ok", "Review approved"];
+  if (d.reviewDecision === "changes_requested") return ["changes", "warn", "Changes requested"];
+  if (d.reviewDecision === "pending") return ["hourglass", "faint", "Review pending"];
+  return null;
+}
+
+function isSnoozed(d) {
+  return d.hidden !== true && isHiddenItem(d);
+}
+
+function categoryOf(d) {
+  if (isSnoozed(d)) return { id: "snoozed", label: "Snoozed" };
+  const s = sectionOf(d);
+  return { id: s, label: SECTIONS[SECTION_ORDER.get(s)].category };
+}
+
+function categoryChip(d) {
+  const cat = categoryOf(d);
+  return h("span", { class: "cat cat-" + cat.id, text: cat.label });
+}
+
+function groupOf(d) {
+  if (isHiddenItem(d)) return "later";
+  const s = sectionOf(d);
+  return GROUPS.find((g) => g.sections.includes(s)).id;
+}
+
+// ---------- rows ----------
+
+const MAX_ROW_ICONS = 3;
+
+function effortEl(d) {
+  const e = effortOf(d);
+  if (!e) return h("span", { class: "r-effort" });
+  const hours = e >= 60 && e % 60 === 0;
+  return h("span", { class: "r-effort", title: "Estimated time to read up and decide" },
+    h("b", { text: String(hours ? e / 60 : e) }), h("small", { text: hours ? "h" : "min" }));
+}
+
+function buildRow(id, d, dim, slot) {
+  const title = str(d.title) || "(no title)";
+  const hint = str(d.hint).trim() || str(recommendedRoute(d)?.title).trim();
+  const review = reviewStatus(d);
+  const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
+  const type = AUTHOR_ICONS[authorTypeOf(d)];
+  if (type) icons.push(icon(type[0], type[1], "muted"));
+  const meta = icons.length ? h("span", { class: "r-meta" }, icons) : null;
+  return h("button", {
+    class: "row" + (dim ? " dim" : ""), type: "button", "data-id": id, "data-slot": slot, "aria-haspopup": "dialog",
+    onclick: (e) => openDetail(id, e.currentTarget),
+  },
+    h("span", { class: "r-kind" }, iconEntry(kindStatus(id, d))),
+    h("span", { class: "r-rev" }, review ? iconEntry(review) : null),
+    h("span", { class: "r-num", text: "#" + str(d.number) }),
+    h("span", { class: "r-cat" }, categoryChip(d)),
+    h("span", { class: "r-main" },
+      h("span", { class: "r-title", title, text: title }),
+      hint ? hintEl(hint) : null),
+    authorEl(d, "r-author", false),
+    meta,
+    effortEl(d),
+    ageEl(d));
+}
+
+const HINT_ACTIONS = [
+  "Request changes", "Start fix", "Take over", "Apply fixes",
+  "Merge", "Reply", "Approve", "Close", "Decide", "Review", "Ask", "React", "Snooze", "Dismiss",
+];
+
+// Split a hint into its action and the rest, so the action can be bold
+function hintParts(hint) {
+  const colon = hint.indexOf(":");
+  if (colon > 0) return [hint.slice(0, colon), hint.slice(colon)];
+  const phrase = HINT_ACTIONS.find((a) => hint.startsWith(a) && (hint.length === a.length || /[\s,.;!?]/.test(hint[a.length])));
+  if (phrase) return [phrase, hint.slice(phrase.length)];
+  const space = hint.search(/\s/);
+  return space < 0 ? [hint, ""] : [hint.slice(0, space), hint.slice(space)];
+}
+
+// One intent per kind of action, shared by hint verbs in the list and action buttons in the dialog
+const INTENTS = [
+  ["finish", ["merge", "approve"], ["Merge", "Approve"]],
+  ["close", ["close"], ["Close"]],
+  ["talk", ["comment", "review_comment", "react", "answer_discussion"], ["Reply", "Ask", "React"]],
+  ["push", ["request_changes"], ["Request changes"]],
+  ["think", [], ["Decide", "Review"]],
+  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Apply fixes", "Start fix", "Drive", "Analyze"]],
+  ["away", ["snooze", "dismiss"], ["Snooze", "Dismiss"]],
+];
+
+function intentOf(action) {
+  const hit = INTENTS.find(([, actions]) => actions.includes(action));
+  return hit ? hit[0] : "other";
+}
+
+function hintGroup(verb) {
+  const a = verb.trim().toLowerCase();
+  const hit = INTENTS.find(([, , verbs]) => verbs.some((v) => a === v.toLowerCase() || a.startsWith(v.toLowerCase() + " ")));
+  return hit ? hit[0] : null;
+}
+
+// Who acts on a step, shown inside its button: the bot's avatar, the maintainer's avatar, or the agent icon
+function actorMark(actor) {
+  if (actor === "agent") return icon("sparkles", null, "actor-icon");
+  const account = actor === "bot" ? boardCap.bot : boardCap.me;
+  if (!account || !str(account.login)) return icon(actor === "bot" ? "bot" : "user", null, "actor-icon");
+  return avatarEl(str(account.login), account.avatarUrl);
+}
+
+function hintEl(hint) {
+  const [action, rest] = hintParts(hint);
+  const group = hintGroup(action);
+  return h("span", { class: "r-hint" + (group ? " act-" + group : "") },
+    icon("nextStep"),
+    h("span", null, h("span", { class: "h-act", text: action }), rest ? richText(rest) : null));
+}
+
+// Show how long someone has waited when that matters, otherwise the plain age
+function ageEl(d) {
+  const waiting = waitingOf(d);
+  if (waiting != null && waiting >= WAITING_CHIP_DAYS) {
+    const updated = relTime(d.updatedAt);
+    const label = "Waited " + waiting + " days for an answer" + (updated ? ". Updated " + updated + "." : ".");
+    return h("span", { class: "r-age" }, iconEntry(["clock", "warn", label, waiting + "d"]));
+  }
+  return h("span", { class: "r-age" }, timeEl(d.updatedAt, "", true) || "");
+}
+
+function visibleRows() {
+  return [...document.querySelectorAll("#board .row")];
+}
+
+function findRow(id, slot) {
+  const rows = [...document.querySelectorAll(".row")].filter((r) => r.dataset.id === id);
+  return rows.find((r) => r.dataset.slot === slot) || rows[0] || null;
+}
+
+function renderList() {
+  const a = document.activeElement;
+  const focused = a && a.classList && a.classList.contains("row") ? [a.dataset.id, a.dataset.slot] : null;
+  const sorter = state.filters.sort === "quickest" ? compareQuickest : compareItems;
+
+  const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
+  for (const [id, d] of state.items) {
+    if (d.hidden === true && !state.filters.showHidden) continue;
+    if (!matchesFilters(d)) continue;
+    const dim = isHiddenItem(d);
+    const order = isSnoozed(d) ? SECTIONS.length : SECTION_ORDER.get(sectionOf(d));
+    byGroup.get(groupOf(d)).push({ id, data: d, dim, order, planned: false });
+  }
+  for (const rows of byGroup.values()) rows.sort((x, y) => x.order - y.order || sorter(x, y));
+
+  // Fill the plan in group order and skip items that do not fit the remaining time
+  const budget = budgetMinutes();
+  const spent = spentMinutes();
+  let left = budget - spent;
+  let skipped = false;
+  let planned = 0;
+  for (const g of GROUPS) {
+    for (const r of byGroup.get(g.id)) {
+      if (r.dim || handledToday(r.id) || finishedBy(r.id)) continue;
+      const e = planEffort(r.data);
+      if (e > left) {
+        skipped = true;
+        continue;
+      }
+      left -= e;
+      r.planned = true;
+      planned++;
+    }
+  }
+
+  const ratio = budget > 0 ? Math.min(1, spent / budget) : 0;
+  planEls.fill.style.width = (ratio * 100).toFixed(1) + "%";
+  planEls.bar.setAttribute("aria-valuemax", String(budget));
+  planEls.bar.setAttribute("aria-valuenow", String(Math.min(spent, budget)));
+  planEls.spent.textContent = formatSpent(spent) + " of " + formatEffort(budget);
+  planEls.bar.setAttribute("aria-valuetext", planEls.spent.textContent);
+  planEls.done.hidden = !(planned === 0 && (spent > 0 || skipped) && state.loaded.items);
+
+  for (const g of GROUPS) {
+    const rows = byGroup.get(g.id);
+    const ordered = [...rows.filter((r) => r.planned), ...rows.filter((r) => !r.planned)];
+    const plannedHere = rows.length - rows.filter((r) => !r.planned).length;
+    const shown = Math.min(plannedHere, g.cap) + (state.reveal.get(g.id) || 0);
+    const sec = groupEls.get(g.id);
+    sec.list.replaceChildren(...ordered.slice(0, shown).map(({ id, data, dim }) => buildRow(id, data, dim, g.id)));
+    sec.list.hidden = shown === 0 || ordered.length === 0;
+    sec.empty.hidden = ordered.length > 0 || !state.loaded.items;
+    sec.more.hidden = ordered.length <= shown;
+  }
+
+  // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
+  for (const m of els.board.querySelectorAll(".r-meta")) {
+    while (m.children.length > 1 && m.scrollWidth > m.clientWidth + 1) m.lastElementChild.remove();
+  }
+
+  if (focused) {
+    const r = findRow(focused[0], focused[1]);
+    if (r) r.focus({ preventScroll: true });
+  }
+}
+
+// ---------- detail dialog ----------
+
+// Use JS auto-grow where the browser lacks `field-sizing: content`
+const AUTO_SIZE = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("field-sizing", "content");
+
+const detail = {
+  el: document.getElementById("detail"),
+  ref: document.getElementById("d-ref"),
+  title: document.getElementById("detail-title"),
+  meta: document.getElementById("d-meta"),
+  body: document.getElementById("d-body"),
+  verdict: document.getElementById("d-verdict"),
+  story: document.getElementById("d-story"),
+  findings: document.getElementById("d-findings"),
+  support: document.querySelector("#detail .d-support"),
+  linksSec: document.getElementById("d-links-sec"),
+  links: document.getElementById("d-links"),
+  routes: document.getElementById("d-routes"),
+  cards: new Map(),
+  openRoute: null,
+  lastRoute: null,
+  zGh: document.getElementById("z-gh"),
+  reviews: document.getElementById("d-reviews"),
+  threads: document.getElementById("d-threads"),
+  meNotes: new Map(),
+  rounds: document.getElementById("d-rounds"),
+  analyze: document.getElementById("d-analyze"),
+  foot: document.getElementById("d-foot"),
+  threadsOpen: false,
+  lastZone: null,
+  id: null,
+  rowIndex: -1,
+  rowSlot: null,
+  deps: new Map(),
+  findingsOpen: true,
+  pendingFocus: null,
+  zoneCtl: null,
+};
+
+function partChanged(name, deps) {
+  if (sameDeps(detail.deps.get(name), deps)) return false;
+  detail.deps.set(name, deps);
+  return true;
+}
+
+function grow(ta) {
+  if (AUTO_SIZE || !ta.isConnected || !detail.el.open) return;
+  const top = detail.body.scrollTop;
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight + 2, Math.round(window.innerHeight * 0.6)) + "px";
+  detail.body.scrollTop = top;
+}
+
+function renderDetailHead(d, dim) {
+  const ref = ghLink(d.url, "#" + str(d.number), "ref");
+  ref.dataset.focusKey = "head:link";
+  if (ref.tagName === "A") ref.title = "Open on GitHub";
+  // Review badges below the verdict replace the single review icon in the dialog
+  const review = Array.isArray(d.reviews) && d.reviews.length ? null : reviewStatus(d);
+  const kind = kindStatus(detail.id, d);
+  const words = kind[2].split(", ").slice(1).join(", ");
+  detail.ref.replaceChildren(iconEntry(kind), review ? iconEntry(review) : "", ref,
+    words ? h("span", { class: "kind-words " + kind[1], text: words.charAt(0).toUpperCase() + words.slice(1) }) : null, categoryChip(d));
+  detail.title.textContent = str(d.title) || "(no title)";
+
+  const labels = Array.isArray(d.labels) ? d.labels : [];
+  const waiting = waitingOf(d);
+  const badges = stateIcons(detail.id, d, dim, true).map(stateBadge);
+  const type = AUTHOR_ICONS[authorTypeOf(d)];
+  const meta = [
+    effortOf(d) ? h("span", { class: "tag effort", title: "Estimated time to read up and decide", text: formatEffort(effortOf(d)) }) : null,
+    waiting != null ? iconEntry(["clock", waiting >= WAITING_CHIP_DAYS ? "warn" : "muted", "An outside person has waited " + waiting + " days for an answer", waiting + "d"]) : null,
+    authorEl(d, "d-author", false),
+    type ? stateBadge([type[0], "muted", type[1], null, type[1]]) : null,
+    badges,
+    labels.map((l) => h("span", { class: "tag label", text: str(l) })),
+    timeEl(d.updatedAt, "updated "),
+  ].flat().filter(Boolean);
+  detail.meta.replaceChildren(...meta);
+}
+
+function renderDetailInfo(d) {
+  const verdict = str(d.state);
+  detail.verdict.replaceChildren(...richText(verdict));
+  const story = str(d.story).trim();
+  // A blank line starts a new paragraph
+  detail.story.replaceChildren(...story.split(/\n\s*\n/).map((para) => h("p", null, richText(para))));
+  detail.story.hidden = !story;
+  detail.verdict.hidden = !verdict;
+  renderRounds(d);
+
+  const badges = reviewBadges(d);
+  detail.reviews.replaceChildren(...badges);
+  detail.reviews.hidden = badges.length === 0;
+  // An address_review route lists the threads on its card
+  const threads = routesOf(d).some((r) => r.type === "address_review") ? null : buildThreads(d.threads);
+  if (threads) {
+    threads.open = detail.threadsOpen;
+    threads.addEventListener("toggle", () => { detail.threadsOpen = threads.open; });
+  }
+  detail.threads.replaceChildren(...(threads ? [threads] : []));
+  detail.threads.hidden = !threads;
+
+  // Findings that belong to a route show on its card
+  const loose = (Array.isArray(d.findings) ? d.findings : []).filter((f) => f && typeof f === "object" && !f.routeId);
+  const findings = buildFindings(loose);
+  if (findings) {
+    // More than three findings start collapsed
+    if (detail.findingsOpen === null) detail.findingsOpen = loose.length <= 3;
+    findings.open = detail.findingsOpen;
+    findings.addEventListener("toggle", () => { detail.findingsOpen = findings.open; });
+  }
+  detail.findings.replaceChildren(...(findings ? [findings] : []));
+  detail.findings.hidden = !findings;
+
+  const links = buildLinks(d.links);
+  detail.links.replaceChildren(...(links ? [links] : []));
+  detail.linksSec.hidden = !links;
+  detail.support.hidden = !findings && !links;
+}
+
+const REACTION_EMOJI = { THUMBS_UP: "👍", HEART: "❤️", HOORAY: "🎉", ROCKET: "🚀", EYES: "👀" };
+
+// ---------- saved drafts ----------
+
+// Typed step texts survive a reload. Keys are item, step and draft hash, so a rewritten draft drops the old text.
+// The draft hash each in-memory step draft was typed against
+const draftHashes = new Map();
+
+function readDraftStore() {
+  try {
+    const v = JSON.parse(localStorage.getItem(storeKey("drafts")) || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDraftStore(store) {
+  try {
+    localStorage.setItem(storeKey("drafts"), JSON.stringify(store));
+  } catch {
+    // Drafts then live only until the next reload
+  }
+}
+
+function saveDraft(itemId, stepId, hash, text) {
+  const store = readDraftStore();
+  store[itemId + "|" + stepId + "|" + hash] = text;
+  writeDraftStore(store);
+}
+
+function dropSavedDraft(itemId, stepId) {
+  const store = readDraftStore();
+  const prefix = itemId + "|" + stepId + "|";
+  for (const k of Object.keys(store)) if (k.startsWith(prefix)) delete store[k];
+  writeDraftStore(store);
+}
+
+function savedDraft(itemId, stepId, hash) {
+  const store = readDraftStore();
+  const prefix = itemId + "|" + stepId + "|";
+  let found = null;
+  let changed = false;
+  for (const k of Object.keys(store)) {
+    if (!k.startsWith(prefix)) continue;
+    if (k === prefix + hash && typeof store[k] === "string") found = store[k];
+    else {
+      delete store[k];
+      changed = true;
+    }
+  }
+  if (changed) writeDraftStore(store);
+  return found;
+}
+
+// ---------- route cards ----------
+
+// Allowed actors per route type. The first one is the default.
+const ROUTE_ACTORS = {
+  reply: ["me", "bot"],
+  request_logs: ["bot"],
+  close: ["me"],
+  reopen: ["bot", "me"],
+  merge: ["me"],
+  review: ["bot"],
+  address_review: ["agent"],
+  follow_up: ["agent", "bot", "me"],
+  take_over: ["agent"],
+  drive: ["agent"],
+  move: ["bot", "me"],
+  chore: ["bot"],
+};
+const CHORE_LABELS = {
+  label: "Change labels", assign: "Assign", ready: "Mark ready", answer_discussion: "Mark as answer",
+  react: "React", update_branch: "Update branch", rerun_ci: "Re-run CI",
+};
+const CLOSE_REASONS = { completed: "Completed", not_planned: "Not planned", duplicate: "Duplicate" };
+// Labels for the agent's verdict on a review thread, shown next to the maintainer's own decision
+const VERDICT_LABELS = {
+  valid: ["valid", "v-valid"],
+  optional: ["optional", "v-optional"],
+  wrong: ["not needed", "v-wrong"],
+  unjudged: ["not judged", "v-unjudged"],
+};
+
+// Routes the configured accounts can run. The server marks the others "unavailable".
+function routesOf(d) {
+  return (Array.isArray(d.routes) ? d.routes : [])
+    .filter((r) => r && typeof r === "object" && typeof r.id === "string" && Object.hasOwn(ROUTE_ACTORS, r.type))
+    // A move to another repo has one actor per button, so only its buttons decide
+    .filter((r) => r.actor === undefined || ROUTE_ACTOR_KINDS.has(r.actor) || (r.type === "move" && moveToRepo(r) && r.actors))
+    .filter((r) => r.type !== "move" || str(paramsOf(r).to) !== "issue" || escalateCommand() !== "")
+    .filter((r) => r.type !== "move" || !moveToRepo(r) || ["transfer", "close"].some((m) => moveActor(r, m) !== null));
+}
+
+function escalateCommand() {
+  return str(boardCap.botCommands.escalate).trim();
+}
+
+function recommendedRoute(d) {
+  const routes = routesOf(d);
+  return routes.find((r) => r.recommended === true) || routes[0] || null;
+}
+
+// "own" runs under the maintainer's GitHub login after the click, "me" is a prefill he finishes on GitHub
+const ROUTE_ACTOR_KINDS = new Set(["me", "bot", "own", "agent"]);
+
+function actorOf(r) {
+  if (ROUTE_ACTOR_KINDS.has(r.actor)) return r.actor;
+  const allowed = ROUTE_ACTORS[r.type];
+  return allowed.includes(r.as) ? r.as : allowed[0];
+}
+
+// The actor of one button of a move to another repo, or null when nobody can run it
+function moveActor(r, mode) {
+  const given = r.actors && typeof r.actors === "object" ? r.actors[mode] : undefined;
+  if (given === undefined) return ROUTE_ACTOR_KINDS.has(r.actor) ? r.actor : "bot";
+  return ROUTE_ACTOR_KINDS.has(given) ? given : null;
+}
+
+function paramsOf(r) {
+  return r.params && typeof r.params === "object" && !Array.isArray(r.params) ? r.params : {};
+}
+
+function hasText(r) {
+  return str(r.text).trim() !== "";
+}
+
+// A move to another repo, on an issue. Discussions and issues moving to a discussion go through GitHub by hand.
+function moveToRepo(r) {
+  const to = str(paramsOf(r).to);
+  return to !== "" && to !== "discussion" && to !== "issue";
+}
+
+function routeIntent(r) {
+  const p = paramsOf(r);
+  switch (r.type) {
+    case "merge": return "finish";
+    case "close": return "close";
+    case "review": return p.event === "approve" ? "finish" : p.event === "request_changes" ? "push" : "talk";
+    case "reply":
+    case "request_logs": return "talk";
+    case "address_review":
+    case "take_over":
+    case "drive": return "agent";
+    case "follow_up": return actorOf(r) === "agent" ? "agent" : "talk";
+    case "chore": return intentOf(str(p.action));
+    default: return "other";
+  }
+}
+
+// A route without text or choices is one row with its button. Everything else is a card that expands.
+function routeCompact(r) {
+  switch (r.type) {
+    case "chore": return true;
+    case "merge":
+    case "close":
+    case "reopen": return !hasText(r);
+    case "move": return !moveToRepo(r) || !hasText(r);
+    default: return false;
+  }
+}
+
+function routeHasEditor(r) {
+  switch (r.type) {
+    case "reply":
+    case "request_logs":
+    case "review":
+    case "address_review":
+    case "take_over":
+    case "follow_up": return true;
+    case "close":
+    case "reopen":
+    case "merge":
+    case "move": return hasText(r);
+    default: return false;
+  }
+}
+
+function editorLabel(r) {
+  const as = actorOf(r);
+  if (r.type === "address_review") return "Note for the whole run (optional)";
+  if (r.type === "take_over" || (r.type === "follow_up" && as === "agent")) return "Instructions for the agent (optional)";
+  if (r.type === "follow_up") return "Issue text";
+  if (r.type === "review") return "Review summary";
+  if (r.type === "move") return "Comment before closing";
+  if (r.type === "reopen" && as !== "me") return "Comment before reopening";
+  return null;
+}
+
+function editorRows(r) {
+  if (r.type === "request_logs") return 8;
+  const label = editorLabel(r);
+  return label && label.endsWith("(optional)") ? 3 : 6;
+}
+
+// The buttons of a card. Most routes have one. A move to another repo has two.
+function routeButtons(d, r) {
+  const as = actorOf(r);
+  const p = paramsOf(r);
+  const text = hasText(r);
+  const me = (label, extra = {}) => ({ id: "main", actor: "me", label, copy: "draft", ...extra });
+  const run = (label, extra = {}) => ({ id: "main", actor: as, label, ...extra });
+  const event = { approve: "Approve", request_changes: "Request changes", comment: "Comment" }[p.event] || "Submit review";
+  switch (r.type) {
+    case "reply": return [as === "me" ? me("Copy reply, open GitHub") : run("Post reply", { confirm: true, needsText: true })];
+    case "request_logs": return [as === "me" ? me("Copy request, open GitHub") : run("Ask for a debug log", { confirm: true, needsText: true })];
+    case "close": return [me(text ? "Copy reply, open GitHub to close" : "Open GitHub to close")];
+    case "merge": return [me(text ? "Copy text, open GitHub to merge" : "Open GitHub to merge")];
+    case "reopen": return [as === "me" ? me(text ? "Copy reply, open GitHub to reopen" : "Open GitHub to reopen")
+      : run("Reopen", { confirm: text, confirmVerb: "post and reopen" })];
+    case "review": return [as === "me" ? me("Copy review, open GitHub to " + event.toLowerCase()) : run(event, { confirm: true })];
+    case "address_review": return [{ id: "main", actor: "agent", label: "Address the review" }];
+    case "follow_up":
+      if (as === "agent") return [{ id: "main", actor: "agent", label: "Start fix" }];
+      if (as === "me") return [me("Open GitHub to file the issue", { copy: null })];
+      return [run("File issue", { confirm: true })];
+    case "take_over": return [{ id: "main", actor: "agent", label: p.mode === "replace" ? "Open a replacement PR" : "Take over" }];
+    case "drive": return [{ id: "main", actor: "agent", label: "Drive this PR" }];
+    case "move": {
+      if (str(p.to) === "discussion") return [me("Open GitHub to convert", { copy: null })];
+      if (str(p.to) === "issue") return [me("Copy escalate command, open GitHub", { copy: "escalate" })];
+      const out = [];
+      const ta = moveActor(r, "transfer");
+      if (ta) out.push({ id: "transfer", actor: ta, label: "Transfer to " + str(p.to), confirm: true, input: { mode: "transfer" } });
+      const ca = text ? moveActor(r, "close") : null;
+      if (ca === "me") out.push({ id: "close", actor: "me", label: "Copy text, open GitHub to close", copy: "draft", reveal: true });
+      else if (ca) out.push({ id: "close", actor: ca, label: "Close, ask to reopen there", confirm: true, reveal: true, needsText: true, confirmVerb: "post and close", input: { mode: "close" } });
+      return out;
+    }
+    case "chore": {
+      const label = CHORE_LABELS[p.action] || str(p.action) || "Run";
+      return [run(p.action === "react" ? (REACTION_EMOJI[p.content] || REACTION_EMOJI.THUMBS_UP) + " " + label : label)];
+    }
+    default: return [];
+  }
+}
+
+function confirmText(b) {
+  return "Confirm: " + (b.confirmVerb || b.label.toLowerCase()) + " as " + (b.actor === "own" ? "you" : botLogin());
+}
+
+function buttonTip(b) {
+  if (b.actor === "agent") return "The agent does this";
+  if (b.actor === "bot") return botLogin() + (b.confirm ? " does this after you confirm" : " does this now");
+  if (b.actor === "own") return "Runs right away under your GitHub login" + (b.confirm ? ", after you confirm" : "");
+  return b.copy ? "Copies the text and opens GitHub, you post it" : "Opens GitHub, you do it there";
+}
+
+function repoBase(d) {
+  if (isGithubUrl(str(boardCap.repoUrl))) return str(boardCap.repoUrl).replace(/\/$/, "");
+  const m = /^https:\/\/github\.com\/[^/]+\/[^/]+/.exec(str(d.url));
+  return m ? m[0] : "https://github.com";
+}
+
+// The GitHub page a route in his name opens
+function routeTarget(d, r, title, body) {
+  const url = str(d.url);
+  if (r.type === "follow_up") {
+    return repoBase(d) + "/issues/new?title=" + encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
+  }
+  if (r.type === "merge" || r.type === "move" || d.kind === "discussion") return url;
+  if (r.type === "review") return url + "/files";
+  return url + "#issuecomment-new";
+}
+
+// ---------- opened today ----------
+
+// Routes he opened on GitHub today, kept in this browser. The routine sees his real comment or merge on its next run.
+
+function openedKey(id, r) {
+  return [id, r.id, str(r.draftHash), dayKey(Date.now())].join("|");
+}
+
+function readOpened() {
+  try {
+    const v = JSON.parse(localStorage.getItem(storeKey("opened")) || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function openedToday(id, r) {
+  return readOpened()[openedKey(id, r)] === true;
+}
+
+function itemOpenedToday(id) {
+  const today = "|" + dayKey(Date.now());
+  return Object.keys(readOpened()).some((k) => k.startsWith(id + "|") && k.endsWith(today));
+}
+
+function markOpened(id, r) {
+  const store = readOpened();
+  const today = "|" + dayKey(Date.now());
+  // Keep only today's marks
+  for (const k of Object.keys(store)) if (!k.endsWith(today)) delete store[k];
+  store[openedKey(id, r)] = true;
+  try {
+    localStorage.setItem(storeKey("opened"), JSON.stringify(store));
+  } catch {
+    // Without storage the mark lasts until the next reload
+  }
+}
+
+// Project, repo and accounts from the board server. Nothing about one project is built into the page.
+let boardCap = { name: "", repo: "", repoUrl: "", me: null, bot: null, botCommands: {}, dryRun: false };
+
+const botLogin = () => str(boardCap.bot && boardCap.bot.login) || "the bot";
+
+// Copies the project's info in, names the page after it and moves this browser's old keys to the repo's own keys
+function applyBoardInfo(b) {
+  if (!b || typeof b !== "object") return;
+  boardCap = { ...boardCap, ...b, botCommands: b.botCommands && typeof b.botCommands === "object" ? b.botCommands : {} };
+  const repo = str(boardCap.repo);
+  if (/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    storagePrefix = "gary:" + repo + ":";
+    try {
+      // Move the keys of the tool's previous name once. The old prefix is assembled so the old name appears nowhere else
+      const oldPrefix = ["triage", "board"].join("-") + ":" + repo + ":";
+      const legacy = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || "";
+        if (k.startsWith(oldPrefix)) legacy.push(k);
+      }
+      for (const old of legacy) {
+        const v = localStorage.getItem(old);
+        const key = storagePrefix + old.slice(oldPrefix.length);
+        if (v !== null && localStorage.getItem(key) === null) localStorage.setItem(key, v);
+        localStorage.removeItem(old);
+      }
+    } catch {
+      // Without storage there is nothing to move
+    }
+  }
+  const name = str(boardCap.name).trim();
+  document.title = name ? name + " triage" : "Gary";
+  document.getElementById("board-title").textContent = name ? name + " triage" : "Gary";
+  document.getElementById("dry-run").hidden = boardCap.dryRun !== true;
+}
+
+// ---------- running a route ----------
+
+function confirmMode(id, key) {
+  const c = state.confirming.get(id);
+  return c === key ? "normal" : c === key + "!force" ? "force" : null;
+}
+
+// Maps a failed /api/action call to a readable note. Refusals carry their reason from the server.
+function routeFailure(e, r) {
+  if (e && e.code === "tool_error") {
+    const env = e.result;
+    const t = env && Array.isArray(env.content) ? env.content.find((c) => c && c.type === "text") : null;
+    const p = parseToolPayload(t && t.text);
+    // A repeated click on an agent route finds the first request still in the queue
+    if (p && p.duplicate === true && actorOf(r) === "agent") return "Already requested. The agent has it on its list.";
+    if (p) return resultString(p.result) || "The action failed.";
+  }
+  if (e && (e.code === "server_not_connected" || e.code === "server_not_found" || e.code === "bad_request")) {
+    return "The board server is not reachable. Nothing was sent.";
+  }
+  return "The board server did not confirm the result. Check GitHub before you click again.";
+}
+
+// Sends a bot or agent route to the server. The server reads type, actor and params from the item file and logs the click.
+async function runRoute(id, r, payload) {
+  if (state.busy.has(id)) return;
+  const key = "r:" + r.id;
+  detail.lastZone = "route";
+  detail.lastRoute = r.id;
+  state.notes.delete(id);
+  state.busy.add(id);
+  render();
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    await state.mcp.callTool(SERVER, r.type, {
+      itemId: id, routeId: r.id, text: str(payload.text), draftHash: str(r.draftHash),
+      force: payload.force === true, input: payload.input || {},
+    });
+    state.notes.set(id, { kind: "done", text: actorOf(r) === "agent" ? "The agent is on it" : "Done: " + str(r.title) });
+    state.drafts.delete(draftKey(id, key));
+    dropSavedDraft(id, r.id);
+    detail.openRoute = r.id;
+  } catch (e) {
+    state.notes.set(id, { kind: "failed", text: routeFailure(e, r) });
+  } finally {
+    state.busy.delete(id);
+    render();
+  }
+}
+
+// ---------- card building ----------
+// ---------- card building ----------
+
+function textEditor(id, r, key, label, value, rows) {
+  const dk = draftKey(id, key);
+  const storeId = key.slice(2);
+  if (!state.drafts.has(dk) || draftHashes.get(dk) !== str(r.draftHash)) {
+    state.drafts.delete(dk);
+    const saved = savedDraft(id, storeId, str(r.draftHash));
+    if (saved !== null) {
+      state.drafts.set(dk, saved);
+      draftHashes.set(dk, str(r.draftHash));
+    }
+  }
+  const field = h(rows ? "textarea" : "input", {
+    id: "ed-" + id + "-" + key.replace(/[^A-Za-z0-9_-]/g, "_"), "data-focus-key": dk,
+    class: rows ? (rows >= 8 ? "tall" : rows <= 3 ? "short" : null) : "field", type: rows ? null : "text", rows: rows ? String(rows) : null,
+    "aria-label": label || "Text", value: getDraft(id, key, value),
+  });
+  field.addEventListener("input", () => {
+    state.drafts.set(dk, field.value);
+    draftHashes.set(dk, str(r.draftHash));
+    saveDraft(id, storeId, str(r.draftHash), field.value);
+    if (rows) grow(field);
+  });
+  return field;
+}
+
+function closeReasonBadge(d, r) {
+  const p = paramsOf(r);
+  if (d.kind === "pr" || !Object.hasOwn(CLOSE_REASONS, p.reason)) return null;
+  if (p.reason === "duplicate" && Number.isInteger(p.duplicateOf)) {
+    const url = repoBase(d) + "/issues/" + p.duplicateOf;
+    return h("span", { class: "sbadge tone-muted reason" }, "Duplicate of ", ghLink(url, "#" + p.duplicateOf));
+  }
+  return h("span", { class: "sbadge tone-muted reason", text: CLOSE_REASONS[p.reason] });
+}
+
+// The diff lines an inline comment refers to, at most 12, colored like GitHub
+function diffHunk(text) {
+  const lines = str(text).replace(/\n$/, "").split("\n");
+  if (!str(text).trim()) return null;
+  return h("pre", { class: "hunk" }, lines.slice(-12).map((l) => h("span", {
+    class: l.startsWith("@@") ? "h-hdr" : l.startsWith("+") ? "h-add" : l.startsWith("-") ? "h-del" : "h-ctx", text: l + "\n",
+  })));
+}
+
+function segControl(label, options, value, onPick) {
+  const buttons = options.map(([v, text]) => {
+    const b = h("button", { type: "button", class: "seg", "data-v": v, "aria-pressed": v === value ? "true" : "false", text });
+    b.addEventListener("click", () => {
+      for (const o of buttons) o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      onPick(v);
+    });
+    return b;
+  });
+  return h("span", { class: "seg-group", role: "group", "aria-label": label }, buttons);
+}
+
+// Inputs a card collects besides its main text. Kept per card, so a re-render does not lose choices.
+function buildCardInputs(id, d, r, rec) {
+  const out = [];
+  const p = paramsOf(r);
+  const as = actorOf(r);
+  if (r.type === "follow_up" && as !== "agent") {
+    rec.titleInput = textEditor(id, r, "r:" + r.id + ":title", "Issue title", str(p.title), 0);
+    out.push(h("label", { class: "card-label", for: rec.titleInput.id }, "Issue title"), rec.titleInput);
+  }
+  const editor = [];
+  if (routeHasEditor(r)) {
+    const label = editorLabel(r);
+    rec.ta = textEditor(id, r, "r:" + r.id, label || "Draft text", str(r.text), editorRows(r));
+    if (label) editor.push(h("label", { class: "card-label", for: rec.ta.id }, label));
+    editor.push(rec.ta);
+    if (r.type === "request_logs") {
+      const reset = h("button", { type: "button", class: "lane-switch", text: "Reset to template", "data-focus-key": "r:" + r.id + ":reset" });
+      const sync = () => { reset.hidden = rec.ta.value === str(r.text); };
+      reset.addEventListener("click", () => {
+        rec.ta.value = str(r.text);
+        state.drafts.delete(draftKey(id, "r:" + r.id));
+        dropSavedDraft(id, r.id);
+        sync();
+        rec.ta.focus();
+      });
+      rec.ta.addEventListener("input", sync);
+      sync();
+      editor.push(h("div", { class: "editor-tools" }, reset));
+    }
+  }
+  if (r.type === "move" && moveToRepo(r)) {
+    // The canned text only matters for "Close, ask to reopen there", so it shows once he picks that button
+    rec.revealBox = h("div", { class: "reveal", hidden: !rec.revealed }, ...editor);
+    out.push(rec.revealBox);
+  } else if (r.type !== "address_review") {
+    out.push(...editor);
+  }
+  if (r.type === "review") {
+    const comments = (Array.isArray(p.comments) ? p.comments : []).filter((c) => c && typeof c === "object" && typeof c.id === "string");
+    if (comments.length) {
+      out.push(h("ul", { class: "checklist" }, comments.map((c) => {
+        if (!rec.checks.has(c.id)) rec.checks.set(c.id, true);
+        const box = h("input", { type: "checkbox", id: "cm-" + id + "-" + c.id.replace(/[^A-Za-z0-9_-]/g, "_"), checked: rec.checks.get(c.id) });
+        box.addEventListener("change", () => rec.checks.set(c.id, box.checked));
+        const range = Number.isInteger(c.startLine) && Number.isInteger(c.line) && c.startLine < c.line ? c.startLine + "-" + c.line
+          : Number.isInteger(c.line) ? String(c.line) : "";
+        const where = str(c.path) + (range ? ":" + range : "");
+        return h("li", null, box, h("div", { class: "c-body" },
+          h("label", { for: box.id }, where ? h("code", { class: "c-where", text: where }) : "Comment"),
+          diffHunk(c.diffHunk),
+          h("span", { class: "c-text" }, richText(c.text))));
+      })));
+    }
+  }
+  if (r.type === "address_review") {
+    const threads = (Array.isArray(d.threads) ? d.threads : []).filter((t) => t && typeof t === "object" && typeof t.id === "string");
+    out.push(h("ul", { class: "decisions" }, threads.map((t) => {
+      const verdict = Object.hasOwn(VERDICT_LABELS, t.verdict) ? t.verdict : "unjudged";
+      if (!rec.decisions.has(t.id)) rec.decisions.set(t.id, { decision: verdict === "wrong" ? "dismiss" : "fix", note: "", noteOpen: false });
+      const st = rec.decisions.get(t.id);
+      const [label, cls] = VERDICT_LABELS[verdict];
+      const note = h("input", { type: "text", class: "field d-note", "aria-label": "Note for this comment", value: st.note, hidden: !st.noteOpen });
+      note.addEventListener("input", () => { st.note = note.value; });
+      const addNote = h("button", { type: "button", class: "lane-switch", text: "Add a note", hidden: st.noteOpen });
+      addNote.addEventListener("click", () => {
+        st.noteOpen = true;
+        note.hidden = false;
+        addNote.hidden = true;
+        note.focus();
+      });
+      return h("li", null,
+        h("span", { class: "t-head" },
+          h("span", { class: "t-summary" }, richText(str(t.summary) || "No summary yet.")),
+          h("span", { class: "vlabel " + cls, title: "The agent's verdict", text: label })),
+        str(t.note) ? h("span", { class: "t-note" }, richText(t.note)) : null,
+        h("span", { class: "t-ref" }, reviewerName(str(t.author)) || "unknown",
+          t.path ? " · " : null, t.path ? h("code", { text: str(t.path) + (Number.isInteger(t.line) ? ":" + t.line : "") }) : null),
+        h("span", { class: "seg-row" },
+          segControl("Decision", [["fix", "Fix"], ["dismiss", "Dismiss"]], st.decision, (v) => { st.decision = v; }),
+          addNote),
+        note);
+    })));
+    out.push(...editor);
+  }
+  if (r.type === "drive") {
+    const max = Number.isInteger(p.maxRounds) && p.maxRounds >= 1 && p.maxRounds <= 3 ? p.maxRounds : 3;
+    if (!rec.rounds) rec.rounds = max;
+    const line = h("p", { class: "card-text" });
+    const say = () => line.replaceChildren("Address comments, push, request a Copilot review, up to " + rec.rounds + (rec.rounds === 1 ? " round." : " rounds."));
+    say();
+    out.push(line, h("span", { class: "seg-row" }, h("span", { class: "card-label" }, "Rounds"),
+      segControl("Rounds", [[1, "1"], [2, "2"], [3, "3"]], rec.rounds, (v) => { rec.rounds = v; say(); })));
+  }
+  return out;
+}
+
+function routePayload(d, r, rec, b) {
+  const input = { ...(b && b.input ? b.input : {}) };
+  if (r.type === "review") input.commentIds = [...rec.checks].filter(([, on]) => on).map(([cid]) => cid);
+  if (r.type === "address_review") {
+    input.decisions = [...rec.decisions].map(([threadId, st]) => ({ threadId, decision: st.decision, ...(st.note.trim() ? { note: st.note.trim() } : {}) }));
+  }
+  if (r.type === "follow_up" && rec.titleInput && rec.titleInput.value !== str(paramsOf(r).title)) input.title = rec.titleInput.value;
+  if (r.type === "drive") input.maxRounds = rec.rounds;
+  // A transfer moves the issue as it is, so no draft text goes along
+  const text = b && b.input && b.input.mode === "transfer" ? "" : rec.ta ? rec.ta.value : str(r.text);
+  return { text, input };
+}
+
+function meButton(id, d, r, rec, b, intent, locked) {
+  const key = "r:" + r.id + ":" + b.id;
+  return h("button", {
+    class: "btn me-btn intent-" + intent + (r.recommended === true ? " primary" : ""), type: "button",
+    disabled: locked || !isGithubUrl(str(d.url)), "data-focus-key": key, title: buttonTip(b),
+    onclick: async () => {
+      if (!isGithubUrl(str(d.url))) return;
+      if (b.reveal && !rec.revealed) {
+        rec.revealed = true;
+        if (rec.revealBox) rec.revealBox.hidden = false;
+        if (rec.ta) rec.ta.focus();
+        return;
+      }
+      const copy = b.copy === "escalate" ? escalateCommand() : b.copy === "draft" && rec.ta ? rec.ta.value : "";
+      let fallback = false;
+      if (copy.trim()) {
+        try {
+          await navigator.clipboard.writeText(copy);
+        } catch {
+          fallback = true;
+          if (rec.ta && copy === rec.ta.value) {
+            rec.ta.focus();
+            rec.ta.select();
+          }
+        }
+      }
+      window.open(routeTarget(d, r, rec.titleInput ? rec.titleInput.value : str(paramsOf(r).title), rec.ta ? rec.ta.value : str(r.text)), "_blank", "noopener,noreferrer");
+      if (fallback) detail.meNotes.set(r.id, b.copy === "escalate" ? "Copy failed. Post " + escalateCommand() + " on GitHub" : "Press Ctrl+C, then paste on GitHub");
+      else detail.meNotes.delete(r.id);
+      markOpened(id, r);
+      render();
+    },
+  }, actorMark("me"), b.label, icon("external", null, "ext"));
+}
+
+// The card's button row: its buttons with their actors, the second confirm, "Post anyway", or the result
+function buildCardActions(id, d, r, rec, locked) {
+  const intent = routeIntent(r);
+  const note = state.notes.get(id);
+  const mine = detail.lastRoute === r.id;
+  const buttons = routeButtons(d, r);
+
+  if (r.done && typeof r.done === "object") {
+    const result = str(r.done.result);
+    const as = actorOf(r);
+    return [h("span", { class: "status done step-done" }, icon("doneCheck"),
+      h("span", { text: as !== "agent" ? "Done" : r.done.status === "queued" ? "Requested. The agent has it on its list." : "The agent took this on" }),
+      isGithubUrl(result) ? ghLink(result, "view on GitHub") : null)];
+  }
+  if (mine && note && note.kind === "done") {
+    return [h("span", { class: "status done step-done" }, icon("doneCheck"), h("span", { text: note.text }))];
+  }
+  if (r.type === "close" && isClosedThread(id, d)) {
+    return [h("span", { class: "status done step-done" }, icon("check"), h("span", { text: "Already closed" }))];
+  }
+
+  if (buttons.every((b) => b.actor === "me")) {
+    return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)),
+      openedToday(id, r) ? h("span", { class: "opened-mark", title: "You opened this on GitHub today" }, "opened") : null,
+      detail.meNotes.has(r.id) ? h("span", { class: "me-note", text: detail.meNotes.get(r.id) }) : null].filter(Boolean);
+  }
+
+  const send = (b, force) => {
+    state.confirming.delete(id);
+    rec.lastButton = b.id;
+    runRoute(id, r, { ...routePayload(d, r, rec, b), force });
+  };
+  const confirming = buttons.find((b) => confirmMode(id, "r:" + r.id + ":" + b.id));
+  if (confirming) {
+    const mode = confirmMode(id, "r:" + r.id + ":" + confirming.id);
+    return [
+      h("button", {
+        class: "btn confirm intent-" + intent, type: "button", disabled: locked, "data-focus-key": "r:" + r.id + ":" + confirming.id + ":confirm", title: buttonTip(confirming),
+        onclick: () => send(confirming, mode === "force"),
+      }, actorMark(confirming.actor), confirmText(confirming)),
+      h("button", {
+        class: "btn quiet", type: "button", "data-focus-key": "r:" + r.id + ":" + confirming.id, text: "Cancel",
+        onclick: () => { state.confirming.delete(id); render(); },
+      }),
+    ];
+  }
+  const refused = r.refused && typeof r.refused === "object" ? r.refused : null;
+  const out = buttons.map((b, i) => {
+    const key = "r:" + r.id + ":" + b.id;
+    if (b.actor === "me") return meButton(id, d, r, rec, b, intent, locked);
+    return h("button", {
+      class: "btn intent-" + intent + (r.recommended === true && i === 0 ? " primary" : ""), type: "button", disabled: locked,
+      "data-focus-key": key, "data-focus-alt": key + ":confirm", title: buttonTip(b),
+      onclick: () => {
+        if (b.reveal && !rec.revealed) {
+          rec.revealed = true;
+          if (rec.revealBox) rec.revealBox.hidden = false;
+          if (rec.ta) {
+            grow(rec.ta);
+            rec.ta.focus();
+          }
+          return;
+        }
+        const payload = routePayload(d, r, rec, b);
+        if (b.needsText && !payload.text.trim()) {
+          detail.lastZone = "route";
+          detail.lastRoute = r.id;
+          state.notes.set(id, { kind: "failed", text: "Write the text first. This route posts it." });
+          render();
+          return;
+        }
+        if (b.confirm) {
+          state.confirming.set(id, key);
+          state.notes.delete(id);
+          render();
+          return;
+        }
+        send(b, false);
+      },
+    }, actorMark(b.actor), b.label);
+  });
+  if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (boardCap.bot ? botLogin() : str(boardCap.me && boardCap.me.login) || "you") }));
+  // A prefill and a direct run can share a card, so the note names the button that runs at once
+  const ownButtons = buttons.filter((b) => b.actor === "own");
+  if (ownButtons.length) {
+    out.push(h("span", { class: "quiet-line", text: (ownButtons.length < buttons.length ? ownButtons[0].label + " runs" : "Runs") + " right away under your GitHub login" }));
+  }
+  // The server refused because the thread moved. The maintainer may override that after a second look.
+  if (refused && refused.forceable === true) {
+    out.push(h("button", {
+      class: "btn quiet", type: "button", disabled: locked, "data-focus-key": "r:" + r.id + ":force", title: str(refused.reason), text: "Post anyway",
+      onclick: () => {
+        const b = buttons.find((x) => x.id === rec.lastButton) || buttons[0];
+        state.confirming.set(id, "r:" + r.id + ":" + b.id + "!force");
+        state.notes.delete(id);
+        render();
+      },
+    }));
+  }
+  return out;
+}
+
+// The one actor of a card, or null when its buttons act as different people
+function cardActor(d, r) {
+  const actors = new Set(routeButtons(d, r).map((b) => b.actor));
+  return actors.size === 1 ? [...actors][0] : null;
+}
+
+function buildCard(id, d, r, rec) {
+  const p = paramsOf(r);
+  const finding = (Array.isArray(d.findings) ? d.findings : []).find((f) => f && f.routeId === r.id) || null;
+  const compact = routeCompact(r);
+  rec.ta = null;
+  rec.titleInput = null;
+  rec.revealBox = null;
+  rec.compact = compact;
+  rec.card.className = "card intent-" + routeIntent(r) + (compact ? " compact" : "");
+  rec.actions = h("div", { class: "card-actions" });
+  rec.status = h("div", { class: "z-status" });
+  const callout = str(r.callout) ? h("div", { class: "callout" + (r.type === "take_over" && p.mode === "replace" ? " strong" : "") }, icon("alert"), h("span", null, richText(r.callout))) : null;
+  if (compact) {
+    rec.head = h("div", { class: "card-head" }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.actions);
+    rec.body = null;
+    rec.card.replaceChildren(...[rec.head, callout, rec.status].filter(Boolean));
+    return;
+  }
+  const actor = cardActor(d, r);
+  rec.headActor = actor ? actorMark(actor) : null;
+  rec.head = h("button", {
+    class: "card-head", type: "button", "data-focus-key": "card:" + r.id, "aria-expanded": "false",
+    onclick: () => {
+      detail.openRoute = detail.openRoute === r.id ? null : r.id;
+      render();
+    },
+  }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.headActor, icon("chevronDown", null, "chev"));
+  rec.body = h("div", { class: "card-body" },
+    str(r.why) ? h("p", { class: "card-why" }, richText(r.why)) : null,
+    finding ? h("p", { class: "card-finding" }, h("span", { class: "vlabel sev-" + severityClass(finding.severity), text: str(finding.severity) || "note" }), " ", richText(finding.text)) : null,
+    r.type === "take_over" && p.mode !== "replace" ? h("p", { class: "quiet-line", text: "Continues in the contributor's PR" }) : null,
+    callout,
+    r.type === "close" ? closeReasonBadge(d, r) : null,
+    ...buildCardInputs(id, d, r, rec),
+    rec.actions,
+    rec.status);
+  rec.card.replaceChildren(rec.head, rec.body);
+}
+
+// One card per route. The recommended route starts expanded, the others are one line until clicked.
+function renderRoutes(id, d, locked) {
+  const routes = routesOf(d);
+  if (detail.openRoute === undefined || (detail.openRoute !== null && !routes.some((r) => r.id === detail.openRoute))) {
+    const done = routes.find((r) => r.done && !routeCompact(r));
+    const rec = recommendedRoute(d);
+    detail.openRoute = (done || (rec && !routeCompact(rec) ? rec : null) || {}).id ?? null;
+  }
+  const keep = new Set(routes.map((r) => r.id));
+  for (const k of [...detail.cards.keys()]) if (!keep.has(k)) detail.cards.delete(k);
+  const nodes = routes.map((r) => {
+    let rec = detail.cards.get(r.id);
+    if (!rec) {
+      rec = { card: h("section", { class: "card" }), checks: new Map(), decisions: new Map(), core: null, sig: null, revealed: false, rounds: null };
+      detail.cards.set(r.id, rec);
+    }
+    // Rebuild the card only when the route itself changed. A new draft text alone updates the editor in place,
+    // and never while he is typing in it, so focus, cursor and typed text stay.
+    const { done, refused, text, draftHash, ...core } = r;
+    const coreSig = JSON.stringify([core, hasText(r), d.threads, d.findings, d.kind, d.url]);
+    if (coreSig !== rec.core) {
+      rec.core = coreSig;
+      rec.sig = null;
+      buildCard(id, d, r, rec);
+    } else if (rec.ta && !state.drafts.has(draftKey(id, "r:" + r.id)) && document.activeElement !== rec.ta && rec.ta.value !== str(text)) {
+      rec.ta.value = str(text);
+    }
+    const open = !rec.compact && detail.openRoute === r.id;
+    rec.card.classList.toggle("open", open);
+    rec.card.classList.toggle("recommended", r.recommended === true);
+    if (!rec.compact) {
+      rec.head.setAttribute("aria-expanded", open ? "true" : "false");
+      rec.body.hidden = !open;
+      if (rec.headActor) rec.headActor.style.display = open ? "none" : "";
+    }
+    if (rec.ta) rec.ta.disabled = locked || !!r.done;
+    const sig = JSON.stringify([r.done, r.refused, state.confirming.get(id), locked, isClosedThread(id, d), openedToday(id, r),
+      detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, str(boardCap.me && boardCap.me.login)]);
+    if (sig !== rec.sig) {
+      rec.sig = sig;
+      rec.actions.replaceChildren(...buildCardActions(id, d, r, rec, locked));
+    }
+    if (open && rec.ta && !rec.ta.hidden) grow(rec.ta);
+    return rec.card;
+  });
+  placeChildren(detail.routes, nodes);
+}
+
+// Place children in order, moving only nodes that are out of place, so a focused field stays attached
+function placeChildren(box, nodes) {
+  nodes.forEach((n, i) => {
+    if (box.children[i] !== n) box.insertBefore(n, box.children[i] || null);
+  });
+  while (box.children.length > nodes.length) box.lastElementChild.remove();
+}
+
+// What the agent did while driving a PR. Open points stay visible, the rounds fold away.
+function renderRounds(d) {
+  const rounds = (Array.isArray(d.rounds) ? d.rounds : []).filter((x) => x && typeof x === "object");
+  detail.rounds.hidden = rounds.length === 0;
+  if (!rounds.length) {
+    detail.rounds.replaceChildren();
+    return;
+  }
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const last = rounds[rounds.length - 1];
+  const open = list(last.open).map(str).filter(Boolean);
+  const fixed = rounds.reduce((n, x) => n + list(x.fixed).length, 0);
+  const dismissed = rounds.reduce((n, x) => n + list(x.dismissed).length, 0);
+  const summary = rounds.length + (rounds.length === 1 ? " round" : " rounds") + " by the agent · " + fixed + " fixed · " + dismissed + " dismissed";
+  const details = h("details", { class: "rounds-all" }, h("summary", null, summary),
+    h("ol", { class: "rounds-list" }, rounds.map((x, i) => h("li", null,
+      h("span", { class: "round-n", text: "Round " + (Number.isInteger(x.n) ? x.n : i + 1) }),
+      list(x.fixed).length ? h("ul", null, list(x.fixed).map((t) => h("li", { class: "r-fixed" }, h("span", { class: "vlabel v-valid", text: "fixed" }), " ", richText(str(t))))) : null,
+      list(x.dismissed).length ? h("ul", null, list(x.dismissed).map((t) => h("li", { class: "r-dismissed" },
+        h("span", { class: "vlabel v-wrong", text: "dismissed" }), " ", richText(str(t && t.summary)),
+        t && str(t.reason) ? h("span", { class: "t-note" }, " · ", richText(t.reason)) : null))) : null,
+      list(x.open).length ? h("ul", null, list(x.open).map((t) => h("li", null, h("span", { class: "vlabel v-unjudged", text: "open" }), " ", richText(str(t))))) : null))));
+  detail.rounds.replaceChildren(
+    open.length ? h("div", { class: "rounds-open" }, h("span", { class: "card-label", text: "Still open after the agent's last round" }),
+      h("ul", null, open.map((t) => h("li", null, richText(t))))) : null,
+    details);
+}
+
+function renderZones(id, d, locked) {
+  renderRoutes(id, d, locked);
+  updateFooter(d, locked);
+}
+
+// The footer: Snooze, hide until new activity, and Analyze again with its note panel. Built once per opened item.
+function buildZoneControls(id) {
+  const leave = async (action, params) => {
+    detail.lastZone = "away";
+    await runAction(id, action, params, "", "more:" + action);
+    if (detail.id === id && !state.notes.has(id)) closeDetail();
+  };
+
+  const reKey = "more:reanalyze";
+  const note = h("textarea", {
+    class: "short", id: "re-" + id, rows: "3", "data-focus-key": draftKey(id, reKey),
+    placeholder: "Optional instructions, like which log or comment to look at again",
+    value: getDraft(id, reKey, ""),
+  });
+  note.addEventListener("input", () => state.drafts.set(draftKey(id, reKey), note.value));
+  const setPanel = (open) => {
+    detail.analyze.hidden = !open;
+    analyze.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) note.focus();
+  };
+  const send = h("button", {
+    class: "btn intent-agent", type: "button", "data-focus-key": "more:send", title: "The agent does this",
+    onclick: async () => {
+      detail.lastZone = "agent";
+      await runAction(id, "reanalyze", {}, note.value.trim(), reKey);
+      if (detail.id === id && state.notes.get(id)?.kind !== "failed") setPanel(false);
+    },
+  }, actorMark("agent"), "Send to the agent");
+  const cancel = h("button", { class: "btn quiet", type: "button", "data-focus-key": "more:cancel", text: "Cancel", onclick: () => setPanel(false) });
+  detail.analyze.replaceChildren(
+    h("label", { class: "card-label", for: note.id }, "Analyze again"),
+    note,
+    h("div", { class: "card-actions" }, send, cancel));
+  detail.analyze.hidden = true;
+
+  const fbtn = (content, label, key, fn, tip = label) => h("button", {
+    class: "foot-btn", type: "button", "data-focus-key": key, "aria-label": label, title: tip, "data-tip": tip, onclick: fn,
+  }, content);
+  const snoozeBtn = (n) => fbtn(n + "d", "Snooze " + n + (n === 1 ? " day" : " days"), "foot:snooze:" + n, () => leave("snooze", { days: n }));
+  const snoozes = [1, 3, 7].map(snoozeBtn);
+  const dismiss = fbtn("until new activity", "Snooze until new activity", "foot:dismiss", () => leave("dismiss", {}),
+    "Hidden until someone comments or pushes on GitHub");
+  const restore = fbtn("Show again", "Show again", "foot:restore", () => {
+    detail.lastZone = "away";
+    restoreItem(id);
+  });
+  const analyze = fbtn([icon("sparkles"), "Analyze again"], "Analyze again", "foot:analyze", () => setPanel(detail.analyze.hidden),
+    "Ask the agent to look at this item again");
+  analyze.classList.add("foot-analyze");
+  analyze.setAttribute("aria-expanded", "false");
+  analyze.setAttribute("aria-controls", "d-analyze");
+  const status = h("div", { class: "foot-status" });
+  detail.foot.replaceChildren(
+    status,
+    h("span", { class: "foot-label" }, icon("moon"), "Snooze"), ...snoozes, dismiss, restore, analyze,
+  );
+  return { review: send, input: note, inputDraft: draftKey(id, reKey), snoozes, dismiss, restore, analyze, status };
+}
+
+function updateFooter(d, locked) {
+  const zc = detail.zoneCtl;
+  if (!zc) return;
+  for (const c of [zc.review, zc.input, zc.analyze, ...zc.snoozes, zc.dismiss, zc.restore]) c.disabled = locked;
+  zc.restore.hidden = !isHiddenItem(d);
+  zc.dismiss.hidden = d.hidden === true;
+  // A sent instruction clears its draft, so the note empties as well
+  if (!state.drafts.has(zc.inputDraft) && document.activeElement !== zc.input && zc.input.value !== "") zc.input.value = "";
+}
+
+// Route results show on their card. Everything else, including agent requests, shows in the footer.
+function renderZoneStatus(id) {
+  const zc = detail.zoneCtl;
+  const busyOrNote = state.busy.has(id) || state.notes.has(id);
+  if (busyOrNote && detail.lastZone === "route") {
+    if (zc) zc.status.replaceChildren();
+    const rec = detail.cards.get(detail.lastRoute);
+    for (const [rid, other] of detail.cards) if (rid !== detail.lastRoute) other.status.replaceChildren();
+    if (rec) {
+      const line = state.busy.has(id) ? h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the board server" }))
+        : state.notes.get(id).kind === "failed" ? h("div", { class: "status failed" }, icon("alert"), h("span", { text: state.notes.get(id).text })) : null;
+      rec.status.replaceChildren(...(line ? [line] : []));
+    }
+    return;
+  }
+  for (const rec of detail.cards.values()) rec.status.replaceChildren();
+  const line = statusLine(id);
+  if (zc) zc.status.replaceChildren(...(line ? [line] : []));
+}
+
+function findFocusable(key) {
+  const all = [...detail.el.querySelectorAll("[data-focus-key], [data-focus-alt]")];
+  return all.find((e) => e.dataset.focusKey === key) || all.find((e) => e.dataset.focusAlt === key) || null;
+}
+
+function currentFocusKey() {
+  const a = document.activeElement;
+  if (a && a !== detail.body && detail.el.contains(a)) return (a.dataset && a.dataset.focusKey) || null;
+  return detail.pendingFocus;
+}
+
+// Rebuilt or disabled controls drop focus, so move it to the control with the same key once that one is usable
+function restoreDetailFocus(key) {
+  detail.pendingFocus = null;
+  if (key) {
+    const t = findFocusable(key);
+    if (t && !t.disabled && !t.hidden) {
+      if (document.activeElement !== t) t.focus({ preventScroll: true });
+    } else {
+      detail.pendingFocus = key;
+    }
+  }
+  const a = document.activeElement;
+  if (!a || !detail.el.contains(a) || a.disabled) detail.body.focus({ preventScroll: true });
+}
+
+function renderDetail() {
+  const id = detail.id;
+  if (!id) return;
+  const d = state.items.get(id);
+  if (!d) {
+    closeDetail();
+    return;
+  }
+  const open = detail.el.open;
+  const focusKey = open ? currentFocusKey() : null;
+  const scrollTop = detail.body.scrollTop;
+  const dim = isHiddenItem(d);
+  const locked = state.busy.has(id) || state.dbMissing;
+
+  if (partChanged("head", [d, dim, state.latestAction.get(id)])) renderDetailHead(d, dim);
+  if (partChanged("info", [d])) renderDetailInfo(d);
+  renderZones(id, d, locked);
+  if (partChanged("status", [state.latestAction.get(id), state.busy.has(id), state.notes.get(id), detail.lastZone])) renderZoneStatus(id);
+
+  if (open) {
+    detail.body.scrollTop = scrollTop;
+    restoreDetailFocus(focusKey);
+  }
+}
+
+function openDetail(id, row) {
+  if (!state.items.has(id) || detail.el.open) return;
+  const rows = visibleRows();
+  detail.rowIndex = row ? rows.indexOf(row) : rows.findIndex((r) => r.dataset.id === id);
+  detail.rowSlot = row ? row.dataset.slot : null;
+  detail.id = id;
+  detail.deps.clear();
+  detail.cards.clear();
+  detail.routes.replaceChildren();
+  detail.openRoute = undefined;
+  detail.lastRoute = null;
+  detail.threadsOpen = false;
+  detail.meNotes.clear();
+  detail.lastZone = null;
+  detail.findingsOpen = null;
+  detail.pendingFocus = null;
+  detail.zoneCtl = buildZoneControls(id);
+  renderDetail();
+  detail.el.showModal();
+  for (const rec of detail.cards.values()) if (rec.ta && !rec.body.hidden) grow(rec.ta);
+  detail.body.scrollTop = 0;
+  detail.body.focus({ preventScroll: true });
+}
+
+// Run the cleanup right away because the close event fires in a later task
+function closeDetail() {
+  if (detail.el.open) detail.el.close();
+  finishDetail();
+}
+
+// ---------- page reload ----------
+
+let reloadPending = false;
+
+// The local server announces a new board page. Typed step texts are saved, so only an open dialog defers the reload.
+function requestReload() {
+  if (!detail.el.open) {
+    location.reload();
+    return;
+  }
+  reloadPending = true;
+  document.getElementById("reload").hidden = false;
+}
+
+window.addEventListener("board:reload", requestReload);
+document.getElementById("reload").addEventListener("click", () => location.reload());
+
+function finishDetail() {
+  const id = detail.id;
+  // A close event can arrive after the dialog was opened again, and must not clear the new item
+  if (!id || detail.el.open) return;
+  detail.id = null;
+  state.confirming.delete(id);
+  detail.cards.clear();
+  detail.routes.replaceChildren();
+  detail.deps.clear();
+  detail.zoneCtl = null;
+  detail.foot.replaceChildren();
+  detail.pendingFocus = null;
+  const rows = visibleRows();
+  const same = rows.filter((r) => r.dataset.id === id);
+  const back = same.find((r) => r.dataset.slot === detail.rowSlot) || same[0] || rows[Math.min(detail.rowIndex, rows.length - 1)];
+  if (back) back.focus();
+  if (reloadPending) location.reload();
+}
+
+function setupDetail() {
+  const el = detail.el;
+  const closeBtn = document.getElementById("d-close");
+  closeBtn.append(icon("x", null, "lg"));
+  closeBtn.addEventListener("click", closeDetail);
+
+  const onBackdrop = (e) => {
+    if (e.target !== el) return false;
+    const r = el.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  // Require press and release outside the dialog so a text selection dragged past the edge keeps it open
+  let pressedOutside = false;
+  el.addEventListener("pointerdown", (e) => { pressedOutside = onBackdrop(e); });
+  el.addEventListener("click", (e) => {
+    if (pressedOutside && onBackdrop(e)) closeDetail();
+    pressedOutside = false;
+  });
+
+  el.addEventListener("close", finishDetail);
+}
+
+function setupRowKeys() {
+  document.addEventListener("keydown", (e) => {
+    if (detail.el.open || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target;
+    if (t instanceof Element && t.closest("input, textarea, select, [contenteditable]")) return;
+    const onRow = t instanceof Element && t.classList.contains("row");
+    let dir = 0;
+    if (e.key === "j" || (onRow && e.key === "ArrowDown")) dir = 1;
+    else if (e.key === "k" || (onRow && e.key === "ArrowUp")) dir = -1;
+    if (!dir) return;
+    const rows = visibleRows();
+    if (!rows.length) return;
+    const i = rows.indexOf(t);
+    const next = i < 0 ? rows[dir > 0 ? 0 : rows.length - 1] : rows[Math.max(0, Math.min(rows.length - 1, i + dir))];
+    e.preventDefault();
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: "nearest" });
+  });
+}
+
+// ---------- render ----------
+
+function renderNotice() {
+  let el = null;
+  if (state.dbMissing) {
+    el = h("div", { class: "notice" },
+      h("strong", { text: "The board data is not available in this view." }),
+      "Open the board on claude.ai while signed in to the owner account.");
+  } else if (state.loadError) {
+    el = h("div", { class: "notice" },
+      h("strong", { text: "The board data stopped loading." }),
+      state.loadError + " Reload the page to reconnect.");
+  } else if (state.loaded.items && state.items.size === 0) {
+    el = state.meta
+      ? h("div", { class: "notice" }, h("strong", { text: "Nothing open needs attention." }),
+          "The last run found no items to brief.")
+      : h("div", { class: "notice" }, h("strong", { text: "The triage routine has not run yet." }),
+          "Briefings appear here after the first hourly run writes them.");
+  } else if (!state.loaded.items) {
+    el = h("div", { class: "notice" },
+      state.slow
+        ? h("strong", { text: "The board data cannot be reached yet." })
+        : h("strong", { text: "Loading briefings" }),
+      state.slow ? "It keeps trying in the background." : null);
+  } else if (state.slow) {
+    el = h("div", { class: "notice" }, "This view may be out of date. The data store has not confirmed it yet.");
+  }
+  els.notice.replaceChildren(...(el ? [el] : []));
+}
+
+function render() {
+  renderHeader();
+  renderNotice();
+  renderList();
+  renderDetail();
+}
+
+function refreshTimes() {
+  for (const t of document.querySelectorAll("time[data-ts]")) {
+    const iso = new Date(Number(t.dataset.ts)).toISOString();
+    t.textContent = (t.dataset.prefix || "") + relTime(iso, t.dataset.short === "1");
+  }
+}
+
+// ---------- actions ----------
+
+function errorText(e) {
+  return str(e && (e.message || e.code)) || "Unknown error";
+}
+
+async function writeActionLog(itemId, action, params, text, status, via, result) {
+  const id = itemId + "-" + Date.now();
+  const createdAt = nowIso();
+  const doc = {
+    itemId,
+    action,
+    params: params && typeof params === "object" ? params : {},
+    text: str(text),
+    status,
+    via,
+    createdAt,
+    finishedAt: status === "queued" ? null : createdAt,
+    result: str(result),
+  };
+  await state.db.doc("actions/" + id).set(doc);
+}
+
+function resultString(r) {
+  if (r == null) return "";
+  if (typeof r === "string") return r;
+  if (typeof r === "object") {
+    if (typeof r.url === "string") return r.url;
+    if (typeof r.message === "string") return r.message;
+  }
+  try { return JSON.stringify(r).slice(0, 500); } catch { return String(r); }
+}
+
+function parseToolPayload(p) {
+  if (typeof p === "string") {
+    try { p = JSON.parse(p); } catch { return null; }
+  }
+  return p && typeof p === "object" && typeof p.ok === "boolean" ? p : null;
+}
+
+async function runAction(itemId, action, rawParams, text, stepKey) {
+  const item = state.items.get(itemId);
+  if (!item || !state.db || state.busy.has(itemId)) return;
+  const params = rawParams && typeof rawParams === "object" && !Array.isArray(rawParams) ? JSON.parse(JSON.stringify(rawParams)) : {};
+  state.notes.delete(itemId);
+  state.busy.add(itemId);
+  render();
+
+  try {
+    if (BOARD_ACTIONS.has(action)) {
+      await runBoardAction(itemId, action, params);
+    } else if (AGENT_ACTIONS.has(action)) {
+      await writeActionLog(itemId, action, params, text, "queued", "queue", "");
+      state.drafts.delete(draftKey(itemId, stepKey));
+    } else {
+      state.notes.set(itemId, { kind: "failed", text: "The board does not know the action \"" + action + "\"." });
+    }
+  } catch (e) {
+    state.notes.set(itemId, { kind: "failed", text: "Saving failed: " + errorText(e) });
+  } finally {
+    state.busy.delete(itemId);
+    render();
+  }
+}
+
+async function runBoardAction(itemId, action, params) {
+  const ref = state.db.doc("items/" + itemId);
+  if (action === "dismiss") {
+    await ref.update({ hidden: true });
+  } else if (action === "snooze") {
+    const days = Number.isInteger(params.days) && params.days >= 1 && params.days <= 90 ? params.days : 1;
+    await ref.update({ snoozedUntil: new Date(Date.now() + days * 86400000).toISOString() });
+  }
+  await writeActionLog(itemId, action, params, "", "done", "board", "");
+}
+
+async function restoreItem(itemId) {
+  if (!state.db || state.busy.has(itemId)) return;
+  state.busy.add(itemId);
+  render();
+  try {
+    await state.db.doc("items/" + itemId).update({ hidden: false, snoozedUntil: null });
+  } catch (e) {
+    state.notes.set(itemId, { kind: "failed", text: "Restoring failed: " + errorText(e) });
+  } finally {
+    state.busy.delete(itemId);
+    render();
+  }
+}
+
+// ---------- data ----------
+
+function onDbError(e) {
+  state.loadError = e && e.code === "revoked" ? "Access to the board data ended." : "Error: " + errorText(e) + ".";
+  clearTimeout(slowTimer);
+  render();
+}
+
+let slowTimer = 0;
+const confirmed = { items: false, actions: false, meta: false };
+
+function markLoaded(key, meta) {
+  state.loaded[key] = true;
+  if (meta && !meta.fromCache) confirmed[key] = true;
+  if (confirmed.items && confirmed.actions && confirmed.meta) {
+    clearTimeout(slowTimer);
+    state.slow = false;
+  }
+}
+
+function subscribe(db) {
+  slowTimer = setTimeout(() => { state.slow = true; render(); }, 10000);
+
+  db.collection("items").onSnapshot((snap) => {
+    const next = new Map();
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
+      if (d && typeof d === "object" && routesOf(d).length) next.set(doc.id, d);
+    }
+    state.items = next;
+    for (const id of state.confirming.keys()) if (!next.has(id)) state.confirming.delete(id);
+    markLoaded("items", snap.metadata);
+    render();
+  }, onDbError);
+
+  db.collection("actions").orderBy("createdAt", "desc").limit(1000).onSnapshot((snap) => {
+    const latest = new Map();
+    for (const doc of snap.docs) {
+      const a = doc.data();
+      if (!a || typeof a.itemId !== "string") continue;
+      const prev = latest.get(a.itemId);
+      if (!prev || str(a.createdAt) > str(prev.createdAt)) latest.set(a.itemId, a);
+    }
+    state.latestAction = latest;
+    markLoaded("actions", snap.metadata);
+    render();
+  }, onDbError);
+
+  db.doc("meta/status").onSnapshot((snap) => {
+    state.meta = snap.exists ? snap.data() : null;
+    markLoaded("meta", snap.metadata);
+    render();
+  }, onDbError);
+}
+
+async function checkServer() {
+  if (!state.mcp) return setServer("queued");
+  try {
+    const r = await state.mcp.listTools(SERVER);
+    const s = r && Array.isArray(r.servers) ? r.servers.find((x) => x && x.server === SERVER) : null;
+    setServer(s && Array.isArray(s.tools) && s.tools.length ? "connected" : "queued");
+  } catch {
+    setServer("queued");
+  }
+}
+
+async function boot() {
+  const claude = window.claude;
+  const use = claude && typeof claude.use === "function" ? (n) => claude.use(n).catch(() => null) : async () => null;
+  // The project info names the storage keys, so it comes before the saved filters
+  applyBoardInfo(await use("board"));
+  state.filters = loadFilters();
+  buildFilters();
+  setupDetail();
+  setupRowKeys();
+  buildSections();
+  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el));
+  renderConnection();
+  render();
+
+  const [db, mcp] = await Promise.all([use("db"), use("mcp")]);
+
+  state.mcp = mcp;
+  checkServer();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkServer();
+  });
+
+  if (!db) {
+    state.dbMissing = true;
+    state.loaded = { items: true, actions: true, meta: true };
+    render();
+    return;
+  }
+  state.db = db;
+  subscribe(db);
+}
+
+setInterval(() => {
+  refreshTimes();
+  // Snoozes expire with the clock, so visibility must be recomputed
+  render();
+}, 60000);
+
+boot();
+</script>

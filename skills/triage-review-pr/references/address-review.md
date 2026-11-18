@@ -1,0 +1,24 @@
+# Mode: address review
+
+The maintainer clicked `address_review` on a PR. The action file's `params.decisions` holds one entry per open thread: `{ threadId, decision: "fix" | "dismiss", note }`. Its `text` is an optional note for the whole request. Both are the maintainer's instructions. You fix the threads marked `fix`, reply in every thread, and resolve them.
+
+This mode builds on the `address-review-comments` skill when it is installed. Read it and use its recipes for fetching threads, replying and resolving. The recipes below cover the same steps when it is missing. The board settles that skill's open questions in advance:
+
+- **Which threads**: exactly those in `params.decisions`. A thread that is missing there stays untouched.
+- **Verdict overview**: skip it. The maintainer already decided per thread on the board. Do not wait for anyone.
+- **Validity**: the decision is his. Still verify a `fix` thread against the code before editing. If the fix turns out wrong or impossible, leave that thread open, skip its reply, and say why in the returned `state`.
+- **Push or stage**: push, following `push-to-pr.md`. Its preconditions and rules apply in full.
+- **Resolve**: resolve every thread you replied to, the dismissed ones too. The maintainer dismissed them explicitly.
+
+## Steps
+
+1. Check the preconditions in `push-to-pr.md`. When no decision is `fix`, the push checks are not needed, but the PR must be open.
+2. Fetch the threads with the `reviewThreads` query from the review skill, adding `comments(first:1){nodes{databaseId}}`. Map each `threadId` to its first comment's `databaseId`, which the reply endpoint needs. A thread that is already resolved or gone needs no reply.
+3. Fix every `fix` thread in the worktree, with its `note` as extra guidance. One commit for all of them, with a message like `fix: address review feedback` in the project's format. Push it.
+4. Reply in every handled thread under the writing identity (`accounts.md`): `gh api repos/<owner>/<repo>/pulls/<n>/comments/<databaseId>/replies -f body='…'`. Keep replies to one or two sentences, in the style of `voice.md`, without "I":
+   - fixed: `Fixed in <short sha>: <what changed>.`
+   - dismissed: the short reason. Use the maintainer's `note` when he gave one, otherwise the thread's `note` from the item doc. Example: `Not needed: the value is already validated by the parser.`
+5. Resolve each replied thread under the writing identity: `gh api graphql -f query='mutation($id: ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' -f id=<threadId>`.
+6. Remove the worktree and return as described in `push-to-pr.md`. Handled threads leave `threads`. `result` is the commit URL, or the number of threads handled when nothing was pushed.
+
+A failure after the push still returns `status: "done"` with what happened in `state`, like `Pushed the fix. Replying to 1 of 3 threads failed: API error 502.` The push cannot be undone, so the item has to show the real state.

@@ -1,0 +1,7 @@
+{
+	"name": "gary",
+	"displayName": "Gary",
+	"version": "0.1.0",
+	"description": "Maintainer triage for one GitHub repository: an hourly routine briefs every open PR, issue and discussion on a local board, and clicks there are the maintainer's approval.",
+	"keywords": ["github", "triage", "maintainer"]
+}

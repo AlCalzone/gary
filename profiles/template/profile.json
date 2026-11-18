@@ -1,0 +1,12 @@
+{
+	"name": "my-project",
+	"repo": "owner/my-project",
+	"maintainers": [],
+	"botLogins": [],
+	"reviewBots": [],
+	"relatedRepos": [],
+	"sensitivePaths": [".github/**", "**/package.json"],
+	"autoLabels": [],
+	"botCommands": {},
+	"requiredTools": []
+}

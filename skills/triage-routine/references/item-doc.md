@@ -1,0 +1,188 @@
+# Writing an item doc
+
+The `items/<id>.json` shape is in `<core>/SPEC.md`. This file covers the fields an agent writes: `section`, `state`, `story`, `hint`, `effortMinutes`, `waitingDays`, `solved`, `threads`, `findings`, `routes` and `links`, plus `takenOver` and `rounds` after a take-over or a drive. Every item doc carries `hint` and `effortMinutes`, also after a quick classification. The routine copies `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
+
+Canned texts for routes live in `<profile>/templates/`. The maintainer edits their wording there, and you copy them into a route's `text`. Text follows `voice.md` and its profile and personal layers, including any writing rules `personal.md` names.
+
+The maintainer scans dozens of items per session. A briefing earns its place when `state` tells him the situation and the recommended route is what he would do about it.
+
+## `state`
+
+The verdict. One sentence, at most 25 words, that describes the situation. It does not name the action, because the recommended route's card does. Less text is better: he reads `state` to pick what to tackle next, and opens the item for everything else.
+
+- Good: `Reporter fixed it by clearing the cache.`
+- Good: `Clean except one leftover comment line. The contributor's question about the retry flag has a clear answer.`  (two short sentences are fine when both are needed)
+- Good: `Open question whether the client should expose its request timeout publicly.`
+- Good: `Reporter waits for a go-ahead to send a PR for the missing option.`
+- Bad: `Reporter fixed it by clearing the cache. Close.` The card already says close.
+- Bad: `This is a PR by someone that adds a config file.` It describes the item.
+- Bad: a sentence that lists what was checked, what passes, and what the review found. Details belong in `findings`.
+
+Leave out what the chips already show: CI state, draft, author, labels, the item's age. Leave out how you analyzed it. Name numbers and identifiers only when the decision depends on them. Keep a hedge when you are unsure ("probably"). Shortening never upgrades certainty.
+
+## `story`
+
+The briefing in the detail dialog. Assume the maintainer has not read the thread. Tell the short story of the item in 3 to 5 sentences, at most 90 words, in the order things happened:
+
+1. Who wants or reports what, with the concrete symptom or change. Name the component, the versions, the file, whatever anchors it.
+2. What happened since: what was tried, what the logs showed, what was asked and answered, what a review found.
+3. Where it stands now and who it waits on.
+
+Do not recite every comment. Leave out greetings, pleasantries and anything that changed nothing. Keep numbers and identifiers. Write past events in past tense. The story explains, `state` gives the verdict, and they do not repeat each other. Every item doc has a story, quick ones too. For a quick classification, build it from the body and the last comments in the snapshot, and say less when you know less.
+
+- Good: `The reporter's uploads failed after the 4.2 update with a timeout after 30 s. The debug log showed the client retrying the first chunk forever, because the server answered 413. The reporter raised the server's size limit and uploads work again.`
+- Bad: `The user opened an issue. The maintainer asked for logs. The user posted logs. The maintainer replied.` It recites the thread and says nothing about the problem.
+
+## `reviews` and `threads`
+
+The board shows review activity as badges and a collapsed thread list. Text never repeats it.
+
+- `reviews` is copied, never written by hand: the snapshot's `reviewSummary` entries, plus one entry with `state: "pending"` for each of `requestedReviewers`. The routine copies it like the other GitHub-derived fields.
+- `threads` has one entry per unresolved review thread in the snapshot's `openThreads`: `id` (the GraphQL thread id, `PRRT_…`), `author`, `isBot`, `path`, `line` and `url` copied, and three fields you write. The `address_review` card sends decisions by `id`, so a thread without it cannot be handled. `summary`: one line of at most 20 words that says what the comment asks for, in your words. `verdict`: `valid` when it is right and should be fixed before merging, `optional` when it is right but can be skipped, `wrong` when it does not apply, `unjudged` when you did not check it. `note`: one sentence with the reason, required for `valid` and `wrong`. A quick classification writes `summary` and leaves `verdict` at `unjudged`. A full review judges every thread against the code at the head.
+- Do not repeat threads as `findings`. Findings are what you found yourself.
+- `story`, `state` and the hint do not narrate who reviewed when. The badges show approvals, change requests and pending reviews. Mention review activity in `state` only when it decides the situation, like `Two of the review bot's three comments are valid.`
+
+## `hint`
+
+The action you suggest, for the overview list. It is also the `title` of the recommended route, character for character. At most 60 characters, shorter is better. Write it like a note on a sticky: an imperative verb, then a colon and the gist when the verb alone is not enough. No "maybe", no full sentences, no period at the end.
+
+- Good: `Reply: PR welcome`
+- Good: `Merge`
+- Good: `Request changes: 3 nits`
+- Good: `Decide: expose the request timeout?`
+- Good: `Ask for a debug log`
+- Good: `Take over: add the missing metadata`
+- Bad: `Maybe reply and say that we accept PRs` (wordy)
+- Bad: `URGENT: reply now` (pressure)
+
+Use a verb that matches the route type: Reply, Ask for a log, Close, Reopen, Merge, Approve, Request changes, Comment, Address review, Drive, Start fix, File issue, Take over, Move, Convert, Escalate, Label, React, Rerun CI. It does not repeat the title of the thread. An item without routes still gets a hint, for the record, but the board does not show it.
+
+## `solved`
+
+`solved: true` means the reporter's problem is gone: the fix is merged, the reporter confirmed it works, or a correct answer to their question is in the thread. Nothing else.
+
+A suggestion to close is not a solution. A feature request you would decline, a report you consider invalid, a duplicate and a stale thread all stay `solved: false`, even when the recommended route is `close`. When in doubt, leave it false.
+
+## `effortMinutes`
+
+Your estimate of how long the maintainer needs to read up and decide, in minutes. Use one of 1, 2, 5, 10, 15, 30, 60. It covers his reading and thinking, and excludes any implementation work.
+
+- 1: click merge on an approved PR with passing CI, close a clear duplicate.
+- 2: send a suggested reply that needs no checking.
+- 5: skim a small diff, confirm a short review, answer a yes or no question.
+- 10 to 15: read a code change of up to about 200 lines, or decide an API question with one tradeoff.
+- 30: a larger code change, a log-based diagnosis he will want to verify.
+- 60: a new subsystem, a design discussion, anything above about 800 changed lines.
+
+A full review lowers the estimate when it leaves him only a confirmation. Open specification questions raise it.
+
+## `waitingDays`
+
+Set it when someone outside our side waits for an answer or a review: whole days since their unanswered comment, or since a contributor PR last got commits without a maintainer response. Leave it out otherwise.
+
+## `findings`
+
+Full reviews only. One entry per distinct problem:
+
+```json
+{ "severity": "major", "text": "The retry loop ignores the abort signal, so a cancelled upload keeps sending.", "ref": "src/upload/retry.ts:84" }
+```
+
+Severities:
+
+- `blocker`: merging it breaks something, or the issue cannot move without it.
+- `major`: wrong behavior in a real case, a missing test for a bug fix, a specification violation.
+- `minor`: style, naming, docs, a nit the maintainer would still mention.
+- `idea`: a useful follow-up on a solved thread. See "Solved and closed threads" in `classification.md` for the bar it has to pass.
+- `question`: an open question you could not settle from the repo, especially about a specification the project implements. Phrase it as a question. Never guess the answer.
+
+`ref` is `path:line` relative to the repo root, at the reviewed head. Leave it out when no file applies. Order findings by severity. Leave out praise and summaries of what the PR does.
+
+`routeId` links a finding to the route it argues for, like a `review` route that carries it as an inline comment, or a `follow_up` route that acts on it. The card shows such findings as its reason. Every `routeId` must name a route in the same doc.
+
+A finding that carries a `follow_up` route is two sentences: what to change, and what it buys. Example: `Log the request ID when an upload is rejected. Reports like this one would then name the failing request right away.` The route's title stays short and does not restate it, like `File issue: log rejected request ID`.
+
+## `routes`
+
+A route is one way to resolve the item. The board builds the dialog from your route cards. The shape, the route types and who may act on each are in SPEC.md under "Who acts", "Routes" and "Accounts". Read them before you write routes. `accounts.md` says how the account setup changes `as` and which routes it rules out.
+
+Pick 0 to 4 routes. With routes, exactly one has `recommended: true`, and it comes first. It is the route you would take if you were the maintainer, and its `title` equals `hint`. Most items have one route. Add another only when it is a real alternative the maintainer might prefer. Never add filler: a second wording of the same reply, a label next to a reply, a `full_review` "just in case".
+
+```json
+{ "id": "r1", "type": "reply", "title": "Reply: PR welcome", "as": "me", "params": {}, "text": "That makes sense. I'll accept a PR that adds the option to the config schema.", "recommended": true }
+```
+
+General rules:
+
+- `id` is `r1` to `r4`, unique within the item. `title` follows the `hint` rules.
+- `why` is optional: one sentence on when to pick this route over the recommended one. Leave it out on the recommended route unless the choice is not obvious.
+- `as` must be allowed for the type in the SPEC.md table and the account setup. When a type allows more than one actor, the default is the one listed first.
+- `callout` is a warning the maintainer must see before clicking. Use it only when something can go wrong, like a replacement PR or a transfer.
+- Never write a route for hide, dismiss, snooze or "Analyze again". The dialog footer always offers those.
+- A route whose text comes from a template: read the template file, copy everything below its leading comment into `text`, and change only the parts in square brackets, as the comment says.
+- Every route that posts or prefills text carries finished `text`. The maintainer can click without editing. No placeholders like `<version>`, no "[insert link]", no notes to him inside the text. The text has no forced line breaks inside paragraphs and contains no bot commands (see `classification.md`).
+- Text for `as: "me"` is in the maintainer's own first-person voice, because he posts it under his name. Text for `as: "bot"` states facts and requests without "I".
+- A route that depends on a profile fact exists only when that fact exists: `move` to a repo only for repos in `relatedRepos`, `move` to `issue` only with `botCommands.escalate`, `drive` only when `reviewBots` is not empty.
+
+Per type:
+
+- **`reply`**: an answer to a person. `as: "me"` by default. Use `as: "bot"` only for a neutral, factual note that does not need his name, like pointing to the release that contains a fix.
+- **`request_logs`**: a request for a log, posted by the bot. `text` comes from `<profile>/templates/request-logs.md`. Replace only the bracketed line with what to reproduce while the log runs. Write this route only when the profile has that template.
+- **`close`**: always `as: "me"`. `params.reason` is `completed`, `not_planned` or `duplicate`. With `duplicate`, set `params.duplicateOf` to the original's number and write `text` as a short reply that links it, like `Duplicate of #431, which has the details and the fix.` For a PR, leave `reason` out. `text` is optional: a solved thread whose last comment only says thanks closes without text.
+- **`reopen`**: `as: "bot"` by default, with a `text` that says why. Use `as: "me"` when the reason should carry his name.
+- **`merge`**: `as: "me"`. When the profile wants a format for squash commit titles and the PR title does not follow it, put the title you propose into `text`. Never recommend merge while a valid open thread or a `blocker` or `major` finding remains.
+- **`review`**: posted by the bot as one PR review. `params.event` is `approve`, `request_changes` or `comment`. Each finding with a file and a line becomes one entry in `params.comments`: `{ "id": "c1", "path": "src/…", "line": 84, "text": "…", "diffHunk": "…" }`, ids `c1`, `c2` and so on. For a range, add `startLine` with the first line. `line` and `startLine` must be on the right side of the same diff hunk at `reviewedSha`, because GitHub rejects inline comments elsewhere. `diffHunk` holds at most 12 lines of the PR diff at `reviewedSha` around the commented line, copied from `gh pr diff` with their `+`, `-` and space prefixes. The card shows it, so the maintainer can judge the comment without opening the file. Findings without such a line go into the summary `text`. The summary stands alone without the inline comments, because the maintainer can uncheck any of them. Give each such finding `routeId` of this route. A PR authored by the bot gets only `event: "comment"`, because GitHub forbids reviewing your own PR.
+- **`address_review`**: the agent handles the open review threads after the maintainer decides per thread. Offer it only when every entry in `threads` has an `id` and a verdict other than `unjudged`, and the agent can push to the PR branch (see `classification.md`, "Open review feedback"). `text` stays empty: the maintainer adds his own note on the card.
+- **`follow_up`**: another way forward that a finding suggests. Give that finding `routeId` of this route. Pick the actor per finding:
+  - `agent`: a small change a test can cover. The agent starts a fix with a repro test and a draft PR. `text` holds the instructions: which module, which input, which expected result. The profile's `rules/issues.md` says what the test setup can reproduce.
+  - `bot`: a larger change worth tracking. The bot files an issue with `params.title` and `text` as the body and links it in the thread.
+  - `me`: the issue is a decision or a statement that should carry his name. The click opens GitHub's new-issue form with `params.title` and `text` filled in.
+  The usefulness bar from "Solved and closed threads" in `classification.md` applies to every follow-up. A weak idea gets no route and no finding.
+- **`take_over`**: for a stalled contributor PR where finishing it ourselves is quicker than another round trip. A round trip with a contributor costs days for a change that takes a minute. Example: a contributor's PR lacks a few fields that a sibling file on master already has, and the contributor stopped answering. `params.mode` is `push` by default: we continue in the contributor's PR with our commits, pushed under the writing identity. The returned item then has `takenOver: true`. Use `replace` only when pushing is impossible, and say why in `callout`, like `The contributor did not allow edits by maintainers, so the agent opens a replacement PR.` Do not offer it when a remaining point needs the contributor's knowledge or hardware, or when the PR touches a sensitive path. `text` holds instructions for the agent when the findings alone do not say what to do.
+- **`move`**: three targets.
+  - A repo from `relatedRepos`, on an issue, with `as: "bot"`. The card has two bot buttons: transfer the issue, or close it with `text` that asks to reopen there. Write `text` from `<profile>/templates/reopen-elsewhere.md` for the second button, with the target repo and what the new issue needs. Say in `why` which button fits: transfer when the issue already has what the other repo needs, like versions and steps, close when it lacks it.
+  - `discussion`, on an issue, with `as: "me"`: he converts it on GitHub. No `text`.
+  - `issue`, on a discussion, with `as: "me"`, only when `botCommands.escalate` exists: for a confirmed bug. The board copies the command for him to post. No `text`. The bot never posts that command.
+  Reports for projects outside the org get a `close` with a redirect reply.
+- **`drive`**: the agent drives the PR on its own for up to `params.maxRounds` rounds (1 to 3, default 3): it judges and addresses the open review comments, pushes, requests a review from the profile's review bot and repeats. Offer it only on PRs by the maintainer, the bot or with `authorType: "copilot"`, and on contributor PRs with `takenOver: true`. It fits when open review comments are the only thing left and they look mechanical. No `text`.
+- **`chore`**: one bot action from the list in SPEC.md, with that action's params in `params`. Example: `{ "type": "chore", "as": "bot", "params": { "action": "answer_discussion", "commentId": "DC_kwDO…" } }`. Use it as the recommended route only when the chore is the whole job, like marking the correct answer on a discussion or rerunning a flaky CI job.
+
+An item without routes is not shown on the board. Write no routes, and never a placeholder route, in these cases:
+
+- **It needs analysis first**: a quick classification that cannot name the right action yet, or a PR with `unjudged` threads. Set `reviewDepth: "pending"`. The routine analyzes such items on its own, before any other optional review. A quick classification that can already name the right action, like merging a green dependency update, writes that route.
+- **Nothing can be done until someone else acts**: the reporter owes a log, the contributor owes a change, a vendor owes an answer. The item returns when it changes on GitHub. This also covers informational issues, the maintainer's own notes and backlog ideas, and answered discussions where no reply is owed.
+
+A waiting item gets a route again only when a close is due: when our request to the reporter is older than `activeMaxWaitDays`, recommend `close` with reason `not_planned` and a short text that invites the reporter to reopen with the requested info.
+
+## `links`
+
+Related URLs the maintainer will want to open: the draft fix PR, the duplicate, the PR that fixed it, the failing CI run, the docs page an answer cites. Labels are short nouns: `Draft fix`, `Duplicate`, `Failing job`.
+
+## Validation checklist
+
+The routine checks each doc a subagent returns. A doc that fails any check is rejected and the item stays at `pending`.
+
+1. It parses as one JSON object, with no text around it.
+2. `kind` and `number` match the item the subagent was given. The id derived from them matches.
+3. `section` is one of `active`, `easy`, `almost`, `review`, `deferred`, `hardware`.
+4. `reviewDepth` is `full`, or `pending` with no routes when the subagent could not finish. For PRs, `reviewedSha` is a 40-character SHA.
+5. `state` is a non-empty string of at most 25 words. `effortMinutes` is one of 1, 2, 5, 10, 15, 30, 60. `story` is a non-empty string of at most 90 words. `hint` is a non-empty string of at most 60 characters without "maybe".
+6. `findings`, when present, is an array of objects with `severity` from the list above and a non-empty `text`. Every `routeId` names a route in this doc. A finding that points to a `follow_up` route has exactly two sentences.
+7. `threads`, for PRs, has one entry per open thread in the snapshot, each with `id`, `summary` and a `verdict` of `valid`, `optional`, `wrong` or `unjudged`. `valid` and `wrong` have a `note`.
+8. `routes` has 0 to 4 entries with unique ids. With routes, exactly one has `recommended: true`, and its `title` equals `hint`. Every `title` has at most 60 characters. An item with `reviewDepth: "pending"` or an `unjudged` thread has no routes, unless the route needs no analysis, like a merge of a green dependency update.
+9. Each route's `type` is in the SPEC.md table, valid for the item's kind, and its `as` is allowed for that type and for the account setup (`accounts.md`). No route is a hide, dismiss, snooze or analyze action. Agent routes that push appear only when the account setup allows pushes.
+10. Each route's `params` match its type:
+    - `close`: `reason` is `completed`, `not_planned` or `duplicate`, or absent on a PR. `duplicateOf` is a number exactly when `reason` is `duplicate`.
+    - `review`: `event` is `approve`, `request_changes` or `comment`. `comments` entries have a unique `id`, a `path`, an integer `line`, an optional integer `startLine` below `line`, a non-empty `text`, and a `diffHunk` of 1 to 12 lines. A PR by the bot gets only `comment`.
+    - `follow_up` with `as` `bot` or `me`: `params.title` is set.
+    - `take_over`: `mode` is `push` or `replace`. `replace` has a non-empty `callout`.
+    - `drive`: `maxRounds` is 1, 2 or 3. The profile's `reviewBots` is not empty. The PR's author is the maintainer, the bot or has `authorType: "copilot"`, or the item has `takenOver: true`.
+    - `move`: on an issue, `to` is a repo from `relatedRepos` with `as: "bot"` and a non-empty `text`, or `discussion` with `as: "me"`. On a discussion, `to` is `issue` with `as: "me"`, and `botCommands.escalate` exists.
+    - `chore`: `action` is `label`, `assign`, `ready`, `answer_discussion`, `react`, `update_branch` or `rerun_ci`, and the other keys are that action's params.
+11. `reply`, `request_logs` and `follow_up` routes have a non-empty `text`. A `review` has a `text` or at least one comment. No `text` contains a command from the profile's `botCommands`.
+12. An `address_review` route appears only when `threads` is non-empty and no thread is `unjudged`.
+13. `rounds`, when present, is an array of `{ n, fixed, dismissed, open }`: `n` a number, `fixed` and `open` arrays of strings, `dismissed` an array of `{ summary, reason }`. `takenOver`, when present, is `true`.
+14. `links`, when present, is an array of `{label, url}` with `https://` URLs.
+15. Strings are plain text or Markdown. The board renders them as text, so HTML in them shows up literally.
+
+Fix nothing in a returned doc except the GitHub-derived fields the routine always overwrites. A doc that needs other repairs failed the review.

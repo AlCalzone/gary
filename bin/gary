@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+// The one entry point for everything the skills and the maintainer run. `gary help` lists the commands.
+import { SettingsError, paths } from "../scripts/lib/config.mjs";
+
+const COMMANDS = {
+	snapshot: ["../scripts/snapshot.mjs", "Fetch open items and print the work list. --commit saves the staged snapshot"],
+	put: ["../scripts/board-put.mjs", "Write one board document: put items <id> <file> | items <id> --delete | meta <file>"],
+	action: ["../scripts/execute-action.mjs", "Run one GitHub action from a JSON file or stdin. --dry-run, --check-fresh"],
+	"watch-queue": ["../scripts/watch-queue.mjs", "Print queued agent requests as JSON lines. --once"],
+	setup: ["../scripts/setup.mjs", "Create the home directory and config.json. --help for the flags"],
+	doctor: ["../scripts/doctor.mjs", "Check the installation, read-only. --json"],
+};
+
+function help() {
+	const lines = ["Usage: gary <command> [options]", ""];
+	for (const [name, [, text]] of Object.entries(COMMANDS)) lines.push(`  ${name.padEnd(12)} ${text}`);
+	lines.push(`  ${"paths".padEnd(12)} Print the core, home, profile and state directories as JSON`);
+	console.log(lines.join("\n"));
+}
+
+const [command, ...args] = process.argv.slice(2);
+try {
+	if (!command || command === "help" || command === "--help" || command === "-h") {
+		help();
+	} else if (command === "paths") {
+		const out = paths();
+		console.log(JSON.stringify(out, null, 2));
+		if (out.error) process.exitCode = 2;
+	} else if (Object.hasOwn(COMMANDS, command)) {
+		const { main } = await import(COMMANDS[command][0]);
+		await main(args);
+	} else {
+		console.error(`Unknown command "${command}".`);
+		help();
+		process.exitCode = 2;
+	}
+} catch (e) {
+	console.error(`gary ${command}: ${e.message}`);
+	process.exitCode = e instanceof SettingsError ? 2 : 1;
+}
