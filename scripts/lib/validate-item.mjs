@@ -1,5 +1,6 @@
 // Checks a board item against the rules of SPEC.md before it is written.
 import { ID_PATTERN } from "./board-store.mjs";
+import { fixBlock } from "./fixes.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
@@ -8,6 +9,7 @@ const SECTIONS = ["active", "easy", "almost", "review", "deferred", "hardware"];
 const EFFORTS = [1, 2, 5, 10, 15, 30, 60, 120];
 const DEPTHS = ["quick", "full", "pending"];
 export const CLASSIFIERS = ["fast", "standard", "full"];
+const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "unchanged"];
 const CI = ["passing", "failing", "pending", "none"];
 const MERGEABLE = ["mergeable", "conflicting", "unknown"];
 const DECISIONS = ["approved", "changes_requested", "pending"];
@@ -25,9 +27,9 @@ const isString = (v) => typeof v === "string" && v.trim().length > 0;
 /**
  * Returns `{ errors, warnings }` for one item. Each entry is `{ code, message }`.
  * `mode` is the account mode from accountMode(), `profile` the loaded profile.json, `repos` the instance's allowed repos
- * (default the profile's one repo).
+ * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known.
  */
-export function validateItem(id, item, { mode, profile, repos: repoList }) {
+export function validateItem(id, item, { mode, profile, repos: repoList, fix = null }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
@@ -49,7 +51,8 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 	if (!AUTHOR_TYPES.includes(item.authorType)) err("authorType", `authorType must be one of ${AUTHOR_TYPES.join(", ")}`);
 	if (!SECTIONS.includes(item.section)) err("section", `section must be one of ${SECTIONS.join(", ")}`);
 	if (!Number.isInteger(item.priority) || item.priority < 0) err("priority", "priority must be a whole number");
-	if (!EFFORTS.includes(item.effortMinutes)) err("effortMinutes", `effortMinutes must be one of ${EFFORTS.join(", ")}`);
+	if (item.effortMinutes === undefined) err("effortMinutes", `effortMinutes is required: the minutes the maintainer needs, one of ${EFFORTS.join(", ")}`);
+	else if (!EFFORTS.includes(item.effortMinutes)) err("effortMinutes", `effortMinutes must be one of ${EFFORTS.join(", ")}, not ${JSON.stringify(item.effortMinutes)}`);
 	if (!DEPTHS.includes(item.reviewDepth)) err("reviewDepth", `reviewDepth must be one of ${DEPTHS.join(", ")}`);
 	if (item.kind === "pr" && item.ci !== undefined && !CI.includes(item.ci)) err("ci", `ci must be one of ${CI.join(", ")}`);
 	if (item.mergeable !== undefined && !MERGEABLE.includes(item.mergeable)) err("mergeable", `mergeable must be one of ${MERGEABLE.join(", ")}`);
@@ -59,6 +62,17 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
 	if (item.lastEventUrl !== undefined && !(typeof item.lastEventUrl === "string" && typeof item.url === "string" && item.lastEventUrl.startsWith(item.url + "#"))) {
 		err("lastEventUrl", "lastEventUrl must be a URL of the item's own thread, its url followed by #anchor");
+	}
+	if (item.handled !== undefined && item.handled !== null) {
+		const h = item.handled;
+		const ok = isObject(h) && Object.keys(h).every((k) => ["at", "routeId", "routeType", "verified"].includes(k)) && Number.isFinite(Date.parse(h.at ?? "")) && isString(h.routeId) && isString(h.routeType) && (h.verified === null || HANDLED_VERIFIED.includes(h.verified));
+		if (!ok) err("handled", `handled must be { at, routeId, routeType, verified: null | ${HANDLED_VERIFIED.join(" | ")} }`);
+	}
+	if (item.fixFor !== undefined) {
+		const f = item.fixFor;
+		if (item.kind !== "pr" || !isObject(f) || Object.keys(f).some((k) => !["itemId", "ref"].includes(k)) || typeof f.itemId !== "string" || !ID_PATTERN.test(f.itemId) || typeof f.ref !== "string" || !/^[\w.-]+\/[\w.-]+#\d+$/.test(f.ref)) {
+			err("fixFor", 'fixFor is only for PRs, as { itemId, ref: "owner/name#number" }');
+		}
 	}
 	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
@@ -139,6 +153,10 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		}
 
 		if (params.alsoLabel !== undefined) checkAlsoLabel(route, params.alsoLabel, profile, where, err);
+		if (params.alsoAnswer !== undefined) checkAlsoAnswer(item, route, params.alsoAnswer, where, err);
+
+		// No second fix while one runs or its PR is a draft or open
+		if (route.type === "follow_up" && route.as === "agent" && fixBlock(fix)) err("fix-running", `${where}: ${fixBlock(fix)}`);
 
 		switch (route.type) {
 			case "review": {
@@ -269,6 +287,17 @@ function checkAlsoLabel(route, also, profile, where, err) {
 	if (both.length) err("also-label", `${where}: params.alsoLabel adds and removes ${both.join(", ")}`);
 }
 
+// The comment a discussion close route also marks as the answer, offered as a second button
+function checkAlsoAnswer(item, route, also, where, err) {
+	if (route.type !== "close" || item.kind !== "discussion") return err("also-answer", `${where}: alsoAnswer is only for close routes of discussions`);
+	if (!isObject(also) || Object.keys(also).some((k) => !["commentId", "url", "gist"].includes(k))) {
+		return err("also-answer", `${where}: params.alsoAnswer must be { commentId, url, gist }`);
+	}
+	if (typeof also.commentId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(also.commentId)) err("also-answer", `${where}: params.alsoAnswer.commentId must be a discussion comment node id`);
+	if (typeof also.url !== "string" || typeof item.url !== "string" || !also.url.startsWith(item.url + "#")) err("also-answer", `${where}: params.alsoAnswer.url must be a comment URL in this discussion`);
+	if (!isString(also.gist) || also.gist.length > 200) err("also-answer", `${where}: params.alsoAnswer.gist must say in at most 200 characters what the answer says`);
+}
+
 // What the project's autofix would change in a PR, from the mechanical check before the review
 function checkAutofix(item, err) {
 	if (item.autofix === undefined) return;
@@ -309,4 +338,4 @@ function checkWants(item, profile, err) {
 }
 
 /** Item fields whose change needs a validation of the merged item. */
-export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason"];
+export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason", "handled"];

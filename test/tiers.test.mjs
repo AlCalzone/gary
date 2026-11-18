@@ -1,7 +1,7 @@
 // The item's `wants` and `gary wants`, the rules fields of meta.json, and the shadow comparison of the fast tier.
 // Runs offline against the fake gh. The root's port 9 makes `gary put` write directly.
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ME } from "./fixtures/github.mjs";
 import { GARY, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
@@ -139,6 +139,44 @@ for (const bad of ["https://github.com/acme/widgets/pull/120#issuecomment-9", "h
 	r = gary("put", "items", "pr-12", file({ ...BASE, url: "https://github.com/acme/widgets/pull/12", lastEventUrl: bad }));
 	t.check(`lastEventUrl ${JSON.stringify(bad)} is refused`, r.status === 1 && /lastEventUrl must be a URL of the item's own thread/.test(r.stdout), r.stdout);
 }
+
+// handled: a maintainer field, kept on replace, cleared with a merge of null
+const handled = { at: "2026-11-18T10:00:00Z", routeId: "r1", routeType: "reply", verified: null };
+writeFileSync(join(items, "pr-12.json"), JSON.stringify({ ...BASE, handled }));
+r = gary("put", "items", "pr-12", file({ ...BASE, priority: 2 }));
+t.check("a replace keeps handled", r.status === 0 && JSON.stringify(JSON.parse(readFileSync(join(items, "pr-12.json"), "utf8")).handled) === JSON.stringify(handled), r.stdout + r.stderr);
+r = gary("put", "--merge", "items", "pr-12", file({ handled: { ...handled, verified: "maybe" } }));
+t.check("handled is validated", r.status === 1 && /handled must be \{ at, routeId, routeType, verified/.test(r.stdout), r.stdout);
+r = gary("put", "--merge", "items", "pr-12", file({ handled: { ...handled, verified: "closed" } }));
+t.check("handled takes a verified value", r.status === 0, r.stdout);
+const snapPath = join(home, "state", "snapshot.pending.json");
+const snap = JSON.parse(readFileSync(join(home, "state", "snapshot.json"), "utf8"));
+snap.items["pr-12"] = { ...snap.items["pr-12"], updatedAt: "2026-11-18T09:00:00Z", lastEventAt: "2026-11-18T11:00:00Z" };
+snap.items["pr-17"] = { ...snap.items["pr-17"], updatedAt: "2026-11-18T09:00:00Z", lastEventAt: null };
+writeFileSync(snapPath, JSON.stringify(snap));
+writeFileSync(join(items, "pr-17.json"), JSON.stringify({ ...BASE, number: 17, handled }));
+writeFileSync(join(items, "pr-98.json"), JSON.stringify({ ...BASE, number: 98, handled }));
+let hl = json(gary("handled", "--json"));
+const hOf = (id) => hl.find?.((x) => x.id === id);
+t.check("gary handled lists the handled items", Array.isArray(hl) && hl.length === 3 && hOf("pr-12").handled.verified === "closed" && !hl.some((x) => x.id === "issue-22"), hl);
+t.check("changedSince is true for an event after handled.at", hOf("pr-12").changedSince === true);
+t.check("changedSince is false without a later update or event", hOf("pr-17").changedSince === false, hOf("pr-17"));
+t.check("changedSince is null without a snapshot entry", hOf("pr-98").changedSince === null);
+r = gary("handled");
+t.check("the plain list names the check and the change", /pr-12\s+reply\s+2026-11-18T10:00:00Z\s+verified: closed, changed since/.test(r.stdout) && /pr-98 .*not checked, not in the snapshot/.test(r.stdout) && /3 handled items/.test(r.stdout), r.stdout);
+r = gary("put", "--merge", "items", "pr-12", file({ handled: null }));
+t.check("a merge of null clears handled", r.status === 0 && JSON.parse(readFileSync(join(items, "pr-12.json"), "utf8")).handled === undefined, r.stdout);
+rmSync(snapPath);
+for (const id of ["pr-17", "pr-98"]) writeFileSync(join(items, `${id}.json`), JSON.stringify({ ...BASE, number: Number(id.slice(3)) }));
+
+// effortMinutes
+const { effortMinutes: _drop, ...noEffort } = BASE;
+r = gary("put", "items", "pr-12", file(noEffort));
+t.check("a missing effortMinutes names the allowed values", r.status === 1 && /effortMinutes is required: the minutes the maintainer needs, one of 1, 2, 5, 10, 15, 30, 60, 120/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-12", file({ ...BASE, effortMinutes: 45 }));
+t.check("a wrong effortMinutes names the allowed values and the value", r.status === 1 && /one of 1, 2, 5, 10, 15, 30, 60, 120, not 45/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-12", file({ ...BASE, effortMinutes: 120 }));
+t.check("120 minutes is allowed", r.status === 0, r.stdout);
 
 // classifiedBy on items
 r = gary("put", "items", "pr-12", file({ ...BASE, classifiedBy: "fast" }));

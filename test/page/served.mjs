@@ -52,7 +52,7 @@ ws.addEventListener("message", (e) => {
 	const m = JSON.parse(e.data);
 	if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
 	if (m.method === "Runtime.exceptionThrown") problems.push("exception: " + m.params.exceptionDetails.exception?.description);
-	if (m.method === "Log.entryAdded" && m.params.entry.level === "error" && !/favicon|ERR_NAME|net::|avatars|github\.com/.test(m.params.entry.text + m.params.entry.url)) problems.push("log: " + m.params.entry.text);
+	if (m.method === "Log.entryAdded" && m.params.entry.level === "error" && !/favicon|ERR_NAME|net::|avatars|github\.com/.test(m.params.entry.text + m.params.entry.url)) problems.push("log: " + m.params.entry.text + " " + (m.params.entry.url || ""));
 	if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") problems.push("console: " + m.params.args.map((a) => a.value ?? a.description).join(" "));
 });
 const cmd = (method, params = {}) => new Promise((r) => { const id = ++seq; waiting.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
@@ -209,11 +209,14 @@ try {
 	await clickCard(2);
 	ok("address_review prefills fix and dismiss", await ev(`return [...document.querySelectorAll("#d-routes .card.open .decisions li")].map((li) => li.querySelector('.seg[aria-pressed="true"]').textContent).join() === "Fix,Dismiss";`));
 	ok("threads list is replaced by the card", await ev(`return document.getElementById("d-threads").hidden;`));
-	await press("Address the review");
-	ok("the server queues address_review with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-12" && a.routeId === "r3" && a.status === "queued" && a.action === "address_review" && a.params.decisions.map((d) => d.decision).join() === "fix,dismiss")));
-	ok("the queued card reads as requested", await until(`/Requested\\. The agent has it on its list\\./.test(${openCardText})`, 8000));
 	await clickCard(3);
 	ok("take_over replace shows its callout", await ev(`return /The fork does not allow pushes/.test(document.querySelector("#d-routes .card.open .callout")?.textContent ?? "");`));
+	await clickCard(2);
+	await press("Address the review");
+	ok("the server queues address_review with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-12" && a.routeId === "r3" && a.status === "queued" && a.action === "address_review" && a.params.decisions.map((d) => d.decision).join() === "fix,dismiss")));
+	// Queuing a pushing job marks the PR as being changed: the banner explains, the deciding routes go away
+	ok("after queuing, the PR shows the push banner", await until(`/The agent is changing this PR/.test(document.getElementById("d-fix").textContent)`, 8000));
+	ok("and offers no merge, review or second push", await ev(`return ![...document.querySelectorAll("#d-routes .card .card-head .r-hint")].some((e) => /^(Merge|Request changes|Take over|Address review)/.test(e.textContent));`));
 	await closeItem();
 
 	// The freshness guard: a refusal, then Post anyway with the second confirm
@@ -247,7 +250,8 @@ try {
 	// The list waits for the dialog, so the row shows the new state once it closes
 	await closeItem();
 	await revealAll();
-	ok("kind icon follows the live state", await until(`document.querySelector('.row[data-id="widgets/issue-21"] .r-kind svg')?.getAttribute("aria-label") === "Issue, closed as completed"`));
+	// The posted log request marked it handled, so its row may sit in the handled line
+	ok("kind icon follows the live state", await until(`(document.querySelector('.row[data-id="widgets/issue-21"] .r-kind svg') ?? document.querySelector('.handled-row[data-id="widgets/issue-21"] .h-kind svg'))?.getAttribute("aria-label") === "Issue, closed as completed"`));
 	setStub({});
 
 	// Routes in his name: the board copies and opens GitHub, the server is never asked to write
@@ -269,9 +273,13 @@ try {
 	await clickCard(3);
 	await press("Open GitHub to file the issue");
 	ok("me follow_up opens the new-issue form", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/new?title=A%20%26%20B&body=Line%201")`));
-	await openItem("pr-12");
+	writeFileSync(itemFile("pr-16"), JSON.stringify(probe("pr", 16, "https://github.com/acme/widgets/pull/16", {
+		hint: "Reply: thanks", routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks", recommended: true, text: "Thanks!" }, { id: "r2", type: "merge", as: "me", title: "Merge: ready" }],
+	})));
+	await until(`!!state.items.get("widgets/pr-16")`);
+	await openItem("pr-16");
 	await ev(`${rowButton(1, "Open GitHub to merge")}.click();`);
-	ok("me merge opens the PR URL", await until(`window.__opened.includes(${JSON.stringify(PR)})`));
+	ok("me merge opens the PR URL", await until(`window.__opened.includes("https://github.com/acme/widgets/pull/16")`));
 	ok("still no /api/action request", await ev(`return window.__apiCalls === 0;`));
 	await closeItem();
 
@@ -288,7 +296,7 @@ try {
 	// Learning: the decision log behind a prefill button
 	const decisions = () => JSON.parse(spawnSync(process.execPath, [GARY, "decisions", "--json"], { env: ENV, encoding: "utf8" }).stdout || "[]");
 	ok("a prefill click logs the edited text through /api/decision", await fileUntil(() => decisions().some((e) => e.type === "edited_text" && e.itemId === "issue-21" && e.route?.type === "reply" && / \(edited\)$/.test(e.final))));
-	ok("a prefill that is not the recommended route logs the alternative", await fileUntil(() => decisions().some((e) => e.type === "chose_alternative" && e.itemId === "pr-12" && e.chosen?.type === "merge")));
+	ok("a prefill that is not the recommended route logs the alternative", await fileUntil(() => decisions().some((e) => e.type === "chose_alternative" && e.itemId === "pr-16" && e.chosen?.type === "merge")));
 
 	// take_over on a contributor's PR carries the judged threads
 	writeFileSync(itemFile("pr-14"), JSON.stringify(probe("pr", 14, "https://github.com/acme/widgets/pull/14", {
@@ -307,7 +315,7 @@ try {
 	await ev(`document.querySelectorAll("#d-routes .card.open .decisions > li")[1].querySelector('.seg[data-v="fix"]').click();`);
 	await press("Take over");
 	ok("the server queues take_over with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-14" && a.action === "take_over" && a.status === "queued" && a.params.decisions?.map((d) => d.decision).join() === "fix,fix,dismiss")));
-	ok("the take_over card reads as requested", await until(`/Requested\\. The agent has it on its list\\./.test(${openCardText})`, 8000));
+	ok("after the take-over is queued the PR shows the push banner and no second take-over", await until(`/The agent is changing this PR/.test(document.getElementById("d-fix").textContent) && !document.querySelector("#d-routes .card")`, 8000));
 	await closeItem();
 
 	// "Not this": dismissing suggested routes
@@ -395,7 +403,7 @@ try {
 	ok("autofix: the served badge", await ev(`return [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Autofix: 2 files");`));
 	await ev(`${rowButton(0, "Format & fix lint")}.click();`);
 	ok("format: the server queues it", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-13" && a.action === "format" && a.status === "queued")));
-	ok("format: the row reads as requested", await until(`/Requested/.test(document.querySelectorAll("#d-routes .card")[0]?.textContent ?? "")`, 8000));
+	ok("format: once queued, the push banner replaces the row", await until(`/The agent is changing this PR/.test(document.getElementById("d-fix").textContent) && !document.querySelector("#d-routes .card")`, 8000));
 	await closeItem();
 
 	// Broken settings: the server keeps the last valid ones, the page shows a banner until they are fixed
@@ -454,6 +462,57 @@ try {
 	ok("the list does not move while the dialog is open", await ev(`return ${rowOf("issue-26")} === ${before26};`));
 	await closeItem();
 	ok("closing applies the change", await until(`${rowOf("issue-26")} !== ${before26}`));
+
+	// Answer button on a discussion's close
+	writeFileSync(itemFile("disc-31"), JSON.stringify(probe("discussion", 31, "https://github.com/acme/widgets/discussions/31", {
+		hint: "Close: answered", routes: [{ id: "r1", type: "close", as: "me", title: "Close: answered", recommended: true, text: "Thanks, answered below.",
+			params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/31#c1", gist: "Use the backup command." } } }],
+	})));
+	await until(`!!state.items.get("widgets/disc-31")`);
+	await openItem("disc-31");
+	const answerBtn = `document.querySelector("#d-routes .card .answer-btn")`;
+	ok("answer: the served card has Mark answer and the gist", await until(`${answerBtn}?.textContent === "Mark answer" && /Proposed answer: Use the backup command\./.test(document.querySelector("#d-routes .part-gist")?.textContent ?? "")`));
+	await ev(`${answerBtn}.click();`);
+	ok("answer: the server marks the answer", await fileUntil(() => actionFiles().some((a) => a.itemId === "disc-31" && a.part === "answer" && a.status === "done")));
+	ok("answer: the button reads Answer marked", await until(`${answerBtn}?.textContent === "Answer marked" && ${answerBtn}.disabled`, 8000));
+	await closeItem();
+
+	// A fix in flight and a PR the agent is changing, from the stored item fields
+	writeFileSync(itemFile("issue-33"), JSON.stringify(probe("issue", 33, "https://github.com/acme/widgets/issues/33", {
+		hint: "Reply: fix in review",
+		fix: { state: "draft", pr: { number: 14, url: "https://github.com/acme/widgets/pull/14", title: "fix: probe", isDraft: true, ci: "pending", author: "widgets-bot" }, startedBy: "routine", since: new Date().toISOString() },
+		routes: [
+			{ id: "r1", type: "reply", as: "me", title: "Reply: fix in review", recommended: true, text: "A fix is in review." },
+			{ id: "r2", type: "follow_up", as: "agent", title: "Start fix: again", text: "" },
+		],
+	})));
+	writeFileSync(itemFile("pr-15"), JSON.stringify(probe("pr", 15, "https://github.com/acme/widgets/pull/15", {
+		hint: "Reply: on it", working: { kind: "push", route: "take_over", since: new Date().toISOString() },
+		routes: [
+			{ id: "r1", type: "reply", as: "me", title: "Reply: on it", recommended: true, text: "On it." },
+			{ id: "r2", type: "merge", as: "me", title: "Merge: as is" },
+			{ id: "r3", type: "review", as: "bot", title: "Approve: as is", params: { event: "approve", comments: [] }, text: "Thanks" },
+			{ id: "r4", type: "drive", as: "agent", title: "Drive: rounds", params: { maxRounds: 2 } },
+		],
+	})));
+	await until(`!!state.items.get("widgets/pr-15")`);
+	await revealAll();
+	ok("fix draft: the row chip on the title line", await until(`document.querySelector('.row[data-id="widgets/issue-33"] .r-titleline .agent-chip')?.textContent === "Fix: #14 draft"`));
+	ok("push: the Agent working chip", await ev(`return document.querySelector('.row[data-id="widgets/pr-15"] .r-titleline .agent-chip')?.textContent === "Agent working";`));
+	await openItem("issue-33");
+	ok("fix draft: the banner and no fix route", await ev(`return /^Draft fix #14 is open: fix: probe\./.test(document.getElementById("d-fix").textContent) && ![...document.querySelectorAll("#d-routes .card")].some((c) => /Start fix/.test(c.textContent));`));
+	await closeItem();
+	await openItem("pr-15");
+	ok("push: merge, approve and drive are hidden, the reply stays", await ev(`const t = [...document.querySelectorAll("#d-routes .card .card-head .r-hint")].map((e) => e.textContent).join("|"); return t === "Reply: on it";`));
+	ok("push: the banner", await ev(`return /The agent is changing this PR \\(take over, started/.test(document.getElementById("d-fix").textContent);`));
+	await closeItem();
+
+	// A handled item leaves the plan; Bring back clears the mark on the server
+	await put("issue-33", { handled: { at: new Date().toISOString(), routeId: "r1", routeType: "reply", verified: "unchanged" } });
+	ok("handled: the row leaves the groups and appears in the handled line", await until(`!document.querySelector('#board .group .row[data-id="widgets/issue-33"]') && !!document.querySelector('#handled .handled-row[data-id="widgets/issue-33"]')`, 8000));
+	await ev(`[...document.querySelectorAll('#handled .handled-row[data-id="widgets/issue-33"] button')].find((b) => b.textContent === "Bring back").click();`);
+	ok("Bring back clears handled on disk", await fileUntil(() => !json(itemFile("issue-33")).handled));
+	ok("and the row is back", await until(`!document.querySelector('#handled .handled-row[data-id="widgets/issue-33"]') && !!document.querySelector('#board .row[data-id="widgets/issue-33"]')`, 8000));
 
 	// Paused: gary pause and gary resume change the header live, server writes are refused calmly
 	const gary = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: ENV, encoding: "utf8" });
@@ -555,10 +614,11 @@ try {
 	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "easy", 10, i + 1)]));
 	await settle();
 	ok("quick capped at 5", (await ids("quick")) === "issue-1,issue-2,issue-3,issue-4,issue-5");
-	setActions([["issue-1-1", { itemId: "issue-1", action: "comment", status: "done", via: "mcp", createdAt: iso(60000), finishedAt: iso(60000), params: {}, text: "", result: "" }]]);
+	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "easy", 10, i + 1, i === 0 ? { handled: { at: iso(60000), routeId: "r0", routeType: "chore", verified: null } } : {})]));
 	await settle();
 	ok("next planned item moves up", (await ids("quick")) === "issue-2,issue-3,issue-4,issue-5,issue-6");
 	ok("handled time counts as spent", await ev(`return document.querySelector("#plan .sum").textContent === "10 min of 6 h";`));
+	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "easy", 10, i + 1)]));
 	setActions([["issue-1-2", { itemId: "issue-1", action: "reanalyze", status: "done", via: "queue", createdAt: iso(60000), finishedAt: iso(30000), params: {}, text: "", result: "" }]]);
 	await settle();
 	ok("a finished re-analysis returns the item to its place by priority", (await ids("quick")) === "issue-1,issue-2,issue-3,issue-4,issue-5");

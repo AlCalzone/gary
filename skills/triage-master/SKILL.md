@@ -74,6 +74,12 @@ A worker may or may not be able to start its own subagents, depending on the har
 
 Whichever way: a worker reports only through the instance's state directory: item docs, action results and `<state>/runs/<run>/summary.txt`. Never wait for a message.
 
+## 5a. Dead workers
+
+A worker can die. When a worker's time limit passes without a summary file, set its job's action doc to `failed` with the result `The worker did not finish.`, release the claims of that run (`gary claims --json` lists them by run, `gary release <itemId> <kind> --run <run>`), and name the item in the summary.
+
+On every hourly start, do the same for every claimed action doc and every claim whose run has no live worker in this session and is older than the time limit.
+
 ## 6. Wait and summarize
 
 Wait for each worker's `summary.txt` with a Monitor or a polling loop, with the same time limits as above. A worker that wrote none by then failed: note `<name>: no summary after 60 minutes.`

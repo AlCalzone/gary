@@ -94,6 +94,55 @@ export function prFacts(entry) {
 	};
 }
 
+const LOCK_FILES = new Set([
+	"package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb", "cargo.lock", "go.sum",
+	"gemfile.lock", "composer.lock", "pipfile.lock", "poetry.lock", "uv.lock", "packages.lock.json", "flake.lock", ".terraform.lock.hcl",
+]);
+
+/**
+ * The size of a PR from its GraphQL node: `changedFiles`, and `changedLines` as additions plus deletions without lock files.
+ * GitHub's API does not say which files are generated, so only lock files are left out. Lock files beyond the first
+ * page of files still count.
+ */
+export function sizeFacts(node) {
+	const files = node.files?.nodes ?? [];
+	const lockLines = files.filter((f) => LOCK_FILES.has(basename(f.path ?? "").toLowerCase())).reduce((n, f) => n + (f.additions ?? 0) + (f.deletions ?? 0), 0);
+	return {
+		changedFiles: node.files?.totalCount ?? files.length,
+		changedLines: Math.max(0, (node.additions ?? 0) + (node.deletions ?? 0) - lockLines),
+	};
+}
+
+const AI_NAME = /\b(claude|copilot)\b/i;
+const AI_BRANCH = /^(claude|copilot)\//i;
+
+/**
+ * Whether an AI agent or a bot wrote the PR, from its commits and head branch. `ai.logins` are the configured bot
+ * and the profile's botLogins, `ai.names` the profile's aiAuthors, matched as case-insensitive parts of a name or login.
+ */
+export function aiFacts(node, ai = { logins: [], names: [] }) {
+	const logins = new Set((ai.logins ?? []).map((l) => l.toLowerCase()));
+	const names = (ai.names ?? []).map((n) => n.toLowerCase()).filter(Boolean);
+	const isAgent = (text) => {
+		const v = (text ?? "").trim();
+		if (!v) return false;
+		const low = v.toLowerCase();
+		return AI_NAME.test(v) || low.endsWith("[bot]") || logins.has(low) || names.some((n) => low.includes(n));
+	};
+	const signals = new Set();
+	if (AI_BRANCH.test(node.headRefName ?? "")) signals.add(`branch ${node.headRefName}`);
+	for (const { commit } of node.allCommits?.nodes ?? []) {
+		for (const [role, person] of [["author", commit?.author], ["committer", commit?.committer]]) {
+			const who = person?.user?.login ?? person?.name;
+			if (isAgent(person?.user?.login) || isAgent(person?.name)) signals.add(`commit ${role} ${who}`);
+		}
+		for (const m of (commit?.message ?? "").matchAll(/^co-authored-by:\s*([^<\n]*?)\s*(?:<([^>\n]*)>)?\s*$/gim)) {
+			if (isAgent(m[1]) || isAgent(m[2]?.split("@")[0])) signals.add(`co-author ${m[1] || m[2]}`);
+		}
+	}
+	return { aiAuthored: signals.size > 0, aiSignals: [...signals].slice(0, 10) };
+}
+
 /** The facts of an issue or discussion entry from the snapshot. */
 export function issueFacts(entry, timeline) {
 	return {

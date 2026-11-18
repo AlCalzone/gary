@@ -42,6 +42,9 @@ const items = {
 			{ id: "r12", type: "take_over", title: "Take over: default mode", as: "agent" },
 			{ id: "r13", type: "chore", title: "Chore: Copilot review", as: "bot", params: { action: "request_review", reviewer: "copilot" } },
 			{ id: "r14", type: "format", title: "Format: no autofix check", as: "agent" },
+			{ id: "r15", type: "chore", title: "Chore: ready", as: "bot", params: { action: "ready" } },
+			{ id: "r16", type: "reply", title: "Reply: while it works", as: "bot", text: "Working on it" },
+			{ id: "r17", type: "review", title: "Review: approve later", as: "bot", params: { event: "approve" }, text: "" },
 		],
 	},
 	"issue-21": {
@@ -111,6 +114,15 @@ const items = {
 			{ id: "r7", type: "reply", title: "Reply: no labels", as: "bot", text: "x" },
 		],
 	},
+	"disc-31": {
+		kind: "discussion", repo: REPO, number: 31, title: "answered", url: "https://github.com/acme/widgets/discussions/31", reviewedAt, hint: "Close: answered",
+		routes: [{ id: "r1", type: "close", title: "Close: answered", recommended: true, text: "Thanks, closing.", params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/31#c1", gist: "Hold the button" } } }],
+	},
+	"issue-60": { kind: "issue", repo: REPO, number: 22, title: "refresh unchanged", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x" }] },
+	"issue-61": { kind: "issue", repo: REPO, number: 23, title: "refresh closed", reviewedAt, hint: "Close: x", routes: [{ id: "r1", type: "close", title: "Close: x", recommended: true, text: "x" }] },
+	"disc-62": { kind: "discussion", repo: REPO, number: 35, title: "refresh commented", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x" }] },
+	"pr-63": { kind: "pr", repo: REPO, number: 18, title: "refresh merged", authorType: "maintainer", reviewedAt, ci: "pending", mergeable: "unknown", hint: "Merge: x", routes: [{ id: "r1", type: "merge", title: "Merge: x", as: "me", recommended: true }] },
+	...Object.fromEntries(Array.from({ length: 30 }, (_, k) => [`issue-${70 + k}`, { kind: "issue", repo: REPO, number: 22, title: "budget", reviewedAt, routes: [] }])),
 	"issue-41": { kind: "issue", repo: REPO, number: 20, title: "closed", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { add: ["needs-info"] } } }] },
 };
 for (const [id, data] of Object.entries(items)) writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(data));
@@ -130,6 +142,10 @@ const gadgetItems = {
 	"issue-90": { kind: "issue", repo: "acme/gadgets", number: 90, title: "only in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }, { id: "r2", type: "request_logs", title: "Ask: log", as: "bot", text: "Log?" }] },
 	"issue-91": { kind: "issue", repo: REPO, number: 91, title: "widgets repo in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }] },
 	"issue-92": { kind: "issue", repo: "acme/gadgets", number: 22, title: "label in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { add: ["needs-info"] } } }] },
+	"disc-95": {
+		kind: "discussion", repo: "acme/gadgets", number: 31, title: "gadgets answer", reviewedAt, hint: "Close: x",
+		routes: [{ id: "r1", type: "close", title: "Close: x", recommended: true, text: "x", params: { alsoAnswer: { commentId: "DC_c1", url: "x#c1", gist: "x" } } }],
+	},
 	"issue-93": { kind: "issue", repo: "acme/gadgets", number: 21, title: "own login", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { remove: ["bug"] } } }] },
 };
 for (const [id, data] of Object.entries(gadgetItems)) writeFileSync(join(GBOARD, "items", id + ".json"), JSON.stringify(data));
@@ -142,9 +158,11 @@ writeFileSync(stubFile, JSON.stringify({
 	"acme/widgets#20": { state: "CLOSED" },
 }));
 const ghLog = join(T, "gh.log");
+const ghOverrides = join(T, "gh-overrides.json");
+writeFileSync(ghOverrides, "{}");
 
 const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-run", "--port", String(PORT)], {
-	env: { ...env, GARY_GUARD_STUB: stubFile, FAKE_GH_LOG: ghLog },
+	env: { ...env, GARY_GUARD_STUB: stubFile, FAKE_GH_LOG: ghLog, FAKE_GH_OVERRIDES: ghOverrides },
 	stdio: ["ignore", "inherit", "pipe"],
 });
 process.on("exit", () => child.kill("SIGTERM"));
@@ -253,11 +271,35 @@ await expect("drive on an issue is refused", "issue-21", "r15", {}, refused(/onl
 await expect("drive on a contributor PR is refused", "pr-14", "r2", {}, refused(/taken-over PRs/));
 await expect("drive with maxRounds 4 is refused", "pr-14", "r1", {}, refused(/taken-over PRs|maxRounds/));
 await expect("drive on a taken-over PR is queued with 3 rounds", "pr-13", "r1", {}, (r) => r.data.ok && r.data.queued);
-await expect("drive on a maintainer PR is queued", "pr-12", "r11", {}, (r) => r.data.ok && r.data.queued);
 await expect("format without an autofix check is refused", "pr-12", "r14", {}, refused(/autofix check to have found changes/));
+await expect("drive on a maintainer PR is queued", "pr-12", "r11", {}, (r) => r.data.ok && r.data.queued);
 await expect("format when the autofix changes nothing is refused", "pr-15", "r1", {}, refused(/autofix check to have found changes/));
 await expect("format takes no input", "pr-14", "r3", { input: { files: ["a"] } }, refused(/unknown field/));
 await expect("format on a contributor PR that is not taken over is queued", "pr-14", "r3", {}, (r) => r.data.ok && r.data.queued);
+// One push job per item at a time. finishQueued stands in for a worker that finished its request
+const finishQueued = () => {
+	for (const n of readdirSync(join(BOARD, "actions"))) {
+		const f = join(BOARD, "actions", n);
+		const d = JSON.parse(readFileSync(f, "utf8"));
+		if (d.status === "queued") writeFileSync(f, JSON.stringify({ ...d, status: "done", finishedAt: new Date().toISOString() }));
+	}
+};
+await expect("a second push job on an item with a queued one gets 409", "pr-12", "r12", {}, (r) => r.status === 409 && r.data.working === true && r.data.result === "The agent is changing this PR. Decide after it is done.");
+await expect("a review is blocked while the agent pushes to the PR", "pr-12", "r17", {}, (r) => r.status === 409 && r.data.result === "The agent is changing this PR. Decide after it is done.");
+await expect("a ready chore is blocked too", "pr-12", "r15", {}, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
+await expect("a reply stays allowed", "pr-12", "r16", {}, (r) => r.data.ok === true);
+let st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("the item is served as working while a push job is queued", st.working?.kind === "push" && st.working.action === "drive" && typeof st.working.since === "string", st.working);
+finishQueued();
+// A drive that waits for a review bot between rounds still pushes
+mkdirSync(join(home, "state", "drive"), { recursive: true });
+writeFileSync(join(home, "state", "drive", "pr-12.json"), JSON.stringify({ reviewRequestedAt: new Date().toISOString(), repo: REPO, number: 12 }));
+st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("a waiting drive is served as push work", st.working?.kind === "push" && st.working.action === "drive", st.working);
+await expect("a waiting drive blocks a review", "pr-12", "r17", {}, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
+rmSync(join(home, "state", "drive", "pr-12.json"));
+st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("a finished job leaves the item without working", st.working === undefined, st.working);
 await expect("take_over defaults to push", "pr-12", "r12", {}, (r) => r.data.ok && r.data.queued);
 check("route comments keep diffHunk in the served route", served["pr-12"].routes.find((r) => r.id === "r1").params.comments[1].diffHunk.includes("DIFFHUNK_MARKER"));
 
@@ -268,8 +310,20 @@ await expect("a new human comment refuses the click", "issue-22", "r1", {}, (r) 
 await expect("force runs it anyway", "issue-22", "r1", { force: true }, (r) => r.data.ok === true);
 
 // Agent routes
-await expect("address_review is queued", "pr-12", "r2", { input: { decisions: [{ threadId: "PRRT_1", decision: "fix", note: " fix it " }, { threadId: "PRRT_2", decision: "dismiss" }] }, text: "Run note" }, (r) => r.data.ok && r.data.queued);
+finishQueued();
 await expect("take_over push is queued", "pr-12", "r8", {}, (r) => r.data.ok && r.data.queued);
+finishQueued();
+await expect("address_review is queued", "pr-12", "r2", { input: { decisions: [{ threadId: "PRRT_1", decision: "fix", note: " fix it " }, { threadId: "PRRT_2", decision: "dismiss" }] }, text: "Run note" }, (r) => r.data.ok && r.data.queued);
+// A claim of the matching kind blocks a click, a claim of another kind does not
+mkdirSync(join(home, "state", "claims"), { recursive: true });
+writeFileSync(join(home, "state", "claims", "issue-21.fix.json"), JSON.stringify({ run: "run-hourly", at: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() }));
+writeFileSync(join(home, "state", "claims", "disc-34.review.json"), JSON.stringify({ run: "run-old", at: "2026-01-01T00:00:00Z", expiresAt: "2026-01-01T01:00:00Z" }));
+await sleep(300);
+await expect("a fix claim of the hourly run blocks Start fix", "issue-21", "r8", {}, (r) => r.status === 409 && r.data.fixRunning === true && /already running, started by the routine/.test(r.data.result));
+st = (await api("/api/state")).data.items.filter((i) => i.instance === "widgets");
+check("an issue with a running fix is served with item.fix", st.find((i) => i.id === "issue-21").fix?.state === "working" && st.find((i) => i.id === "issue-21").fix.startedBy === "routine" && st.find((i) => i.id === "issue-22").fix === undefined, st.find((i) => i.id === "issue-21").fix);
+check("a claim is served as working with its kind and start", st.find((i) => i.id === "issue-21").working?.kind === "fix" && st.find((i) => i.id === "disc-34").working === undefined, st.find((i) => i.id === "issue-21").working);
+rmSync(join(home, "state", "claims", "issue-21.fix.json"));
 await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", {}, (r) => r.data.ok && r.data.queued);
 await expect("a repeated agent click gets 409", "issue-21", "r8", {}, (r) => r.status === 409);
 
@@ -284,7 +338,7 @@ check("the label button takes only input.part", r.data.ok === false && /only inp
 r = await labelClick("widgets", "issue-40", "r1", { input: { part: "label", add: ["bug"] } });
 check("the label button takes no labels from the client", r.data.ok === false && /unknown field "add"/.test(r.data.result), r);
 r = await labelClick("widgets", "issue-40", "r1", { input: { part: "text" } });
-check("input.part must be label", r.data.ok === false && /input.part must be "label"/.test(r.data.result), r);
+check("input.part must name a button", r.data.ok === false && /input.part must be one of label, answer/.test(r.data.result), r);
 r = await labelClick("widgets", "issue-40", "r1", { text: "x" });
 check("the label button sends no text", r.status === 400, r);
 r = await labelClick("widgets", "issue-40", "r4");
@@ -306,6 +360,20 @@ check("input.alsoLabel must be a boolean", refused(/input.alsoLabel must be true
 r = await click("issue-40", "r7", { input: { alsoLabel: false } });
 check("input.alsoLabel needs a route with alsoLabel", refused(/unknown field "alsoLabel"/)(r), r);
 
+// alsoAnswer: the answer button next to a prefill close of a discussion
+r = await click("disc-31", "r1");
+check("the close itself stays the maintainer's", refused(/yours to do on GitHub/)(r), r);
+r = await labelClick("widgets", "disc-31", "r1");
+check("a close route has no label button", r.data.ok === false && /sets no labels/.test(r.data.result), r);
+r = await labelClick("widgets", "disc-31", "r1", { input: { part: "answer", commentId: "DC_x" } });
+check("the answer button takes no comment id from the client", r.data.ok === false && /unknown field "commentId"/.test(r.data.result), r);
+r = await labelClick("widgets", "issue-40", "r1", { input: { part: "answer" } });
+check("a reply route has no answer button", r.data.ok === false && /marks no answer/.test(r.data.result), r);
+r = await labelClick("widgets", "disc-31", "r1", { input: { part: "answer" } });
+check("the answer button marks exactly the route's comment as the bot", r.data.ok === true && invocations(r).includes("markDiscussionCommentAsAnswer") && invocations(r).includes("DC_c1"), r);
+r = await labelClick("widgets", "disc-31", "r1", { input: { part: "answer" } });
+check("a repeat of the answer button gets 409", r.status === 409 && r.data.duplicate === true, r);
+
 // Action log
 await new Promise((r) => setTimeout(r, 300));
 const docs = readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8")));
@@ -325,7 +393,7 @@ const wLog = readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim()
 check("unticking the label logs skipped_label with the route and the labels", wLog.some((e) => e.type === "skipped_label" && e.route.type === "request_logs" && e.route.title === "Ask: log, no label" && JSON.stringify(e.labels) === '{"add":["needs-info"]}'), wLog);
 check("the label button logs no decision", !wLog.some((e) => e.chosen?.title === "Reply: ask for a log" || e.route?.title === "Reply: ask for a log") && wLog.filter((e) => e.type === "skipped_label").length === 1, wLog);
 const fmt = byRoute("pr-14", "r3")[0];
-check("format doc is queued with the reviewed head", fmt?.status === "queued" && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
+check("format doc is queued with the reviewed head", ["queued", "done"].includes(fmt?.status) && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
 check("format does not take the PR over", JSON.parse(readFileSync(join(BOARD, "items", "pr-14.json"), "utf8")).takenOver === undefined);
 check("take_over doc carries the text", byRoute("pr-12", "r8")[0]?.text === "Finish it", byRoute("pr-12", "r8"));
 check("take_over doc", byRoute("pr-12", "r8")[0]?.params?.mode === "push", byRoute("pr-12", "r8"));
@@ -338,9 +406,52 @@ const after = Object.fromEntries((await api("/api/state")).data.items.filter((i)
 const r1 = after["pr-12"].routes.find((r) => r.id === "r1");
 check("state marks a ran route as done", r1.done?.status === "done", r1);
 check("state marks a queued route", after["pr-12"].routes.find((r) => r.id === "r2").done?.status === "queued");
+check("state serves answerDone", after["disc-31"].routes[0].answerDone?.status === "done" && after["disc-31"].routes[0].labelDone === undefined, after["disc-31"].routes[0]);
+const answerDoc = byRoute("disc-31", "r1")[0];
+check("the answer button writes its own action doc", answerDoc?.part === "answer" && answerDoc.action === "answer_discussion" && /^[0-9a-f]{16}$/.test(answerDoc.answerHash) && JSON.stringify(answerDoc.params) === '{"commentId":"DC_c1"}', answerDoc);
 const labelled = after["issue-40"].routes[0];
 check("state serves labelDone next to done", labelled.labelDone?.status === "done" && typeof labelled.labelDone.result === "string" && labelled.done === undefined, labelled);
 
+
+// handled and the refresh
+const itemNow = (id) => JSON.parse(readFileSync(join(BOARD, "items", id + ".json"), "utf8"));
+check("a bot post sets handled to commented", itemNow("issue-40").handled?.routeId === "r5" && itemNow("issue-40").handled.routeType === "request_logs" && itemNow("issue-40").handled.verified === "commented", itemNow("issue-40").handled);
+check("a queued agent job sets handled unchecked", itemNow("pr-12").handled?.routeType === "address_review" && itemNow("pr-12").handled.verified === null, itemNow("pr-12").handled);
+check("the answer button sets handled", itemNow("disc-31").handled?.routeType === "close" && itemNow("disc-31").handled.verified === null, itemNow("disc-31").handled);
+for (const id of ["issue-60", "issue-61", "disc-62", "pr-63"]) await api("/api/decision", { instance: "widgets", itemId: id, routeId: "r1" });
+await sleep(100);
+const h60 = itemNow("issue-60").handled;
+check("a reported prefill sets handled with verified null", h60?.routeId === "r1" && h60.routeType === "reply" && h60.verified === null && Date.parse(h60.at) > Date.now() - 10000, h60);
+const soon = new Date(Date.now() + 60000).toISOString();
+writeFileSync(ghOverrides, JSON.stringify({
+	"issue-23": { state: "CLOSED" },
+	"disc-35": { timelineComments: { totalCount: 1, nodes: [{ id: "DC_new", author: { login: "octocat", __typename: "User" }, createdAt: soon, body: "Done", url: "https://github.com/acme/widgets/discussions/35#discussioncomment-900" }] } },
+	"pr-18": { state: "MERGED", mergeable: "CONFLICTING", commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] } },
+}));
+const refresh = (itemId, instance = "widgets") => api("/api/refresh", { instance, itemId });
+r = await refresh("issue-60");
+check("a refresh without a change says unchanged", r.status === 200 && r.data.ok && r.data.result.verified === "unchanged" && r.data.result.state === "open" && itemNow("issue-60").handled.verified === "unchanged" && itemNow("issue-60").live === undefined, r);
+r = await refresh("issue-60");
+check("a second refresh of the item within 20 s gets 429 with a retry hint", r.status === 429 && r.data.retryAfter > 0 && r.data.retryAfter <= 20, r);
+r = await refresh("issue-61");
+check("a thread closed after the click is verified closed and served live", r.data.ok && r.data.result.verified === "closed" && itemNow("issue-61").live?.state === "closed" && typeof itemNow("issue-61").live.checkedAt === "string", r);
+r = await refresh("disc-62");
+check("our comment after the click is verified commented", r.data.ok && r.data.result.verified === "commented" && itemNow("disc-62").lastEventUrl === "https://github.com/acme/widgets/discussions/35#discussioncomment-900", { r, item: itemNow("disc-62") });
+r = await refresh("pr-63");
+const p63 = itemNow("pr-63");
+check("a merged PR is verified merged and its GitHub fields refreshed", r.data.ok && r.data.result.verified === "merged" && p63.live?.state === "merged" && p63.mergeable === "conflicting" && p63.ci === "failing" && p63.title === "refresh merged" && p63.routes.length === 1, p63);
+const refreshedItems = (await api("/api/state")).data.items.filter((i) => i.instance === "widgets");
+check("the state serves live and handled", refreshedItems.find((i) => i.id === "issue-61").live?.state === "closed" && refreshedItems.find((i) => i.id === "issue-60").handled?.verified === "unchanged");
+r = await refresh("issue-70");
+check("a refresh of an item without handled only refreshes the fields", r.data.ok && r.data.result.verified === undefined && itemNow("issue-70").handled === undefined, r);
+const before = readFileSync(ghLog, "utf8").length;
+let last;
+for (let k = 71; k < 100 && (!last || last.status !== 429); k++) last = await refresh(`issue-${k}`);
+check("more than 30 refreshes a minute get 429", last.status === 429 && last.data.retryAfter > 0 && last.data.retryAfter <= 60, last);
+check("a refresh never writes to GitHub", !readFileSync(ghLog, "utf8").slice(before).includes("mutation"));
+r = await refresh("issue-60", "nope");
+check("a refresh needs a served instance", r.status === 400, r);
+writeFileSync(ghOverrides, "{}");
 
 // Suggestions in inline review comments
 check("a suggestion follows the text after a blank line", commentBody({ text: "Use const", suggestion: "const a = 1;" }) === "Use const\n\n```suggestion\nconst a = 1;\n```", commentBody({ text: "Use const", suggestion: "const a = 1;" }));
@@ -453,6 +564,8 @@ r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r
 check("a gadgets bot click is refused while gadgets is paused", r.data.ok === false && r.data.paused === true, r);
 r = await labelClick("gadgets", "issue-92", "r1");
 check("the label button is refused while paused", r.data.ok === false && r.data.paused === true, r);
+r = await labelClick("gadgets", "disc-95", "r1", { input: { part: "answer" } });
+check("the answer button is refused while paused", r.data.ok === false && r.data.paused === true, r);
 r = await api("/api/action", { instance: "widgets", itemId: "issue-30", routeId: "r1", draftHash: itemOf("widgets", "issue-30").routes[0].draftHash });
 check("a widgets bot click still runs", r.data.ok === true && JSON.stringify(r.data.result.invocations).includes("Hi from widgets"), r);
 writeFileSync(join(gadgets.home, "state", "control.json"), JSON.stringify({ paused: false }));
@@ -469,6 +582,8 @@ writeFileSync(gConfig, JSON.stringify({ ...JSON.parse(gConfigText), bot: null })
 await sleep(300);
 r = await labelClick("gadgets", "issue-93", "r1");
 check("the label button needs a bot or own-token pushes", r.data.ok === false && /needs a bot account, or allowOwnTokenPushes/.test(r.data.result), r);
+r = await labelClick("gadgets", "disc-95", "r1", { input: { part: "answer" } });
+check("the answer button needs a bot or own-token pushes", r.data.ok === false && /Marking the answer needs a bot account/.test(r.data.result), r);
 writeFileSync(gConfig, JSON.stringify({ ...JSON.parse(gConfigText), bot: null, allowOwnTokenPushes: true }));
 await sleep(300);
 r = await labelClick("gadgets", "issue-93", "r1");
@@ -573,6 +688,8 @@ r = await api("/api/action", { instance: "gadgets", itemId: "issue-90", routeId:
 check("a bot click is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result) && /"repo" must look like/.test(r.data.settingsError), r);
 r = await labelClick("gadgets", "issue-93", "r1");
 check("the label button is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result), r);
+r = await labelClick("gadgets", "disc-95", "r1", { input: { part: "answer" } });
+check("the answer button is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result), r);
 r = await api("/api/db", { instance: "gadgets", op: "update", path: "items/issue-90", data: { priority: 2 } });
 check("board-only writes keep working", r.status === 200, r);
 r = await api("/api/action", { instance: "gadgets", action: "dismiss_proposal", proposalId: "learn-none" });

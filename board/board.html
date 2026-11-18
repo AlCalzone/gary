@@ -215,11 +215,45 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .prev-draft summary { cursor: pointer; }
 .prev-draft pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 13.5px/1.5 var(--font-read); color: var(--fg); }
 .also-label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--fg); }
-.label-btn { gap: 6px; }
-.label-btn .label-check, .opened-mark .i { width: 15px; height: 15px; color: var(--ok); }
+.part-btn { gap: 6px; }
+.part-btn .part-check, .opened-mark .i { width: 15px; height: 15px; color: var(--ok); }
+.part-view { font-size: 12.5px; color: var(--muted); }
+.part-view:hover { color: var(--fg); }
+.part-gist { flex-basis: 100%; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.working-line { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 13.5px; color: var(--muted); }
+.working-line[hidden] { display: none; }
+.working-line .i { width: 15px; height: 15px; color: var(--act-agent); }
+/* A fix or a push in progress: filled teal, readable at a glance on the title line */
+.r-titleline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.agent-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; background: var(--act-agent); color: var(--surface); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.agent-chip.quiet { background: color-mix(in srgb, var(--act-agent) 14%, var(--surface)); color: var(--act-agent); }
+.ci-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 1.5px var(--surface); }
+.ci-dot.ci-passing { background: var(--ok); }
+.ci-dot.ci-failing { background: var(--bad); }
+.ci-dot.ci-pending { background: var(--warn); }
+.agent-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 2px 0 0; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--act-agent) 14%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--act-agent) 45%, transparent); color: var(--fg); font-size: 14px; line-height: 1.5; }
+.agent-banner[hidden] { display: none; }
+.agent-banner .i { width: 16px; height: 16px; color: var(--act-agent); flex: none; }
+.agent-banner .ab-text { flex: 1; min-width: 14em; }
+.agent-banner.quiet { background: transparent; box-shadow: none; padding: 0; color: var(--muted); font-size: 13.5px; }
+.fix-for { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; color: var(--muted); }
+.fix-for[hidden] { display: none; }
 .opened-mark { display: inline-flex; align-items: center; }
-.label-btn .avatar, .label-btn .actor-icon { width: 16px; height: 16px; }
+.part-btn .avatar, .part-btn .actor-icon { width: 16px; height: 16px; }
 .status.soft-warn { color: var(--warn); flex-basis: 100%; }
+.d-handled { margin: 0; padding: 8px 14px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 8%, var(--surface)); font-size: 13.5px; color: var(--fg); }
+.d-handled[hidden] { display: none; }
+.handled-sec { margin-top: 18px; }
+.handled-sec[hidden] { display: none; }
+.handled summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.handled-list { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.handled-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px; border-radius: 8px; background: var(--surface); font-size: 13.5px; }
+.handled-row .h-num { color: var(--muted); font-variant-numeric: tabular-nums; }
+.handled-row .h-title { flex: 1; min-width: 12em; }
+.handled-row .h-what .r-hint { font-size: 12.5px; }
+.handled-row .h-check { font-size: 12px; }
+.handled-row .h-check.tone-ok { color: var(--ok); }
+.handled-row .h-check.tone-warn { color: var(--warn); }
 .r-ref { display: block; font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .p-instance { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Paused is a state he chose, so it reads calm: muted ink, a soft pill */
@@ -898,15 +932,19 @@ textarea {
   </div>
   <div class="d-body" id="d-body" tabindex="-1">
     <div class="d-updated" id="d-updated" role="status" hidden></div>
+    <p class="d-handled" id="d-handled" hidden></p>
     <div class="d-head">
       <h2 class="d-title" id="detail-title"></h2>
       <div class="meta" id="d-meta"></div>
+      <div class="agent-banner" id="d-fix" role="status" hidden></div>
+      <p class="fix-for" id="d-fix-for" hidden></p>
       <div class="story" id="d-story" hidden></div>
       <div class="reviews" id="d-reviews" hidden></div>
       <div class="d-sec" id="d-threads" hidden></div>
       <div class="d-sec rounds" id="d-rounds" hidden></div>
     </div>
     <section class="ways" aria-label="Ways forward">
+      <p class="working-line" id="d-working" role="status" hidden></p>
       <p class="state" id="d-verdict"></p>
       <div class="routes" id="d-routes"></div>
     </section>
@@ -1066,6 +1104,7 @@ const ICONS = {
   alert: [p("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), p("M12 9v4"), p("M12 17h.01")],
   shield: [p("M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z")],
   sparkleSmall: [p("M12 6.5l1.4 4.1 4.1 1.4-4.1 1.4-1.4 4.1-1.4-4.1-4.1-1.4 4.1-1.4z")],
+  wrench: [p("M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z")],
   wand: [p("M15 4V2"), p("M15 16v-2"), p("M8 9h2"), p("M20 9h2"), p("M17.8 11.8 19 13"), p("M17.8 6.2 19 5"), p("m3 21 9-9"), p("M12.2 6.2 11 5")],
   pause: [["rect", { x: 6, y: 4, width: 4, height: 16, rx: 1 }], ["rect", { x: 14, y: 4, width: 4, height: 16, rx: 1 }]],
   sparklesOff: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"), p("M3 3l18 18")],
@@ -1270,12 +1309,22 @@ function recentlyDone(a) {
   return a.status === "done" && Number.isFinite(t) && Date.now() - t < DAY_MS;
 }
 
-// An item counts as handled today when he opened one of its steps on GitHub today, or its latest action was created today and is queued or done
-function handledToday(id) {
-  return itemOpenedToday(id) || handledAction(latestOf(id));
+// Handled: the server marks an item when he used a prefill or a bot or agent route ran. It leaves the plan until the next run.
+// A prefill click marks it here at once, before the server's push arrives.
+const localHandled = new Map();
+
+function handledOf(key, d = state.items.get(key)) {
+  const h = d && d.handled && typeof d.handled === "object" && d.handled.at ? d.handled : null;
+  return h || localHandled.get(key) || null;
 }
 
-// A finished re-analysis hands the item back to him with new cards, so it does not count as handled
+function handledToday(key) {
+  const hd = handledOf(key);
+  const t = hd ? parseTime(hd.at) : NaN;
+  return Number.isFinite(t) && dayKey(t) === dayKey(Date.now());
+}
+
+// Work on items that already left the board still counts, from today's action log. A finished re-analysis is not his work.
 function handledAction(a) {
   if (!a || (a.status !== "done" && a.status !== "queued")) return false;
   if (a.action === "reanalyze" && a.status === "done") return false;
@@ -1295,10 +1344,10 @@ function spentMinutes() {
   // Handled items can have left the board, so the action log is the source and the item only adds its effort
   const keyOf = new Map([...state.items].map(([k, d]) => [actionRef(refOf(k).instance, refOf(k).id), k]));
   for (const [ref, a] of state.latestAction) {
-    const key = keyOf.get(ref);
-    if (key ? !handledToday(key) : !handledAction(a)) continue;
-    sum += key ? planEffort(state.items.get(key)) : DEFAULT_EFFORT_MIN;
+    if (keyOf.has(ref) || !handledAction(a)) continue;
+    sum += DEFAULT_EFFORT_MIN;
   }
+  for (const key of state.items.keys()) if (handledToday(key)) sum += planEffort(state.items.get(key));
   return sum;
 }
 
@@ -1368,7 +1417,7 @@ function renderHeader() {
 
 const CONNECTION = {
   connected: ["plug", "Action server connected"],
-  queued: ["unplug", "Action server offline. Clicks are queued for the next run."],
+  queued: ["unplug", "The board server is not reachable. Nothing was sent."],
   checking: ["dashed", "Checking the action server"],
 };
 
@@ -1483,6 +1532,88 @@ function buildFilters() {
 const groupEls = new Map();
 const planEls = {};
 
+const handledEls = {};
+
+const HANDLED_DONE = {
+  reply: "Replied", request_logs: "Asked for a log", close: "Closed", reopen: "Reopened", merge: "Merged", review: "Reviewed",
+  address_review: "Asked the agent to address the review", follow_up: "Followed up", take_over: "Took over", drive: "Asked the agent to drive",
+  move: "Moved", chore: "Ran a chore", open: "Opened on GitHub", format: "Asked the agent to format",
+};
+
+// What GitHub shows after his click, from the server's check
+function handledCheck(d, hd) {
+  const live = d.live && typeof d.live === "object" ? str(d.live.state) : "";
+  if (hd.verified === "merged" || live === "merged") return ["merged on GitHub", "ok"];
+  if (hd.verified === "closed" || live === "closed") return ["closed on GitHub", "ok"];
+  if (hd.verified === "commented") return ["comment seen on GitHub", "ok"];
+  if (hd.verified === "labeled") return ["label seen on GitHub", "ok"];
+  // He may have copied the text and not posted it
+  if (hd.verified === "unchanged" && Date.now() - parseTime(hd.at) >= 10 * 60000) return ["nothing changed on GitHub yet", "warn"];
+  return null;
+}
+
+function renderHandled(rows) {
+  if (!handledEls.el) return;
+  handledEls.el.hidden = rows.length === 0;
+  handledEls.count.textContent = "Handled, waiting for the next run: " + rows.length;
+  handledEls.list.replaceChildren(...rows.map(([key, d]) => {
+    const hd = handledOf(key, d);
+    const route = routesOf(d).find((r) => r.id === hd.routeId);
+    const what = str(route && route.title) || HANDLED_DONE[hd.routeType] || "Handled";
+    const check = handledCheck(d, hd);
+    const back = h("button", { class: "btn quiet small", type: "button", text: "Bring back", "data-focus-key": "handled:" + key });
+    back.addEventListener("click", () => bringBack(key));
+    return h("li", { class: "handled-row", "data-id": key },
+      h("span", { class: "h-kind" }, iconEntry(kindStatus(key, d))),
+      h("span", { class: "h-num", text: combinedView() ? itemRef(d) : "#" + str(d.number) }),
+      h("span", { class: "h-title", text: str(d.title) || "(no title)" }),
+      h("span", { class: "h-what" }, hintEl(what)),
+      check ? h("span", { class: "h-check tone-" + check[1], text: check[0] }) : null,
+      back);
+  }));
+}
+
+// The undo for a click on the wrong button: the server's mark goes, the item returns to the plan
+async function bringBack(key) {
+  localHandled.delete(key);
+  const d = state.items.get(key);
+  if (d && d.handled && state.db) {
+    try {
+      await state.db.doc("items/" + refOf(key).instance + "/" + refOf(key).id).update({ handled: null });
+    } catch (e) {
+      state.notes.set(key, { kind: "failed", text: "Bringing it back failed: " + errorText(e) });
+    }
+  }
+  render();
+}
+
+// Asks the server to read GitHub again for items he handled in the last 15 minutes, once per item per focus
+const refreshedThisFocus = new Set();
+function refreshHandled(keys) {
+  const send = boardApi && boardApi.refresh;
+  if (typeof send !== "function") return;
+  for (const key of keys) {
+    const hd = handledOf(key);
+    if (!hd || refreshedThisFocus.has(key)) continue;
+    if (Date.now() - parseTime(hd.at) > 15 * 60000) continue;
+    if (hd.verified && hd.verified !== "unchanged") continue;
+    refreshedThisFocus.add(key);
+    // The server rate-limits as well, so a refusal is no news
+    try {
+      Promise.resolve(send.call(boardApi, { instance: refOf(key).instance, itemId: refOf(key).id })).catch(() => {});
+    } catch {
+      // Nothing to show
+    }
+  }
+}
+
+function onFocusBack() {
+  refreshedThisFocus.clear();
+  refreshHandled([...state.items.keys()]);
+}
+window.addEventListener("focus", onFocusBack);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onFocusBack(); });
+
 function buildSections() {
   planEls.fill = h("span", { class: "bar-fill" });
   planEls.bar = h("span", { class: "bar", role: "progressbar", "aria-label": "Time spent today", "aria-valuemin": "0" }, planEls.fill);
@@ -1498,6 +1629,11 @@ function buildSections() {
   });
   planEls.done = h("span", { class: "plan-done" }, planEls.doneText, planEls.add);
   planEls.el = h("div", { class: "plan", id: "plan" }, planEls.bar, planEls.spent, planEls.done);
+
+  handledEls.count = h("span");
+  handledEls.list = h("ul", { class: "handled-list" });
+  handledEls.details = h("details", { class: "handled" }, h("summary", null, handledEls.count), handledEls.list);
+  handledEls.el = h("section", { class: "handled-sec", id: "handled", hidden: true }, handledEls.details);
 
   for (const g of GROUPS) {
     const list = h("div", { class: "list" });
@@ -1651,7 +1787,7 @@ function statusLine(id) {
   if (a.status === "queued") {
     const forAgent = AGENT_ACTIONS.has(a.action);
     const analyzing = a.action === "full_review" || a.action === "reanalyze";
-    const text = forAgent ? (analyzing ? "The agent is analyzing it again" : "The agent is on it") : "Queued for next run: " + name;
+    const text = forAgent ? (analyzing ? "The agent is analyzing it again" : "The agent is on it") : "Requested: " + name + ". The agent picks it up in a moment.";
     return h("div", { class: "status queued" }, icon("queued"), h("span", { text }), when);
   }
   if (a.status === "done") {
@@ -1672,6 +1808,109 @@ function statusLine(id) {
 // Icons that describe an item's state, most important first. Each entry is [icon, class, label, text]
 const FALLBACK_NOTE = "The full analysis was stopped by the safety filter. Code-level conclusions need your check.";
 
+const WORKING_TEXT = { review: "The agent is reviewing this", push: "The agent is changing this PR" };
+
+// A fix in flight on an issue or discussion: the agent works on it, or its PR is a draft or open
+function fixOf(d) {
+  const f = d && d.fix && typeof d.fix === "object" ? d.fix : null;
+  return f && ["working", "draft", "open", "merged", "closed"].includes(f.state) ? f : null;
+}
+const fixActive = (d) => ["working", "draft", "open"].includes(fixOf(d)?.state);
+const pushActive = (d) => workingOf(d)?.kind === "push";
+
+// Routes that would start a second fix, or decide a PR the agent is still changing, are not offered at all
+const PUSH_HIDDEN = new Set(["review", "merge", "close", "take_over", "address_review", "drive", "format"]);
+function blockedRoute(d, r) {
+  if (fixActive(d) && r.type === "follow_up" && actorOf(r) === "agent") return true;
+  if (pushActive(d) && (PUSH_HIDDEN.has(r.type) || (r.type === "chore" && paramsOf(r).action === "ready"))) return true;
+  return false;
+}
+
+function visibleRoutes(d) {
+  return routesOf(d).filter((r) => !blockedRoute(d, r));
+}
+
+const hhmm = (iso) => new Date(parseTime(iso)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+function ciDot(ci) {
+  return ["passing", "failing", "pending"].includes(ci) ? h("span", { class: "ci-dot ci-" + ci, role: "img", "aria-label": "CI " + ci, title: "CI " + ci }) : null;
+}
+
+// The chip on the title line of a row
+function agentChip(d) {
+  const f = fixOf(d);
+  if (f && f.state === "working") return h("span", { class: "agent-chip", title: "The agent is working on a fix" }, "Fix running");
+  if (f && (f.state === "draft" || f.state === "open") && f.pr) {
+    return h("span", { class: "agent-chip", title: (f.state === "draft" ? "Draft fix" : "Fix") + " #" + f.pr.number + " is open on GitHub" }, "Fix: #" + f.pr.number + " " + f.state, ciDot(str(f.pr.ci)));
+  }
+  if (f && f.state === "merged" && f.pr) return h("span", { class: "agent-chip quiet", text: "Fixed by #" + f.pr.number });
+  if (pushActive(d)) return h("span", { class: "agent-chip", title: "The agent is changing this PR" }, "Agent working");
+  return null;
+}
+
+// The board item of a PR number in the same instance, for "Open on board"
+function prKeyOf(d, number) {
+  for (const [key, x] of state.items) if (x.kind === "pr" && x.number === number && str(x.instance) === str(d.instance)) return key;
+  return null;
+}
+
+function switchDialog(key) {
+  closeDetail();
+  openDetail(key);
+}
+
+const PUSH_JOBS = { take_over: "take over", address_review: "addressing the review", drive: "driving the review rounds", format: "formatting" };
+
+// The banner under the meta row: what the agent is doing, so nothing here starts it twice
+function renderAgentBanner(d) {
+  const el = document.getElementById("d-fix");
+  const forEl = document.getElementById("d-fix-for");
+  const f = fixOf(d);
+  const w = workingOf(d);
+  let parts = null;
+  let quiet = false;
+  if (f && f.state === "working") {
+    const who = f.startedBy === "maintainer" ? "You started it" : f.startedBy === "routine" ? "The agent started it" : "It was started";
+    parts = [icon("wrench"), h("span", { class: "ab-text", text: "A fix is running. " + who + (parseTime(f.since) ? " at " + hhmm(f.since) : "") + "." })];
+  } else if (f && (f.state === "draft" || f.state === "open") && f.pr) {
+    const ci = str(f.pr.ci);
+    const ciText = { pending: "running", passing: "passing", failing: "failing" }[ci];
+    const board = prKeyOf(d, f.pr.number);
+    parts = [icon("wrench"), h("span", { class: "ab-text" }, (f.state === "draft" ? "Draft fix #" : "Fix #") + f.pr.number + " is open: ", richText(str(f.pr.title)), "." + (ciText ? " CI " + ciText + "." : "")),
+      isGithubUrl(str(f.pr.url)) ? h("a", { class: "btn small", href: str(f.pr.url), target: "_blank", rel: "noopener noreferrer", text: "Open PR", "data-focus-key": "fix:pr" }) : null,
+      board ? h("button", { class: "btn small", type: "button", text: "Open on board", "data-focus-key": "fix:board", onclick: () => switchDialog(board) }) : null];
+  } else if (f && f.state === "merged" && f.pr) {
+    quiet = true;
+    parts = [h("span", { class: "ab-text", text: "Fixed by #" + f.pr.number })];
+  } else if (w && w.kind === "push") {
+    const job = PUSH_JOBS[str(w.route || w.action)];
+    const at = parseTime(w.since) ? "started " + hhmm(w.since) : "";
+    const paren = [job, at].filter(Boolean).join(", ");
+    parts = [icon("wrench"), h("span", { class: "ab-text", text: "The agent is changing this PR" + (paren ? " (" + paren + ")" : "") + ". Decide after it is done." })];
+  }
+  el.hidden = !parts;
+  el.classList.toggle("quiet", quiet);
+  const sig = JSON.stringify([d.fix, d.working, parts ? parts.length : 0, [...state.items.keys()].length]);
+  if (el.dataset.sig !== sig) {
+    el.dataset.sig = sig;
+    el.replaceChildren(...(parts || []).filter(Boolean));
+  }
+  // A PR that is Gary's fix for another item points back to it
+  const ff = d.fixFor && typeof d.fixFor === "object" ? d.fixFor : null;
+  forEl.hidden = !ff;
+  if (ff) {
+    const src = itemKeyOf(str(d.instance), str(ff.itemId));
+    const srcTitle = src ? str(state.items.get(src).title) : "";
+    forEl.replaceChildren(h("span", { text: "Fix for " + str(ff.ref) + (srcTitle ? ": " + srcTitle : "") }),
+      src ? h("button", { class: "btn small", type: "button", text: "Open on board", "data-focus-key": "fixfor:board", onclick: () => switchDialog(src) }) : null);
+  }
+}
+
+function workingOf(d) {
+  const w = d && d.working && typeof d.working === "object" ? d.working : null;
+  return w && Object.hasOwn(WORKING_TEXT, w.kind) ? w : null;
+}
+
 function stateIcons(id, d, dim, withPassing) {
   const out = [];
   // Entries are [icon, class, tooltip, inline text, badge text]. The dialog shows the badge text, list rows only the icon.
@@ -1679,7 +1918,7 @@ function stateIcons(id, d, dim, withPassing) {
   else {
     const a = latestOf(id);
     const name = a ? ACTION_NAMES[a.action] || str(a.action) : "";
-    if (a && a.status === "queued") out.push(["queued", "warn", "Queued for next run: " + name, null, "Queued"]);
+    if (a && a.status === "queued") out.push(["queued", "warn", "Requested: " + name + ". The agent picks it up in a moment.", null, "Requested"]);
     else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
     else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", "Done: " + name, null, "Done: " + name]);
   }
@@ -1691,6 +1930,8 @@ function stateIcons(id, d, dim, withPassing) {
   if (withPassing && d.kind === "pr" && d.ci === "passing") out.push(["ciPass", "ok", "CI passing"]);
   if (open && d.solved === true && !(d.kind === "discussion" && d.isAnswered === true)) out.push(["solved", "muted", "Looks solved, still open", null, "Looks solved"]);
   if (d.reviewDepth === "pending") out.push(["eye", "muted", "Not analyzed yet", null, "Not analyzed yet"]);
+  const w = workingOf(d);
+  if (w && w.kind === "review") out.push(["wrench", "muted", WORKING_TEXT.review, null, "Agent reviewing"]);
   if (d.analyzedBy === "fallback") out.push(["sparkleSmall", "muted", FALLBACK_NOTE, null, "Smaller model"]);
   if (d.blocked && typeof d.blocked === "object") out.push(["sparklesOff", "muted", "Not analyzed by the agent", null, "Not analyzed"]);
   if (d.hidden === true) out.push(["archive", "muted", "Dismissed"]);
@@ -1751,6 +1992,10 @@ function threadState(id, d) {
     const reason = a.params && typeof a.params === "object" && a.params.reason === "not_planned" ? "NOT_PLANNED" : "COMPLETED";
     return { state: "CLOSED", reason };
   }
+  const checked = d.live && typeof d.live === "object" ? str(d.live.state) : "";
+  const verified = d.handled && typeof d.handled === "object" ? str(d.handled.verified) : "";
+  if (checked === "merged" || verified === "merged") return { state: "MERGED", reason: null };
+  if (checked === "closed" || verified === "closed") return { state: "CLOSED", reason: null };
   const live = d.liveState && typeof d.liveState === "object" ? d.liveState : null;
   if (live && (live.state === "CLOSED" || live.state === "MERGED")) return { state: live.state, reason: str(live.reason) || null };
   return { state: "OPEN", reason: null };
@@ -1828,7 +2073,10 @@ function effortEl(d) {
 
 function buildRow(id, d, dim, slot) {
   const title = str(d.title) || "(no title)";
-  const hint = str(d.hint).trim() || str(recommendedRoute(d)?.title).trim();
+  // A hint that points at a route that is not offered now would contradict the chip
+  const rec = recommendedRoute(d);
+  const hint = rec && blockedRoute(d, rec) ? str((visibleRoutes(d).find((r) => r.recommended) || visibleRoutes(d)[0])?.title).trim() : str(d.hint).trim() || str(rec?.title).trim();
+  const chip = agentChip(d);
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
   const type = AUTHOR_ICONS[authorTypeOf(d)];
@@ -1845,7 +2093,7 @@ function buildRow(id, d, dim, slot) {
     h("span", { class: "r-main" },
       // The combined tab names the repo, so the full ref gets its own quiet line above the title
       combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
-      h("span", { class: "r-title", title, text: title }),
+      chip ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), chip) : h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
     meta,
@@ -1982,10 +2230,15 @@ function renderListNow() {
   const sorter = state.filters.sort === "quickest" ? compareQuickest : compareItems;
 
   const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
+  const handledRows = [];
   for (const [id, d] of state.items) {
     if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
     if (d.hidden === true && !state.filters.showHidden) continue;
     if (!matchesFilters(d)) continue;
+    if (handledOf(id, d)) {
+      handledRows.push([id, d]);
+      continue;
+    }
     const dim = isHiddenItem(d);
     const order = isSnoozed(d) ? SECTIONS.length : SECTION_ORDER.get(sectionOf(d));
     byGroup.get(groupOf(d)).push({ id, data: d, dim, order, planned: false });
@@ -2000,7 +2253,7 @@ function renderListNow() {
   let planned = 0;
   for (const g of GROUPS) {
     for (const r of byGroup.get(g.id)) {
-      if (r.dim || handledToday(r.id) || finishedBy(r.id)) continue;
+      if (r.dim || finishedBy(r.id)) continue;
       const e = planEffort(r.data);
       if (e > left) {
         skipped = true;
@@ -2033,6 +2286,7 @@ function renderListNow() {
   }
 
   els.board.classList.toggle("combined", combinedView());
+  renderHandled(handledRows);
 
   // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
   for (const m of els.board.querySelectorAll(".r-meta")) {
@@ -2064,6 +2318,7 @@ const detail = {
   links: document.getElementById("d-links"),
   routes: document.getElementById("d-routes"),
   dismissed: new Set(),
+  workingEl: document.getElementById("d-working"),
   farewell: false,
   updatedEl: document.getElementById("d-updated"),
   updated: null,
@@ -2489,45 +2744,6 @@ function routeTarget(d, r, title, body, b) {
   return url;
 }
 
-// ---------- opened today ----------
-
-// Routes he opened on GitHub today, kept in this browser. The routine sees his real comment or merge on its next run.
-
-function openedKey(id, r) {
-  return [refOf(id).id, r.id, str(r.draftHash), dayKey(Date.now())].join("|");
-}
-
-function readOpened(id) {
-  try {
-    const v = JSON.parse(localStorage.getItem(instanceKey(refOf(id).instance, "opened")) || "{}");
-    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
-  } catch {
-    return {};
-  }
-}
-
-function openedToday(id, r) {
-  return readOpened(id)[openedKey(id, r)] === true;
-}
-
-function itemOpenedToday(id) {
-  const today = "|" + dayKey(Date.now());
-  return Object.keys(readOpened(id)).some((k) => k.startsWith(refOf(id).id + "|") && k.endsWith(today));
-}
-
-function markOpened(id, r) {
-  const store = readOpened(id);
-  const today = "|" + dayKey(Date.now());
-  // Keep only today's marks
-  for (const k of Object.keys(store)) if (!k.endsWith(today)) delete store[k];
-  store[openedKey(id, r)] = true;
-  try {
-    localStorage.setItem(instanceKey(refOf(id).instance, "opened"), JSON.stringify(store));
-  } catch {
-    // Without storage the mark lasts until the next reload
-  }
-}
-
 // The board server serves every instance. Accounts, repos, bot commands and the pause switch belong to each instance.
 let boardInfo = { me: null, dryRun: false, instances: [] };
 const EMPTY_INSTANCE = { name: "", title: "", kind: "maintainer", repos: [], repoUrl: "", bot: null, accountMode: "bot", paused: false, relatedRepos: [], botCommands: {}, reviewBots: [] };
@@ -2582,7 +2798,7 @@ function applyBoardInfo(b) {
         if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) continue;
         // The tool's previous name is assembled, so it appears nowhere else in the page
         for (const oldPrefix of ["gary:" + repo + ":", ["triage", "board"].join("-") + ":" + repo + ":"]) {
-          for (const name of ["drafts", "opened", "filters"]) {
+          for (const name of ["drafts", "filters"]) {
             const old = oldPrefix + name;
             const v = localStorage.getItem(old);
             if (v === null) continue;
@@ -2726,6 +2942,8 @@ function refusalNote(e, key) {
   const p = refusalPayload(e);
   if (!p) return null;
   if (p.paused === true) return { kind: "info", text: str(p.result) || "Nothing was sent." };
+  // Races with work already in flight: the server's reason is the information
+  if (p.working === true || p.fix || /already working on this|is changing this PR|fix is (already )?(running|open)|already (has )?a fix/i.test(str(p.result))) return { kind: "info", text: str(p.result) };
   if (p.settingsError) {
     const inst = instOf(state.items.get(key));
     return { kind: "info", text: "Nothing was sent. The settings of " + (inst.title || inst.name || "this project") + " are invalid, see the note at the top." };
@@ -3062,47 +3280,72 @@ function labelPart(r) {
   return { add, remove, text, doneText };
 }
 
-// Who sets the label next to a prefill: the bot, or he himself in own mode. Null when nobody may.
-function labelActor(d) {
+// A discussion's close can also mark the reply that answered it. Returns null when the route proposes none.
+function answerPart(d, r) {
+  if (r.type !== "close" || d.kind !== "discussion") return null;
+  const a = paramsOf(r).alsoAnswer;
+  if (!a || typeof a !== "object" || !str(a.commentId)) return null;
+  return { url: str(a.url), gist: str(a.gist) };
+}
+
+// The extra steps a prefill card can run on the server next to its copy button, like setting a label or marking an answer
+function extraParts(d, r) {
+  const out = [];
+  const label = labelPart(r);
+  if (label) out.push({ name: "label", text: label.text, doneText: label.doneText, done: r.labelDone });
+  const answer = answerPart(d, r);
+  if (answer) out.push({ name: "answer", text: "Mark answer", doneText: "Answer marked", done: r.answerDone, url: answer.url, gist: answer.gist });
+  return out;
+}
+
+// Who runs such a step: the bot, or he himself in own mode. Null when nobody may.
+function partActor(d) {
   const inst = instOf(d);
   if (inst.bot) return "bot";
   return inst.accountMode === "own" ? "own" : null;
 }
 
-async function runLabelPart(id, r, rec) {
-  if (rec.labelState === "busy") return;
-  rec.labelState = "busy";
-  rec.labelError = "";
+async function runPart(id, r, rec, name) {
+  const st = (rec.parts[name] = rec.parts[name] || { state: "", error: "" });
+  if (st.state === "busy") return;
+  st.state = "busy";
+  st.error = "";
   render();
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
-    await state.mcp.callTool(SERVER, r.type, { instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, input: { part: "label" } });
-    rec.labelState = "done";
+    await state.mcp.callTool(SERVER, r.type, { instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, input: { part: name } });
+    st.state = "done";
   } catch (e) {
     const p = refusalPayload(e);
-    // A second click finds the label already set: that is done, not a failure
-    if (p && p.duplicate === true) rec.labelState = "done";
+    // A second click finds the step already done: that is done, not a failure
+    if (p && p.duplicate === true) st.state = "done";
     else {
-      rec.labelState = "";
-      rec.labelError = refusalNote(e, id)?.text || routeFailure(e, r);
+      st.state = "";
+      st.error = refusalNote(e, id)?.text || routeFailure(e, r);
     }
   } finally {
     render();
   }
 }
 
-function labelButton(id, d, r, rec, locked) {
-  const part = labelPart(r);
-  const actor = part ? labelActor(d) : null;
+function partButtons(id, d, r, rec, locked) {
+  const actor = partActor(d);
   if (!actor) return [];
-  const done = rec.labelState === "done" || (r.labelDone && typeof r.labelDone === "object" && r.labelDone.status === "done");
-  const out = [h("button", {
-    class: "btn quiet label-btn", type: "button", disabled: locked || done || rec.labelState === "busy",
-    "data-focus-key": "r:" + r.id + ":label", title: done ? part.doneText : buttonTip({ actor }, instOf(d)),
-  }, done ? icon("check", null, "label-check") : actorMark(actor, instOf(d)), done ? part.doneText : part.text)];
-  out[0].addEventListener("click", () => runLabelPart(id, r, rec));
-  if (!done && instOf(d).paused === true) out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
-  if (rec.labelError) out.push(h("span", { class: "status failed" }, icon("alert"), h("span", { text: rec.labelError })));
+  const out = [];
+  for (const part of extraParts(d, r)) {
+    const st = rec.parts[part.name] || { state: "", error: "" };
+    const done = st.state === "done" || (part.done && typeof part.done === "object" && part.done.status === "done");
+    const btn = h("button", {
+      class: "btn quiet part-btn " + part.name + "-btn", type: "button", disabled: locked || done || st.state === "busy",
+      "data-focus-key": "r:" + r.id + ":" + part.name, title: done ? part.doneText : buttonTip({ actor }, instOf(d)),
+    }, done ? icon("check", null, "part-check") : actorMark(actor, instOf(d)), done ? part.doneText : part.text);
+    btn.addEventListener("click", () => runPart(id, r, rec, part.name));
+    out.push(btn);
+    if (part.url && isGithubUrl(part.url)) out.push(h("a", { class: "part-view", href: part.url, target: "_blank", rel: "noopener noreferrer", text: "view", title: "Open the proposed answer on GitHub" }));
+    if (!done && instOf(d).paused === true) out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
+    if (st.error) out.push(h("span", { class: "status failed" }, icon("alert"), h("span", { text: st.error })));
+    if (part.gist) out.push(h("span", { class: "part-gist" }, "Proposed answer: ", richText(part.gist)));
+  }
   return out;
 }
 
@@ -3150,7 +3393,7 @@ function meButton(id, d, r, rec, b, intent, locked) {
       window.open(routeTarget(d, r, rec.titleInput ? rec.titleInput.value : str(paramsOf(r).title), rec.ta ? rec.ta.value : str(r.text), b), "_blank", "noopener,noreferrer");
       if (fallback) detail.meNotes.set(r.id, b.copy === "escalate" ? "Copy failed. Post " + escalateCommand(instOf(d)) + " on GitHub" : "Press Ctrl+C, then paste on GitHub");
       else detail.meNotes.delete(r.id);
-      markOpened(id, r);
+      if (!handledOf(id)) localHandled.set(id, { at: new Date().toISOString(), routeId: r.id, routeType: r.type, verified: null });
       render();
     },
   }, actorMark("me", instOf(d)), b.label, icon("external", null, "ext"));
@@ -3179,8 +3422,8 @@ function buildCardActions(id, d, r, rec, locked) {
   }
 
   if (buttons.every((b) => b.actor === "me")) {
-    return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)), ...labelButton(id, d, r, rec, locked),
-      openedToday(id, r) ? h("span", { class: "opened-mark", role: "img", title: "You opened this on GitHub today", "aria-label": "You opened this on GitHub today" }, icon("check")) : null,
+    return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)), ...partButtons(id, d, r, rec, locked),
+      handledOf(id)?.routeId === r.id ? h("span", { class: "opened-mark", role: "img", title: "You opened this on GitHub today", "aria-label": "You opened this on GitHub today" }, icon("check")) : null,
       detail.meNotes.has(r.id) ? h("span", { class: "me-note", text: detail.meNotes.get(r.id) }) : null].filter(Boolean);
   }
 
@@ -3380,7 +3623,7 @@ function renderRoutes(id, d, locked) {
     placeChildren(detail.routes, [h("p", { class: "farewell", text: "Suggestion dismissed. The agent will propose something else." })]);
     return;
   }
-  const routes = routesOf(d).filter((r) => !detail.dismissed.has(r.id));
+  const routes = visibleRoutes(d).filter((r) => !detail.dismissed.has(r.id));
   if (detail.openRoute === undefined || (detail.openRoute !== null && !routes.some((r) => r.id === detail.openRoute))) {
     const done = routes.find((r) => r.done && !routeCompact(r));
     // Pick among the cards on screen, so a dismissed recommendation hands its place to the next card
@@ -3392,12 +3635,12 @@ function renderRoutes(id, d, locked) {
   const nodes = routes.map((r) => {
     let rec = detail.cards.get(r.id);
     if (!rec) {
-      rec = { card: h("section", { class: "card" }), checks: new Map(), decisions: new Map(), core: null, sig: null, revealed: false, rounds: null };
+      rec = { card: h("section", { class: "card" }), parts: {}, checks: new Map(), decisions: new Map(), core: null, sig: null, revealed: false, rounds: null };
       detail.cards.set(r.id, rec);
     }
     // Rebuild the card only when the route itself changed. A new draft text alone updates the editor in place,
     // and never while he is typing in it, so focus, cursor and typed text stay.
-    const { done, refused, text, draftHash, labelDone, ...core } = r;
+    const { done, refused, text, draftHash, labelDone, answerDone, ...core } = r;
     // The agent rewrote a draft he had edited: rebuild, so the editor shows the new text and keeps his as "previous"
     const dkR = draftKey(id, "r:" + r.id);
     if (state.drafts.has(dkR) && draftHashes.has(dkR) && draftHashes.get(dkR) !== str(r.draftHash)) rec.core = null;
@@ -3418,7 +3661,7 @@ function renderRoutes(id, d, locked) {
       if (rec.headActor) rec.headActor.style.display = open ? "none" : "";
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
-    const sig = JSON.stringify([r.done, r.refused, r.labelDone, rec.labelState, rec.labelError, state.confirming.get(id), locked, isClosedThread(id, d), openedToday(id, r),
+    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d),
       detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, meLogin(), instOf(d).paused === true, combinedView()]);
     if (sig !== rec.sig) {
       rec.sig = sig;
@@ -3483,7 +3726,20 @@ function renderRounds(d) {
     details);
 }
 
+function renderWorking(d) {
+  renderAgentBanner(d);
+  // The push banner says it already; the quiet line is for a running review
+  const w = workingOf(d)?.kind === "review" ? workingOf(d) : null;
+  detail.workingEl.hidden = !w;
+  if (!w) return;
+  const sig = w.kind + "|" + str(w.since);
+  if (detail.workingEl.dataset.sig === sig) return;
+  detail.workingEl.dataset.sig = sig;
+  detail.workingEl.replaceChildren(icon("wrench"), h("span", { text: WORKING_TEXT[w.kind] }), parseTime(w.since) ? timeEl(w.since, "since ") : null);
+}
+
 function renderZones(id, d, locked) {
+  renderWorking(d);
   renderRoutes(id, d, locked);
   updateFooter(d, locked);
 }
@@ -3554,6 +3810,7 @@ function buildZoneControls(id) {
 
 // An analysis of this item is queued or running, so "Analyze again" would only start a second one
 function analyzing(id) {
+  if (workingOf(state.items.get(id))?.kind === "review") return true;
   const a = latestOf(id);
   return !!a && (a.action === "reanalyze" || a.action === "full_review") && ["queued", "running", "claimed"].includes(a.status);
 }
@@ -3644,6 +3901,13 @@ function renderDetail() {
   detail.reviewedAt = reviewedAt;
   detail.lastHint = str(d.hint).trim() || str(recommendedRoute(d)?.title).trim();
   detail.updatedEl.hidden = !detail.updated;
+  const hd = handledOf(id, d);
+  const hEl = document.getElementById("d-handled");
+  hEl.hidden = !hd;
+  if (hd) {
+    const at = new Date(parseTime(hd.at)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+    hEl.textContent = "You handled this at " + at + ". It returns after the next run if something is left to do.";
+  }
   if (detail.updated && detail.updatedEl.dataset.before !== detail.updated.before) {
     detail.updatedEl.dataset.before = detail.updated.before;
     detail.updatedEl.replaceChildren(
@@ -3929,6 +4193,7 @@ function finishDetail() {
   detail.zoneCtl = null;
   detail.foot.replaceChildren();
   detail.pendingFocus = null;
+  if (handledOf(id)) refreshHandled([id]);
   detail.updated = null;
   detail.staleDrafts.clear();
   if (listFreeze.pending) renderList();
@@ -4146,6 +4411,8 @@ function subscribe(db) {
       const d = doc.data();
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
       if (d && typeof d === "object" && routesOf(d).length) next.set(doc.id, d);
+      // Once the server carries the mark, it decides, including clearing it after the next run
+      if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
     state.items = next;
     for (const id of state.confirming.keys()) if (!next.has(id)) state.confirming.delete(id);
@@ -4234,7 +4501,7 @@ async function boot() {
   setupDetail();
   setupRowKeys();
   buildSections();
-  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el));
+  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el);
   renderConnection();
   render();
 

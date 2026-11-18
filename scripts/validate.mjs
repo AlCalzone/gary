@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { boardDir, readJson } from "./lib/board-store.mjs";
 import { instanceName, loadInstance, loadProfile } from "./lib/config.mjs";
 import { accountMode } from "./lib/gh.mjs";
+import { fixStateOf, loadFixSources } from "./lib/fixes.mjs";
 import { validateItem } from "./lib/validate-item.mjs";
 
 export async function main(argv) {
@@ -14,10 +15,12 @@ export async function main(argv) {
 	if (!ids.length) ids = (await readdir(dir)).filter((n) => n.endsWith(".json") && !n.startsWith(".")).map((n) => n.slice(0, -5)).sort();
 
 	const options = { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instanceName()).repos };
+	const sources = await loadFixSources();
 	const results = [];
 	for (const id of ids) {
 		const item = await readJson(join(dir, id + ".json"));
-		const { errors, warnings } = item ? validateItem(id, item, options) : { errors: [{ code: "unreadable", message: "missing or not a JSON object" }], warnings: [] };
+		const fix = item && (item.kind === "issue" || item.kind === "discussion") ? fixStateOf(id, sources) : null;
+		const { errors, warnings } = item ? validateItem(id, item, { ...options, fix }) : { errors: [{ code: "unreadable", message: "missing or not a JSON object" }], warnings: [] };
 		results.push({ id, errors, warnings });
 	}
 

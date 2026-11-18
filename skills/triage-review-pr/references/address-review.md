@@ -26,3 +26,9 @@ The board starts every thread on dismiss except the `valid` ones. A dismissed th
 6. Remove the worktree and return as described in `push-to-pr.md`. Handled threads leave `threads`. `result` is the commit URL, or the number of threads handled when nothing was pushed.
 
 A failure after the push still returns `status: "done"` with what happened in `state`, like `Pushed the fix. Replying to 1 of 3 threads failed: API error 502.` The push cannot be undone, so the item has to show the real state.
+
+The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
+
+## Last step
+
+On every exit path, failures and refusals included: release your claims with `gary release <itemId> <kind> --run <run>`, and set the action doc to `done` or `failed`. A doc left `queued` or claimed blocks the item, because such docs do not expire.

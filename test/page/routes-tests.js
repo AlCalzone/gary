@@ -410,6 +410,10 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   document.getElementById("d-close").click(); await wait(5);
   for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
   await wait(5);
+  // Opening it on GitHub marked it handled; for this check it belongs on the list
+  localHandled.delete("issue-9481"); render(); await wait(5);
+  for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+  await wait(5);
   ok("the list row shows a quiet not-analyzed icon", !!document.querySelector('.row[data-id="issue-9481"] .r-meta svg[aria-label="Not analyzed by the agent"]') && !document.querySelector('.row[data-id="issue-9471"] .r-meta svg[aria-label="Not analyzed by the agent"]'));
 
   // Paused: the header says so live, server writes are refused calmly
@@ -528,14 +532,11 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
 
   // A second project without a bot
   const OLD = ["triage", "board"].join("-") + ":contoso/gadgets:drafts";
-  const OLD2 = "gary:contoso/gadgets:opened";
   localStorage.setItem(OLD, JSON.stringify({ "x|r1|h": "legacy" }));
-  localStorage.setItem(OLD2, JSON.stringify({ "x|r1|h|day": true }));
   const gadgetsOnly = (accountMode, dryRun) => ({ me: acct("jdoe"), dryRun, instances: [window.__instanceInfo("gadgets", "contoso-gadgets", { bot: null, accountMode, botCommands: {}, relatedRepos: ["widgets-desktop"] })] });
   applyBoardInfo(gadgetsOnly("none", true));
   ok("a second project names the page and shows the dry run marker", document.getElementById("board-title").textContent === "contoso-gadgets triage" && !document.getElementById("dry-run").hidden);
-  ok("per-repo keys move to the instance's keys once", localStorage.getItem(OLD) === null && localStorage.getItem(OLD2) === null
-    && /legacy/.test(localStorage.getItem("gary:gadgets:drafts") || "") && /day/.test(localStorage.getItem("gary:gadgets:opened") || ""));
+  ok("per-repo keys move to the instance's keys once", localStorage.getItem(OLD) === null && /legacy/.test(localStorage.getItem("gary:gadgets:drafts") || ""));
   items(served("none")); await wait(10);
   await openItem("issue-9472");
   ok("no bot: request_logs is a prefill with his avatar", !!cardBtn("Copy request, open GitHub") && /jdoe/.test(cardBtn("Copy request, open GitHub").querySelector("img")?.src ?? "") && !!openCard().querySelector("textarea.tall"));

@@ -12,10 +12,13 @@ import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
+import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
+import { fixBlock, fixStateOf, loadFixSources } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
+import { fetchItem } from "../scripts/snapshot.mjs";
 import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
@@ -32,6 +35,16 @@ const MAX_NOTE = 1000;
 const MAX_TITLE = 256;
 const MAX_REASON = 500;
 const MAX_RULE = 20000;
+// A refresh reads GitHub, so it is limited per item and in total
+const REFRESH_ITEM_MS = 20000;
+const REFRESH_PER_MINUTE = 30;
+export const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "unchanged"];
+// What a bot action that ran says about the thread, for `handled.verified`
+const VERIFIED_BY_ACTION = { comment: "commented", review: "commented", create_issue: "commented", close: "closed", label: "labeled" };
+// The routes a pushing agent job blocks on its PR
+export const PUSH_BLOCKED_TYPES = ["review", "merge", "close", "address_review", "take_over", "drive", "format"];
+const PUSH_BLOCKED = (route) => PUSH_BLOCKED_TYPES.includes(route.type) || (route.type === "chore" && route.params?.action === "ready");
+const MERGEABLE_STATES = { MERGEABLE: "mergeable", CONFLICTING: "conflicting", UNKNOWN: "unknown" };
 
 /** Fingerprint of a drafted route. It changes when the routine rewrites the route or reviews the item again. */
 export function draftHash(route, item) {
@@ -134,6 +147,12 @@ export function validateInput(route, item, input) {
 		return { title: input.title.trim() };
 	}
 
+	if (route.type === "close" && answerParams(route)) {
+		checkKeys(input, ["part"], "input");
+		if (input.part !== undefined && input.part !== "answer") throw new Refusal('input.part must be "answer".');
+		return input.part ? { part: input.part } : {};
+	}
+
 	if (route.type === "reply" || route.type === "request_logs") {
 		const also = labelParams(route);
 		checkKeys(input, also ? ["alsoLabel", "part"] : [], "input");
@@ -156,11 +175,44 @@ export function labelParams(route) {
 	return Object.keys(out).length ? out : null;
 }
 
-/** Fingerprint of a route's label button. It changes when the labels change or the item is reviewed again. */
-export function labelHash(route, item) {
-	const reviewedAt = typeof item?.reviewedAt === "string" ? item.reviewedAt : "";
-	return createHash("sha256").update(JSON.stringify(labelParams(route)) + "\u0000" + reviewedAt).digest("hex").slice(0, 16);
+/** The `answer_discussion` params of a discussion close route's `alsoAnswer`, or null when it has none. */
+export function answerParams(route) {
+	if (route?.type !== "close") return null;
+	const commentId = route.params?.alsoAnswer?.commentId;
+	return typeof commentId === "string" && commentId ? { commentId } : null;
 }
+
+// The second buttons a route can carry next to its prefill. Each runs one bot action with params from the route only
+export const PARTS = {
+	label: {
+		params: labelParams,
+		action: "label",
+		hashField: "labelHash",
+		doneField: "labelDone",
+		// Labels on a closed thread make no sense. Marking an answer comes after the close
+		openOnly: true,
+		none: "This route sets no labels.",
+		needs: "Setting the labels needs",
+		duplicate: "These labels are already set. The board shows the result.",
+	},
+	answer: {
+		params: answerParams,
+		action: "answer_discussion",
+		hashField: "answerHash",
+		doneField: "answerDone",
+		openOnly: false,
+		none: "This route marks no answer.",
+		needs: "Marking the answer needs",
+		duplicate: "The answer is already marked. The board shows the result.",
+	},
+};
+
+/** Fingerprint of a route's second button. It changes when its params change or the item is reviewed again. */
+export function partHash(part, route, item) {
+	const reviewedAt = typeof item?.reviewedAt === "string" ? item.reviewedAt : "";
+	return createHash("sha256").update(JSON.stringify(PARTS[part].params(route)) + "\u0000" + reviewedAt).digest("hex").slice(0, 16);
+}
+export const labelHash = (route, item) => partHash("label", route, item);
 
 /**
  * The body GitHub gets for one inline review comment: its text, then a suggestion block when it has `suggestion`.
@@ -654,6 +706,11 @@ function shim(token, info, version) {
     async decision(body) {
       try { await api("/api/decision", scoped(body)); } catch { /* the log entry is lost, nothing else */ }
     },
+    // Reads one item's live state from GitHub. Answers { ok, result } or, when asked too often, { ok: false, retryAfter }
+    async refresh(body) {
+      const r = await api("/api/refresh", scoped(body));
+      return r.data ?? { ok: false, result: "The board server failed." };
+    },
   };
 
   window.claude = {
@@ -765,16 +822,60 @@ export async function startBoardServer({
 	}
 
 	// The label buttons that ran, keyed by item, route and label hash. Failed ones are served too
-	function labelsByKey(name, actions) {
+	function partsByKey(name, actions, part) {
 		const out = new Map();
-		const sorted = actions.map((a) => a.data).filter((a) => a.part === "label" && typeof a.routeId === "string" && typeof a.labelHash === "string").sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+		const field = PARTS[part].hashField;
+		const sorted = actions.map((a) => a.data).filter((a) => a.part === part && typeof a.routeId === "string" && typeof a[field] === "string").sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 		for (const a of sorted) {
-			out.set(`${name}|${a.itemId}|${a.routeId}|${a.labelHash}`, { status: a.status, result: typeof a.result === "string" ? a.result : "" });
+			out.set(`${name}|${a.itemId}|${a.routeId}|${a[field]}`, { status: a.status, result: typeof a.result === "string" ? a.result : "" });
 		}
 		return out;
 	}
 
 	const modeOf = (name) => settingsOf(name).mode ?? "none";
+
+	/**
+	 * The agent work in progress per item: unexpired claims, queued or claimed agent requests, and drives that wait
+	 * for a review bot between rounds. Each entry is `{ itemId, kind, action, since }`.
+	 */
+	async function workList(name, actions) {
+		const out = [];
+		for (const c of await listClaims({ instance: name })) if (!c.expired) out.push({ itemId: c.itemId, kind: c.kind, action: null, since: c.at });
+		for (const { data: a } of actions) {
+			const kind = ACTION_KINDS[a.action];
+			if (kind && a.status === "queued" && typeof a.itemId === "string") out.push({ itemId: a.itemId, kind, action: a.action, since: a.createdAt ?? null });
+		}
+		const driveDir = join(served.get(name).state, "drive");
+		let names = [];
+		try {
+			names = readdirSync(driveDir).filter((n) => n.endsWith(".json") && !n.startsWith("."));
+		} catch {
+			// No drive waits
+		}
+		for (const n of names) {
+			const itemId = n.slice(0, -".json".length);
+			if (!ITEM_ID.test(itemId)) continue;
+			const d = await readJson(join(driveDir, n));
+			if (d) out.push({ itemId, kind: "push", action: "drive", since: d.reviewRequestedAt ?? d.startedAt ?? null });
+		}
+		return out;
+	}
+
+	/** The work of `kind` in progress on the item, or undefined. */
+	async function busyWith(name, itemId, kind) {
+		return (await workList(name, await readCollection(name, "actions"))).find((w) => w.itemId === itemId && w.kind === kind);
+	}
+
+	/** Per item, the work in progress to serve as `item.working`: push work first, then the oldest. */
+	async function workingByItem(name, actions) {
+		const out = new Map();
+		for (const w of await workList(name, actions)) {
+			const cur = out.get(w.itemId);
+			const better = !cur || (w.kind === "push" && cur.kind !== "push") || (w.kind === cur.kind && String(w.since) < String(cur.since));
+			if (better) out.set(w.itemId, { kind: w.kind, ...(w.action && { action: w.action }), since: w.since });
+		}
+		return out;
+	}
 
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
 	async function readItems(name) {
@@ -784,16 +885,25 @@ export async function startBoardServer({
 		const mode = current ?? "none";
 		const [items, actions] = await Promise.all([readCollection(name, "items"), readCollection(name, "actions")]);
 		const clicked = clickedByKey(name, actions);
-		const labelled = labelsByKey(name, actions);
+		const partDone = Object.fromEntries(Object.keys(PARTS).map((p) => [p, partsByKey(name, actions, p)]));
+		const working = await workingByItem(name, actions);
+		const fixSources = await withInstance(name, () => loadFixSources(name));
+		const fixOf = (id, data) => (data.kind === "issue" || data.kind === "discussion" ? fixStateOf(id, fixSources) : null);
 		return items.map(({ id, data }) => ({
 			...data,
 			liveState: liveStates.get(`${name}/${id}`),
+			...(working.has(id) && { working: working.get(id) }),
+			...(fixOf(id, data) && { fix: fixOf(id, data) }),
 			routes: routesOf(data).map((route) => {
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
 				const ran = clicked.get(key) ?? (doneKeys.has(key) ? { status: "done", result: "", finishedAt: null } : undefined);
-				const labelDone = labelParams(route) ? labelled.get(`${name}|${id}|${route.id}|${labelHash(route, data)}`) : undefined;
-				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...(labelDone && { labelDone }) };
+				const parts = {};
+				for (const [p, def] of Object.entries(PARTS)) {
+					const done = def.params(route) ? partDone[p].get(`${name}|${id}|${route.id}|${partHash(p, route, data)}`) : undefined;
+					if (done) parts[def.doneField] = done;
+				}
+				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...parts };
 			}),
 			instance: name,
 			id,
@@ -892,6 +1002,9 @@ export async function startBoardServer({
 		addWatch(w, i.state, (_type, file) => {
 			if (file === "control.json") schedulePush(name, "board");
 		});
+		// A claim taken or released changes item.working
+		mkdirSync(claimsDir(name), { recursive: true });
+		addWatch(w, claimsDir(name), () => schedulePush(name, "items"));
 		watchSettings(name);
 		const { instance, error } = settingsOf(name);
 		entry.settingsError = error;
@@ -1031,7 +1144,7 @@ export async function startBoardServer({
 		const { error: settingsError } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
 		const { itemId, routeId, text, force, input } = body;
-		if (isObject(input) && input.part !== undefined) return handleLabelPart(name, body);
+		if (isObject(input) && input.part !== undefined) return handlePart(name, body);
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
 		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) {
@@ -1052,6 +1165,16 @@ export async function startBoardServer({
 				return [409, { ok: false, result: "This route already ran. The board shows its result.", duplicate: true }];
 			}
 
+			// No second fix while one runs or its PR is a draft or open, also when the item file still offers one
+			if (route.type === "follow_up" && route.as === "agent" && (item.kind === "issue" || item.kind === "discussion")) {
+				const block = fixBlock(fixStateOf(itemId, await withInstance(name, () => loadFixSources(name))));
+				if (block) return [409, { ok: false, result: block, fixRunning: true }];
+			}
+			// While the agent pushes to the PR, nothing may decide it on its current state
+			if (PUSH_BLOCKED(route) && (await busyWith(name, itemId, "push"))) {
+				return [409, { ok: false, result: "The agent is changing this PR. Decide after it is done.", working: true }];
+			}
+
 			const draft = typeof text === "string" ? text : typeof route.text === "string" ? route.text : "";
 			let plan;
 			try {
@@ -1070,6 +1193,10 @@ export async function startBoardServer({
 			};
 
 			if (plan.agent) {
+				const kind = ACTION_KINDS[plan.action];
+				if (kind && (await busyWith(name, itemId, kind))) {
+					return [409, { ok: false, result: "The agent is already working on this.", working: true }];
+				}
 				logRouteDecisions(name, itemId, item, route, draft, input, true);
 				await logClick(name, itemId, {
 					...entry,
@@ -1082,6 +1209,7 @@ export async function startBoardServer({
 					result: "",
 				});
 				doneKeys.add(key);
+				await setHandled(name, itemId, route, null);
 				return [200, { ok: true, result: "Queued for the master session.", queued: true }];
 			}
 
@@ -1152,68 +1280,163 @@ export async function startBoardServer({
 			if (outcome.ok) {
 				doneKeys.add(key);
 				refusals.delete(key);
+				await setHandled(name, itemId, route, VERIFIED_BY_ACTION[first.action] ?? null);
 			}
 			schedulePush(name, "items");
 			return [200, outcome];
 		});
 	}
 
+	/** Marks the item as handled by the maintainer through `route`. The routine and the refresh read it. */
+	async function setHandled(name, itemId, route, verified) {
+		const file = itemFile(name, itemId);
+		await withLock(docLocks, file, async () => {
+			const item = await readJson(file);
+			if (!item) return;
+			await writeAtomic(file, { ...item, handled: { at: new Date().toISOString(), routeId: route.id, routeType: route.type, verified } });
+		});
+		schedulePush(name, "items");
+	}
+
+	const refreshedAt = new Map();
+	const refreshWindow = [];
+
 	/**
-	 * Runs the label button of a route with `alsoLabel`: exactly the route's labels, as the bot or under the own
-	 * login. It is no route choice, so it logs no decision.
+	 * Reads one item from GitHub, read-only, and stores what changed: `handled.verified`, `live` for a closed or
+	 * merged thread, and the GitHub fields the page shows. Nothing the agent wrote changes.
 	 */
-	async function handleLabelPart(name, body) {
+	async function handleRefresh(body) {
+		const name = instanceOf(body.instance);
+		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
+		const { itemId } = body;
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return [400, { ok: false, result: "itemId is required." }];
+		const { error: settingsError } = settingsOf(name);
+		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid. ${settingsError}`, settingsError }];
+		const file = itemFile(name, itemId);
+		const item = await readJson(file);
+		if (!item) return [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (!allowedRepo(name, item.repo) || !["pr", "issue", "discussion"].includes(item.kind) || !Number.isSafeInteger(item.number)) {
+			return [200, { ok: false, result: "The item names no thread of this instance." }];
+		}
+		const now = Date.now();
+		const key = `${name}/${itemId}`;
+		while (refreshWindow.length && refreshWindow[0] <= now - 60000) refreshWindow.shift();
+		const itemWait = (refreshedAt.get(key) ?? -Infinity) + REFRESH_ITEM_MS - now;
+		const totalWait = refreshWindow.length >= REFRESH_PER_MINUTE ? refreshWindow[0] + 60000 - now : 0;
+		const wait = Math.max(itemWait, totalWait);
+		if (wait > 0) {
+			const retryAfter = Math.ceil(wait / 1000);
+			return [429, { ok: false, result: `Checked a moment ago. Try again in ${retryAfter} s.`, retryAfter }];
+		}
+		refreshedAt.set(key, now);
+		refreshWindow.push(now);
+		let entry;
+		try {
+			entry = await withInstance(name, () => fetchItem(item.kind, item.number, item.repo));
+		} catch (e) {
+			return [200, { ok: false, result: `Reading the thread from GitHub failed: ${e.message}` }];
+		}
+		const checkedAt = new Date().toISOString();
+		const state = entry.githubState ?? "open";
+		let next;
+		await withLock(docLocks, file, async () => {
+			const cur = await readJson(file);
+			if (!cur) return;
+			next = { ...cur };
+			if (state === "closed" || state === "merged") next.live = { state, checkedAt };
+			else delete next.live;
+			if (entry.mergeable !== undefined) next.mergeable = MERGEABLE_STATES[entry.mergeable] ?? "unknown";
+			if (entry.ci !== undefined) next.ci = entry.ci;
+			if (entry.facts?.lastEventUrl) next.lastEventUrl = entry.facts.lastEventUrl;
+			if (isObject(cur.handled)) next.handled = { ...cur.handled, verified: verify(cur, cur.handled, entry, state) };
+			await writeAtomic(file, next);
+		});
+		if (!next) return [200, { ok: false, result: OUTDATED, outdated: true }];
+		schedulePush(name, "items");
+		return [200, { ok: true, result: { state, checkedAt, ...(next.handled && { verified: next.handled.verified }) } }];
+	}
+
+	/** What GitHub shows since the maintainer handled the item. */
+	function verify(item, handled, entry, state) {
+		if (state === "closed" || state === "merged") return state;
+		const since = Date.parse(handled.at);
+		const ours = (entry.facts?.timeline ?? []).some((e) => e.side === "us" && e.kind !== "opened" && Date.parse(e.at) > since);
+		if (ours) return "commented";
+		const route = routesOf(item).find((r) => r.id === handled.routeId);
+		const wanted = route?.type === "chore" && route.params?.action === "label" ? route.params : route?.params?.alsoLabel;
+		if (isObject(wanted)) {
+			const has = new Set((entry.labels ?? []).map((l) => l.toLowerCase()));
+			const add = Array.isArray(wanted.add) ? wanted.add : [];
+			const remove = Array.isArray(wanted.remove) ? wanted.remove : [];
+			if (add.length + remove.length && add.every((l) => has.has(String(l).toLowerCase())) && remove.every((l) => !has.has(String(l).toLowerCase()))) return "labeled";
+		}
+		return "unchanged";
+	}
+
+	/**
+	 * Runs the second button of a route: the labels of `alsoLabel` or the answer of `alsoAnswer`, with params from
+	 * the route only, as the bot or under the own login. It is no route choice, so it logs no decision.
+	 */
+	async function handlePart(name, body) {
 		const { itemId, routeId, input, force } = body;
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
-		if (body.text !== undefined) return [400, { ok: false, result: "The label button sends no text." }];
+		const part = input.part;
+		const def = Object.hasOwn(PARTS, part) ? PARTS[part] : null;
+		if (!def) return [200, { ok: false, result: `input.part must be one of ${Object.keys(PARTS).join(", ")}.` }];
+		if (body.text !== undefined) return [400, { ok: false, result: `The ${part} button sends no text.` }];
 		return withLock(actionLocks, `${name}/${itemId}`, async () => {
 			const item = await readJson(itemFile(name, itemId));
 			const route = item && routesOf(item).find((r) => r.id === routeId);
 			if (!route) return outdated;
-			const labels = labelParams(route);
-			if (!labels) return [200, { ok: false, result: "This route sets no labels." }];
+			const params = def.params(route);
+			if (!params) return [200, { ok: false, result: def.none }];
 			if (!allowedRepo(name, item.repo)) {
 				return [200, { ok: false, result: typeof item.repo === "string" ? `${item.repo} is not a repository of instance ${name}. Nothing was sent.` : "The item names no repository. Nothing was sent." }];
 			}
 			try {
 				const chosen = validateInput(route, item, input);
-				if (chosen.part !== "label" || input.alsoLabel !== undefined) throw new Refusal('The label button sends only input.part "label".');
+				if (chosen.part !== part || Object.keys(input).length !== 1) throw new Refusal(`The ${part} button sends only input.part "${part}".`);
 			} catch (e) {
 				if (e instanceof Refusal) return [200, { ok: false, result: e.message }];
 				throw e;
 			}
 			const mode = modeOf(name);
-			if (mode === "none") return [200, { ok: false, result: "Setting the labels needs a bot account, or allowOwnTokenPushes in config.json to run it under your own gh login." }];
-			const hash = labelHash(route, item);
+			if (mode === "none") return [200, { ok: false, result: `${def.needs} a bot account, or allowOwnTokenPushes in config.json to run it under your own gh login.` }];
+			const hash = partHash(part, route, item);
 			const key = `${name}|${itemId}|${routeId}|${hash}`;
-			if (doneKeys.has(`label|${key}`) || labelsByKey(name, await readCollection(name, "actions")).get(key)?.status === "done") {
-				return [409, { ok: false, result: "These labels are already set. The board shows the result.", duplicate: true }];
+			if (doneKeys.has(`${part}|${key}`) || partsByKey(name, await readCollection(name, "actions"), part).get(key)?.status === "done") {
+				return [409, { ok: false, result: def.duplicate, duplicate: true }];
 			}
 			if (isPaused(served.get(name).state)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
 			const { kind, number, repo } = item;
-			const fresh = await checkFresh({ instance: name, action: "label", params: labels, kind, number, item, force: force === true, openOnly: true });
-			if (fresh.state) {
-				liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
-				schedulePush(name, "items");
+			if (def.openOnly) {
+				const fresh = await checkFresh({ instance: name, action: def.action, params, kind, number, item, force: force === true, openOnly: true });
+				if (fresh.state) {
+					liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
+					schedulePush(name, "items");
+				}
+				if (!fresh.ok) return [200, { ok: false, result: fresh.reason, stale: true, forceable: false }];
 			}
-			if (!fresh.ok) return [200, { ok: false, result: fresh.reason, stale: true, forceable: false }];
-			const outcome = await runAction({ instance: name, repo, action: "label", params: labels, kind, number, dryRun });
+			const outcome = await runAction({ instance: name, repo, action: def.action, params, kind, number, dryRun });
 			await logClick(name, itemId, {
 				routeId,
 				route: route.type,
-				part: "label",
-				labelHash: hash,
+				part,
+				[def.hashField]: hash,
 				createdAt: new Date().toISOString(),
-				action: "label",
-				params: labels,
+				action: def.action,
+				params,
 				text: "",
 				status: outcome.ok ? "done" : "failed",
 				via: "server",
 				finishedAt: new Date().toISOString(),
 				result: typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result),
 			});
-			if (outcome.ok) doneKeys.add(`label|${key}`);
+			if (outcome.ok) {
+				doneKeys.add(`${part}|${key}`);
+				await setHandled(name, itemId, route, VERIFIED_BY_ACTION[def.action] ?? null);
+			}
 			schedulePush(name, "items");
 			return [200, outcome];
 		});
@@ -1276,6 +1499,7 @@ export async function startBoardServer({
 		if (recommended && recommended !== route) await decide(name, "chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
 		const drafted = typeof route.text === "string" ? route.text : "";
 		if (typeof text === "string" && text !== drafted) await decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
+		await setHandled(name, itemId, route, null);
 		return [200, { ok: true, result: "Logged." }];
 	}
 
@@ -1508,12 +1732,12 @@ export async function startBoardServer({
 		if (req.method === "GET" && url.pathname === "/api/tools") {
 			return json(res, 200, { tools: Object.keys(ACTIONS), dryRun });
 		}
-		if (req.method === "POST" && ["/api/db", "/api/action", "/api/decision"].includes(url.pathname)) {
+		if (req.method === "POST" && ["/api/db", "/api/action", "/api/decision", "/api/refresh"].includes(url.pathname)) {
 			if (!/^application\/json\b/.test(req.headers["content-type"] ?? "")) {
 				return json(res, 415, { error: "Send JSON." });
 			}
 			const body = await readBody(req);
-			const handler = { "/api/db": handleDb, "/api/action": handleAction, "/api/decision": handleDecision }[url.pathname];
+			const handler = { "/api/db": handleDb, "/api/action": handleAction, "/api/decision": handleDecision, "/api/refresh": handleRefresh }[url.pathname];
 			const [status, data] = await handler(body);
 			return json(res, status, data);
 		}

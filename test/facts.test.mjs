@@ -50,6 +50,15 @@ const withUrls = f.buildTimeline([{ ...ev(0, "hubot", "opened"), url: "u0" }, { 
 t.check("lastEventUrl is the newest event's url, automated ones included", withUrls.lastEventUrl === "u2" && withUrls.timeline.every((e) => e.url === undefined), withUrls);
 t.check("lastEventUrl is null with only the opening post", f.buildTimeline([{ ...ev(0, "hubot", "opened"), url: "u0" }], ctx).lastEventUrl === null);
 
+const node = (over) => ({ headRefName: "fix-x", allCommits: { nodes: [{ commit: { message: "x", author: { name: "Jane", user: { login: "jane" } }, committer: { name: "Jane", user: { login: "jane" } } } }] }, ...over });
+const commitBy = (name, login, message = "x") => ({ allCommits: { nodes: [{ commit: { message, author: { name, user: login ? { login } : null }, committer: { name: "GitHub", user: null } } }] } });
+t.check("a human PR has no AI signals", f.aiFacts(node(), { logins: [BOT], names: [] }).aiAuthored === false);
+t.check("the configured bot and botLogins count", f.aiFacts(node(commitBy("Widgets Bot", BOT)), { logins: [BOT], names: [] }).aiSignals[0] === `commit author ${BOT}`);
+t.check("copilot logins and copilot/ branches count", f.aiFacts(node(commitBy("Copilot", "Copilot")), {}).aiAuthored && f.aiFacts(node({ headRefName: "copilot/fix-1" }), {}).aiSignals.includes("branch copilot/fix-1"));
+t.check("aiAuthors adds name patterns", f.aiFacts(node(commitBy("Devin AI", null)), { logins: [], names: ["devin"] }).aiSignals[0] === "commit author Devin AI" && !f.aiFacts(node(commitBy("Devin AI", null)), {}).aiAuthored);
+t.check("a Claudette is not Claude", !f.aiFacts(node(commitBy("Claudette", "claudette")), {}).aiAuthored);
+t.check("a co-author email can name the agent", f.aiFacts(node(commitBy("Jane", "jane", "x\n\nCo-authored-by: Someone <copilot@users.noreply.github.com>")), {}).aiSignals[0] === "co-author Someone");
+
 const pr = { ci: "passing", mergeable: "MERGEABLE", files: ["package.json", "yarn.lock"], changedFileCount: 2, reviewSummary: [{ author: ME, state: "approved" }] };
 let p = f.prFacts(pr);
 t.check("a PR that changes only manifests and lock files is dependency-only and clean", p.dependencyOnly && p.isClean && p.ciGreen && JSON.stringify(p.approvedBy) === `["${ME}"]` && p.openThreadCount === 0 && !p.touchesSensitive, p);
@@ -75,7 +84,12 @@ const item = (...args) => {
 
 const dep = item("pr", "17");
 t.check("gary item gives a dependency PR its facts", dep.facts?.dependencyOnly === true && dep.facts.isClean === true && dep.facts.ciGreen === true && dep.facts.waitingOn === "nobody" && dep.facts.timeline.length === 1 && dep.facts.timeline[0].side === "bot", dep.facts ?? dep);
+t.check("a bot commit marks a PR as AI or bot authored", dep.facts?.aiAuthored === true && dep.facts.aiSignals.includes("commit author renovate[bot]") && dep.facts.changedFiles === 2 && dep.facts.changedLines === 2, dep.facts);
+const ai = item("pr", "18");
+t.check("a claude/ branch and a co-author trailer are AI signals", ai.facts?.aiAuthored === true && ai.facts.aiSignals.includes("branch claude/restore-timeout") && ai.facts.aiSignals.includes("co-author Claude") && ai.facts.aiSignals.length === 2, ai.facts?.aiSignals);
+t.check("changedLines leaves out lock files", ai.facts?.changedLines === 120 && ai.facts.changedFiles === 3, ai.facts);
 const pr12 = item("pr", "12");
+t.check("a PR without AI signals is not AI authored", pr12.facts?.aiAuthored === false && JSON.stringify(pr12.facts.aiSignals) === "[]", pr12.facts);
 const kinds = pr12.facts?.timeline.map((e) => e.kind) ?? [];
 t.check("a PR timeline holds reviews and thread comments", kinds.includes("opened") && kinds.includes("comment") && kinds.includes("review") && kinds.includes("thread_comment"), pr12.facts);
 t.check("PR facts come from the entry", pr12.facts?.touchesSensitive === true && pr12.facts.openThreadCount === 3 && pr12.facts.dependencyOnly === false && JSON.stringify(pr12.facts.approvedBy) === `["${ME}"]`, pr12.facts);
@@ -89,6 +103,7 @@ const disc = item("discussion", "35");
 const replies = disc.facts?.timeline.filter((e) => e.kind === "reply") ?? [];
 t.check("more replies than the inline page are fetched", replies.length === 3 && !disc.facts.timelineTruncated && disc.facts.waitingOn === "us", disc.facts ?? disc);
 t.check("lastEventUrl of a discussion is the newest fetched reply", disc.facts?.lastEventUrl === "https://github.com/acme/widgets/discussions/35#discussioncomment-507", disc.facts?.lastEventUrl);
+t.check("a discussion says whether answers are possible and chosen", disc.facts?.answerable === true && disc.facts.answerChosen === false && issue.facts.answerable === undefined, disc.facts);
 t.check("discussion facts are there", disc.facts?.isAnswered === false && disc.facts.hasClosingPr === false);
 
 const snap = gary("snapshot");

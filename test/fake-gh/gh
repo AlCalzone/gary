@@ -4,6 +4,7 @@
 //   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
 //   FAKE_GH_LOGIN          the stored login without GH_TOKEN, default octocat. Empty means not logged in
 //   FAKE_GH_LOG            a file that gets one line per call, for tests that check what ran
+//   FAKE_GH_OVERRIDES      a JSON file { "issue-22": { …fields } } merged into the full nodes of `gary item`, read on every call
 import { appendFileSync, readFileSync } from "node:fs";
 import * as gh from "../fixtures/github.mjs";
 
@@ -52,6 +53,14 @@ if (args[1] !== "graphql") {
 const { query, variables: v = {} } = JSON.parse(stdin || "{}");
 if (/^\s*mutation\b/.test(query)) fail("fake gh refuses every write", undefined);
 const repository = (data) => out({ data: { repository: data } });
+const overrides = (() => {
+	try {
+		return process.env.FAKE_GH_OVERRIDES ? JSON.parse(readFileSync(process.env.FAKE_GH_OVERRIDES, "utf8")) : {};
+	} catch {
+		return {};
+	}
+})();
+const withOverride = (key, node) => (node && overrides[key] ? { ...node, ...overrides[key] } : node);
 
 if (query.includes("issueOrPullRequest(number")) {
 	const item = gh.issuesAndPrs[v.number];
@@ -82,20 +91,24 @@ if (query.includes("node(id: $id)")) {
 	if (!node) fail(`Could not resolve to a node with the global id of '${v.id}'`, { node: null });
 	out({ data: { node } });
 }
+if (query.includes("search(query: $q, type: ISSUE")) {
+	if (!/^repo:acme\/widgets is:pr\b/.test(v.q ?? "")) fail(`fake gh only searches PRs of acme/widgets, not "${v.q}"`, undefined);
+	out({ data: { search: { nodes: overrides.searchPrs ?? gh.searchPrs } } });
+}
 if (query.includes("pullRequests(states: OPEN")) {
-	repository({ pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: Object.values(gh.prNodes) } });
+	repository({ pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: Object.values(gh.prNodes).map((n) => withOverride(`pr-${n.number}`, n)) } });
 }
 if (query.includes("issues(states: OPEN")) {
-	const nodes = Object.values(gh.issueNodes);
+	const nodes = Object.values(gh.issueNodes).map((n) => withOverride(`issue-${n.number}`, n));
 	repository({ issues: { totalCount: gh.openTotals.issues, pageInfo: { hasNextPage: false, endCursor: null }, nodes } });
 }
 if (query.includes("discussions(states: OPEN")) {
-	const nodes = Object.values(gh.discussionNodes);
+	const nodes = Object.values(gh.discussionNodes).map((n) => withOverride(`disc-${n.number}`, n));
 	repository({ discussions: { totalCount: gh.openTotals.discussions, pageInfo: { hasNextPage: false, endCursor: null }, nodes } });
 }
 if (query.includes("pullRequest(number: $number)")) {
 	if (query.includes("allReviews")) {
-		const node = gh.prNodes[v.number];
+		const node = withOverride(`pr-${v.number}`, gh.prNodes[v.number]);
 		if (!node) fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null } });
 		repository({ pullRequest: node });
 	}
@@ -105,7 +118,7 @@ if (query.includes("pullRequest(number: $number)")) {
 }
 if (query.includes("issue(number: $number)")) {
 	if (query.includes("closedByPullRequestsReferences")) {
-		const node = gh.issueNodes[v.number];
+		const node = withOverride(`issue-${v.number}`, gh.issueNodes[v.number]);
 		if (!node) fail(`Could not resolve to an Issue with the number of ${v.number}.`, { repository: { issue: null } });
 		repository({ issue: node });
 	}
@@ -115,7 +128,7 @@ if (query.includes("issue(number: $number)")) {
 }
 if (query.includes("discussion(number: $number)")) {
 	if (query.includes("isAnswered")) {
-		const node = gh.discussionNodes[v.number];
+		const node = withOverride(`disc-${v.number}`, gh.discussionNodes[v.number]);
 		if (!node) fail(`Could not resolve to a Discussion with the number of ${v.number}.`, { repository: { discussion: null } });
 		repository({ discussion: node });
 	}

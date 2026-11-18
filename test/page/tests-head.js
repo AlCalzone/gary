@@ -54,7 +54,7 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
   items(Array.from({ length: 8 }, (_, i) => ["e" + (i + 1), simple(i + 1, "easy", 10, i + 1)]));
   await wait(10);
   ok("quick capped at 5: " + ids("quick"), ids("quick").join(",") === "e1,e2,e3,e4,e5" && !moreBtn("quick").hidden);
-  actions([["x1", { itemId: "e1", action: "comment", status: "done", createdAt: iso(60000) }]]);
+  items(Array.from({ length: 8 }, (_, i) => ["e" + (i + 1), simple(i + 1, "easy", 10, i + 1, i === 0 ? { handled: { at: iso(60000), routeId: "r0", routeType: "chore", verified: null } } : {})]));
   await wait(10);
   ok("next planned moves up: " + ids("quick"), ids("quick").join(",") === "e2,e3,e4,e5,e6");
   ok("handled counts as spent: " + spentText(), spentText() === "10 min of 6 h");
@@ -72,7 +72,7 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
 
   // Plan done and Add more
   items([["d1", simple(1, "easy", 30, 1)]]);
-  actions([["x2", { itemId: "d1", action: "close", status: "done", createdAt: iso(1000) }]]);
+  items([["d1", simple(1, "easy", 30, 1, { handled: { at: iso(1000), routeId: "r0", routeType: "close", verified: null } })]]);
   await wait(10);
   ok("plan done with add more", !document.querySelector(".plan-done").hidden);
   document.querySelector(".plan-done button").click(); await wait(5);

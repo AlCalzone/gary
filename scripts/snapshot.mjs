@@ -5,8 +5,9 @@ import { join, matchesGlob } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
-import { buildTimeline, issueFacts, prFacts, speakerFacts } from "./lib/facts.mjs";
+import { aiFacts, buildTimeline, issueFacts, prFacts, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { graphql } from "./lib/gh.mjs";
+import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
 const PENDING = () => join(stateDir(), "snapshot.pending.json");
@@ -16,6 +17,7 @@ const MAX_THREAD_TEXT = 600;
 const MAX_OPEN_THREADS = 20;
 const THREAD_PAGE = 100;
 const TIMELINE_PAGE = 50;
+const MAX_COMMITS = 100;
 const TIMELINE_REPLIES = 20;
 const TIMELINE_THREAD_COMMENTS = 20;
 const MAX_REPLIES = 300;
@@ -46,14 +48,15 @@ const REVIEW_STATE_FIELDS = `
 `;
 
 const PR_FIELDS = `
-				number title url body createdAt updatedAt isDraft
+				number title url body createdAt updatedAt isDraft state
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
-				headRefOid baseRefName reviewDecision mergeable
+				headRefOid headRefName baseRefName reviewDecision mergeable
 				additions deletions
 				commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-				files(first: ${MAX_FILES}) { totalCount nodes { path } }
+				allCommits: commits(first: ${MAX_COMMITS}) { totalCount nodes { commit { message author { name email user { login } } committer { name email user { login } } } } }
+				files(first: ${MAX_FILES}) { totalCount nodes { path additions deletions } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
 				reviews(last: 10) { nodes { author { login __typename } state submittedAt url body } }
@@ -98,13 +101,13 @@ const MORE_REVIEWS_QUERY = `query($owner: String!, $name: String!, $number: Int!
 }`;
 
 const ISSUE_FIELDS = `
-				number title url body createdAt updatedAt
+				number title url body createdAt updatedAt state
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
-				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft } }
+				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft title author { login } } }
 `;
 
 const ISSUE_QUERY = `query($owner: String!, $name: String!, $after: String) {
@@ -118,7 +121,7 @@ const ISSUE_QUERY = `query($owner: String!, $name: String!, $after: String) {
 }`;
 
 const DISCUSSION_FIELDS = `
-				number title url body createdAt updatedAt
+				number title url body createdAt updatedAt closed
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				category { name isAnswerable }
@@ -178,17 +181,19 @@ export async function main(argv = []) {
 		fetchAll(DISCUSSION_QUERY, "discussions", cutoff),
 	]);
 
-	// Drafts are ignored entirely. A draft that becomes ready shows up as a new item
-	const readyPrs = prs.nodes.filter((n) => !n.isDraft);
+	// Drafts are ignored, except Gary's own fix PRs, which the board must show. A draft that becomes ready shows up as a new item
+	const fixFor = fixPrNumbers(await readFixRecords());
+	const readyPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number));
 	await Promise.all([
 		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
 		...discussions.nodes.map(fetchRemainingReplies),
 	]);
+	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
 	const items = [
-		...readyPrs.map((n) => withFacts("pr", n, toPr(n, classify, sensitive), ctx)),
+		...readyPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }) }, ctx)),
 		...issues.nodes.map((n) => withFacts("issue", n, toIssue(n, classify), ctx)),
-		...discussions.nodes.map((n) => withFacts("discussion", n, toDiscussion(n, classify), ctx)),
+		...discussions.nodes.map((n) => withFacts("discussion", n, { ...toDiscussion(n, classify), ...(references.has(n.number) && { referencingPrs: references.get(n.number) }) }, ctx)),
 	];
 
 	const baseline = readJson(BASELINE())?.items ?? {};
@@ -302,12 +307,62 @@ function baselineEntry(item) {
 		// Kept for every entry, so `gary wants` can compare unchanged items too
 		labels: item.labels ?? [],
 		assignees: item.assignees ?? [],
+		// `gary handled` compares it with the time the maintainer handled the item
+		lastEventAt: item.facts?.timeline?.at(-1)?.at ?? null,
+		// The fix state of issues and discussions reads these
+		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
+		...(item.closingPrs && { closingPrs: item.closingPrs }),
+		...(item.referencingPrs && { referencingPrs: item.referencingPrs }),
 	};
+}
+
+const SEARCH_PRS = 100;
+
+/**
+ * PRs that name an active discussion by URL or as #<number> in their title or body, by discussion number.
+ * Discussions have no cross-reference events in the API, so one search reads the repo's 100 most recently updated PRs.
+ */
+async function fetchDiscussionReferences(numbers) {
+	const { owner, name } = repoParts();
+	const wanted = new Set(numbers);
+	const data = await withRetry(() =>
+		graphql(
+			`query($q: String!) {
+				search(query: $q, type: ISSUE, first: ${SEARCH_PRS}) {
+					nodes { ... on PullRequest { number url title body state isDraft author { login } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } }
+				}
+			}`,
+			{ q: `repo:${owner}/${name} is:pr sort:updated-desc` },
+		),
+	);
+	const out = new Map();
+	const urlRef = new RegExp(`github\\.com/${owner}/${name}/discussions/(\\d+)`, "gi");
+	for (const pr of data.search?.nodes ?? []) {
+		if (!pr?.number) continue;
+		const text = `${pr.title ?? ""}\n${pr.body ?? ""}`;
+		const refs = new Set([...text.matchAll(urlRef)].map((m) => Number(m[1])));
+		for (const m of text.matchAll(/(?:^|[^\w/&])#(\d+)\b/g)) refs.add(Number(m[1]));
+		for (const n of refs) {
+			if (!wanted.has(n)) continue;
+			const ref = {
+				number: pr.number, url: pr.url, title: pr.title, author: pr.author?.login ?? "ghost", isDraft: pr.isDraft,
+				state: pr.state.toLowerCase(), ci: CI_STATES[pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state] ?? "none",
+			};
+			out.set(n, [...(out.get(n) ?? []), ref]);
+		}
+	}
+	return out;
 }
 
 /** Who counts as us, and the profile's patterns for automated comments. */
 function factsContext() {
-	return { us: [...new Set([...maintainerLogins(), ...botLogins()])], patterns: loadProfile().automatedComments ?? [] };
+	const profile = loadProfile();
+	const bot = loadConfig().bot?.login;
+	return {
+		us: [...new Set([...maintainerLogins(), ...botLogins()])],
+		patterns: profile.automatedComments ?? [],
+		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [] },
+	};
 }
 
 /** Adds the computed `facts` to a snapshot entry, from the raw GraphQL node. */
@@ -333,7 +388,14 @@ function withFacts(kind, node, entry, ctx) {
 		}
 	}
 	const { timeline, timelineTruncated, lastEventUrl } = buildTimeline(events, ctx, { truncated });
-	const facts = { timeline, ...(timelineTruncated && { timelineTruncated }), ...(lastEventUrl && { lastEventUrl }), ...speakerFacts(timeline), ...(kind === "pr" ? prFacts(entry) : issueFacts(entry, timeline)) };
+	const facts = {
+		timeline,
+		...(timelineTruncated && { timelineTruncated }),
+		...(lastEventUrl && { lastEventUrl }),
+		...speakerFacts(timeline),
+		...(kind === "pr" ? { ...prFacts(entry), ...sizeFacts(node), ...aiFacts(node, ctx.ai) } : issueFacts(entry, timeline)),
+		...(kind === "discussion" && { answerable: node.category?.isAnswerable === true, answerChosen: node.isAnswered === true }),
+	};
 	return { ...entry, facts };
 }
 
@@ -540,6 +602,8 @@ function common(kind, id, n, classify) {
 		authorType: classify(n.author),
 		authorAssociation: n.authorAssociation,
 		labels: n.labels.nodes.map((l) => l.name),
+		// The board's refresh reads one item that may have been closed since the snapshot
+		githubState: n.state === "MERGED" ? "merged" : n.state === "CLOSED" || n.closed === true ? "closed" : "open",
 		createdAt: n.createdAt,
 		updatedAt: n.updatedAt,
 		body: trim(n.body),
@@ -602,6 +666,8 @@ function closingPrs(n) {
 		url: p.url,
 		state: p.state.toLowerCase(),
 		isDraft: p.isDraft,
+		...(p.title !== undefined && { title: p.title }),
+		...(p.author !== undefined && { author: p.author?.login ?? "ghost" }),
 	}));
 	return prs.length ? { closingPrs: prs } : {};
 }

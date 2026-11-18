@@ -240,6 +240,30 @@ Gary never reviews style. A full PR review runs the project's formatter and lint
 
 `reply` and `request_logs` routes may carry `params.alsoLabel: { add: [], remove: [] }`, with labels from the profile's `autoLabels`. A route that asks the reporter for something adds the profile's waiting label, and a reply after the reporter delivered removes it. On a prefill reply the board shows a second button with the bot's avatar that sets the labels. On a bot route the labels go out with the post, behind a checkbox that is on by default. `wants` remains the fallback, so a reply posted without the button still gets the label in the next run, and the two never contradict each other.
 
+## Claims
+
+`gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` (kinds `fix`, `review`, `push`) marks an item as worked on by one run. It exits with 3 when someone else holds the claim. Without `--request`, a `fix` claim is also refused while another `start_fix` request is queued or a fix PR is in draft or open. Every worker releases its claims on every exit path and sets its action doc to `done` or `failed`, because queued or claimed docs do not expire. The master marks the jobs of dead workers as failed and releases their claims. `gary release` frees it, and `gary claims` lists the current ones. Every fix, full review or triage, take-over, address_review, drive round and format claims its item first and releases it at the end, also on failure. An autonomous fix reads the queue right before it starts and before it opens a PR, and gives way to a `start_fix` request for the same item.
+
+## Answers when closing discussions
+
+A `close` route on a discussion with `facts.answerable` and no `facts.answerChosen` carries `alsoAnswer: { commentId, url, gist }` for the comment that best answers the question. Without such a comment, the closing message states the answer.
+
+## AI-written PRs and backlog
+
+`facts.aiAuthored`, `facts.aiSignals`, `facts.changedLines` and `facts.changedFiles` describe AI-written PRs. The fast tier never decides them, and his reading time comes from the changed lines by the table in `item-doc.md`. Issues and discussions by the bot or an agent that describe doable work get one `Implement:` card in `deferred`, sorted last. Autonomous fixes take only `Start fix:` cards.
+
+## Handled items
+
+The server sets the maintainer field `handled: { at, routeId, routeType, verified }` when he used a prefill button or a bot or agent route ran, and the board hides the item until the next run. `gary handled --json` lists such items. Early in every hourly run, after the snapshot, the routine clears `handled` with `gary put --merge items <id>` and `{ "handled": null }` when the thread changed on GitHub after `handled.at`, and classifies the item again. When nothing changed and `handled.at` is more than 30 minutes old, it clears `handled`, keeps the routes and prepends a `question` finding that he opened the thread but nothing changed there. A younger mark, or an agent job still queued or claimed, keeps `handled`.
+
+## Routes after a push
+
+Every pushing mode returns routes for the new head only: routes written before the push are dropped, `reviewedSha` is the new head, and a failed or refused job returns the previous doc unchanged after releasing its claim.
+
+## Fix state
+
+The code keeps `fix: { state, pr, startedBy, since }` per issue and discussion, with `state` `working`, `draft`, `open`, `merged` or `closed`. `gary fixes --json` lists it. The fix flow calls `gary fix-record <itemId> --pr <n> --branch <name> --run <run> --by routine|maintainer` right after `gh pr create`, and checks `gary fixes` before it creates the branch and before it opens the PR. The PR's own item carries `fixFor: { itemId, ref }`. The validator and the server refuse a `follow_up` route as agent while the state is `working`, `draft` or `open`, and every hourly run removes such stored routes. Gary's own draft fix PR is the one draft that becomes a board item, once its CI finished. A merged fix leads to a close card on the source item, and a closed unmerged fix allows a new one.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):
