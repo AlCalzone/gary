@@ -62,7 +62,8 @@
 				},
 				"text": "Thanks for the report! The graph part of this looks like a Widgets Desktop problem. Please open a new issue in acme/widgets-desktop with your UI version and a screenshot of the network graph."
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	},
 	"issue-9472": {
 		"kind": "issue",
@@ -118,7 +119,8 @@
 				},
 				"text": "The docs for `restoreNVM` do not mention the soft reset afterwards.\nApps should wait for the driver ready event again."
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	},
 	"pr-9473": {
 		"kind": "pr",
@@ -206,7 +208,8 @@
 				},
 				"callout": "The fork does not allow edits from maintainers, so the bot cannot push to this branch."
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	},
 	"pr-9474": {
 		"kind": "pr",
@@ -294,7 +297,8 @@
 					"mode": "push"
 				}
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	},
 	"pr-9475": {
 		"kind": "pr",
@@ -360,7 +364,8 @@
 				"as": "bot",
 				"title": "Reopen"
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	},
 	"pr-9480": {
 		"kind": "pr",
@@ -419,7 +424,8 @@
 				},
 				"text": "Thanks! Could you rename parameter 2 to match the manual?"
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	},
 	"disc-9476": {
 		"kind": "discussion",
@@ -463,7 +469,8 @@
 					"commentId": "DC_1"
 				}
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	},
 	"issue-9477": {
 		"kind": "issue",
@@ -507,6 +514,7 @@
 					"content": "THUMBS_UP"
 				}
 			}
-		]
+		],
+		"repo": "acme/widgets"
 	}
 }
