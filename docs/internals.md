@@ -34,9 +34,24 @@ Every `gary` command resolves the instance in this order:
 4. the only instance, when exactly one exists,
 5. otherwise an error that lists the instances. There is no silent default.
 
-`gary paths` prints `instance`, `root` (`$GARY_HOME`), `home` (the instance directory), `config`, `personal` (an array, shared file first), `profile`, `state`, `checkout` and `core`. `gary instances` lists the instances. `gary pause --all`, `gary resume --all` and `gary doctor --all` act on every instance. Commands that change something print the instance they acted on. `gary setup --instance <name>` creates an instance with its own port. Each instance has its own board, state, pause switch, decision log and master scheduled task.
+`gary paths` prints `instance`, `root` (`$GARY_HOME`), `home` (the instance directory), `config`, `personal` (an array, shared file first), `profile`, `state`, `checkout` and `core`. `gary instances` lists the instances. `gary pause --all`, `gary resume --all` and `gary doctor --all` act on every instance. Commands that change something print the instance they acted on. `gary setup --instance <name>` creates an instance. Each instance has its own state, pause switch and decision log, and its own tab on the one board. `gary instances --json` lists the instances, see "One server, one master".
 
 The skills resolve the instance once with `gary paths` and pass `--instance <name>` on every later command, also in subagent briefs. Only humans rely on the inference.
+
+## One server, one master
+
+The contract is the SPEC section "One server, one master".
+
+- **One board server per machine** serves every instance, on the one port in `<root>/config.json` (`{ "port": 7878 }`, set with `gary setup --port`). Instance configs have no port. `gary serve` starts it (also `--watch`, `--dry-run`), and `board_start` starts or finds it from any directory. The server watches `<root>/instances/` and picks up a new instance without a restart.
+- **Server-wide files** live in `<root>/state/`: `server-token` and `server.log`. Everything else stays in each instance's `state/`.
+- **One master session** runs the `triage-master` skill every hour. It starts the server, starts one worker per instance that runs `triage-routine`, arms one `gary watch-queue --all` Monitor and starts one worker per agent request, and waits for drives. A worker is a child session, a headless `claude -p` run, or the master itself with subagents, in that order of preference. Workers report through `<state>/runs/<run>/summary.txt`, item docs and action results only.
+- **`gary watch-queue --all`** prints one line per queued agent request of any instance that is not paused: `{ "instance", "id", "itemId", "action" }`.
+- **`gary paths --root`** prints `core` and `root` from any directory. `gary instances --json` returns `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served` and `current`. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`.
+- **Kinds**: an instance has a `kind`, today only `maintainer`. Rules that differ by kind live in files named for it, like `skills/triage-routine/references/classification.maintainer.md`. Each instance has a list of allowed repos. For `maintainer` it is the profile's one `repo`, and an action on an item of another repo is refused.
+- **Item identity**: every item doc carries `repo` (`owner/name`) next to `kind` and `number`. Ids are opaque (`^[a-z0-9][a-z0-9._-]{0,99}$`), and no code derives anything from one. Outside one instance an item is `{ instance, id }`. The server adds `instance` and `ref` (`owner/name#number`) to every item it serves. Decision log entries carry `instance`, `instanceKind` and `repo`.
+- **API**: every endpoint names the instance. `GET /api/state` returns `board.instances[]` with each instance's title, kind, repos, bot, account mode, pause switch, related repos, bot commands and review bots, and items and proposals of all instances, each with `instance`. Clicks, decisions and board actions send `instance` in the body. Every SSE event names its instance.
+- **Board page**: a combined tab "All" first, then one tab per instance. In "All", items show `owner/name#number`. Links, avatars, bot names and commands come from the item's own instance. Browser storage keys are `gary:<instance>:…`.
+- **`gary migrate`** moves an installation from the layout with one server per instance.
 
 ## Commands the agents run
 
@@ -62,7 +77,7 @@ The first command never touches the baseline in `state/snapshot.json`. `--commit
 
 ### gary item
 
-`gary item pr-412` prints the fresh snapshot entry of one item as JSON, read from GitHub with the same fields as `gary snapshot`. It writes no state. Use it to re-check one item without a full snapshot.
+`gary item <pr|issue|discussion> <number> [--repo owner/name]` prints the fresh snapshot entry of one item as JSON, read from GitHub with the same fields as `gary snapshot`. It writes no state. Use it to re-check one item without a full snapshot. `gary item <id>` reads an item already stored on the board. Every item doc carries `repo`.
 
 ### gary action
 
@@ -136,7 +151,7 @@ The stdio server `gary` has one tool per GitHub action and three tools for the b
 
 - `board_start` starts the board server inside this MCP process and returns its URL. When another process already serves the board, it returns `{ "running": true, "owner": false, "url": … }`. Calling it again is safe.
 - `board_stop` stops the board server if this MCP process started it.
-- `board_status` returns the URL, whether this process runs the board server, and whether the port answers like the board.
+- `board_status` returns the URL, whether this process runs the board server, whether the port answers like the board, and the instances it serves.
 
 The master triage session calls `board_start` at the start of every run. Other sessions never start it on their own.
 
@@ -148,7 +163,7 @@ node server/server.mjs --dry-run    # nothing is written to GitHub
 node server/server.mjs --watch      # restart on edits in server/ and scripts/lib/
 ```
 
-It listens on `127.0.0.1` at the `port` from `config.json`. `GARY_DRY_RUN=1` turns on dry-run mode for the MCP server too. `--port` and `--board-dir` override the port and the data directory for tests.
+It listens on `127.0.0.1` at the `port` from the root `config.json`, for all instances. `GARY_DRY_RUN=1` turns on dry-run mode for the MCP server too. `--port` and `--board-dir` override the port and the data directory for tests.
 
 `GET /api/state` returns `board` next to the items: the project `name`, `repo` and `repoUrl`, `me` and `bot` with login and avatar URL (`bot` is `null` without one), `accountMode` (`bot`, `own` or `none`), `relatedRepos`, `botCommands`, `reviewBots` and `paused`. The page gets the same object from `window.claude.use("board")`. Every served route carries `actor`, who acts after a click: `me`, `bot`, `own`, `agent` or `unavailable`. A move to a repository carries `actors` with one entry per button.
 
@@ -156,7 +171,7 @@ Edits reach open pages without a manual reload. When `board/board.html` changes,
 
 The server can write to GitHub, so it locks itself down:
 
-- On the first start it writes a random token to `state/server-token` with mode 600. The page gets the token inline. Every `/api` request must send it, except `GET /api/health`.
+- On the first start it writes a random token to `<root>/state/server-token` with mode 600. The page gets the token inline. Every `/api` request must send it, except `GET /api/health`.
 - It rejects any `Origin` other than its own and any `Host` other than `127.0.0.1:<port>` or `localhost:<port>`.
 - It accepts only JSON bodies up to 256 KB and sends no CORS headers. It serves nothing besides the board page.
 - The page runs under a strict Content-Security-Policy. Images may come only from GitHub, for the avatars.
@@ -184,7 +199,7 @@ The switch is `paused: true` in `<state>/control.json`, read fresh on every chec
 - Agent requests still queue, but `gary watch-queue` prints nothing. They start after `gary resume`.
 - Snoozing, hiding, dismissing a route and deciding proposals keep working.
 
-`board.paused` is in `/api/state` and in `use("board")`. A change sends a `board` SSE event, and the page shim dispatches `board:info`. `gary doctor` reports the switch.
+Pause is per instance: `board.instances[].paused` is in `/api/state` and in `use("board")`. A change sends a `board` SSE event, and the page shim dispatches `board:info`. `gary doctor` reports the switch.
 
 ## Blocked items
 
@@ -204,7 +219,7 @@ decisions.jsonl             the decision log
 learn.json                  the learning cursor
 failures.json               failed analyses per item
 runs/<run>/would-have.json  what a paused run would have done
-snapshot.json, snapshot.pending.json, server-token, logs
+snapshot.json, snapshot.pending.json, logs
 ```
 
 ## Learning

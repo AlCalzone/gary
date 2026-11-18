@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeAtomic } from "./board-store.mjs";
-import { instanceDir, instanceName, listInstances, stateDir } from "./config.mjs";
+import { instanceDir, instanceName, instanceNames, stateDir } from "./config.mjs";
 
 export const PAUSED_MESSAGE = "Gary is paused. Nothing was sent.";
 
@@ -17,13 +17,16 @@ export function isPaused(dir) {
 	}
 }
 
+/** Whether an instance is paused, by name. */
+export const isInstancePaused = (instance) => isPaused(join(instanceDir(instance), "state"));
+
 export async function setPaused(paused, dir = stateDir()) {
 	mkdirSync(dir, { recursive: true });
 	await writeAtomic(controlFile(dir), { paused, at: new Date().toISOString() });
 }
 
 async function toggle(paused, argv) {
-	const names = argv.includes("--all") ? listInstances() : [instanceName()];
+	const names = argv.includes("--all") ? instanceNames() : [instanceName()];
 	if (!names.length) throw new Error("There is no instance to change.");
 	for (const name of names) {
 		await setPaused(paused, join(instanceDir(name), "state"));

@@ -3,7 +3,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, matchesGlob } from "node:path";
 import { pathToFileURL } from "node:url";
-import { botLogins, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
+import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
+import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
 import { graphql } from "./lib/gh.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
@@ -133,7 +134,7 @@ const DISCUSSION_QUERY = `query($owner: String!, $name: String!, $after: String)
 const ITEM_QUERIES = {
 	pr: ["pullRequest", PR_FIELDS],
 	issue: ["issue", ISSUE_FIELDS],
-	disc: ["discussion", DISCUSSION_FIELDS],
+	discussion: ["discussion", DISCUSSION_FIELDS],
 };
 
 export async function main(argv = []) {
@@ -207,20 +208,22 @@ export async function main(argv = []) {
 
 /**
  * Fetches one item fresh from GitHub, with the same fields as the full snapshot. Writes no state.
- * `id` is pr-<n>, issue-<n> or disc-<n>.
+ * `kind` is pr, issue or discussion. `repo` defaults to the instance's repo and must be one of its repos.
  */
-export async function fetchItem(id) {
-	const m = /^(pr|issue|disc)-(\d+)$/.exec(id ?? "");
-	if (!m) throw new Error(`Invalid item id "${id}". Use pr-<n>, issue-<n> or disc-<n>`);
-	const [field, fields] = ITEM_QUERIES[m[1]];
-	const { owner, name } = repoParts();
+export async function fetchItem(kind, number, repo = loadProfile().repo) {
+	if (!Object.hasOwn(ITEM_QUERIES, kind)) throw new Error(`kind must be one of ${Object.keys(ITEM_QUERIES).join(", ")}`);
+	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
+	if (!allowedRepo(instanceName(), repo)) throw new Error(`${repo} is not a repository of instance ${instanceName()}`);
+	const id = `${kind} #${number}`;
+	const [field, fields] = ITEM_QUERIES[kind];
+	const { owner, name } = repoParts(repo);
 	let data;
 	try {
 		data = await graphql(
 			`query($owner: String!, $name: String!, $number: Int!) {
 				repository(owner: $owner, name: $name) { ${field}(number: $number) { ${fields} } }
 			}`,
-			{ owner, name, number: Number(m[2]) },
+			{ owner, name, number },
 		);
 	} catch (e) {
 		if (/Could not resolve/i.test(e.message)) throw new Error(`${id} not found in ${owner}/${name}`);
@@ -229,17 +232,33 @@ export async function fetchItem(id) {
 	const node = data.repository[field];
 	if (!node) throw new Error(`${id} not found in ${owner}/${name}`);
 	const classify = authorClassifier(maintainerLogins(), botLogins());
-	if (m[1] === "pr") {
+	if (kind === "pr") {
 		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node)]);
 		return toPr(node, classify, loadProfile().sensitivePaths);
 	}
-	return m[1] === "issue" ? toIssue(node, classify) : toDiscussion(node, classify);
+	return kind === "issue" ? toIssue(node, classify) : toDiscussion(node, classify);
 }
 
-/** gary item <id>: prints the fresh snapshot entry of one item. */
+const ITEM_USAGE = "Usage: gary item <id> | gary item <pr|issue|discussion> <number> [--repo <owner/name>]";
+
+/**
+ * gary item <id>: the fresh snapshot entry of a stored board item, found by its kind, number and repo.
+ * gary item <kind> <number>: the same for any item of the instance's repo.
+ */
 export async function itemMain(argv) {
-	if (argv.length !== 1) throw new Error("Usage: gary item <pr-<n>|issue-<n>|disc-<n>>");
-	process.stdout.write(JSON.stringify(await fetchItem(argv[0]), null, 2) + "\n");
+	const r = argv.indexOf("--repo");
+	const repo = r >= 0 ? argv[r + 1] : undefined;
+	const args = r < 0 ? argv : argv.filter((_, i) => i !== r && i !== r + 1);
+	let entry;
+	if (args.length === 1) {
+		if (!ID_PATTERN.test(args[0])) throw new Error(ITEM_USAGE);
+		const item = await readDoc(join(boardDir(), "items", args[0] + ".json"));
+		if (!item) throw new Error(`Item ${args[0]} is not on the board. ${ITEM_USAGE}`);
+		entry = await fetchItem(item.kind, item.number, item.repo ?? repo);
+	} else if (args.length === 2) {
+		entry = await fetchItem(args[0], Number(args[1]), repo);
+	} else throw new Error(ITEM_USAGE);
+	process.stdout.write(JSON.stringify(entry, null, 2) + "\n");
 }
 
 // Compare review and thread state too because a PR's updatedAt does not reliably move for them
@@ -426,6 +445,7 @@ function toComment(c, classify) {
 function common(kind, id, n, classify) {
 	return {
 		id,
+		repo: loadProfile().repo,
 		kind,
 		number: n.number,
 		title: n.title,

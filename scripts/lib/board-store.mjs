@@ -1,26 +1,29 @@
 import { randomBytes } from "node:crypto";
-import { readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { stateDir } from "./config.mjs";
+import { instanceDir, instanceName, rootStateDir } from "./config.mjs";
 
-export const ID_PATTERN = /^(pr|issue|disc)-\d+(-\d+)?$/;
+// Ids are opaque. Nothing derives a repo, kind or number from one
+export const ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,99}$/;
 export const PROPOSAL_ID = /^[a-z0-9-]{1,80}$/;
 export const COLLECTIONS = ["items", "actions", "proposals"];
 
 /** The id pattern of the docs in one collection. */
 export const idPattern = (collection) => (collection === "proposals" ? PROPOSAL_ID : ID_PATTERN);
 
-export function boardDir() {
-	return join(stateDir(), "board");
+/** The board store of an instance, by default the resolved one. */
+export function boardDir(instance = instanceName()) {
+	return join(instanceDir(instance), "state", "board");
 }
 
-/** The token file sits next to the board directory, so a test copy of the board gets its own token. */
-export function tokenFile(dir = boardDir()) {
-	return join(dirname(dir), "server-token");
+/** The one board server's token, shared by every instance. */
+export function tokenFile() {
+	return join(rootStateDir(), "server-token");
 }
 
-/** Resolves `items/<id>`, `actions/<id>`, `proposals/<id>` or `meta` to its file, or returns null for anything else. */
-export function docPath(dir, path) {
+/** Resolves `items/<id>`, `actions/<id>`, `proposals/<id>` or `meta` of an instance to its file, or returns null. */
+export function docPath(instance, path) {
+	const dir = boardDir(instance);
 	if (path === "meta") return join(dir, "meta.json");
 	const m = /^(items|actions|proposals)\/(.+)$/.exec(typeof path === "string" ? path : "");
 	if (!m || !idPattern(m[1]).test(m[2])) return null;
@@ -77,8 +80,8 @@ export function replaceFields(cur, doc) {
  * `merge` merges and creates a missing doc with `null` removing a field, `delete` removes the file.
  * Returns `[status, body]` like an HTTP reply.
  */
-export async function applyWrite(dir, { op, path, data }) {
-	const file = docPath(dir, path);
+export async function applyWrite(instance, { op, path, data }) {
+	const file = docPath(instance, path);
 	if (!file) return [400, { error: "Only items/<id>, actions/<id> and meta can be written." }];
 	if (path === "meta" && op !== "set") return [400, { error: "meta only supports set." }];
 	if (op === "delete") {
@@ -98,6 +101,7 @@ export async function applyWrite(dir, { op, path, data }) {
 		if (op === "replace") next = replaceFields(cur, data);
 		else next = op === "update" ? { ...cur, ...data } : mergeFields(cur ?? {}, data);
 	}
+	await mkdir(dirname(file), { recursive: true });
 	await writeAtomic(file, next);
 	return [200, { ok: true }];
 }

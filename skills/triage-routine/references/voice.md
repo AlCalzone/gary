@@ -24,7 +24,7 @@ Canned texts live in `<profile>/templates/<name>.md`. Copy everything below the 
 
 A `review` route posts one review: the summary `text` as the body and `params.comments` inline.
 
-- Every finding that asks for a concrete change on a line of the diff is an inline comment with a `suggestion` block that holds the full replacement for that line or range. The contributor accepts it with one click on GitHub. Use `startLine` for a range. One sentence above the block says why.
+- Every finding that asks for a concrete change on a line of the diff is an inline comment with a replacement. The comment carries `original`, the exact text of lines `startLine` to `line` at `reviewedSha`, and `suggestion`, the full replacement text without a fence. The board turns them into a suggestion the contributor accepts with one click. `text` is prose only: one sentence on why, never a suggestion fence.
 - A change request never goes into the summary when its line is part of the diff. Only findings without a diff line go there: a missing file, a line the PR did not touch, a question about the approach.
 - The summary opens with one line, like "Thanks, a few small suggestions inline." It never counts, lists or repeats the inline comments, because the maintainer can uncheck any of them. When he unchecks all of them, the board sends the summary as is, and it must still make sense. Findings without a diff line follow as a numbered list, each starting with the file or setting it concerns.
 - The event: `request_changes` when at least one finding is `major` or a `blocker`, `comment` when all are `minor` or cosmetic, with an approval offered as the alternative.
@@ -33,10 +33,12 @@ A `review` route posts one review: the summary `text` as the body and `params.co
 
 ## Suggestions
 
+- The range covers exactly the lines the replacement replaces, no more and no fewer. `original` holds those lines, and `suggestion` replaces all of them.
+- A replacement that only adds lines still covers the one line it attaches to. `original` is that line, and `suggestion` repeats it plus the new lines.
 - Suggestions on one PR must not overlap. Merge two changes that touch the same lines into one suggestion.
 - A suggestion that deletes the last property of a JSON object includes the previous line, so it can drop that line's trailing comma.
 - A requested change whose lines lie outside the PR's diff hunks cannot be an inline comment. It goes into the summary.
-- Each suggestion must leave the file valid on its own and together with the others. Apply them all to a scratch copy of the file at `reviewedSha` and check it before you return. When the profile names a formatter for the file type, run it on the copy. Without one, parse the file, or read the result carefully when no parser fits.
+- Each suggestion must leave the file valid on its own and together with the others. Apply each `suggestion` over its `original` range to a scratch copy of the file at `reviewedSha`, all of them together, and check the result before you return. When the profile names a formatter for the file type, run it on the copy. Without one, parse the file, or read the result carefully when no parser fits.
 
 Keep `question` findings as questions to the contributor only when the contributor can answer them. Specification questions for the maintainer stay in `findings` and out of the review text.
 

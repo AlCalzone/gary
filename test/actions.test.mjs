@@ -96,6 +96,10 @@ const CASES = [
 	[false, '{"action":"react","kind":"issue","number":22,"params":{"commentId":"IC_1"}}', "does not belong"],
 	[true, '{"action":"comment","kind":"pr","number":12,"text":"hello \\"$(rm -rf ~)\\" `x`"}', "$(rm -rf ~)"],
 	[true, '{"action":"comment","kind":"pr","number":12,"text":"x"}', '"as": "widgets-bot"'],
+	// The repo comes from the item and must be one of the instance's
+	[true, '{"action":"comment","kind":"pr","number":12,"repo":"acme/widgets","text":"x"}', "addComment"],
+	[true, '{"action":"comment","kind":"pr","number":12,"repo":"ACME/Widgets","text":"x"}', "addComment"],
+	[false, '{"action":"comment","kind":"pr","number":12,"repo":"acme/other","text":"x"}', "acme/other is not a repository of instance widgets"],
 ];
 
 const t = runner("actions");

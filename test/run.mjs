@@ -6,12 +6,15 @@ import { join } from "node:path";
 import { TEST_DIR } from "./lib.mjs";
 
 const SUITES = [
+	["node", "config.test.mjs"],
 	["node", "actions.test.mjs"],
 	["node", "server.test.mjs"],
+	["node", "server-shim.test.mjs"],
 	["node", "accounts.test.mjs"],
 	["node", "learning.test.mjs"],
 	["node", "pause.test.mjs"],
 	["node", "instances.test.mjs"],
+	["node", "migrate.test.mjs"],
 	["zsh", "sharing.test.zsh"],
 	["zsh", "validate.test.zsh"],
 ];
@@ -20,13 +23,15 @@ const PAGE_SUITES = [
 	["node", "page/served.mjs"],
 	["node", "page/served-nobot.mjs"],
 	["node", "page/served-nobot.mjs", "own"],
+	["node", "page/served-tabs.mjs"],
 ];
 
 const list = process.argv.includes("--page") ? PAGE_SUITES : SUITES;
 let failed = 0;
 for (const [bin, file, ...args] of list) {
-	const r = spawnSync(bin === "node" ? process.execPath : bin, [join(TEST_DIR, file), ...args], { stdio: "inherit" });
-	if (r.error) console.log(`${file}: could not start ${bin}: ${r.error.message}`);
+	// A suite that hangs fails after its timeout, so the rest still runs
+	const r = spawnSync(bin === "node" ? process.execPath : bin, [join(TEST_DIR, file), ...args], { stdio: "inherit", timeout: 300000, killSignal: "SIGKILL" });
+	if (r.error) console.log(`${file}: ${r.error.code === "ETIMEDOUT" ? "timed out after 300 s" : `could not start ${bin}: ${r.error.message}`}`);
 	if (r.status !== 0) failed++;
 }
 console.log(failed ? `${failed} of ${list.length} suites failed` : `all ${list.length} suites passed`);

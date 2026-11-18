@@ -1,19 +1,24 @@
-// /api/action and /api/state of server/server.mjs on a temp home in dry-run mode, with the fake gh.
+// /api/action and /api/state of server/server.mjs on a temp root in dry-run mode, with the fake gh.
+// The second half runs two instances in the one server and adds a third while it runs.
 import { spawn } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { get } from "node:http";
 import { join } from "node:path";
-import { ROOT, freePort, makeHome, removeDir, tempDir } from "./lib.mjs";
+import { setTimeout as sleep } from "node:timers/promises";
+import { PROFILE, ROOT, freePort, makeHome, removeDir, tempDir } from "./lib.mjs";
+import { commentBody, planRoute } from "../server/server.mjs";
 
 const T = tempDir();
-const { home, env } = makeHome(T);
-const BOARD = join(home, "state", "board");
 const PORT = await freePort();
+const { home, root, env } = makeHome(T, { port: PORT });
+const BOARD = join(home, "state", "board");
+const REPO = "acme/widgets";
 
 const reviewedAt = "2026-11-17T14:00:00Z";
 const later = "2026-11-18T09:00:00Z";
 const items = {
 	"pr-12": {
-		kind: "pr", number: 12, title: "t", authorType: "maintainer", reviewedAt, reviewedSha: "944d5aca1b70af1d87ca805b08639f3e17b83dcd", hint: "Review: two inline comments",
+		kind: "pr", repo: REPO, number: 12, title: "t", authorType: "maintainer", reviewedAt, reviewedSha: "944d5aca1b70af1d87ca805b08639f3e17b83dcd", hint: "Review: two inline comments",
 		threads: [
 			{ id: "PRRT_1", verdict: "valid" },
 			{ id: "PRRT_2", verdict: "wrong" },
@@ -39,7 +44,7 @@ const items = {
 		],
 	},
 	"issue-21": {
-		kind: "issue", number: 21, title: "t", reviewedAt, hint: "Follow-up: split the issue",
+		kind: "issue", repo: REPO, number: 21, title: "t", reviewedAt, hint: "Follow-up: split the issue",
 		routes: [
 			{ id: "r1", type: "follow_up", title: "Follow-up: split the issue", as: "bot", recommended: true, params: { title: "Split part" }, text: "Body" },
 			{ id: "r2", type: "move", title: "Move: to widgets-desktop", as: "bot", params: { to: "widgets-desktop" } },
@@ -59,31 +64,50 @@ const items = {
 		],
 	},
 	"issue-20": {
-		kind: "issue", number: 20, title: "closed", reviewedAt, hint: "Reopen: wrongly closed",
+		kind: "issue", repo: REPO, number: 20, title: "closed", reviewedAt, hint: "Reopen: wrongly closed",
 		routes: [
 			{ id: "r1", type: "reopen", title: "Reopen: wrongly closed", recommended: true, text: "Reopening." },
 			{ id: "r2", type: "reopen", title: "Reopen: myself", as: "me" },
 		],
 	},
 	"disc-34": {
-		kind: "discussion", number: 34, title: "closed", reviewedAt, hint: "Reopen: x",
+		kind: "discussion", repo: REPO, number: 34, title: "closed", reviewedAt, hint: "Reopen: x",
 		routes: [{ id: "r1", type: "move", title: "Move: to an issue", params: { to: "issue" } }],
 	},
 	"pr-14": {
-		kind: "pr", number: 14, title: "contributor", authorType: "contributor", reviewedAt, hint: "Drive: x",
+		kind: "pr", repo: REPO, number: 14, title: "contributor", authorType: "contributor", reviewedAt, hint: "Drive: x",
 		routes: [{ id: "r1", type: "drive", title: "Drive: x", as: "agent", params: { maxRounds: 4 } }, { id: "r2", type: "drive", title: "Drive: y", as: "agent" }],
 	},
 	"pr-13": {
-		kind: "pr", number: 13, title: "taken over", authorType: "contributor", takenOver: true, reviewedAt, hint: "Drive: x",
+		kind: "pr", repo: REPO, number: 13, title: "taken over", authorType: "contributor", takenOver: true, reviewedAt, hint: "Drive: x",
 		routes: [{ id: "r1", type: "drive", title: "Drive: x", as: "agent" }],
 	},
 	"issue-22": {
-		kind: "issue", number: 22, title: "t", reviewedAt, hint: "Reply: hi",
+		kind: "issue", repo: REPO, number: 22, title: "t", reviewedAt, hint: "Reply: hi",
 		routes: [{ id: "r1", type: "reply", title: "Reply: hi", as: "bot", recommended: true, text: "Hi" }],
 	},
-	"issue-23": { kind: "issue", number: 24, title: "mismatch", reviewedAt, routes: [{ id: "r1", type: "reply", as: "bot", text: "x" }] },
+	"issue-23": { kind: "issue", repo: "acme/gadgets", number: 23, title: "foreign repo", reviewedAt, routes: [{ id: "r1", type: "reply", as: "bot", text: "x" }] },
+	"issue-25": { kind: "issue", number: 25, title: "no repo", reviewedAt, routes: [{ id: "r1", type: "reply", as: "bot", text: "x" }] },
 };
 for (const [id, data] of Object.entries(items)) writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(data));
+writeFileSync(join(BOARD, "items", "issue-30.json"), JSON.stringify({ kind: "issue", repo: REPO, number: 21, title: "t", reviewedAt, hint: "Reply: hi", routes: [{ id: "r1", type: "reply", title: "Reply: hi", as: "bot", recommended: true, text: "Hi from widgets" }] }));
+
+// A second instance in the same root, for the repo acme/gadgets
+function profileFor(name, repo) {
+	const dir = join(T, `profile-${name}`);
+	cpSync(PROFILE, dir, { recursive: true });
+	writeFileSync(join(dir, "profile.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(PROFILE, "profile.json"), "utf8")), name, repo }));
+	return dir;
+}
+const gadgets = makeHome(T, { profile: profileFor("gadgets", "acme/gadgets") }, "gadgets");
+const GBOARD = join(gadgets.home, "state", "board");
+const gadgetItems = {
+	"pr-12": { kind: "pr", repo: "acme/gadgets", number: 12, title: "gadgets PR", authorType: "maintainer", reviewedAt, hint: "Reply: gadgets", routes: [{ id: "r1", type: "reply", title: "Reply: gadgets", as: "bot", recommended: true, text: "Hi from gadgets" }] },
+	"issue-90": { kind: "issue", repo: "acme/gadgets", number: 90, title: "only in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }, { id: "r2", type: "request_logs", title: "Ask: log", as: "bot", text: "Log?" }] },
+	"issue-91": { kind: "issue", repo: REPO, number: 91, title: "widgets repo in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }] },
+};
+for (const [id, data] of Object.entries(gadgetItems)) writeFileSync(join(GBOARD, "items", id + ".json"), JSON.stringify(data));
+writeFileSync(join(GBOARD, "meta.json"), JSON.stringify({ lastRunSummary: "gadgets run" }));
 const stubFile = join(T, "stub.json");
 writeFileSync(stubFile, JSON.stringify({
 	"*": { state: "OPEN" },
@@ -95,11 +119,12 @@ const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-r
 	env: { ...env, GARY_GUARD_STUB: stubFile },
 	stdio: ["ignore", "inherit", "pipe"],
 });
+process.on("exit", () => child.kill("SIGTERM"));
 let stderr = "";
 child.stderr.on("data", (d) => (stderr += d));
 const base = `http://127.0.0.1:${PORT}`;
 for (let i = 0; i < 50 && !stderr.includes(" on http://127.0.0.1:"); i++) await new Promise((r) => setTimeout(r, 100));
-const TOKEN = readFileSync(join(home, "state", "server-token"), "utf8").trim();
+const TOKEN = readFileSync(join(root, "state", "server-token"), "utf8").trim();
 
 async function api(path, body) {
 	const res = await fetch(base + path, {
@@ -121,12 +146,12 @@ function check(name, cond, detail) {
 }
 
 const state = await api("/api/state");
-const served = Object.fromEntries(state.data.items.map((i) => [i.id, i.data]));
+const served = Object.fromEntries(state.data.items.filter((i) => i.instance === "widgets").map((i) => [i.id, i]));
 const hash = (item, route) => served[item].routes.find((r) => r.id === route).draftHash;
 check("state serves routes with a draft hash", served["pr-12"].routes.every((r) => /^[0-9a-f]{16}$/.test(r.draftHash)), served["pr-12"].routes);
-check("state serves no nextSteps", state.data.items.every((i) => i.data.nextSteps === undefined));
+check("state serves no nextSteps", state.data.items.every((i) => i.nextSteps === undefined));
 
-const click = (itemId, routeId, extra = {}) => api("/api/action", { itemId, routeId, draftHash: hash(itemId, routeId), ...extra });
+const click = (itemId, routeId, extra = {}) => api("/api/action", { instance: "widgets", itemId, routeId, draftHash: hash(itemId, routeId), ...extra });
 const expect = async (name, itemId, routeId, extra, test) => {
 	const r = await click(itemId, routeId, extra);
 	check(name, test(r), r);
@@ -137,9 +162,14 @@ const invocations = (r) => JSON.stringify(r.data.result?.invocations ?? []);
 
 // Outdated and malformed clicks
 await expect("unknown route is outdated", "pr-12", "r1", { routeId: "zz" }, (r) => r.data.outdated === true);
-check("wrong draft hash is outdated", (await api("/api/action", { itemId: "pr-12", routeId: "r1", draftHash: "0000000000000000" })).data.outdated === true);
-check("bad itemId is outdated", (await api("/api/action", { itemId: "../x", routeId: "r1" })).data.outdated === true);
-check("item number mismatch is outdated", (await api("/api/action", { itemId: "issue-23", routeId: "r1", draftHash: hash("issue-23", "r1") })).data.outdated === true);
+check("wrong draft hash is outdated", (await api("/api/action", { instance: "widgets", itemId: "pr-12", routeId: "r1", draftHash: "0000000000000000" })).data.outdated === true);
+check("bad itemId is outdated", (await api("/api/action", { instance: "widgets", itemId: "../x", routeId: "r1" })).data.outdated === true);
+await expect("an item of a repo outside the instance is refused", "issue-23", "r1", {}, refused(/acme\/gadgets is not a repository of instance widgets/));
+await expect("an item without a repo is refused", "issue-25", "r1", {}, refused(/names no repository/));
+for (const instance of [undefined, "nope", "../widgets", "Widgets", 7]) {
+	const r = await api("/api/action", { instance, itemId: "pr-12", routeId: "r1", draftHash: hash("pr-12", "r1") });
+	check(`instance ${JSON.stringify(instance)} is refused`, r.status === 400 && r.data.ok === false && /Unknown instance/.test(r.data.result), r);
+}
 
 // Actor rules
 await expect("merge as me is refused", "pr-12", "r3", {}, refused(/yours to do on GitHub/));
@@ -228,10 +258,225 @@ check("edited flag", byRoute("issue-21", "r9")[0]?.edited === true && byRoute("i
 check("refused routes are not logged", byRoute("pr-12", "r3").length === 0 && byRoute("pr-12", "r4").length === 0 && byRoute("issue-21", "r3").length === 0);
 check("each click logged once", byRoute("pr-12", "r1").length === 1, byRoute("pr-12", "r1"));
 
-const after = Object.fromEntries((await api("/api/state")).data.items.map((i) => [i.id, i.data]));
+const after = Object.fromEntries((await api("/api/state")).data.items.filter((i) => i.instance === "widgets").map((i) => [i.id, i]));
 const r1 = after["pr-12"].routes.find((r) => r.id === "r1");
 check("state marks a ran route as done", r1.done?.status === "done", r1);
 check("state marks a queued route", after["pr-12"].routes.find((r) => r.id === "r2").done?.status === "queued");
+
+
+// Suggestions in inline review comments
+check("a suggestion follows the text after a blank line", commentBody({ text: "Use const", suggestion: "const a = 1;" }) === "Use const\n\n```suggestion\nconst a = 1;\n```", commentBody({ text: "Use const", suggestion: "const a = 1;" }));
+const fenced = commentBody({ text: "x", suggestion: "```js\ny\n```" });
+check("a suggestion with a fence line gets a longer fence", fenced === "x\n\n````suggestion\n```js\ny\n```\n````", fenced);
+check("a longer backtick run gets a fence one longer", commentBody({ text: "x", suggestion: "`````\n" }).startsWith("x\n\n``````suggestion\n"));
+check("an old doc with the fence in its text is sent unchanged", commentBody({ text: "Old\n```suggestion\ny\n```" }) === "Old\n```suggestion\ny\n```");
+const suggested = planRoute(
+	{ id: "r1", type: "review", as: "bot", params: { event: "comment", comments: [{ id: "c1", path: "a.ts", line: 3, text: "Rename", original: "let a = 1;", suggestion: "const a = 1;", diffHunk: "@@ -1 +1 @@" }] } },
+	{ kind: "pr", number: 12 },
+	{},
+	"Body",
+);
+const sent = suggested.steps[0].params.comments[0];
+check("original, suggestion and diffHunk are never sent", JSON.stringify(Object.keys(sent).sort()) === '["line","path","text"]' && sent.text === "Rename\n\n```suggestion\nconst a = 1;\n```", sent);
+
+// Two instances in one server
+async function openEvents() {
+	const ctrl = new AbortController();
+	const res = await fetch(`${base}/api/events?token=${TOKEN}`, { signal: ctrl.signal });
+	const events = [];
+	const reader = res.body.getReader();
+	const decoder = new TextDecoder();
+	let buf = "";
+	(async () => {
+		try {
+			for (;;) {
+				const { value, done } = await reader.read();
+				if (done) break;
+				buf += decoder.decode(value, { stream: true });
+				let at;
+				while ((at = buf.indexOf("\n\n")) >= 0) {
+					const chunk = buf.slice(0, at);
+					buf = buf.slice(at + 2);
+					const event = /^event: (.+)$/m.exec(chunk)?.[1];
+					const data = /^data: (.+)$/m.exec(chunk)?.[1];
+					if (event && data) events.push({ event, data: JSON.parse(data) });
+				}
+			}
+		} catch {
+			// Aborted by close()
+		}
+	})();
+	const waitFor = async (test, ms = 3000) => {
+		for (let t = 0; t < ms; t += 50) {
+			const e = events.find(test);
+			if (e) return e;
+			await sleep(50);
+		}
+		return null;
+	};
+	return { events, waitFor, close: () => ctrl.abort() };
+}
+
+const health = await (await fetch(base + "/api/health")).json();
+check("health lists both instances", health.ok === true && health.name === "gary" && JSON.stringify(health.instances) === '["gadgets","widgets"]', health);
+let multi = (await api("/api/state")).data;
+const entry = (name) => multi.board.instances.find((i) => i.name === name);
+check("board lists one entry per instance", multi.board.instances.length === 2 && entry("gadgets").title === "gadgets" && entry("widgets").title === "widgets" && entry("gadgets").repos[0] === "acme/gadgets" && entry("gadgets").repoUrl === "https://github.com/acme/gadgets" && entry("widgets").kind === "maintainer", multi.board);
+check("board carries me and dryRun once", multi.board.me?.login === "octocat" && multi.board.dryRun === true && multi.board.paused === undefined && multi.board.repo === undefined, multi.board);
+check("an instance entry carries accounts and profile facts", entry("gadgets").bot?.login === "widgets-bot" && entry("gadgets").accountMode === "bot" && entry("gadgets").paused === false && entry("gadgets").relatedRepos.includes("widgets-desktop") && entry("gadgets").reviewBots.includes("copilot") && !!entry("gadgets").botCommands.escalate, entry("gadgets"));
+const itemOf = (name, id) => multi.items.find((i) => i.instance === name && i.id === id);
+check("items of both instances are served with instance, id, ref and repo", itemOf("gadgets", "pr-12")?.ref === "acme/gadgets#12" && itemOf("widgets", "pr-12")?.ref === "acme/widgets#12" && itemOf("gadgets", "pr-12").repo === "acme/gadgets" && itemOf("gadgets", "pr-12").title === "gadgets PR", multi.items.map((i) => [i.instance, i.id, i.ref]));
+check("an item without a repo is served with ref null", itemOf("widgets", "issue-25")?.ref === null && itemOf("widgets", "issue-25").repo === null);
+check("state has no actions and meta", multi.actions === undefined && multi.meta === undefined && Object.keys(multi).sort().join() === "board,items,proposals");
+
+const gHash = (id, routeId) => itemOf("gadgets", id).routes.find((r) => r.id === routeId).draftHash;
+let r = await api("/api/action", { instance: "widgets", itemId: "issue-90", routeId: "r1", draftHash: gHash("issue-90", "r1") });
+check("an item id of gadgets is outdated on widgets", r.data.ok === false && r.data.outdated === true, r);
+r = await api("/api/action", { instance: "widgets", itemId: "pr-12", routeId: "r4", draftHash: gHash("pr-12", "r1") });
+check("a draft hash of gadgets' pr-12 does not run widgets' pr-12", r.data.ok === false && r.data.outdated === true, r);
+r = await api("/api/action", { instance: "gadgets", itemId: "issue-91", routeId: "r1", draftHash: gHash("issue-91", "r1") });
+check("a widgets repo item stored in gadgets is refused", r.data.ok === false && /acme\/widgets is not a repository of instance gadgets/.test(r.data.result), r);
+
+const sse = await openEvents();
+check("the event stream opens with the full board", !!(await sse.waitFor((e) => e.event === "board" && e.data.board?.instances?.length === 2)), sse.events.map((e) => e.event));
+for (const event of ["items", "actions", "proposals", "meta"]) {
+	const got = (name) => sse.events.some((e) => e.event === event && e.data.instance === name);
+	await sse.waitFor((e) => e.event === event && e.data.instance === "widgets");
+	check(`the stream sends ${event} of each instance`, got("widgets") && got("gadgets"), sse.events.filter((e) => e.event === event).map((e) => e.data.instance));
+}
+check("meta events carry the instance's meta", sse.events.some((e) => e.event === "meta" && e.data.instance === "gadgets" && e.data.data?.lastRunSummary === "gadgets run"));
+check("item events carry instance and ref per doc", sse.events.some((e) => e.event === "items" && e.data.instance === "gadgets" && e.data.docs.some((d) => d.instance === "gadgets" && d.ref === "acme/gadgets#90")));
+
+// Pause one instance
+sse.events.length = 0;
+writeFileSync(join(gadgets.home, "state", "control.json"), JSON.stringify({ paused: true }));
+const paused = await sse.waitFor((e) => e.event === "board" && e.data.instance === "gadgets");
+check("pausing gadgets sends a board event that names it", paused?.data.board.instances.find((i) => i.name === "gadgets").paused === true && paused.data.board.instances.find((i) => i.name === "widgets").paused === false, paused);
+multi = (await api("/api/state")).data;
+check("only gadgets shows paused", entry("gadgets").paused === true && entry("widgets").paused === false);
+r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r1", draftHash: gHash("pr-12", "r1") });
+check("a gadgets bot click is refused while gadgets is paused", r.data.ok === false && r.data.paused === true, r);
+r = await api("/api/action", { instance: "widgets", itemId: "issue-30", routeId: "r1", draftHash: itemOf("widgets", "issue-30").routes[0].draftHash });
+check("a widgets bot click still runs", r.data.ok === true && JSON.stringify(r.data.result.invocations).includes("Hi from widgets"), r);
+writeFileSync(join(gadgets.home, "state", "control.json"), JSON.stringify({ paused: false }));
+await sleep(300);
+r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r1", draftHash: gHash("pr-12", "r1") });
+check("after resume the gadgets click runs against its own item", r.data.ok === true && JSON.stringify(r.data.result.invocations).includes("Hi from gadgets"), r);
+r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r1", draftHash: gHash("pr-12", "r1") });
+check("a repeat on gadgets gets 409", r.status === 409, r);
+r = await api("/api/action", { instance: "widgets", itemId: "issue-30", routeId: "r1", draftHash: itemOf("widgets", "issue-30").routes[0].draftHash });
+check("the repeat lock is per instance", r.status === 409, r);
+
+// Separate state
+await sleep(200);
+const docsIn = (board) => readdirSync(join(board, "actions")).map((n) => JSON.parse(readFileSync(join(board, "actions", n), "utf8")));
+check("the gadgets click wrote its action doc to gadgets only", docsIn(GBOARD).some((d) => d.itemId === "pr-12" && d.status === "done") && !docsIn(BOARD).some((d) => JSON.stringify(d).includes("Hi from gadgets")), docsIn(GBOARD));
+multi = (await api("/api/state")).data;
+check("served done marks stay per instance", itemOf("gadgets", "pr-12").routes[0].done?.status === "done" && itemOf("widgets", "pr-12").routes[0].done?.status === "done" && itemOf("gadgets", "issue-90").routes[0].done === undefined);
+r = await api("/api/action", { instance: "gadgets", action: "dismiss_route", itemId: "issue-90", routeId: "r2", text: "No logs" });
+check("dismiss_route on gadgets runs", r.data.ok === true, r);
+r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-90", routeId: "r1" });
+check("dismiss_route of a gadgets id on widgets is outdated", r.data.outdated === true, r);
+await sleep(100);
+const logIn = (h) => {
+	try {
+		return readFileSync(join(h, "state", "decisions.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+	} catch {
+		return [];
+	}
+};
+const gLog = logIn(gadgets.home);
+check("the gadgets decision log names instance, kind and repo", gLog.some((e) => e.type === "dismissed_route" && e.instance === "gadgets" && e.instanceKind === "maintainer" && e.repo === "acme/gadgets" && e.itemId === "issue-90"), gLog);
+check("the widgets decision log has no gadgets entry", logIn(home).every((e) => e.instance === "widgets"), logIn(home).filter((e) => e.instance !== "widgets"));
+r = await api("/api/decision", { instance: "nope", itemId: "pr-12", routeId: "r1" });
+check("/api/decision refuses an unknown instance", r.status === 400, r);
+r = await api("/api/decision", { itemId: "pr-12", routeId: "r1" });
+check("/api/decision refuses a missing instance", r.status === 400, r);
+
+// /api/db: the instance in the body or in the path
+r = await api("/api/db", { instance: "gadgets", op: "update", path: "items/issue-90", data: { priority: 3 } });
+check("a db write with the instance in the body lands in that instance", r.status === 200 && JSON.parse(readFileSync(join(GBOARD, "items", "issue-90.json"), "utf8")).priority === 3, r);
+r = await api("/api/db", { op: "update", path: "items/gadgets/issue-90", data: { priority: 4, instance: "gadgets", ref: "acme/gadgets#90" } });
+const stored = JSON.parse(readFileSync(join(GBOARD, "items", "issue-90.json"), "utf8"));
+check("a db write with the instance in the path lands there and drops served-only fields", r.status === 200 && stored.priority === 4 && stored.instance === undefined && stored.ref === undefined, { r, stored });
+r = await api("/api/db", { op: "set", path: "actions/gadgets/issue-90-1", data: { itemId: "gadgets/issue-90", action: "reanalyze", text: "Look again", status: "queued", via: "queue", createdAt: new Date().toISOString() } });
+check("a page reanalyze doc stores the plain item id", r.status === 200 && JSON.parse(readFileSync(join(GBOARD, "actions", "issue-90-1.json"), "utf8")).itemId === "issue-90", r);
+await sleep(100);
+check("the page's note is logged in gadgets", logIn(gadgets.home).some((e) => e.type === "agent_note" && e.itemId === "issue-90" && e.text === "Look again"));
+r = await api("/api/db", { op: "set", path: "meta/gadgets", data: { lastRunSummary: "set through the path" } });
+check("meta/<instance> writes that instance's meta", r.status === 200 && JSON.parse(readFileSync(join(GBOARD, "meta.json"), "utf8")).lastRunSummary === "set through the path", r);
+r = await api("/api/db", { instance: "widgets", op: "update", path: "items/gadgets/issue-90", data: { priority: 1 } });
+check("a db write whose body and path disagree is refused", r.status === 400, r);
+for (const body of [{ op: "update", path: "items/issue-90", data: {} }, { instance: "nope", op: "update", path: "items/issue-90", data: {} }, { op: "update", path: "items/../issue-90", data: {} }, { op: "set", path: "meta/../widgets", data: {} }]) {
+	r = await api("/api/db", body);
+	check(`a db write without a known instance is refused: ${body.path}`, r.status === 400, r);
+}
+
+// Settings edits apply without a restart, also in a profile outside the root
+const editJson = (file, change) => {
+	const tmp = file + ".tmp";
+	writeFileSync(tmp, JSON.stringify(change(JSON.parse(readFileSync(file, "utf8")))));
+	renameSync(tmp, file);
+};
+const entryTitle = (e) => e?.data.board.instances.find((i) => i.name === "gadgets")?.title;
+const relatedOf = (e) => e?.data.board.instances.find((i) => i.name === "gadgets")?.relatedRepos ?? [];
+sse.events.length = 0;
+editJson(join(T, "profile-gadgets", "profile.json"), (p) => ({ ...p, relatedRepos: ["gadgets-cloud"] }));
+let edited = await sse.waitFor((e) => e.event === "board" && relatedOf(e).includes("gadgets-cloud"));
+check("a profile edit sends a board event with the new relatedRepos", !!edited, sse.events.filter((e) => e.event === "board").map(relatedOf));
+const otherProfile = profileFor("gadgets-two", "acme/gadgets");
+editJson(join(gadgets.home, "config.json"), (c) => ({ ...c, profile: otherProfile }));
+check("pointing the config to another profile sends a board event", !!(await sse.waitFor((e) => e.event === "board" && entryTitle(e) === "gadgets-two")), sse.events.filter((e) => e.event === "board").map(entryTitle));
+sse.events.length = 0;
+await sleep(300);
+editJson(join(otherProfile, "profile.json"), (p) => ({ ...p, relatedRepos: ["gadgets-two-cloud"] }));
+edited = await sse.waitFor((e) => e.event === "board" && relatedOf(e).includes("gadgets-two-cloud"));
+check("the watcher follows the new profile", !!edited, sse.events.filter((e) => e.event === "board").map(relatedOf));
+sse.events.length = 0;
+editJson(join(T, "profile-gadgets", "profile.json"), (p) => ({ ...p, relatedRepos: ["stale"] }));
+await sleep(600);
+check("the old profile is no longer watched", !sse.events.some((e) => e.event === "board" && e.data.instance === "gadgets"), sse.events.map((e) => [e.event, e.data.instance]));
+
+// A new instance appears while the server runs
+sse.events.length = 0;
+const third = makeHome(T, { profile: profileFor("third", "acme/third") }, "third");
+writeFileSync(join(third.home, "state", "board", "items", "issue-5.json"), JSON.stringify({ kind: "issue", repo: "acme/third", number: 22, title: "third", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "Hi from third" }] }));
+const added = await sse.waitFor((e) => e.event === "board" && e.data.instance === "third");
+check("a new instance sends a board event that names it", added?.data.board.instances.some((i) => i.name === "third" && i.title === "third"), sse.events.map((e) => [e.event, e.data.instance]));
+check("then its items", !!(await sse.waitFor((e) => e.event === "items" && e.data.instance === "third" && e.data.docs.some((d) => d.id === "issue-5"))));
+check("health lists the new instance", (await (await fetch(base + "/api/health")).json()).instances.includes("third"));
+multi = (await api("/api/state")).data;
+r = await api("/api/action", { instance: "third", itemId: "issue-5", routeId: "r1", draftHash: itemOf("third", "issue-5").routes[0].draftHash, force: true });
+check("a click on the new instance runs", r.data.ok === true && JSON.stringify(r.data.result.invocations).includes("Hi from third"), r);
+
+// A directory without config.json is no instance, and removing one stops serving it
+mkdirSync(join(root, "instances", "ghost", "state", "board", "items"), { recursive: true });
+r = await api("/api/action", { instance: "ghost", itemId: "issue-5", routeId: "r1" });
+check("a directory without config.json is an unknown instance", r.status === 400, r);
+sse.events.length = 0;
+rmSync(third.home, { recursive: true, force: true });
+const removed = await sse.waitFor((e) => e.event === "board" && e.data.instance === "third");
+check("removing an instance sends a board event without it", removed && !removed.data.board.instances.some((i) => i.name === "third"), sse.events.map((e) => [e.event, e.data.instance]));
+check("and empty collections for it", !!(await sse.waitFor((e) => e.event === "items" && e.data.instance === "third" && e.data.docs.length === 0)));
+r = await api("/api/action", { instance: "third", itemId: "issue-5", routeId: "r1" });
+check("a removed instance is unknown", r.status === 400, r);
+sse.close();
+
+// One server-wide token and log
+check("the token lives in the root state only", readdirSync(join(home, "state")).every((n) => n !== "server-token"));
+check("the server log is in the root state", /Serving instance gadgets/.test(readFileSync(join(root, "state", "server.log"), "utf8")));
+const pageHtml = await (await fetch(base + "/")).text();
+check("the page shim carries the board with every instance", pageHtml.includes('"instances":[{"name":"gadgets"') && pageHtml.includes('"name":"widgets"'));
+r = await fetch(base + "/api/state", { headers: { "X-Board-Token": TOKEN, Origin: "http://evil.example" } });
+check("a foreign origin is refused", r.status === 403);
+const hostStatus = await new Promise((resolve) => get({ host: "127.0.0.1", port: PORT, path: "/api/state", headers: { "X-Board-Token": TOKEN, Host: `example.com:${PORT}` } }, (res) => resolve(res.statusCode)).on("error", () => resolve(null)));
+check("a foreign host is refused", hostStatus === 421, hostStatus);
+r = await fetch(base + "/api/action", { method: "POST", headers: { "X-Board-Token": TOKEN, "Content-Type": "text/plain" }, body: "{}" });
+check("a non-JSON body is refused", r.status === 415);
+r = await fetch(base + "/api/action", { method: "POST", headers: { "X-Board-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify({ instance: "widgets", text: "x".repeat(300 * 1024) }) });
+check("a body over 256 KB is refused", r.status === 413);
+r = await fetch(base + "/api/state");
+check("a request without the token is refused", r.status === 401);
 
 child.kill("SIGTERM");
 removeDir(T);

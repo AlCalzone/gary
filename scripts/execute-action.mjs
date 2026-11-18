@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runAction } from "./lib/actions.mjs";
-import { boardDir, readJson } from "./lib/board-store.mjs";
+import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
 import { checkFresh } from "./lib/guard.mjs";
 
 const FLAGS = ["--dry-run", "--check-fresh", "--autonomous"];
@@ -32,24 +32,25 @@ export async function main(args) {
 		if (!request || typeof request !== "object" || Array.isArray(request)) {
 			throw new Error("The action must be a JSON object");
 		}
-		let { action, kind, number, params, text, itemId } = request;
-		// Queued docs in the board's `actions` collection carry only `itemId`
-		if (kind === undefined && number === undefined && typeof itemId === "string") {
-			const match = /^(pr|issue|disc)-(\d+)$/.exec(itemId);
-			if (!match) throw new Error(`Invalid itemId "${itemId}"`);
-			kind = match[1] === "disc" ? "discussion" : match[1];
-			number = Number(match[2]);
+		let { action, kind, number, repo, params, text, itemId } = request;
+		// A board item supplies kind, number and repo. Ids are opaque, so they come from the stored doc
+		let item = null;
+		if (itemId !== undefined) {
+			if (typeof itemId !== "string" || !ID_PATTERN.test(itemId)) throw new Error(`Invalid itemId "${itemId}"`);
+			item = await readJson(join(boardDir(), "items", itemId + ".json"));
+			if (!item && (kind === undefined || number === undefined)) throw new Error(`Item ${itemId} is not on the board`);
+		}
+		if (item) {
+			kind ??= item.kind;
+			number ??= item.number;
+			repo ??= item.repo;
 		}
 		if (checkFreshness) {
-			if (typeof itemId !== "string" || !/^(pr|issue|disc)-\d+$/.test(itemId)) {
-				throw new Error("--check-fresh needs the itemId of a board item");
-			}
-			const item = await readJson(join(boardDir(), "items", itemId + ".json"));
-			if (!item) throw new Error(`Item ${itemId} is not on the board`);
+			if (!item) throw new Error("--check-fresh needs the itemId of a board item");
 			const fresh = await checkFresh({ action, kind, number, item, params, force: request.force === true });
 			if (!fresh.ok) throw new Error(fresh.reason);
 		}
-		outcome = await runAction({ action, kind, number, params, text, dryRun, autonomous });
+		outcome = await runAction({ action, kind, number, repo, params, text, dryRun, autonomous });
 	} catch (e) {
 		outcome = { ok: false, result: e.message };
 	}

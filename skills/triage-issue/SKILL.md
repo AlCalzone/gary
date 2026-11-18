@@ -9,18 +9,18 @@ You triage one issue or discussion in the repo and return one item doc. The main
 
 ## Paths and reading order
 
-Use the paths the caller passed, or run `gary paths`: `<instance>`, `<core>`, `<home>`, `<profile>`, `<state>`, `<checkout>` (the local clone of the repo), `<config>` and `<personal>`. Several Gary instances can live on one machine, one per repo. `gary paths` resolves the instance once, from the session's working directory, which is the repo's checkout. If it fails to resolve, stop and report its error text. Never pick an instance yourself. From then on, every `gary` command in this skill runs as `gary --instance <instance> …`, also from worktrees and scratch directories, where the working directory could point to another instance or none. The commands below leave the flag out to stay short. Add it every time. Every subagent brief names the instance. If the model provider's safety filter stops this run, you cannot switch your own model: the caller retries once on the smaller model, as the routine skill describes. `<personal>` is a list: the shared `personal.md` first, then the instance's own, when it has one. Read them in that order. The repo is `profile.repo`, written below as `<owner>/<repo>`.
+Use the paths the caller passed, or run `gary paths`: `<instance>`, `<core>`, `<home>`, `<profile>`, `<state>`, `<checkout>` (the local clone of the repo), `<config>` and `<personal>`. Several Gary instances can live on one machine, one per repo. `gary paths` resolves the instance once, from the session's working directory, which is the repo's checkout. If it fails to resolve, stop and report its error text. Never pick an instance yourself. From then on, every `gary` command in this skill runs as `gary --instance <instance> …`, also from worktrees and scratch directories, where the working directory could point to another instance or none. The commands below leave the flag out to stay short. Add it every time. Every subagent brief names the instance. If the model provider's safety filter stops this run, you cannot switch your own model: the caller retries once on the smaller model, as the routine skill describes. `<personal>` is a list: the shared `personal.md` first, then the instance's own, when it has one. Read them in that order. The repo is the item's `repo` field from the snapshot entry, written below as `<owner>/<repo>`. Item ids are opaque: take the id from the snapshot entry or the caller and never build one from kind and number. `<n>` below is the item's `number`.
 
 Read in this order. A later file overrides an earlier one:
 
 1. This skill and `<core>/SPEC.md` (the `items/<id>.json` shape and the route table).
-2. From the core routine skill: `<core>/skills/triage-routine/references/item-doc.md`, `voice.md`, `classification.md` and `accounts.md`.
+2. From the core routine skill: `<core>/skills/triage-routine/references/item-doc.md`, `voice.md`, the classification file for the instance's kind (`classification.<kind>.md`, today the classification file) and `accounts.md`.
 3. `<profile>/rules/issues.md`, and the profile's `classification.md` and `voice.md`.
 4. The `<personal>` files, shared first, including any writing rules they name.
 
 The ground rules below cannot be overridden by a profile or by `personal.md`.
 
-The caller gives you the item's snapshot entry, the previous item doc if any, maybe a maintainer instruction, and a scratch directory. Without a snapshot entry, for example in a standalone run, get it with `gary item issue-<n>` or `gary item disc-<n>`. The GitHub-derived fields of the doc come only from that entry: kind, number, title, url, author, `authorType`, labels, `updatedAt` and `isAnswered`. It also says whether this is a triage or fix mode. Fix mode comes from a `follow_up` route with `as: "agent"`, or a `start_fix` request with optional `text` and `params.finding`. In fix mode, skip to `${CLAUDE_SKILL_DIR}/references/autofix.md`. When the user invokes this skill directly, fetch the data yourself and use a new directory under `<state>/manual/`.
+The caller gives you the item's snapshot entry, the previous item doc if any, maybe a maintainer instruction, and a scratch directory. Without a snapshot entry, for example in a standalone run, get it with `gary item <pr|issue|discussion> <number> --repo <owner>/<repo>`, with kind, number and repo from the caller or the stored item. `gary item <id>` only reads an item already stored on the board. The GitHub-derived fields of the doc come only from that entry: repo, kind, number, title, url, author, `authorType`, labels, `updatedAt` and `isAnswered`. It also says whether this is a triage or fix mode. Fix mode comes from a `follow_up` route with `as: "agent"`, or a `start_fix` request with optional `text` and `params.finding`. In fix mode, skip to `${CLAUDE_SKILL_DIR}/references/autofix.md`. When the user invokes this skill directly, fetch the data yourself and use a new directory under `<state>/manual/`.
 
 ## Ground rules
 
@@ -85,7 +85,7 @@ Also common:
 - A confirmed bug in a discussion: a `move` route with `params.to: "issue"` as `me`, only when the profile has `botCommands.escalate`.
 - A fault outside the project with nothing the code can do: a `close` route, reason `not_planned`, and a text naming the evidence.
 
-Some items need nothing from the maintainer: informational issues, his own notes and backlog ideas, and answered discussions where no reply is owed. They get no routes and stay off the board until they change. See "No routes" in `classification.md`.
+Some items need nothing from the maintainer: informational issues, his own notes and backlog ideas, and answered discussions where no reply is owed. They get no routes and stay off the board until they change. See "No routes" in the classification file.
 
 ## 5. Write the doc
 
@@ -93,7 +93,7 @@ Some items need nothing from the maintainer: informational issues, his own notes
 
 Every route with text carries finished text that addresses the reporter. Do not repeat what the reporter wrote back to them.
 
-Read "Solved and closed threads" in `classification.md` before you write the doc. A solved thread gets a `close` route and nothing else, unless something really important is missing or a follow-up idea passes the bar there.
+Read "Solved and closed threads" in the classification file before you write the doc. A solved thread gets a `close` route and nothing else, unless something really important is missing or a follow-up idea passes the bar there.
 
 ## 6. Return
 

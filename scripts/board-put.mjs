@@ -8,11 +8,9 @@
 // A replace keeps the maintainer's `hidden` and `snoozedUntil`, and `priority` when the file has none.
 // An item write is validated against the result. --no-validate skips that, for migrations.
 import { readFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import { applyWrite, boardDir, docPath, mergeFields, readJson, replaceFields, tokenFile } from "./lib/board-store.mjs";
-import { loadConfig, loadProfile } from "./lib/config.mjs";
+import { applyWrite, docPath, mergeFields, readJson, replaceFields, tokenFile } from "./lib/board-store.mjs";
+import { instanceName, loadInstance, loadProfile, rootConfig } from "./lib/config.mjs";
 import { accountMode } from "./lib/gh.mjs";
 import { validateProposal, writeLearn } from "./lib/learning.mjs";
 import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
@@ -23,13 +21,13 @@ function fail(message, problems) {
 }
 
 /** Validates the item as it will be after the write. A merge that touches none of the checked fields passes. */
-async function check(dir, write) {
+async function check(instance, write) {
 	if (!["merge", "replace"].includes(write.op) || !write.path.startsWith("items/")) return;
 	if (write.op === "merge" && !VALIDATED_FIELDS.some((k) => Object.hasOwn(write.data, k))) return;
 	const id = write.path.slice("items/".length);
-	const cur = await readJson(docPath(dir, write.path));
+	const cur = await readJson(docPath(instance, write.path));
 	const merged = write.op === "merge" ? mergeFields(cur ?? {}, write.data) : replaceFields(cur, write.data);
-	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile() });
+	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos });
 	for (const w of warnings) console.error(`warning: ${id}: ${w.message}`);
 	if (errors.length) fail(`${id} breaks ${errors.length} rule${errors.length === 1 ? "" : "s"}, nothing was written`, errors.map((e) => e.message));
 }
@@ -62,24 +60,24 @@ function parse(argv, merge) {
 export async function main(argv) {
 	const noValidate = argv.includes("--no-validate");
 	const write = parse(argv.filter((a) => a !== "--no-validate" && a !== "--merge"), argv.includes("--merge"));
-	const dir = boardDir();
+	const instance = instanceName();
 	if (write.op === "learn") {
 		const problems = await writeLearn(write.data);
 		if (problems.length) fail("learn.json is invalid, nothing was written", problems);
 		console.log(JSON.stringify({ ok: true }));
 		return;
 	}
-	if (!docPath(dir, write.path)) fail(`Invalid document path ${write.path}`);
+	if (!docPath(instance, write.path)) fail(`Invalid document path ${write.path}`);
 	if (write.path.startsWith("proposals/")) {
 		const problems = validateProposal(write.path.slice("proposals/".length), write.data);
 		if (problems.length) fail("The proposal is invalid, nothing was written", problems);
 	}
-	if (!noValidate) await check(dir, write);
+	if (!noValidate) await check(instance, write);
 
-	const port = loadConfig().port;
+	const { port } = rootConfig();
 	let token = "";
 	try {
-		token = readFileSync(tokenFile(dir), "utf8").trim();
+		token = readFileSync(tokenFile(), "utf8").trim();
 	} catch {
 		// Without a token file no server ever started, so the direct write below applies
 	}
@@ -90,7 +88,7 @@ export async function main(argv) {
 			const res = await fetch(`http://127.0.0.1:${port}/api/db`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json", "X-Board-Token": token },
-				body: JSON.stringify(write),
+				body: JSON.stringify({ instance, ...write }),
 				signal: AbortSignal.timeout(10000),
 			});
 			reply = [res.status, await res.json().catch(() => ({}))];
@@ -101,8 +99,7 @@ export async function main(argv) {
 
 	if (!reply) {
 		console.error(`Board server on port ${port} is not reachable. Writing ${write.path} directly.`);
-		if (write.path !== "meta") await mkdir(dirname(docPath(dir, write.path)), { recursive: true });
-		reply = await applyWrite(dir, write);
+		reply = await applyWrite(instance, write);
 	}
 
 	const [status, body] = reply;

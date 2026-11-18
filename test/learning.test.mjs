@@ -24,7 +24,7 @@ const env = { ...baseEnv, GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "test@examp
 writeFileSync(join(root, "personal.md"), "# Personal rules\n");
 const BOARD = join(home, "state", "board");
 const reviewedAt = "2026-11-17T14:00:00Z";
-const base = (kind, number, extra) => ({ kind, number, title: `Item ${number}`, url: `https://github.com/acme/widgets/${kind === "pr" ? "pull" : "issues"}/${number}`, author: "hubot", authorType: "contributor", section: "easy", priority: 1, effortMinutes: 5, reviewDepth: "full", state: "Decide.", reviewedAt, labels: ["bug"], ...extra });
+const base = (kind, number, extra) => ({ kind, repo: "acme/widgets", number, title: `Item ${number}`, url: `https://github.com/acme/widgets/${kind === "pr" ? "pull" : "issues"}/${number}`, author: "hubot", authorType: "contributor", section: "easy", priority: 1, effortMinutes: 5, reviewDepth: "full", state: "Decide.", reviewedAt, labels: ["bug"], ...extra });
 const items = {
 	"pr-12": base("pr", 12, {
 		authorType: "maintainer", reviewedSha: "944d5aca1b70af1d87ca805b08639f3e17b83dcd", hint: "Reply: thanks",
@@ -92,15 +92,15 @@ const server = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-
 let stderr = "";
 server.stderr.on("data", (d) => (stderr += d));
 for (let i = 0; i < 50 && !stderr.includes(" on http://127.0.0.1:"); i++) await sleep(100);
-const token = readFileSync(join(home, "state", "server-token"), "utf8").trim();
+const token = readFileSync(join(root, "state", "server-token"), "utf8").trim();
 const api = async (path, body) => {
 	const res = await fetch(`http://127.0.0.1:${port}${path}`, { method: body ? "POST" : "GET", headers: { "X-Board-Token": token, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
 	return { status: res.status, data: await res.json() };
 };
 const state = async () => (await api("/api/state")).data;
-const served = async (id) => (await state()).items.find((i) => i.id === id)?.data;
+const served = async (id) => (await state()).items.find((i) => i.id === id);
 const hash = async (id, routeId) => (await served(id)).routes.find((r) => r.id === routeId).draftHash;
-const click = async (id, routeId, extra = {}) => api("/api/action", { itemId: id, routeId, draftHash: await hash(id, routeId), ...extra });
+const click = async (id, routeId, extra = {}) => api("/api/action", { instance: "widgets", itemId: id, routeId, draftHash: await hash(id, routeId), ...extra });
 const log = () => {
 	try {
 		return readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
@@ -119,7 +119,7 @@ try {
 	t.check("take_over takes per-thread decisions", r.data.ok && r.data.queued, r);
 	const to = actionDocs().find((a) => a.itemId === "pr-14" && a.action === "take_over");
 	t.check("the take_over doc carries the decisions", to?.params?.mode === "push" && to.params.decisions?.[0]?.decision === "dismiss", to);
-	r = await api("/api/action", { itemId: "pr-14", routeId: "r1", draftHash: await hash("pr-14", "r1"), input: { decisions: [{ threadId: "PRRT_9", decision: "fix" }] } });
+	r = await api("/api/action", { instance: "widgets", itemId: "pr-14", routeId: "r1", draftHash: await hash("pr-14", "r1"), input: { decisions: [{ threadId: "PRRT_9", decision: "fix" }] } });
 	t.check("take_over decisions are checked against the threads", r.status === 409 || (r.data.ok === false), r);
 
 	// Decision log entries from clicks
@@ -132,6 +132,7 @@ try {
 	t.check("edited_text is logged with draft and final", logOf("edited_text").some((e) => e.itemId === "pr-12" && e.draft === "Notes" && e.final === "Edited notes"), log());
 	t.check("unchecked_comment is logged for the unchecked comment only", logOf("unchecked_comment").length === 1 && logOf("unchecked_comment")[0].comment.path === "src/a.ts", logOf("unchecked_comment"));
 	t.check("every entry carries the item facts", log().every((e) => e.at && e.item && e.item.kind && Array.isArray(e.item.labels)), log());
+	t.check("every entry names the instance, its kind and the repo", log().every((e) => e.instance === "widgets" && e.instanceKind === "maintainer" && e.repo === "acme/widgets"), log());
 	r = await click("pr-12", "r3", { text: "Keep it small", input: { decisions: [{ threadId: "PRRT_1", decision: "fix" }, { threadId: "PRRT_2", decision: "dismiss" }, { threadId: "PRRT_3", decision: "fix" }, { threadId: "PRRT_4", decision: "dismiss" }] } });
 	t.check("address_review on a maintainer PR is queued", r.data.ok && r.data.queued, r);
 	await sleep(100);
@@ -141,27 +142,27 @@ try {
 
 	// Routes he does himself report to /api/decision
 	const before = actionDocs().length;
-	r = await api("/api/decision", { itemId: "issue-21", routeId: "r2", text: "Can you check again?" });
+	r = await api("/api/decision", { instance: "widgets", itemId: "issue-21", routeId: "r2", text: "Can you check again?" });
 	t.check("/api/decision answers ok", r.data.ok, r);
 	await sleep(50);
 	t.check("/api/decision logs the alternative and the edit", logOf("chose_alternative").some((e) => e.itemId === "issue-21" && e.chosen.type === "reply") && logOf("edited_text").some((e) => e.itemId === "issue-21" && e.final === "Can you check again?"), log());
 	t.check("/api/decision writes no action doc", actionDocs().length === before);
-	r = await api("/api/decision", { itemId: "issue-21", routeId: "r9" });
+	r = await api("/api/decision", { instance: "widgets", itemId: "issue-21", routeId: "r9" });
 	t.check("/api/decision with an unknown route is outdated", r.data.outdated === true, r);
 
 	// Snooze, hide and Analyze again from the page
-	await api("/api/db", { op: "update", path: "items/issue-22", data: { snoozedUntil: new Date(Date.now() + 3 * 86400000).toISOString() } });
-	await api("/api/db", { op: "update", path: "items/issue-21", data: { hidden: true } });
-	await api("/api/db", { op: "set", path: "actions/issue-22-1", data: { itemId: "issue-22", action: "reanalyze", text: "Look at the logs again", status: "queued", via: "queue", createdAt: new Date().toISOString() } });
+	await api("/api/db", { op: "update", path: "items/widgets/issue-22", data: { snoozedUntil: new Date(Date.now() + 3 * 86400000).toISOString() } });
+	await api("/api/db", { op: "update", path: "items/widgets/issue-21", data: { hidden: true } });
+	await api("/api/db", { op: "set", path: "actions/widgets/issue-22-1", data: { itemId: "issue-22", action: "reanalyze", text: "Look at the logs again", status: "queued", via: "queue", createdAt: new Date().toISOString() } });
 	await sleep(100);
 	t.check("snooze is logged with days", logOf("snoozed").some((e) => e.itemId === "issue-22" && e.days === 3), logOf("snoozed"));
 	t.check("hide is logged as untilActivity", logOf("snoozed").some((e) => e.itemId === "issue-21" && e.untilActivity === true), logOf("snoozed"));
 	t.check("Analyze again with a note is an agent_note", logOf("agent_note").some((e) => e.itemId === "issue-22" && e.text === "Look at the logs again"), logOf("agent_note"));
 
 	// dismiss_route
-	r = await api("/api/action", { action: "dismiss_route", itemId: "issue-21", routeId: "r1", text: "x".repeat(501) });
+	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-21", routeId: "r1", text: "x".repeat(501) });
 	t.check("a reason over 500 characters is refused", r.status === 400, r);
-	r = await api("/api/action", { action: "dismiss_route", itemId: "issue-21", routeId: "r1", text: "Not fixed for him" });
+	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-21", routeId: "r1", text: "Not fixed for him" });
 	t.check("dismiss_route answers ok", r.data.ok && r.data.reanalyze === false, r);
 	let item = JSON.parse(readFileSync(join(BOARD, "items", "issue-21.json"), "utf8"));
 	t.check("the route is gone and the next one is recommended", item.routes.length === 1 && item.routes[0].id === "r2" && item.routes[0].recommended === true && item.hint === "Reply: ask", item);
@@ -169,11 +170,11 @@ try {
 	t.check("findings pointing to it lose the routeId", item.findings[0].routeId === undefined, item.findings);
 	t.check("the dismissal is a done board action doc", actionDocs().some((a) => a.itemId === "issue-21" && a.action === "dismiss_route" && a.status === "done" && a.via === "board"), actionDocs());
 	t.check("the dismissal is in the decision log", logOf("dismissed_route").some((e) => e.itemId === "issue-21" && e.wasRecommended === true && e.reason === "Not fixed for him"), log());
-	r = await api("/api/action", { action: "dismiss_route", itemId: "issue-22", routeId: "r1" });
+	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-22", routeId: "r1" });
 	item = JSON.parse(readFileSync(join(BOARD, "items", "issue-22.json"), "utf8"));
 	t.check("dismissing the last route leaves no routes and no hint", r.data.reanalyze === true && item.routes.length === 0 && item.hint === undefined, item);
 	t.check("then a reanalyze request is queued with the reason", actionDocs().some((a) => a.itemId === "issue-22" && a.action === "reanalyze" && a.status === "queued" && /close route "Close: done"/.test(a.text) && /none given/.test(a.text)), actionDocs().filter((a) => a.itemId === "issue-22"));
-	r = await api("/api/action", { action: "dismiss_route", itemId: "issue-21", routeId: "r1" });
+	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-21", routeId: "r1" });
 	t.check("dismissing a route that is gone is outdated", r.data.outdated === true, r);
 
 	// Replace keeps dismissedRoutes, and the validator refuses the dismissed type
@@ -186,25 +187,25 @@ try {
 
 	// Proposals on the board
 	const st = await state();
-	t.check("/api/state serves the open proposals", st.proposals.length === 3 && st.proposals.every((p) => p.data.status === "open"), st.proposals);
-	r = await api("/api/action", { action: "accept_proposal", proposalId: "learn-2026-11-18-stale", text: "- Close config PRs after 45 days without reply." });
+	t.check("/api/state serves the open proposals", st.proposals.length === 3 && st.proposals.every((p) => p.status === "open" && p.instance === "widgets"), st.proposals);
+	r = await api("/api/action", { instance: "widgets", action: "accept_proposal", proposalId: "learn-2026-11-18-stale", text: "- Close config PRs after 45 days without reply." });
 	t.check("accept_proposal answers ok and commits", r.data.ok && r.data.committed === true, r);
 	const rules = readFileSync(join(profile, "rules", "classification.md"), "utf8");
 	t.check("the edited rule lands under its heading", /## Stale PRs\n\nOld rule\.\n\n- Close config PRs after 45 days without reply\.\n\n## Labels/.test(rules), rules);
 	t.check("the profile repo has one new commit for that file", git("log", "-1", "--format=%s").trim() === "Add rule: Close stale config PRs" && git("show", "--name-only", "--format=", "HEAD").trim() === "rules/classification.md", git("log", "--oneline"));
 	const accepted = JSON.parse(readFileSync(join(BOARD, "proposals", "learn-2026-11-18-stale.json"), "utf8"));
 	t.check("the proposal is accepted with the final text", accepted.status === "accepted" && !!accepted.decidedAt && /45 days/.test(accepted.text), accepted);
-	r = await api("/api/action", { action: "accept_proposal", proposalId: "learn-2026-11-18-stale" });
+	r = await api("/api/action", { instance: "widgets", action: "accept_proposal", proposalId: "learn-2026-11-18-stale" });
 	t.check("a decided proposal cannot be decided again", r.status === 409, r);
-	r = await api("/api/action", { action: "accept_proposal", proposalId: "learn-2026-11-18-personal" });
+	r = await api("/api/action", { instance: "widgets", action: "accept_proposal", proposalId: "learn-2026-11-18-personal" });
 	t.check("a personal proposal appends to personal.md", r.data.ok && r.data.committed === false && readFileSync(join(root, "personal.md"), "utf8") === "# Personal rules\n\nKeep replies short.\n", r);
-	r = await api("/api/action", { action: "dismiss_proposal", proposalId: "learn-2026-11-18-drop", text: "We review those by hand" });
+	r = await api("/api/action", { instance: "widgets", action: "dismiss_proposal", proposalId: "learn-2026-11-18-drop", text: "We review those by hand" });
 	const dropped = JSON.parse(readFileSync(join(BOARD, "proposals", "learn-2026-11-18-drop.json"), "utf8"));
 	t.check("dismiss_proposal stores the reason", r.data.ok && dropped.status === "dismissed" && dropped.reason === "We review those by hand", dropped);
 	await sleep(50);
 	t.check("dismiss_proposal is in the decision log", logOf("dismissed_proposal").some((e) => e.proposal.id === "learn-2026-11-18-drop" && e.reason === "We review those by hand"), log());
 	t.check("no open proposals are left on the board", (await state()).proposals.length === 0);
-	r = await api("/api/action", { action: "accept_proposal", proposalId: "../x" });
+	r = await api("/api/action", { instance: "widgets", action: "accept_proposal", proposalId: "../x" });
 	t.check("a bad proposal id is refused", r.status === 400, r);
 } finally {
 	server.kill("SIGTERM");
@@ -223,8 +224,8 @@ let err2 = "";
 server2.stderr.on("data", (d) => (err2 += d));
 for (let i = 0; i < 50 && !err2.includes(" on http://127.0.0.1:"); i++) await sleep(100);
 try {
-	const token2 = readFileSync(join(evilHome.home, "state", "server-token"), "utf8").trim();
-	const res = await fetch(`http://127.0.0.1:${port2}/api/action`, { method: "POST", headers: { "X-Board-Token": token2, "Content-Type": "application/json" }, body: JSON.stringify({ action: "accept_proposal", proposalId: "learn-evil" }) });
+	const token2 = readFileSync(join(evilHome.root, "state", "server-token"), "utf8").trim();
+	const res = await fetch(`http://127.0.0.1:${port2}/api/action`, { method: "POST", headers: { "X-Board-Token": token2, "Content-Type": "application/json" }, body: JSON.stringify({ instance: "widgets", action: "accept_proposal", proposalId: "learn-evil" }) });
 	const body = await res.json();
 	t.check("accept refuses a rules directory that leads elsewhere", body.ok === false && /leads elsewhere/.test(body.result), body);
 	t.check("nothing was written there", readdirSync(join(T, "elsewhere")).length === 0);

@@ -8,7 +8,7 @@ import { ROOT, freePort, makeHome, removeDir, tempDir } from "../lib.mjs";
 const PORT = await freePort();
 const DIR = tempDir();
 const own = process.argv[2] === "own";
-const { home: HOME, env: ENV } = makeHome(DIR, { port: PORT, bot: null, allowOwnTokenPushes: own });
+const { home: HOME, root: ROOTDIR, env: ENV } = makeHome(DIR, { port: PORT, bot: null, allowOwnTokenPushes: own });
 const BOARD = join(HOME, "state", "board");
 const PAGE = join(ROOT, "board", "board.html");
 const item = { kind: "issue", number: 21, title: "Probe", url: "https://github.com/acme/widgets/issues/21", author: "someone", authorType: "contributor", section: "easy", priority: 0, effortMinutes: 1, reviewDepth: "full", hint: "Ask: debug log",
@@ -20,22 +20,22 @@ const item = { kind: "issue", number: 21, title: "Probe", url: "https://github.c
 	] };
 writeFileSync(join(BOARD, "items", "issue-21.json"), JSON.stringify(item));
 const server = spawn(process.execPath, [join(ROOT, "server", "server.mjs"), "--dry-run", "--port", String(PORT), "--page-file", PAGE], { stdio: ["ignore", "pipe", "pipe"], env: ENV });
-await new Promise((r) => server.stderr.on("data", (d) => { if (/Board of \S+ on/.test(d)) r(); else process.stderr.write("[server] " + d); }));
+await new Promise((r) => server.stderr.on("data", (d) => { if (/Board on/.test(d)) r(); else process.stderr.write("[server] " + d); }));
 const results = [];
 const ok = (n, v) => results.push((v ? "PASS " : "FAIL ") + n);
 try {
-	const token = readFileSync(join(HOME, "state", "server-token"), "utf8").trim();
+	const token = readFileSync(join(ROOTDIR, "state", "server-token"), "utf8").trim();
 	const st = await (await fetch(`http://127.0.0.1:${PORT}/api/state`, { headers: { "X-Board-Token": token } })).json();
-	const routes = st.items.find((i) => i.id === "issue-21").data.routes;
+	const routes = st.items.find((i) => i.id === "issue-21").routes;
 	const actors = Object.fromEntries(routes.map((r) => [r.id, r.actor]));
-	results.push("INFO actors " + JSON.stringify(actors) + " move " + JSON.stringify(routes[3].actors) + " board.bot " + JSON.stringify(st.board.bot));
+	results.push("INFO actors " + JSON.stringify(actors) + " move " + JSON.stringify(routes[3].actors) + " bot " + JSON.stringify(st.board.instances[0].bot));
 	const html = await new Promise((resolve) => {
 		const c = spawn("timeout", ["30", process.env.CHROME ?? "google-chrome", "--headless=new", "--disable-gpu", "--no-sandbox", `--user-data-dir=${join(DIR, "prof")}`, "--timeout=6000", "--dump-dom", `http://127.0.0.1:${PORT}/`]);
 		let out = "";
 		c.stdout.on("data", (d) => (out += d));
 		c.on("exit", () => resolve(out));
 	});
-	ok("the page lists the probe", /data-id="issue-21"/.test(html));
+	ok("the page lists the probe", html.includes('data-id="widgets/issue-21"'));
 	ok("no bot avatar anywhere on the page", !/widgets-bot\.png/.test(html));
 } finally {
 	server.kill();

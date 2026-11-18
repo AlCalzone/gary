@@ -3,13 +3,13 @@
 // It also moves the layout from before instances into instances/<name>.
 import { execFile } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, promisify } from "node:util";
+import { migrate } from "./migrate.mjs";
 import {
-	INSTANCE_NAME, ROOT, expandHome, explicitInstance, hasFlatLayout, instanceDir, instanceFacts, listInstances, personalFile, rootDir, validateConfig, validateProfile,
+	INSTANCE_NAME, ROOT, expandHome, explicitInstance, hasFlatLayout, instanceDir, instanceFacts, instanceNames, personalFile, rootConfigFile, rootDir, validateConfig, validateProfile,
 } from "./lib/config.mjs";
 
 const run = promisify(execFile);
@@ -25,7 +25,7 @@ const USAGE = `Usage: gary setup [options]
   --bot-token-file <path>   file with the bot's GitHub token
   --no-bot                  run without a bot account
   --instance <name>         name of the instance, default the repository name in lower case
-  --port <n>                board server port, default the next free one from 7878
+  --port <n>                the one board server's port, in the root config.json, default 7878
   --force                   replace an existing config.json and existing links
   --no-links                do not link skills and the launcher, do not print the MCP command
   --register-mcp            run \`claude mcp add\` for a clone install
@@ -36,7 +36,6 @@ Your own rules for the triage agents, as plain text, for every instance. Nothing
 The agents read this file last, so it wins over the core and profile rules. An instance can add its own personal.md.
 -->
 `;
-const FIRST_PORT = 7878;
 
 const realOrSelf = (p) => {
 	try {
@@ -46,13 +45,6 @@ const realOrSelf = (p) => {
 	}
 };
 
-function portBindable(port) {
-	return new Promise((done) => {
-		const s = createServer();
-		s.once("error", () => done(false));
-		s.listen(port, "127.0.0.1", () => s.close(() => done(true)));
-	});
-}
 
 /** An instance name from a repository name: lower case, other characters as dashes. */
 export function nameFromRepo(repo) {
@@ -150,6 +142,13 @@ export async function main(argv) {
 		const moved = migrateFlat(report);
 		console.error(`Moved the old layout into instance ${moved}.`);
 	}
+	report.push(...(await migrate()));
+	if (o.port) {
+		const port = Number(o.port);
+		if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("--port must be a port number");
+		writeFileSync(rootConfigFile(), JSON.stringify({ port }, null, "\t") + "\n");
+		report.push(`set the board port ${port} in ${rootConfigFile()}`);
+	}
 
 	const tty = process.stdin.isTTY && process.stdout.isTTY;
 	const rl = tty ? createInterface({ input: process.stdin, output: process.stdout }) : null;
@@ -199,14 +198,14 @@ export async function main(argv) {
 			}
 		}
 
-		// Instance name, and no second instance for the same repo, checkout or port
+		// Instance name, and no second instance for the same repo or checkout
 		const repo = created.length ? created[0][2].repo : JSON.parse(readFileSync(join(profile, "profile.json"), "utf8")).repo;
 		const name = explicitInstance() ?? nameFromRepo(repo);
 		if (!INSTANCE_NAME.test(name)) throw new Error(`"${name}" is not a valid instance name. Use lower case letters, digits and dashes, at most 40.`);
 		const dir = instanceDir(name);
 		const exists = existsSync(join(dir, "config.json"));
 		if (exists && !o.force) throw new Error(`Instance ${name} already exists in ${dir}. Pass --force to replace its config.json.`);
-		const others = listInstances().filter((n) => n !== name).map(instanceFacts);
+		const others = instanceNames().filter((n) => n !== name).map(instanceFacts);
 		const sameRepo = others.find((f) => f.repo && repo && f.repo.toLowerCase() === repo.toLowerCase());
 		if (sameRepo) throw new Error(`Instance ${sameRepo.name} already triages ${repo}.`);
 		if (checkout) {
@@ -214,15 +213,7 @@ export async function main(argv) {
 			const sameCheckout = others.find((f) => f.checkout && realOrSelf(f.checkout) === mine);
 			if (sameCheckout) throw new Error(`Instance ${sameCheckout.name} already uses the checkout ${mine}.`);
 		}
-		const taken = new Set(others.map((f) => f.port));
-		let port = o.port ? Number(o.port) : null;
-		if (port !== null && taken.has(port)) throw new Error(`Instance ${others.find((f) => f.port === port).name} already uses port ${port}.`);
-		if (port === null) {
-			port = FIRST_PORT;
-			while (taken.has(port) || !(await portBindable(port))) port++;
-		}
-
-		const config = { profile: collapseHome(profile), me, ...(checkout && { checkout }), bot, allowOwnTokenPushes: false, port, activeWindowDays: 30, activeMaxWaitDays: 14, maxFullReviewsPerRun: 10, maxAutoFixesPerRun: 2 };
+		const config = { kind: "maintainer", profile: collapseHome(profile), me, ...(checkout && { checkout }), bot, allowOwnTokenPushes: false, activeWindowDays: 30, activeMaxWaitDays: 14, maxFullReviewsPerRun: 10, maxAutoFixesPerRun: 2 };
 		const errors = validateConfig(config);
 		for (const [, , data] of created) {
 			if (bot) data.botLogins = [...new Set([...(data.botLogins ?? []), bot.login])];
@@ -239,7 +230,7 @@ export async function main(argv) {
 		if (!existsSync(personalFile())) writeFileSync(personalFile(), PERSONAL_HEADER);
 		console.error(`${exists ? "Updated" : "Created"} instance ${name}.`);
 
-		report.push(`wrote ${join(dir, "config.json")} with port ${port}`, ...created.map(([, d]) => `created profile ${d} from profiles/template`));
+		report.push(`wrote ${join(dir, "config.json")}`, ...created.map(([, d]) => `created profile ${d} from profiles/template`));
 		if (!o["no-links"] && !isPluginInstall()) {
 			for (const name of readdirSync(join(ROOT, "skills"))) {
 				link(join(ROOT, "skills", name), join(homedir(), ".claude", "skills", name), o.force, report);

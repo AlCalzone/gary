@@ -25,21 +25,23 @@ node $B setup --profile $P --me octocat --bot-login widgets-bot --bot-token-file
 ITEMS=$GARY_HOME/instances/widgets/state/board/items
 
 # gary item
-expect "item: PR with threads and reviews" 0 '"openThreadCount": 3' node $B item pr-12
-expect "item: PR thread ids" 0 '"id": "PRRT_' node $B item pr-12
-expect "item: reviewer summary" 0 '"state": "approved"' node $B item pr-12
-expect "item: outdated thread is kept and flagged" 0 '"outdated": true' node $B item pr-12
-expect "item: issue with a closing PR" 0 '"closingPrs"' node $B item issue-22
-expect "item: closing PR number" 0 '"number": 12' node $B item issue-22
-expect "item: discussion" 0 '"isAnswered"' node $B item disc-31
-expect "item: unknown number" 1 "not found" node $B item pr-99999
-expect "item: an issue number asked as PR" 1 "not found" node $B item pr-21
-expect "item: bad id" 1 "Invalid item id" node $B item foo-1
+expect "item: PR with threads and reviews" 0 '"openThreadCount": 3' node $B item pr 12
+expect "item: PR thread ids" 0 '"id": "PRRT_' node $B item pr 12
+expect "item: reviewer summary" 0 '"state": "approved"' node $B item pr 12
+expect "item: outdated thread is kept and flagged" 0 '"outdated": true' node $B item pr 12
+expect "item: issue with a closing PR" 0 '"closingPrs"' node $B item issue 22
+expect "item: closing PR number" 0 '"number": 12' node $B item issue 22
+expect "item: discussion" 0 '"isAnswered"' node $B item discussion 31
+expect "item: unknown number" 1 "not found" node $B item pr 99999
+expect "item: an issue number asked as PR" 1 "not found" node $B item pr 21
+expect "item: a kind that does not exist" 1 "kind must be one of" node $B item thing 1
+expect "item: an id that is not on the board" 1 "is not on the board" node $B item pr-12
+expect "item: a repo outside the instance" 1 "is not a repository of instance widgets" node $B item pr 12 --repo acme/other
 expect "item writes no state" 0 "" test ! -e $GARY_HOME/state/snapshot.pending.json
 
 # put validation
 mk() { print -r -- "$2" > $H/$1.json }
-BASE='"kind":"pr","number":12,"title":"t","url":"https://github.com/x","author":"a","authorType":"maintainer","section":"easy","priority":1,"effortMinutes":5,"reviewDepth":"full","state":"Decide."'
+BASE='"repo":"acme/widgets","kind":"pr","number":12,"title":"t","url":"https://github.com/x","author":"a","authorType":"maintainer","section":"easy","priority":1,"effortMinutes":5,"reviewDepth":"full","state":"Decide."'
 mk good "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"Thanks\",\"recommended\":true},{\"id\":\"r2\",\"type\":\"merge\",\"title\":\"Merge: ready\",\"as\":\"me\"}],\"findings\":[{\"severity\":\"minor\",\"text\":\"x\",\"routeId\":\"r2\"}]}"
 expect "put: a valid item is written" 0 '"ok":true' node $B put items pr-12 $H/good.json
 expect "put: the item is stored" 0 '"Reply: thanks"' cat $ITEMS/pr-12.json
@@ -103,7 +105,14 @@ bad_case "open as bot" "is not allowed for open" "{$BASE,\"hint\":\"Open: on Git
 node $B put items pr-12 $H/good.json > /dev/null
 mk case "{${BASE/\"kind\":\"pr\",\"number\":12/\"kind\":\"issue\",\"number\":21},\"hint\":\"Move: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"move\",\"title\":\"Move: x\",\"params\":{\"to\":\"other-repo\"},\"recommended\":true}]}"
 expect "put refuses: move target outside relatedRepos" 1 "not in the profile's relatedRepos" node $B put items issue-21 $H/case.json
-expect "put refuses: wrong file name" 1 "does not match kind" node $B put items pr-1 $H/good.json
+expect "put takes any opaque id" 0 '"ok":true' node $B put items some.item_1 $H/good.json
+expect "gary item finds a stored item by its doc" 0 '"openThreadCount": 3' node $B item some.item_1
+node $B put items some.item_1 --delete > /dev/null
+expect "put refuses an id that is not opaque-safe" 1 "Invalid document path" node $B put --no-validate items Bad/Id $H/good.json
+mk case "{${BASE/acme\/widgets/acme\/other},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+expect "put refuses a repo outside the instance" 1 "is not a repository of this instance" node $B put items pr-12 $H/case.json
+mk case "{${BASE/\"repo\":\"acme\/widgets\",/},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+expect "put refuses an item without repo" 1 "repo is required" node $B put items pr-12 $H/case.json
 expect "refused writes leave the stored item alone" 0 '"Reply: thanks"' cat $ITEMS/pr-12.json
 mk case "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"s1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"x\",\"recommended\":true}]}"
 expect "put --no-validate writes anyway" 0 '"ok":true' node $B put --no-validate items pr-12 $H/case.json
@@ -117,9 +126,36 @@ mk case "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"s1\",\"type\":\
 node $B put --no-validate items pr-12 $H/case.json > /dev/null
 node $B put --no-validate items issue-21 $H/good.json > /dev/null 2>&1
 expect "validate groups the problems" 1 "route-id" node $B validate
-expect "validate counts" 1 "2 items checked, 2 fail" node $B validate
+expect "validate counts" 1 "2 items checked, 1 fail" node $B validate
 expect "validate one id" 1 "1 items checked, 1 fail" node $B validate pr-12
-expect "validate --json" 1 '"failed": 2' node $B validate --json
+expect "validate --json" 1 '"failed": 1' node $B validate --json
+
+# Review comments with a suggestion
+rv() { print -r -- "{$BASE,\"hint\":\"Comment: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"review\",\"title\":\"Comment: x\",\"as\":\"bot\",\"params\":{\"event\":\"comment\",\"comments\":[$1]},\"recommended\":true}]}" > $H/case.json }
+rv '{"id":"c1","path":"a.ts","startLine":23,"line":25,"text":"Use the helper","original":"a\nb\nc","suggestion":"helper()","diffHunk":"@@ -20,6 +20,6 @@\n a"}'
+expect "a suggestion with original over the marked lines is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x","original":"a","suggestion":"b"}'
+expect "a one-line suggestion without startLine is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","startLine":23,"line":25,"text":"x","suggestion":"b"}'
+expect "a suggestion needs original" 1 "needs original" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","startLine":23,"line":25,"text":"x","original":"a\nb","suggestion":"b"}'
+expect "original must cover the marked lines" 1 "original has 2 lines, but the comment covers 3" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x\n```suggestion\nb\n```","original":"a","suggestion":"b"}'
+expect "no fence in text next to suggestion" 1 "must not hold a suggestion fence" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x","original":"a","suggestion":"b","diffHunk":" a\n-b\n+c"}'
+expect "a diffHunk next to a suggestion starts with @@" 1 "must start with an @@ header" node $B put items pr-12 $H/case.json
+rv '{"id":"c1","path":"a.ts","line":25,"text":"x\n```suggestion\nb\n```"}'
+expect "the old fence form is a warning only" 0 "warning: pr-12: routes[0] (r1): comments[0]: text holds a suggestion fence" node $B put items pr-12 $H/case.json
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
+
+# gary action takes kind, number and repo from the stored item
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
+expect "action with an itemId uses the stored doc" 0 '"id": "PR_12"' zsh -c "print '{\"itemId\":\"pr-12\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
+mk case "{${BASE/acme\/widgets/acme\/other},\"routes\":[]}"
+node $B put --no-validate items foreign.1 $H/case.json > /dev/null 2>&1
+expect "action refuses an item of a foreign repo" 1 "acme/other is not a repository of instance widgets" zsh -c "print '{\"itemId\":\"foreign.1\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
+expect "action refuses an unknown itemId" 1 "is not on the board" zsh -c "print '{\"itemId\":\"nope\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
+node $B put items foreign.1 --delete > /dev/null 2>&1
 
 # gary action --autonomous
 act() { print -r -- "$1" | node $B action --dry-run $2 }

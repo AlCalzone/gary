@@ -11,11 +11,11 @@ Ask one question at a time, and only for facts you cannot read from the repo or 
 
 ## 1. Install and instance
 
-Gary runs one instance per repo. Each instance has its own config, board and port, state, pause switch, decision log and scheduled task, under `~/.config/gary/instances/<name>/`. The shared `~/.config/gary/personal.md` holds his rules for all projects.
+Gary runs one instance per repo. Each instance has its own config, state, pause switch and decision log, and its own tab on the one board, under `~/.config/gary/instances/<name>/`. The shared `~/.config/gary/personal.md` holds his rules for all projects.
 
 Run `gary instances` first. When one exists already, this is a second project: create a new instance, and leave the existing ones alone.
 
-Choose the instance name with him: short, lowercase, after the repo, like `widgets` for `acme/widgets`. Run `gary setup --instance <name>`. It creates the instance directory with `config.json` and `state/`, gives the instance its own port, and links the launcher when the tool runs from a clone. Then run `gary --instance <name> paths` and note `<core>`, `<home>`, `<profile>` and `<config>`. Pass `--instance <name>` on every later `gary` command in this setup.
+Choose the instance name with him: short, lowercase, after the repo, like `widgets` for `acme/widgets`. Run `gary setup --instance <name>`. It creates the instance directory with `config.json` and `state/`, and links the launcher when the tool runs from a clone. Then run `gary --instance <name> paths` and note `<core>`, `<home>`, `<profile>` and `<config>`. Pass `--instance <name>` on every later `gary` command in this setup.
 
 Ask for:
 
@@ -61,4 +61,4 @@ Run `gary --instance <name> doctor` and fix what it reports together with him. `
 
 ## 5. Schedule
 
-Create one hourly scheduled task per instance. It runs the `triage-routine` skill in one master session, with the repo's local clone (`<checkout>`) as the session's project directory, and its prompt names the instance, like `Run the triage routine for Gary instance widgets.` Use the scheduling tool the harness offers. Then start the first run, so he sees the board fill.
+One scheduled task runs Gary for the whole machine. It runs the `triage-master` skill every hour, which starts a worker per instance and serves one board on the root port (`<root>/config.json`, set with `gary setup --port`). Check with the harness's scheduling tool whether that task exists. If it does, adding a project needed only the new instance: the next hourly run picks it up, and the board shows its tab without a restart. If it does not, create it with the prompt `Run the triage-master skill.` and any project directory, then start the first run, so he sees the board fill.

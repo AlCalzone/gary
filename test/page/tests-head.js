@@ -16,7 +16,7 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
   const laterIds = () => [...document.querySelectorAll("#not-today .row")].map((r) => r.dataset.id);
   const spentText = () => document.querySelector("#plan .sum").textContent;
   const todayBtn = () => document.querySelector("#today .show-all");
-  window.__subs["meta/status"]({ exists: true, data: () => ({ lastRunAt: iso(3e6), staleIssues: 240 }) });
+  window.__subs["meta/widgets"]({ exists: true, data: () => ({ lastRunAt: iso(3e6), staleIssues: 240 }) });
   actions([]);
 
   const ids = (g) => [...document.querySelectorAll("#group-" + g + " .row")].map((r) => r.dataset.id);
@@ -122,9 +122,9 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
   ok("dismissed issue keeps the open icon and shows the dismissed state", kindLabel("s3") === "Issue, open" && metaLabels("s3").includes("Dismissed"));
   ok("closed issue shows no solved state icon", !metaLabels("s5").includes("Looks solved, still open"));
   ok("review pending is the hourglass", document.querySelector('.row[data-id="p3"] .r-rev svg').innerHTML === icon("hourglass", "Review pending", "faint").innerHTML);
-  state.latestAction.set("__q", { status: "queued", action: "merge", createdAt: new Date().toISOString() });
+  state.latestAction.set(actionRef("widgets", "__q"), { status: "queued", action: "merge", createdAt: new Date().toISOString() });
   const queuedIcon = stateIcons("__q", {}, false, false)[0];
-  state.latestAction.delete("__q");
+  state.latestAction.delete(actionRef("widgets", "__q"));
   ok("queued uses its own shape", queuedIcon[0] === "queued" && icon("queued").innerHTML !== icon("hourglass").innerHTML);
   ok("review icons", revLabel("p1") === "Review approved" && revLabel("p2") === "Changes requested" && revLabel("p3") === "Review pending" && revLabel("s1") === "" && revLabel("p4") === "");
   ok("at most 3 state icons plus the author type", [...document.querySelectorAll(".r-meta")].every((e) => e.children.length <= 4));

@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, homePath, instanceName, listInstances, loadConfig, loadProfile, paths, profileDir, resolveInstance, rootDir, setInstance } from "./lib/config.mjs";
+import { ROOT, homePath, instanceName, instanceNames, loadConfig, loadProfile, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { readLogin } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
@@ -21,12 +21,12 @@ function portFree(port) {
 	});
 }
 
-/** The instance whose board server answers on the port, or null. */
+/** The instances the board server on the port serves, or null when no board server answers there. */
 async function boardOnPort(port) {
 	try {
 		const res = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) });
 		const body = await res.json();
-		return body?.name === "gary" ? body.instance ?? "" : null;
+		return body?.name === "gary" ? (Array.isArray(body.instances) ? body.instances : []) : null;
 	} catch {
 		return null;
 	}
@@ -87,11 +87,12 @@ async function checkInstance() {
 			return existsSync(join(dir, ".git")) ? ["ok", dir] : ["fail", `${dir} is not a git checkout`];
 		});
 		await attempt("port", async () => {
-			if (await portFree(config.port)) return ["ok", `${config.port} is free`];
-			const owner = await boardOnPort(config.port);
-			if (owner === instanceName()) return ["ok", `${config.port} runs this instance's board server`];
-			if (owner !== null) return ["fail", `port ${config.port} runs the board server of instance ${owner || "(unnamed)"}`];
-			return ["fail", `another program uses port ${config.port}`];
+			const { port } = rootConfig();
+			if (await portFree(port)) return ["ok", `${port} is free, \`gary serve\` or board_start starts the board there`];
+			const served = await boardOnPort(port);
+			if (served?.includes(instanceName())) return ["ok", `${port} runs the board server, and it serves this instance`];
+			if (served !== null) return ["warn", `${port} runs the board server, but it does not list this instance yet`];
+			return ["fail", `another program uses port ${port}`];
 		});
 	}
 	await attempt("required tools", async () => {
@@ -134,7 +135,7 @@ export async function main(argv) {
 		process.exitCode = checks.some((c) => c.status === "fail") ? 1 : 0;
 		return;
 	}
-	const names = listInstances();
+	const names = instanceNames();
 	if (!names.length) throw new Error(`There is no instance in ${rootDir()}. Run \`gary setup\` first.`);
 	const all = {};
 	for (const name of names) {

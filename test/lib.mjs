@@ -1,6 +1,6 @@
 // Shared helpers for the test suites: temp homes, the fake gh on PATH, free ports and a small check runner.
-// A home gets port 9 unless a test passes its own, so `gary put` never reaches a real board server.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+// A root gets port 9 unless a test passes its own, so `gary put` never reaches a real board server.
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -27,7 +27,8 @@ export function testEnv(extra = {}) {
 /**
  * Creates a root with one instance (default "widgets") for the fixture profile and returns `{ home, root, env }`.
  * `home` is the instance directory.
- * `config` overrides config.json fields, like `{ bot: null }`.
+ * `config` overrides config.json fields, like `{ bot: null }`. Its `port` goes into the root config.json.
+ * A second call with another `name` and the same `dir` adds an instance to the same root.
  */
 export function makeHome(dir, config = {}, name = "widgets") {
 	const root = join(dir, "root");
@@ -37,7 +38,10 @@ export function makeHome(dir, config = {}, name = "widgets") {
 	const tokenFile = join(dir, "bot-token");
 	writeFileSync(tokenFile, BOT_TOKEN + "\n", { mode: 0o600 });
 	writeFileSync(join(home, "state", "board", "meta.json"), "{}");
-	writeFileSync(join(home, "config.json"), JSON.stringify({ profile: PROFILE, me: ME, bot: { login: BOT, tokenFile }, port: 9, ...config }, null, "\t"));
+	const { port = 9, ...rest } = config;
+	writeFileSync(join(home, "config.json"), JSON.stringify({ kind: "maintainer", profile: PROFILE, me: ME, bot: { login: BOT, tokenFile }, ...rest }, null, "\t"));
+	// The root config holds the one server's port. A second makeHome in the same dir keeps the first port
+	if (!existsSync(join(root, "config.json"))) writeFileSync(join(root, "config.json"), JSON.stringify({ port }));
 	return { home, root, env: testEnv({ GARY_HOME: root }) };
 }
 

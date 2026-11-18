@@ -6,12 +6,12 @@ When `drive` is allowed and when it is preferred over `address_review` is the ru
 
 ## One round per subagent
 
-Waiting for a bot review takes minutes. A subagent that waits would hold its slot, so every round is its own subagent, and the master session waits between rounds with the Monitor tool. That is the same mechanism the routine uses for the action queue, and it does not block the hourly run.
+Waiting for a bot review takes minutes. A worker that waits would hold its slot, so every round is its own worker, and the `triage-master` session waits between rounds with the Monitor tool. That is the same mechanism it uses for the action queue, and it blocks no hourly run.
 
 The drive's state lives in `<state>/drive/<itemId>.json`, because a drive can span several hourly runs:
 
 ```json
-{ "actionId": "pr-412-…", "maxRounds": 3, "reviewBot": "<first entry of reviewBots>", "rounds": [ { "n": 1, "fixed": ["…"], "dismissed": [ { "summary": "…", "reason": "…" } ], "open": [] } ], "lastPushedSha": "<sha>", "reviewRequestedAt": "ISO" }
+{ "actionId": "<action id>", "repo": "<owner>/<repo>", "number": 412, "maxRounds": 3, "reviewBot": "<first entry of reviewBots>", "rounds": [ { "n": 1, "fixed": ["…"], "dismissed": [ { "summary": "…", "reason": "…" } ], "open": [] } ], "lastPushedSha": "<sha>", "reviewRequestedAt": "ISO" }
 ```
 
 The caller passes the action file, the item file, the state file path (it does not exist before round 1) and a scratch directory.
@@ -30,7 +30,7 @@ The caller passes the action file, the item file, the state file path (it does n
 7. Make the fixes in the worktree, one commit per round, like `fix: address review feedback (round 2)` in the project's format. Push as `push-to-pr.md` describes. Reply in every handled thread and resolve it, as `address-review.md` describes, with your verdict's reason as the reply for dismissed ones.
 8. If rounds remain and this round fixed something, request a review from the review bot:
    ```json
-   { "itemId": "pr-<n>", "action": "request_review", "params": { "reviewer": "<reviewBot>" }, "text": "" }
+   { "itemId": "<itemId>", "action": "request_review", "params": { "reviewer": "<reviewBot>" }, "text": "" }
    ```
    Write it to `<scratch>/request-review.json` and run `gary action <scratch>/request-review.json`. It runs under the maintainer's login.
 9. Append the round to the state file, with `lastPushedSha` and `reviewRequestedAt` set to now.
@@ -65,6 +65,8 @@ The drive ends when:
 - the bot's review did not arrive within 30 minutes.
 
 ## What the master does between rounds
+
+The `triage-master` skill reads `repo` and `number` from the state file, never from the id.
 
 On `status: "waiting"`, the master arms a Monitor that polls for a review by the review bot newer than `reviewRequestedAt`. Review bots post under app logins that start with their name, like `<reviewBot>-pull-request-reviewer[bot]`, so the poll compares case-insensitively by prefix. The profile's `rules/review.md` may name the exact login.
 

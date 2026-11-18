@@ -33,8 +33,8 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("expandable cards carry a chevron, compact rows do not", cards().filter((c) => !c.classList.contains("compact")).every((c) => !!c.querySelector(".card-head .chev")) && !cards()[1].querySelector(".chev"));
   ok("cards are tinted by intent", cards()[0].classList.contains("intent-talk") && cards()[1].classList.contains("intent-close") && cards()[2].classList.contains("intent-agent")
     && getComputedStyle(cards()[2]).backgroundColor !== getComputedStyle(cards()[0]).backgroundColor);
-  ok("collapsed single-actor cards show the actor on the line", !cards()[2].querySelector(".card-body").hidden === false && getComputedStyle(cards()[2].querySelector(".card-head .actor-icon")).display !== "none");
-  ok("the open card keeps the actor on its button only", getComputedStyle(openCard().querySelector(".card-head .avatar")).display === "none");
+  ok("collapsed single-actor cards show the actor on the line", !cards()[2].querySelector(".card-body").hidden === false && getComputedStyle(cards()[2].querySelector(".card-head .head-actor")).display !== "none" && !!cards()[2].querySelector(".card-head .head-actor .actor-icon"));
+  ok("the open card keeps the actor on its button only", getComputedStyle(openCard().querySelector(".card-head .head-actor")).display === "none");
   ok("close without text is a compact row with one button and no body", cards()[1].classList.contains("compact") && !cards()[1].querySelector(".card-body") && [...cards()[1].querySelectorAll(".card-actions button")].length === 1 && !!cardBtn("Open GitHub to close", cards()[1]));
   ok("a route finding is the card's body, others stay in the findings list", /stored node data looks corrupted/.test(cards()[2].querySelector(".card-finding").textContent) && !/corrupted/.test(document.getElementById("d-findings").textContent) && /two releases behind/.test(document.getElementById("d-findings").textContent));
   const replyBtn = cardBtn("Copy reply, open GitHub");
@@ -217,7 +217,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await openItem("issue-9471");
   ok("a done route opens with its result and a link", openCard() === cards()[2] && /The agent took this on/.test(openCard().textContent) && openCard().querySelector(".card-actions a")?.href.endsWith("/pull/999"));
   await expand(0);
-  ok("route draft persists in this browser", openCard().querySelector("textarea").value === "A PR is welcome! Edited." && /A PR is welcome! Edited\./.test(localStorage.getItem("gary:acme/widgets:drafts") || ""));
+  ok("route draft persists in this browser", openCard().querySelector("textarea").value === "A PR is welcome! Edited." && /A PR is welcome! Edited\./.test(localStorage.getItem("gary:widgets:drafts") || ""));
 
   // Analyze again lives in the footer and opens a note panel
   const foot = document.getElementById("d-foot");
@@ -318,7 +318,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   decTa.value = "A PR is welcome, the check goes in getNodeProtocolInfo()."; decTa.dispatchEvent(new Event("input"));
   const nDec = window.__decisions.length;
   cardBtn("Copy reply, open GitHub").click(); await wait(20);
-  ok("a prefill click posts the decision with the textarea's text", window.__decisions.length === nDec + 1 && JSON.stringify(window.__decisions.at(-1)) === JSON.stringify({ itemId: "issue-9471", routeId: "r1", text: "A PR is welcome, the check goes in getNodeProtocolInfo()." }));
+  ok("a prefill click posts the decision with the textarea's text", window.__decisions.length === nDec + 1 && JSON.stringify(window.__decisions.at(-1)) === JSON.stringify({ instance: "widgets", itemId: "issue-9471", routeId: "r1", text: "A PR is welcome, the check goes in getNodeProtocolInfo()." }));
   window.__decisionFails = true;
   const opened = window.__opened.length;
   cardBtn("Open GitHub to close", cards()[1]).click(); await wait(20);
@@ -414,7 +414,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   // Paused: the header says so live, server writes are refused calmly
   const pausedEl = document.getElementById("paused");
   ok("not paused: no marker", pausedEl.hidden);
-  window.__board.paused = true; window.dispatchEvent(new Event("board:info")); await wait(10);
+  window.__board.instances[0].paused = true; window.dispatchEvent(new Event("board:info")); await wait(10);
   ok("paused: the header shows a calm marker with the resume hint", !pausedEl.hidden && pausedEl.textContent === "Paused" && /gary resume/.test(pausedEl.title));
   await openItem("issue-9472");
   ok("paused: bot buttons carry a small paused hint and stay clickable", /paused/.test(openCard().querySelector(".card-actions .paused-hint")?.textContent ?? "") && !cardBtn("Ask for a debug log").disabled);
@@ -428,7 +428,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await expand(2);
   ok("paused: agent routes have no paused hint", !openCard().querySelector(".paused-hint") && !!cardBtn("Start fix"));
   window.__reply = () => ({ ok: true, result: { dryRun: true } });
-  window.__board.paused = false; window.dispatchEvent(new Event("board:info")); await wait(10);
+  window.__board.instances[0].paused = false; window.dispatchEvent(new Event("board:info")); await wait(10);
   await openItem("issue-9472");
   ok("resumed: the marker and the hints go away without a reload", pausedEl.hidden && !document.querySelector("#d-routes .paused-hint"));
   document.getElementById("d-close").click(); await wait(5);
@@ -444,13 +444,38 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await wait(5);
   ok("fallback: the list row shows a quiet icon with the same tooltip", !!document.querySelector('.row[data-id="issue-9483"] .r-meta svg[aria-label="' + FALLBACK + '"]') && !document.querySelector('.row[data-id="issue-9471"] .r-meta svg[aria-label="' + FALLBACK + '"]'));
 
-  // The instance name shows only where it differs from the project name
-  const titleEl = document.getElementById("board-title");
-  ok("an instance named like the project adds no tooltip", (applyBoardInfo({ ...window.__board, instance: "widgets" }), titleEl.title === ""));
-  applyBoardInfo({ ...window.__board, instance: "widgets-staging" });
-  ok("a differing instance name is the title's tooltip and nothing else", titleEl.title === "Instance: widgets-staging" && titleEl.textContent === "widgets triage" && !document.querySelector(".wrap").textContent.includes("widgets-staging") && !document.title.includes("widgets-staging"));
-  ok("the storage prefix stays the repo's", localStorage.getItem("gary:acme/widgets:drafts") !== null);
-  applyBoardInfo(window.__board);
+  // Review suggestions render as diffs
+  {
+    const hdr = "@@ -10,6 +10,6 @@ export function parse(input) {\n \tconst parts = input.split(\",\");\n \tconst out = [];\n \tfor (const p of parts) {\n-\t\tout.push(p);\n+\t\tout.push(p.trim());\n \t}\n \treturn out;";
+    const noHdr = " \tconst parts = input.split(\",\");\n \tconst out = [];\n \tfor (const p of parts) {\n+\t\tout.push(p.trim());\n \t}\n \treturn out;";
+    items([...F, ["pr-9490", { kind: "pr", number: 9490, title: "Trim parsed parts", url: "https://github.com/acme/widgets/pull/9490", author: "someone", authorType: "contributor", section: "easy", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full",
+      routes: [{ id: "r1", type: "review", as: "bot", title: "Request changes: three suggestions", recommended: true, draftHash: "h1", text: "Three small things.", params: { event: "request_changes", comments: [
+        { id: "e1", path: "src/parse.ts", line: 13, startLine: 13, text: "Trim before pushing.", original: "\t\tout.push(p.trim());", suggestion: "\t\tout.push(p.trim().toLowerCase());", diffHunk: hdr },
+        { id: "e2", path: "src/parse.ts", line: 13, text: "Lower-case it too.\n```suggestion\n\t\tout.push(p.trim().toLowerCase());\n```", diffHunk: hdr },
+        { id: "e3", path: "src/parse.ts", line: 13, text: "Same here.\n```suggestion\n\t\tout.push(p.trim().toLowerCase());\n```", diffHunk: noHdr },
+      ] } }] }]]); await wait(10);
+    await openItem("pr-9490");
+    const bodies = [...openCard().querySelectorAll(".checklist .c-body")];
+    const rows = (b) => [...b.querySelectorAll(".hunk span")].map((s) => s.className + ":" + s.textContent.trimEnd());
+    ok("explicit fields: original red, suggestion green, hunk lines above as dimmed context, prose without a fence",
+      rows(bodies[0]).join("|") === ["h-ctx: \tconst parts = input.split(\",\");", "h-ctx: \tconst out = [];", "h-ctx: \tfor (const p of parts) {", "h-del:-\t\tout.push(p.trim());", "h-add:+\t\tout.push(p.trim().toLowerCase());"].join("|")
+      && bodies[0].querySelector(".c-text").textContent === "Trim before pushing." && !/```/.test(bodies[0].textContent));
+    ok("fenced fallback: the commented line red, the replacement green, context around it", rows(bodies[1]).includes("h-del:-\t\tout.push(p.trim());") && rows(bodies[1]).includes("h-add:+\t\tout.push(p.trim().toLowerCase());")
+      && rows(bodies[1]).filter((r) => r.startsWith("h-ctx")).length >= 2 && bodies[1].querySelector(".c-text").textContent === "Lower-case it too." && !bodies[1].querySelector("code.ic"));
+    ok("a hunk without a header still shows the replacement as an addition", rows(bodies[2]).some((r) => r === "h-add:+\t\tout.push(p.trim().toLowerCase());") && !/```/.test(bodies[2].textContent));
+    ok("context lines are muted", getComputedStyle(bodies[0].querySelector(".hunk .h-ctx")).color !== getComputedStyle(bodies[0].querySelector(".hunk .h-add")).color);
+    items(F); await wait(10);
+  }
+
+  // The rounds selector: label and buttons share one vertical center
+  await openItem("pr-9475");
+  {
+    const row = [...openCard().querySelectorAll(".seg-row")].find((r) => /Rounds/.test(r.textContent));
+    const mid = (el) => { const b = el.getBoundingClientRect(); return b.top + b.height / 2; };
+    const label = row.querySelector(".card-label"), group = row.querySelector(".seg-group");
+    ok("rounds row: label and buttons centered within 1px", Math.abs(mid(label) - mid(group)) <= 1 && [...group.querySelectorAll(".seg")].every((s) => Math.abs(mid(s) - mid(group)) <= 1));
+  }
+  document.getElementById("d-close").click(); await wait(5);
 
   // ---------- accounts and projects come from the server ----------
   const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
@@ -470,11 +495,15 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   }) }]);
 
   // A second project without a bot
-  const OLD = ["triage", "board"].join("-") + ":contoso/gadgets:filters";
-  localStorage.setItem(OLD, JSON.stringify({ text: "legacy" }));
-  applyBoardInfo({ name: "contoso-gadgets", repo: "contoso/gadgets", repoUrl: "https://github.com/contoso/gadgets", me: acct("jdoe"), bot: null, accountMode: "none", botCommands: {}, dryRun: true });
+  const OLD = ["triage", "board"].join("-") + ":contoso/gadgets:drafts";
+  const OLD2 = "gary:contoso/gadgets:opened";
+  localStorage.setItem(OLD, JSON.stringify({ "x|r1|h": "legacy" }));
+  localStorage.setItem(OLD2, JSON.stringify({ "x|r1|h|day": true }));
+  const gadgetsOnly = (accountMode, dryRun) => ({ me: acct("jdoe"), dryRun, instances: [window.__instanceInfo("gadgets", "contoso-gadgets", { bot: null, accountMode, botCommands: {}, relatedRepos: ["widgets-desktop"] })] });
+  applyBoardInfo(gadgetsOnly("none", true));
   ok("a second project names the page and shows the dry run marker", document.getElementById("board-title").textContent === "contoso-gadgets triage" && !document.getElementById("dry-run").hidden);
-  ok("legacy keys move to the repo's own keys once", localStorage.getItem(OLD) === null && /legacy/.test(localStorage.getItem("gary:contoso/gadgets:filters") || ""));
+  ok("per-repo keys move to the instance's keys once", localStorage.getItem(OLD) === null && localStorage.getItem(OLD2) === null
+    && /legacy/.test(localStorage.getItem("gary:gadgets:drafts") || "") && /day/.test(localStorage.getItem("gary:gadgets:opened") || ""));
   items(served("none")); await wait(10);
   await openItem("issue-9472");
   ok("no bot: request_logs is a prefill with his avatar", !!cardBtn("Copy request, open GitHub") && /jdoe/.test(cardBtn("Copy request, open GitHub").querySelector("img")?.src ?? "") && !!openCard().querySelector("textarea.tall"));
@@ -500,7 +529,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("no bot: the prefill has no confirm and no bot name", !!cardBtn("Copy reply, open GitHub") && !/bot/.test(openCard().querySelector(".card-actions").textContent));
 
   // Own mode: bot routes run under his login after the click
-  applyBoardInfo({ name: "contoso-gadgets", repo: "contoso/gadgets", repoUrl: "https://github.com/contoso/gadgets", me: acct("jdoe"), bot: null, accountMode: "own", botCommands: {}, dryRun: false });
+  applyBoardInfo(gadgetsOnly("own", false));
   items(served("own")); await wait(10);
   await openItem("pr-9473");
   ok("own: the review runs under his login with his avatar", /jdoe/.test(cardBtn("Request changes")?.querySelector("img")?.src ?? "") && /Runs right away under your GitHub login/.test(openCard().textContent));

@@ -4,8 +4,9 @@
 //   home:     the instance directory root/instances/<name>, holds config.json, an optional personal.md and state/
 //   profile:  the project directory named by `profile` in config.json, holds profile.json, rules/ and templates/
 // The instance comes from --instance, then GARY_INSTANCE, then the working directory, then the only instance.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,10 +17,13 @@ const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const REPO_NAME = /^[\w.-]{1,100}$/;
 
+export const INSTANCE_KINDS = ["maintainer"];
+export const DEFAULT_PORT = 7878;
+
 export const CONFIG_DEFAULTS = {
+	kind: "maintainer",
 	bot: null,
 	allowOwnTokenPushes: false,
-	port: 7878,
 	activeWindowDays: 30,
 	activeMaxWaitDays: 14,
 	maxFullReviewsPerRun: 10,
@@ -51,8 +55,25 @@ export function rootDir() {
 
 export const instancesDir = () => join(rootDir(), "instances");
 export const instanceDir = (name) => join(instancesDir(), name);
-/** The root holds a config.json only in the layout from before instances existed. */
-export const hasFlatLayout = () => existsSync(join(rootDir(), "config.json"));
+export const rootConfigFile = () => join(rootDir(), "config.json");
+export const rootStateDir = () => join(rootDir(), "state");
+
+/** The layout from before instances kept an instance config, with a `profile`, in the root. */
+export function hasFlatLayout() {
+	const data = readJsonSync(rootConfigFile());
+	return !!data && typeof data === "object" && "profile" in data;
+}
+
+/** The server-wide settings in <root>/config.json: `{ port }`. */
+export function rootConfig() {
+	const file = rootConfigFile();
+	const data = existsSync(file) && !hasFlatLayout() ? readSettings(file, "Root config") : {};
+	const errors = [];
+	for (const key of Object.keys(data)) check(errors, key === "port", `unknown field "${key}"`);
+	check(errors, data.port === undefined || isInt(data.port, 1, 65535), `"port" must be a port number`);
+	if (errors.length) throw new SettingsError(`Root config ${file} is invalid:\n- ${errors.join("\n- ")}`);
+	return { port: data.port ?? DEFAULT_PORT };
+}
 
 export class SettingsError extends Error {}
 
@@ -67,7 +88,7 @@ export function setInstance(name) {
 export const explicitInstance = () => explicitName;
 
 /** Names of the instances under the root that have a config.json, sorted. */
-export function listInstances() {
+export function instanceNames() {
 	let names = [];
 	try {
 		names = readdirSync(instancesDir());
@@ -115,11 +136,11 @@ export function instanceFacts(name) {
 	const profile = typeof config?.profile === "string" ? at(config.profile) : null;
 	const repo = profile ? readJsonSync(join(profile, "profile.json"))?.repo ?? null : null;
 	const checkout = typeof config?.checkout === "string" ? at(config.checkout) : null;
-	return { name, dir, config, repo, checkout, port: config?.port ?? CONFIG_DEFAULTS.port };
+	return { name, dir, config, repo, checkout };
 }
 
 /** The instances the directory belongs to: inside a checkout, a worktree of it, or a clone whose origin is the repo. */
-export function matchDirectory(cwd, names = listInstances()) {
+export function matchDirectory(cwd, names = instanceNames()) {
 	const here = realOrNull(cwd);
 	if (!here) return [];
 	const common = (dir) => {
@@ -148,7 +169,7 @@ function listing(names) {
 export function resolveInstance({ cwd = process.cwd() } = {}) {
 	if (resolved) return resolved;
 	const root = rootDir();
-	const names = listInstances();
+	const names = instanceNames();
 	const pick = (name, via) => {
 		if (!INSTANCE_NAME.test(name ?? "")) throw new SettingsError(`"${name}" is not a valid instance name.`);
 		if (!names.includes(name)) {
@@ -174,7 +195,14 @@ export function resolveInstance({ cwd = process.cwd() } = {}) {
 	throw new SettingsError(`The directory ${cwd} belongs to no instance. ${hint}`);
 }
 
-export const instanceName = () => resolveInstance().name;
+// One board server serves every instance, so code it calls runs inside withInstance
+const scope = new AsyncLocalStorage();
+
+/** Runs `fn` with `name` as the instance, for everything it calls, also across awaits. */
+export const withInstance = (name, fn) => scope.run(name, fn);
+
+/** The instance of the current scope, or the resolved one. */
+export const instanceName = () => scope.getStore() ?? resolveInstance().name;
 export function homeDir() {
 	return instanceDir(instanceName());
 }
@@ -217,7 +245,11 @@ const isStringList = (v, pattern) => Array.isArray(v) && v.every((s) => typeof s
 export function validateConfig(data) {
 	const errors = [];
 	const known = ["profile", "me", "checkout", ...Object.keys(CONFIG_DEFAULTS)];
-	for (const key of Object.keys(data)) check(errors, known.includes(key), `unknown field "${key}"`);
+	for (const key of Object.keys(data)) {
+		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
+		else check(errors, known.includes(key), `unknown field "${key}"`);
+	}
+	check(errors, data.kind === undefined || INSTANCE_KINDS.includes(data.kind), `"kind" must be one of ${INSTANCE_KINDS.join(", ")}`);
 	check(errors, typeof data.profile === "string" && data.profile.length > 0, `"profile" must name the project profile directory`);
 	check(errors, typeof data.me === "string" && LOGIN.test(data.me), `"me" must be your GitHub login`);
 	check(errors, data.checkout === undefined || (typeof data.checkout === "string" && data.checkout.length > 0), `"checkout" must name your local clone of the repository`);
@@ -231,7 +263,6 @@ export function validateConfig(data) {
 		}
 	}
 	check(errors, data.allowOwnTokenPushes === undefined || typeof data.allowOwnTokenPushes === "boolean", `"allowOwnTokenPushes" must be true or false`);
-	check(errors, data.port === undefined || isInt(data.port, 1, 65535), `"port" must be a port number`);
 	for (const key of ["activeWindowDays", "activeMaxWaitDays", "maxFullReviewsPerRun", "maxAutoFixesPerRun"]) {
 		check(errors, data[key] === undefined || isInt(data[key], 0, 3650), `"${key}" must be a whole number`);
 	}
@@ -262,39 +293,147 @@ export function validateProfile(data) {
 	return errors;
 }
 
-let cachedConfig;
-let cachedProfile;
+// The caches check the file's mtime, so an edited config or profile applies on the next call, also in the server
+const configCache = new Map();
+const profileCache = new Map();
 
-/** Loads and validates config.json from home. Throws a SettingsError that names the file and every problem. */
-export function loadConfig() {
-	const file = configFile();
-	if (cachedConfig?.file === file) return cachedConfig.value;
-	const data = readSettings(file, "Config");
-	const errors = validateConfig(data);
-	if (errors.length) throw new SettingsError(`Config ${file} is invalid:\n- ${errors.join("\n- ")}`);
-	const value = { ...CONFIG_DEFAULTS, ...data, bot: data.bot ?? null };
-	cachedConfig = { file, value };
+function cached(cache, file, load) {
+	let mtime = null;
+	try {
+		const st = statSync(file);
+		mtime = `${st.mtimeMs}:${st.size}`;
+	} catch {
+		// A missing file goes to load(), which names it in its error
+	}
+	const hit = cache.get(file);
+	if (hit && mtime !== null && hit.mtime === mtime) return hit.value;
+	const value = load();
+	cache.set(file, { mtime, value });
 	return value;
 }
 
-export function profileDir() {
-	return homePath(loadConfig().profile);
+/** Loads and validates one instance's config.json. Throws a SettingsError that names the file and every problem. */
+export function loadConfigFor(name) {
+	const file = join(instanceDir(name), "config.json");
+	return cached(configCache, file, () => {
+		const data = readSettings(file, "Config");
+		const errors = validateConfig(data);
+		if (errors.length) throw new SettingsError(`Config ${file} is invalid:\n- ${errors.join("\n- ")}`);
+		return { ...CONFIG_DEFAULTS, ...data, bot: data.bot ?? null };
+	});
 }
 
-/** Loads and validates profile.json of the configured profile. */
-export function loadProfile() {
-	const file = join(profileDir(), "profile.json");
-	if (cachedProfile?.file === file) return cachedProfile.value;
-	const data = readSettings(file, "Profile");
-	const errors = validateProfile(data);
-	if (errors.length) throw new SettingsError(`Profile ${file} is invalid:\n- ${errors.join("\n- ")}`);
-	const value = { ...PROFILE_DEFAULTS, ...data };
-	cachedProfile = { file, value };
-	return value;
+/** Resolves a path from an instance's config.json: `~` expands, a relative path is relative to the instance directory. */
+export function instancePath(name, path) {
+	const p = expandHome(path);
+	return isAbsolute(p) ? p : resolve(instanceDir(name), p);
 }
 
-export function repoParts() {
-	const [owner, name] = loadProfile().repo.split("/");
+export const profileDirFor = (name) => instancePath(name, loadConfigFor(name).profile);
+
+/** Loads and validates the profile.json of one instance. */
+export function loadProfileFor(name) {
+	const file = join(profileDirFor(name), "profile.json");
+	return cached(profileCache, file, () => {
+		const data = readSettings(file, "Profile");
+		const errors = validateProfile(data);
+		if (errors.length) throw new SettingsError(`Profile ${file} is invalid:\n- ${errors.join("\n- ")}`);
+		return { ...PROFILE_DEFAULTS, ...data };
+	});
+}
+
+/** The resolved instance's config. */
+export const loadConfig = () => loadConfigFor(instanceName());
+export const profileDir = () => profileDirFor(instanceName());
+/** The resolved instance's profile. */
+export const loadProfile = () => loadProfileFor(instanceName());
+
+function pausedIn(state) {
+	return readJsonSync(join(state, "control.json"))?.paused === true;
+}
+
+/**
+ * Everything about one instance: settings, profile and paths. It does not depend on the resolved instance.
+ * `{ name, kind, dir, state, board, config, profile, profileDir, repos, title, checkout, personal, paused }`
+ */
+export function loadInstance(name) {
+	if (!INSTANCE_NAME.test(name ?? "")) throw new SettingsError(`"${name}" is not a valid instance name.`);
+	const config = loadConfigFor(name);
+	const profile = loadProfileFor(name);
+	const dir = instanceDir(name);
+	const state = join(dir, "state");
+	const own = join(dir, "personal.md");
+	return {
+		name,
+		kind: config.kind,
+		dir,
+		state,
+		board: join(state, "board"),
+		config,
+		profile,
+		profileDir: profileDirFor(name),
+		// A maintainer instance triages the one repository of its profile
+		repos: [profile.repo],
+		title: profile.name,
+		checkout: config.checkout ? instancePath(name, config.checkout) : null,
+		personal: [personalFile(), ...(existsSync(own) ? [own] : [])],
+		paused: pausedIn(state),
+	};
+}
+
+/**
+ * The files whose change alters what loadInstance returns: the instance's config.json and its profile.json.
+ * A server that watches them can push a fresh board event. The profile may live outside the root.
+ */
+export function instanceSettingsFiles(name) {
+	const files = [join(instanceDir(name), "config.json")];
+	try {
+		files.push(join(profileDirFor(name), "profile.json"));
+	} catch {
+		// Without a readable config there is no profile to watch yet
+	}
+	return files;
+}
+
+/** Every instance under the root with its name, kind, repos, title, checkout and pause. Broken ones are skipped. */
+export function listInstances() {
+	return instanceNames().flatMap((name) => {
+		try {
+			const i = loadInstance(name);
+			return [{ name, kind: i.kind, repos: i.repos, title: i.title, checkout: i.checkout, paused: i.paused }];
+		} catch {
+			return [];
+		}
+	});
+}
+
+const asInstance = (instance) => (typeof instance === "string" ? loadInstance(instance) : instance);
+
+/** Whether `repo` (owner/name) is one of the instance's allowed repos. `instance` is a name or a loaded instance. */
+export function allowedRepo(instance, repo) {
+	if (typeof repo !== "string") return false;
+	return asInstance(instance).repos.some((r) => r.toLowerCase() === repo.toLowerCase());
+}
+
+/** The local clone for a repo of the instance, or null. */
+export function checkoutFor(instance, repo) {
+	const i = asInstance(instance);
+	return allowedRepo(i, repo) ? i.checkout : null;
+}
+
+/** The profile's rules file of a topic for a repo of the instance, like rules/review.md, or null. */
+export function rulesFor(instance, repo, topic) {
+	const i = asInstance(instance);
+	if (!allowedRepo(i, repo) || !/^[a-z0-9-]+$/.test(topic ?? "")) return null;
+	return join(i.profileDir, "rules", `${topic}.md`);
+}
+
+/** The reference of an item across repos: owner/name#number. */
+export const itemRef = (item) => `${item.repo}#${item.number}`;
+
+/** Owner and name of a repo, by default the resolved instance's one repo. */
+export function repoParts(repo = loadProfile().repo) {
+	const [owner, name] = repo.split("/");
 	return { owner, name };
 }
 

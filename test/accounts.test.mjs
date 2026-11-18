@@ -9,7 +9,7 @@ const T = tempDir();
 const reviewedAt = "2026-11-17T14:00:00Z";
 const items = {
 	"pr-12": {
-		kind: "pr", number: 12, title: "t", authorType: "maintainer", reviewedAt, hint: "Reply: x",
+		kind: "pr", repo: "acme/widgets", number: 12, title: "t", authorType: "maintainer", reviewedAt, hint: "Reply: x",
 		threads: [{ id: "PRRT_1", verdict: "valid" }],
 		routes: [
 			{ id: "reply", type: "reply", as: "bot", text: "Thanks", recommended: true },
@@ -26,7 +26,7 @@ const items = {
 		],
 	},
 	"issue-21": {
-		kind: "issue", number: 21, title: "t", reviewedAt, hint: "Move: x",
+		kind: "issue", repo: "acme/widgets", number: 21, title: "t", reviewedAt, hint: "Move: x",
 		routes: [
 			{ id: "move", type: "move", params: { to: "widgets-desktop" }, text: "Please open it there.", recommended: true },
 			{ id: "issue", type: "follow_up", as: "bot", params: { title: "x" }, text: "Body" },
@@ -34,20 +34,20 @@ const items = {
 		],
 	},
 	"pr-16": {
-		kind: "pr", number: 16, title: "deps", authorType: "bot", reviewedAt, hint: "Take over: x",
+		kind: "pr", repo: "acme/widgets", number: 16, title: "deps", authorType: "bot", reviewedAt, hint: "Take over: x",
 		routes: [{ id: "r1", type: "take_over", as: "agent", params: { mode: "push" }, text: "Fix the lockfile", recommended: true }],
 	},
 	"issue-20": {
-		kind: "issue", number: 20, title: "closed", reviewedAt, hint: "Reopen: x",
+		kind: "issue", repo: "acme/widgets", number: 20, title: "closed", reviewedAt, hint: "Reopen: x",
 		routes: [{ id: "reopen", type: "reopen", text: "Reopening.", recommended: true }],
 	},
 };
 
 function makeHome(name, extra) {
-	const { home, env } = baseHome(join(T, name), extra);
+	const { home, root, env } = baseHome(join(T, name), extra);
 	const board = join(home, "state", "board");
 	for (const [id, data] of Object.entries(items)) writeFileSync(join(board, "items", id + ".json"), JSON.stringify(data));
-	return { home, env };
+	return { home, root, env };
 }
 
 const stubFile = join(T, "stub.json");
@@ -63,7 +63,7 @@ function check(name, cond, detail) {
 	}
 }
 
-async function withServer({ home, env }, port, fn) {
+async function withServer({ root, env }, port, fn) {
 	const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-run", "--port", String(port)], {
 		env: { ...env, GARY_GUARD_STUB: stubFile },
 		stdio: ["ignore", "inherit", "pipe"],
@@ -72,7 +72,7 @@ async function withServer({ home, env }, port, fn) {
 	child.stderr.on("data", (d) => (stderr += d));
 	for (let i = 0; i < 50 && !stderr.includes(" on http://127.0.0.1:"); i++) await new Promise((r) => setTimeout(r, 100));
 	if (!stderr.includes(" on http://127.0.0.1:")) console.log(stderr);
-	const token = readFileSync(join(home, "state", "server-token"), "utf8").trim();
+	const token = readFileSync(join(root, "state", "server-token"), "utf8").trim();
 	const api = async (path, body) => {
 		const res = await fetch(`http://127.0.0.1:${port}${path}`, {
 			method: body ? "POST" : "GET",
@@ -82,8 +82,8 @@ async function withServer({ home, env }, port, fn) {
 		return { status: res.status, data: await res.json() };
 	};
 	const state = (await api("/api/state")).data;
-	const route = (itemId, routeId) => state.items.find((i) => i.id === itemId).data.routes.find((r) => r.id === routeId);
-	const click = (itemId, routeId, extra = {}) => api("/api/action", { itemId, routeId, draftHash: route(itemId, routeId).draftHash, ...extra });
+	const route = (itemId, routeId) => state.items.find((i) => i.id === itemId).routes.find((r) => r.id === routeId);
+	const click = (itemId, routeId, extra = {}) => api("/api/action", { instance: "widgets", itemId, routeId, draftHash: route(itemId, routeId).draftHash, ...extra });
 	const page = await (await fetch(`http://127.0.0.1:${port}/`)).text();
 	try {
 		await fn({ state, route, click, page });
@@ -97,12 +97,12 @@ const invocations = (r) => JSON.stringify(r.data.result?.invocations ?? []);
 
 // No bot, no own pushes
 await withServer(makeHome("nobot", { bot: null }), await freePort(), async ({ state, route, click, page }) => {
-	const b = state.board;
-	check("board info without a bot", b.bot === null && b.accountMode === "none" && b.me.login === "octocat" && b.me.avatarUrl === "https://github.com/octocat.png?size=80", b);
-	check("board info names the project", b.name === "widgets" && b.repo === "acme/widgets" && b.repoUrl === "https://github.com/acme/widgets", b);
+	const b = state.board.instances[0];
+	check("board info without a bot", b.bot === null && b.accountMode === "none" && state.board.me.login === "octocat" && state.board.me.avatarUrl === "https://github.com/octocat.png?size=80", state.board);
+	check("board info names the project", b.name === "widgets" && b.title === "widgets" && b.repos.join() === "acme/widgets" && b.repoUrl === "https://github.com/acme/widgets", b);
 	check("board info carries relatedRepos and botCommands", b.relatedRepos.includes("widgets-desktop") && b.botCommands.escalate?.startsWith("@"), b);
 	check("the page shim carries the same info", page.includes('"accountMode":"none"') && page.includes('host:gary'));
-	check("prefill actors", actors(route, [["pr-12", "reply", "me"], ["pr-12", "logs", "me"], ["pr-12", "body", "me"], ["issue-21", "issue", "me"], ["issue-20", "reopen", "me"], ["pr-12", "merge", "me"]]), state.items.map((i) => i.data.routes.map((r) => [r.id, r.actor])));
+	check("prefill actors", actors(route, [["pr-12", "reply", "me"], ["pr-12", "logs", "me"], ["pr-12", "body", "me"], ["issue-21", "issue", "me"], ["issue-20", "reopen", "me"], ["pr-12", "merge", "me"]]), state.items.map((i) => i.routes.map((r) => [r.id, r.actor])));
 	check("routes without prefill are unavailable", actors(route, [["pr-12", "inline", "unavailable"], ["pr-12", "label", "unavailable"]]));
 	check("pushing agent routes are unavailable", actors(route, [["pr-12", "fix", "unavailable"], ["pr-12", "drive", "unavailable"], ["issue-21", "fix", "unavailable"]]));
 	const mv = route("issue-21", "move");
@@ -124,7 +124,7 @@ await withServer(makeHome("nobot", { bot: null }), await freePort(), async ({ st
 
 // No bot, own pushes allowed
 await withServer(makeHome("own", { bot: null, allowOwnTokenPushes: true }), await freePort(), async ({ state, route, click }) => {
-	check("board info in own mode", state.board.accountMode === "own" && state.board.bot === null, state.board);
+	check("board info in own mode", state.board.instances[0].accountMode === "own" && state.board.instances[0].bot === null, state.board);
 	check("own actors", actors(route, [["pr-12", "reply", "me"], ["pr-12", "inline", "own"], ["pr-12", "label", "own"], ["pr-12", "fix", "agent"]]));
 	check("move in own mode", route("issue-21", "move").actors.transfer === "own" && route("issue-21", "move").actors.close === "me");
 	const r1 = await click("pr-12", "label");
@@ -141,7 +141,7 @@ await withServer(makeHome("own", { bot: null, allowOwnTokenPushes: true }), awai
 
 // With a bot
 await withServer(makeHome("bot"), await freePort(), async ({ state, route, click }) => {
-	check("board info with a bot", state.board.accountMode === "bot" && state.board.bot.login === "widgets-bot" && state.board.bot.avatarUrl.includes("widgets-bot"), state.board);
+	check("board info with a bot", state.board.instances[0].accountMode === "bot" && state.board.instances[0].bot.login === "widgets-bot" && state.board.instances[0].bot.avatarUrl.includes("widgets-bot"), state.board);
 	check("bot actors", actors(route, [["pr-12", "reply", "bot"], ["pr-12", "inline", "bot"], ["pr-12", "label", "bot"], ["pr-12", "fix", "agent"], ["issue-20", "reopen", "bot"], ["pr-12", "merge", "me"]]));
 	check("move with a bot", route("issue-21", "move").actors.transfer === "bot" && route("issue-21", "move").actors.close === "bot");
 	const r1 = await click("pr-12", "reply");
