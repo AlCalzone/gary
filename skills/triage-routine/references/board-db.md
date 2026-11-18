@@ -3,7 +3,7 @@
 The board is a set of JSON files under `<state>/board/`. The board server serves the page, watches these files and pushes every change to the open page.
 
 ```
-<state>/board/items/<id>.json     one item doc, id like pr-412, issue-398, disc-405
+<state>/board/items/<id>.json     one item doc. Ids are opaque, like pr-412 in a maintainer instance. Take them from the snapshot, never build them
 <state>/board/actions/<id>.json   one action doc, id like pr-412-<timestamp>
 <state>/board/meta.json           run status
 ```

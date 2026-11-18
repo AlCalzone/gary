@@ -184,7 +184,7 @@ Related URLs the maintainer will want to open: the draft fix PR, the duplicate, 
 The routine checks each doc a subagent returns. A doc that fails any check is rejected and the item stays at `pending`.
 
 1. It parses as one JSON object, with no text around it.
-2. `kind` and `number` match the item the subagent was given. The id derived from them matches.
+2. `repo`, `kind` and `number` match the snapshot entry of the item the subagent was given. The doc is written under the id from that entry. Ids are opaque: never build or parse one.
 3. `section` is one of `active`, `easy`, `almost`, `review`, `deferred`, `hardware`.
 4. `reviewDepth` is `full`, or `pending` with no routes when the subagent could not finish. A blocked item is the exception: `pending`, a `blocked` field, and exactly one `open` route. For PRs, `reviewedSha` is a 40-character SHA.
 5. `state` is a non-empty string of at most 25 words that names no action: no imperative, no "merge", "close" or "reply" as the thing to do. `story` is a non-empty string of at most 90 words. With routes: `effortMinutes` is one of 1, 2, 5, 10, 15, 30, 60, and `hint` is a non-empty string of at most 60 characters, starts with a verb from the hint list and has no "maybe". Without routes: no `hint` and no `effortMinutes`.
