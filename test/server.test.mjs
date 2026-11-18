@@ -258,6 +258,20 @@ await expect("format without an autofix check is refused", "pr-12", "r14", {}, r
 await expect("format when the autofix changes nothing is refused", "pr-15", "r1", {}, refused(/autofix check to have found changes/));
 await expect("format takes no input", "pr-14", "r3", { input: { files: ["a"] } }, refused(/unknown field/));
 await expect("format on a contributor PR that is not taken over is queued", "pr-14", "r3", {}, (r) => r.data.ok && r.data.queued);
+// One push job per item at a time. finishQueued stands in for a worker that finished its request
+const finishQueued = () => {
+	for (const n of readdirSync(join(BOARD, "actions"))) {
+		const f = join(BOARD, "actions", n);
+		const d = JSON.parse(readFileSync(f, "utf8"));
+		if (d.status === "queued") writeFileSync(f, JSON.stringify({ ...d, status: "done", finishedAt: new Date().toISOString() }));
+	}
+};
+await expect("a second push job on an item with a queued one gets 409", "pr-12", "r12", {}, (r) => r.status === 409 && r.data.working === true && r.data.result === "The agent is already working on this.");
+let st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("the item is served as working while a push job is queued", st.working?.kind === "push" && typeof st.working.since === "string", st.working);
+finishQueued();
+st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("a finished job leaves the item without working", st.working === undefined, st.working);
 await expect("take_over defaults to push", "pr-12", "r12", {}, (r) => r.data.ok && r.data.queued);
 check("route comments keep diffHunk in the served route", served["pr-12"].routes.find((r) => r.id === "r1").params.comments[1].diffHunk.includes("DIFFHUNK_MARKER"));
 
@@ -268,8 +282,19 @@ await expect("a new human comment refuses the click", "issue-22", "r1", {}, (r) 
 await expect("force runs it anyway", "issue-22", "r1", { force: true }, (r) => r.data.ok === true);
 
 // Agent routes
-await expect("address_review is queued", "pr-12", "r2", { input: { decisions: [{ threadId: "PRRT_1", decision: "fix", note: " fix it " }, { threadId: "PRRT_2", decision: "dismiss" }] }, text: "Run note" }, (r) => r.data.ok && r.data.queued);
+finishQueued();
 await expect("take_over push is queued", "pr-12", "r8", {}, (r) => r.data.ok && r.data.queued);
+finishQueued();
+await expect("address_review is queued", "pr-12", "r2", { input: { decisions: [{ threadId: "PRRT_1", decision: "fix", note: " fix it " }, { threadId: "PRRT_2", decision: "dismiss" }] }, text: "Run note" }, (r) => r.data.ok && r.data.queued);
+// A claim of the matching kind blocks a click, a claim of another kind does not
+mkdirSync(join(home, "state", "claims"), { recursive: true });
+writeFileSync(join(home, "state", "claims", "issue-21.fix.json"), JSON.stringify({ run: "run-hourly", at: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() }));
+writeFileSync(join(home, "state", "claims", "disc-34.review.json"), JSON.stringify({ run: "run-old", at: "2026-01-01T00:00:00Z", expiresAt: "2026-01-01T01:00:00Z" }));
+await sleep(300);
+await expect("a fix claim of the hourly run blocks Start fix", "issue-21", "r8", {}, (r) => r.status === 409 && r.data.working === true);
+st = (await api("/api/state")).data.items.filter((i) => i.instance === "widgets");
+check("a claim is served as working with its kind and start", st.find((i) => i.id === "issue-21").working?.kind === "fix" && st.find((i) => i.id === "disc-34").working === undefined, st.find((i) => i.id === "issue-21").working);
+rmSync(join(home, "state", "claims", "issue-21.fix.json"));
 await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", {}, (r) => r.data.ok && r.data.queued);
 await expect("a repeated agent click gets 409", "issue-21", "r8", {}, (r) => r.status === 409);
 
@@ -325,7 +350,7 @@ const wLog = readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim()
 check("unticking the label logs skipped_label with the route and the labels", wLog.some((e) => e.type === "skipped_label" && e.route.type === "request_logs" && e.route.title === "Ask: log, no label" && JSON.stringify(e.labels) === '{"add":["needs-info"]}'), wLog);
 check("the label button logs no decision", !wLog.some((e) => e.chosen?.title === "Reply: ask for a log" || e.route?.title === "Reply: ask for a log") && wLog.filter((e) => e.type === "skipped_label").length === 1, wLog);
 const fmt = byRoute("pr-14", "r3")[0];
-check("format doc is queued with the reviewed head", fmt?.status === "queued" && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
+check("format doc is queued with the reviewed head", ["queued", "done"].includes(fmt?.status) && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
 check("format does not take the PR over", JSON.parse(readFileSync(join(BOARD, "items", "pr-14.json"), "utf8")).takenOver === undefined);
 check("take_over doc carries the text", byRoute("pr-12", "r8")[0]?.text === "Finish it", byRoute("pr-12", "r8"));
 check("take_over doc", byRoute("pr-12", "r8")[0]?.params?.mode === "push", byRoute("pr-12", "r8"));

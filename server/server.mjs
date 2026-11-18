@@ -12,6 +12,7 @@ import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
+import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
@@ -776,6 +777,27 @@ export async function startBoardServer({
 
 	const modeOf = (name) => settingsOf(name).mode ?? "none";
 
+	/** Whether an unexpired claim or a queued agent request of `kind` exists for the item. */
+	async function busyWith(name, itemId, kind) {
+		if ((await listClaims({ instance: name })).some((c) => c.itemId === itemId && c.kind === kind && !c.expired)) return true;
+		return (await readCollection(name, "actions")).some(({ data: a }) => a.itemId === itemId && a.status === "queued" && ACTION_KINDS[a.action] === kind);
+	}
+
+	/** Per item, the agent work in progress: an unexpired claim or a queued agent request. `{ kind, since }`, the oldest wins. */
+	async function workingByItem(name, actions) {
+		const out = new Map();
+		const add = (itemId, kind, since) => {
+			const cur = out.get(itemId);
+			if (!cur || String(since) < String(cur.since)) out.set(itemId, { kind, since });
+		};
+		for (const c of await listClaims({ instance: name })) if (!c.expired) add(c.itemId, c.kind, c.at);
+		for (const { data: a } of actions) {
+			const kind = ACTION_KINDS[a.action];
+			if (kind && a.status === "queued" && typeof a.itemId === "string") add(a.itemId, kind, a.createdAt ?? null);
+		}
+		return out;
+	}
+
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
 	async function readItems(name) {
 		const { instance, mode: current } = settingsOf(name);
@@ -785,9 +807,11 @@ export async function startBoardServer({
 		const [items, actions] = await Promise.all([readCollection(name, "items"), readCollection(name, "actions")]);
 		const clicked = clickedByKey(name, actions);
 		const labelled = labelsByKey(name, actions);
+		const working = await workingByItem(name, actions);
 		return items.map(({ id, data }) => ({
 			...data,
 			liveState: liveStates.get(`${name}/${id}`),
+			...(working.has(id) && { working: working.get(id) }),
 			routes: routesOf(data).map((route) => {
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
@@ -892,6 +916,9 @@ export async function startBoardServer({
 		addWatch(w, i.state, (_type, file) => {
 			if (file === "control.json") schedulePush(name, "board");
 		});
+		// A claim taken or released changes item.working
+		mkdirSync(claimsDir(name), { recursive: true });
+		addWatch(w, claimsDir(name), () => schedulePush(name, "items"));
 		watchSettings(name);
 		const { instance, error } = settingsOf(name);
 		entry.settingsError = error;
@@ -1070,6 +1097,10 @@ export async function startBoardServer({
 			};
 
 			if (plan.agent) {
+				const kind = ACTION_KINDS[plan.action];
+				if (kind && (await busyWith(name, itemId, kind))) {
+					return [409, { ok: false, result: "The agent is already working on this.", working: true }];
+				}
 				logRouteDecisions(name, itemId, item, route, draft, input, true);
 				await logClick(name, itemId, {
 					...entry,
