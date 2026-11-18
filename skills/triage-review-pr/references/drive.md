@@ -77,3 +77,7 @@ Monitor command="until gh api repos/<owner>/<repo>/pulls/<n>/reviews --jq '[.[] 
 On the event, it starts the next round's subagent. On expiry, it starts one more subagent that ends the drive with the reason `The review did not arrive within 30 minutes.`
 
 The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
+
+## Last step
+
+On every exit path, failures and refusals included: release your claims with `gary release <itemId> <kind> --run <run>`, and set the action doc to `done` or `failed`. A doc left `queued` or claimed blocks the item, because such docs do not expire.

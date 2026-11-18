@@ -35,7 +35,7 @@ Reference files, read when you reach the step that needs them:
 
 ## Claims
 
-Two runs must never work on the same item at once. Before any work on one item that takes minutes or writes, claim it: a fix, a full review or triage, a `take_over`, an `address_review`, a `drive` round, a `format`. Use `gary claim <itemId> <kind> --run <run>` with kind `fix`, `review` or `push`, and `gary release <itemId> <kind> --run <run>` at the end, also on failure. Exit code 3 means someone else holds the claim: skip the item, never work in parallel, and name it in the summary. `gary claims` lists the current claims. A subagent that does the work claims and releases itself, with the run id from its brief.
+Two runs must never work on the same item at once. Before any work on one item that takes minutes or writes, claim it: a fix, a full review or triage, a `take_over`, an `address_review`, a `drive` round, a `format`. Use `gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` with kind `fix`, `review` or `push`. A request job passes `--request` with the id of the action doc it handles. Without it, a `fix` claim is refused while another `start_fix` request for the item is queued, or while a fix PR for it is in draft or open. Then use and `gary release <itemId> <kind> --run <run>` at the end, also on failure. Exit code 3 means someone else holds the claim or the claim is refused: skip the item, never work in parallel, and name it in the summary. `gary claims` lists the current claims. A subagent that does the work claims and releases itself, with the run id from its brief. Every worker releases its claims on every exit path, failures and refusals included, and sets its action doc to `done` or `failed` before it exits. A doc left `queued` or claimed blocks the item, because such docs do not expire.
 
 ## Subagents or not
 
@@ -117,16 +117,16 @@ Delete the item for every id in `closed` with `gary put items <id> --delete`.
 
 ### 4d. Fix routes while a fix runs
 
-Every hourly run, even for items that did not change on GitHub: run `gary fixes --json`. For each item whose state is `working`, `draft` or `open` while its stored routes still contain a `follow_up` route with `as: "agent"`, remove that route with `gary put --merge items <id>`, sending the remaining `routes` and a `hint` that matches the new recommended route, or `"hint": null` and `"effortMinutes": null` when no route is left. Pass each item's `fix` to the subagents that classify or triage it.
+Every hourly run, even for items that did not change on GitHub: run `gary fixes --json`, which prints `{ <itemId>: fix }`. For each item whose state is `working`, `draft` or `open` while its stored routes still contain a `follow_up` route with `as: "agent"`, remove that route with `gary put --merge items <id>`, sending the remaining `routes` and a `hint` that matches the new recommended route, or `"hint": null` and `"effortMinutes": null` when no route is left. Pass each item's `fix` to the subagents that classify or triage it.
 
 ### 4c. Handled items (right after step 4, before 4a)
 
 `handled: { at, routeId, routeType, verified }` is a maintainer field. The server sets it when he used a prefill button or a bot or agent route ran, and the board hides the item until the next run. Run `gary handled --json` and decide for each item:
 
 - The thread is closed or merged: step 4 removed it already.
-- The snapshot lists it as changed after `handled.at`, like his comment, a label, a push or a review: clear `handled` with `gary put --merge items <id>` and `{ "handled": null }`, and classify it in step 5 like any changed item. Usually it then has no routes, because we spoke last.
-- Nothing changed on GitHub and `handled.at` is more than 30 minutes old: clear `handled`, keep the routes, and prepend one `findings` entry of severity `question`: `You opened this on GitHub at <time>, but nothing changed there.` Write both with one `gary put --merge`, sending the complete `findings` array with the new entry first, because a merge replaces the array. The item returns to the board as it was. Do not re-analyze it.
-- Nothing changed and `handled.at` is younger than 30 minutes: leave it for the next run.
+- `changedSince` in the row is `true`: the thread changed after `handled.at`, like his comment, a label, a push or a review. clear `handled` with `gary put --merge items <id>` and `{ "handled": null }`, and classify it in step 5 like any changed item. Usually it then has no routes, because we spoke last.
+- `changedSince` is `false` and `handled.at` is more than 30 minutes old: clear `handled`, keep the routes, and prepend one `findings` entry of severity `question`: `You opened this on GitHub at <time>, but nothing changed there.` Write both with one `gary put --merge`, sending the complete `findings` array with the new entry first, because a merge replaces the array. The item returns to the board as it was. Do not re-analyze it.
+- `changedSince` is `false` and `handled.at` is younger than 30 minutes, or `changedSince` is `null`: leave it for the next run.
 - An agent route of the item is still queued or claimed: leave `handled` until that job finishes.
 
 A subagent never writes `handled`. The routine only clears it under these rules.

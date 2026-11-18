@@ -11,7 +11,7 @@ Quick classification uses the snapshot data: author and author type, labels, dra
 Every snapshot entry carries `facts`, computed in code. Use them as given and never re-derive them from the thread:
 
 - `facts.timeline`: `[{ at, author, side, kind }]`, oldest first, the newest 200 events. `side` is `us`, `them`, `automated` or `bot`, and `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `facts.timelineTruncated` is set only when older events are missing. Who spoke last is `facts.lastSpeaker`, with `facts.lastUsAt` and `facts.lastThemAt`. Who we wait on is `facts.waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), and for how long `facts.waitingDays`.
-- PRs: `facts.aiAuthored` with `facts.aiSignals`, `facts.changedLines`, `facts.changedFiles`, `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
+- PRs: `facts.aiAuthored` with `facts.aiSignals` (from the profile's `aiAuthors`), `facts.changedLines` (lock files excluded, generated files not detected), `facts.changedFiles`, `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
 - Issues and discussions: `facts.hasClosingPr` (an open or merged PR closes it), `facts.isAnswered`, `facts.authorIsUs`.
 
 Read the thread text only for what was said: what was asked, what was answered, what is open. A statement like "nobody replied since" comes from `facts.lastSpeaker` and `facts.timeline`, never from reading the top-level comments. When a discussion's `replyCount` is larger than the replies in the snapshot entry and you need the wording of a reply, fetch the thread with the discussion query from the `triage-issue` skill. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
@@ -102,7 +102,7 @@ The item cannot be reproduced without real hardware or an environment the agent 
 
 ## Fixes in progress
 
-The code keeps a fix state per issue and discussion: `fix: { state, pr, startedBy, since }`, with `state` `working`, `draft`, `open`, `merged` or `closed`. Read it with `gary fixes --json`, or from the `fix` field the routine passes along, before you write routes.
+The code keeps a fix state per issue and discussion: `fix: { state, pr, startedBy, since }`, with `state` `working`, `draft`, `open`, `merged` or `closed`. Read it with `gary fixes --json` (`{ <itemId>: fix }`), or from the `fix` field the routine passes along, before you write routes. For discussions the code finds fix PRs with one search over the 100 most recently updated PRs, so an older one is missed. When the thread itself links a fix PR, say so in `story` and write no fix route, even when `gary fixes` reports nothing. `fixFor` on a PR's item is set by `gary put` from Gary's record. A skill never writes it.
 
 - **`working`, `draft` or `open`**: a fix is under way. Write no `follow_up` route for the agent, and no "start a fix" wording anywhere. The routes are about the conversation only: a `reply` that tells the reporter a fix is in review and links the PR, when that has not been said yet, otherwise no routes. `state` says where the fix stands, like `Draft fix pr-431 is in review, CI passing.`
 - **`merged`**: recommend a `close` with a closing message that names the release when it is known (`item-doc.md`, `close`).

@@ -44,3 +44,7 @@ The exception. The route's `callout` said why pushing to the branch is not possi
 The new PR is a draft. The maintainer marks it ready himself.
 
 The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
+
+## Last step
+
+On every exit path, failures and refusals included: release your claims with `gary release <itemId> <kind> --run <run>`, and set the action doc to `done` or `failed`. A doc left `queued` or claimed blocks the item, because such docs do not expire.

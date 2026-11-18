@@ -242,7 +242,7 @@ Gary never reviews style. A full PR review runs the project's formatter and lint
 
 ## Claims
 
-`gary claim <itemId> <kind> --run <run>` (kinds `fix`, `review`, `push`) marks an item as worked on by one run. It exits with 3 when someone else holds the claim. `gary release` frees it, and `gary claims` lists the current ones. Every fix, full review or triage, take-over, address_review, drive round and format claims its item first and releases it at the end, also on failure. An autonomous fix reads the queue right before it starts and before it opens a PR, and gives way to a `start_fix` request for the same item.
+`gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` (kinds `fix`, `review`, `push`) marks an item as worked on by one run. It exits with 3 when someone else holds the claim. Without `--request`, a `fix` claim is also refused while another `start_fix` request is queued or a fix PR is in draft or open. Every worker releases its claims on every exit path and sets its action doc to `done` or `failed`, because queued or claimed docs do not expire. The master marks the jobs of dead workers as failed and releases their claims. `gary release` frees it, and `gary claims` lists the current ones. Every fix, full review or triage, take-over, address_review, drive round and format claims its item first and releases it at the end, also on failure. An autonomous fix reads the queue right before it starts and before it opens a PR, and gives way to a `start_fix` request for the same item.
 
 ## Answers when closing discussions
 

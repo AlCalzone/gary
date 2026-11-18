@@ -84,3 +84,7 @@ Your final report is one JSON object and nothing else:
 On failure or refusal, release the claim and return `status: "failed"`, the reason in `result`, and the previous item doc unchanged except for a `state` that names the reason. Its old routes come back that way.
 
 Check `item` against the validation checklist in `item-doc.md`.
+
+## Last step
+
+On every exit path, failures and refusals included: release your claims with `gary release <itemId> <kind> --run <run>`, and set the action doc to `done` or `failed`. A doc left `queued` or claimed blocks the item, because such docs do not expire.

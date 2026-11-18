@@ -12,7 +12,7 @@ Opening the draft PR is one of the few things the routine may do without a click
 
 ## 0. Claim
 
-Claim the item with `gary claim <itemId> fix --run <run>`, and release it with `gary release <itemId> fix --run <run>` when you are done, also on failure. Exit code 3 means another run holds it: stop and return the item unchanged.
+Claim the item with `gary claim <itemId> fix --run <run>`, plus `--request <action doc id>` when a clicked `start_fix` started you, and release it with `gary release <itemId> fix --run <run>` when you are done, also on failure. Exit code 3 means another run holds it: stop and return the item unchanged.
 
 For an autonomous fix, read the queue right before you start and again right before you open the PR. When a `start_fix` request for this item is queued or claimed, the item is the maintainer's: stop without opening a PR, release the claim, and return the item unchanged. A fix he started with instructions follows those instructions exactly. An autonomous fix uses your own approach, unless the route's `text` gives one.
 
@@ -82,3 +82,7 @@ Return the issue's item doc as one JSON object and nothing else:
 - `routes`: the recommended route is a `reply` as `me` on the issue that tells the reporter a fix is in review and links the PR. The `follow_up` route is gone. The routine applies the profile's autonomous labels and assignments for an opened fix on its own.
 
 Check the doc against the validation checklist in `<core>/skills/triage-routine/references/item-doc.md`.
+
+## Last step
+
+On every exit path, failures and refusals included: release your claims with `gary release <itemId> <kind> --run <run>`, and set the action doc to `done` or `failed`. A doc left `queued` or claimed blocks the item, because such docs do not expire.

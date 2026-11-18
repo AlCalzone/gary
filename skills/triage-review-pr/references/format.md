@@ -16,3 +16,7 @@ The maintainer clicked `format` on a PR. You apply exactly the autofix result to
 The commit runs CI again. When CI was red only because of the lint job, it should turn green.
 
 The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
+
+## Last step
+
+On every exit path, failures and refusals included: release your claims with `gary release <itemId> <kind> --run <run>`, and set the action doc to `done` or `failed`. A doc left `queued` or claimed blocks the item, because such docs do not expire.
