@@ -65,6 +65,8 @@ Each item has a short verdict, a story of what happened so far, and cards with s
 - **The bot**: reviews with inline comments, requests for logs, labels, transfers. They are sent after your click. Anything that posts text asks for a second confirm first.
 - **The agent**: work that takes a session, like taking over a PR, addressing review comments, or writing a fix with a test as a draft PR. The request starts within seconds.
 
+Gary never comments on formatting. When the project's formatter or lint autofix would change a PR, the item shows a badge and a "Format" card that commits exactly those fixes to the PR, without taking it over.
+
 On review cards you can uncheck inline comments and switch each open review thread between Fix and Dismiss. Only comments the agent judged valid start on Fix.
 
 When a suggestion is wrong, dismiss its card and say why. The agent never offers that kind of action on the item again and takes your reason into account. "Analyze again" sends the item back to the agent, optionally with a note.

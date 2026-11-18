@@ -15,6 +15,7 @@ This mode builds on the `address-review-comments` skill when it is installed. Re
 1. Check the preconditions in `push-to-pr.md`. When no decision is `fix`, the push checks are not needed, but the PR must be open.
 2. Fetch the threads with the `reviewThreads` query from the review skill, adding `comments(first:1){nodes{databaseId}}`. Map each `threadId` to its first comment's `databaseId`, which the reply endpoint needs. A thread that is already resolved or gone needs no reply.
 3. Fix every `fix` thread in the worktree, with its `note` as extra guidance. One commit for all of them, with a message like `fix: address review feedback` in the project's format. Push it.
+3a. When the item's `autofix.changes` is true, run `format-check.md` against the current head and apply its patch in the same commit as the fixes.
 4. Reply in every handled thread under the writing identity (`accounts.md`): `gh api repos/<owner>/<repo>/pulls/<n>/comments/<databaseId>/replies -f body='…'`. Keep replies to one or two sentences, in the style of `voice.md`, without "I":
    - fixed: `Fixed in <short sha>: <what changed>.`
    - dismissed: the short reason. Use the maintainer's `note` when he gave one, otherwise the thread's `note` from the item doc. Example: `Not needed: the value is already validated by the parser.`

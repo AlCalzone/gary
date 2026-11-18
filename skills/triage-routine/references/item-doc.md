@@ -55,7 +55,7 @@ The action you suggest, for the overview list. It is also the `title` of the rec
 - Bad: `Maybe reply and say that we accept PRs` (wordy)
 - Bad: `URGENT: reply now` (pressure)
 
-Start with one of these verbs: Reply, Decide, Ask, Close, Reopen, Merge, Approve, Request changes, Comment, Address review, Drive, Implement, Start fix, Post analysis, File issue, Take over, Transfer, Convert, Escalate, Label, Assign, React, Rerun CI, Update branch, Mark ready, Mark answer. Use `Decide` for a `reply` that carries the maintainer's decision on an open question. The hint does not repeat the title of the thread. An item without routes has no hint.
+Start with one of these verbs: Reply, Decide, Ask, Close, Reopen, Merge, Approve, Request changes, Comment, Address review, Drive, Format, Implement, Start fix, Post analysis, File issue, Take over, Transfer, Convert, Escalate, Label, Assign, React, Rerun CI, Update branch, Mark ready, Mark answer. Use `Decide` for a `reply` that carries the maintainer's decision on an open question. The hint does not repeat the title of the thread. An item without routes has no hint.
 
 ## `wants` and `wantsReason`
 
@@ -67,6 +67,10 @@ What the agent wants changed on GitHub without a click, as labels and assignees:
 ```
 
 Write it at classification time, only for changes the classification file and the profile allow without a click, and only with labels from the profile's `autoLabels`. `wantsReason` is one sentence that states the last exchange correctly. Both are agent-owned and replaced with the doc. Leave both out when nothing is wanted. The routine compares `wants` with the item's current labels and assignees every run and applies what is missing.
+
+## `autofix`
+
+PRs only. The result of the format check (`triage-review-pr`, `references/format-check.md`): `{ "changes": true, "files": 2, "lines": 14, "tools": ["oxfmt"] }`. The board shows it as a small badge. Formatting is never a finding.
 
 ## `solved`
 
@@ -172,11 +176,12 @@ Per type:
   Reports for projects outside the org get a `close` with a redirect reply.
 - **`drive`**: the agent drives the PR on its own for up to `params.maxRounds` rounds (1 to 3, default 3): it judges and addresses the open review comments, pushes, requests a review from the profile's review bot and repeats. Leave `text` out.
 
-**Who may push to a PR** (the one rule, other files point here): pushing our commits to a contributor's PR is always a take-over.
+**Who may push to a PR** (the one rule, other files point here): pushing our commits to a contributor's PR is always a take-over. The one exception is `format`: it applies only what the project's formatter and lint autofix change, on files the PR already changed, so it sets no `takenOver` and unlocks neither `drive` nor `address_review`.
 
 - On PRs by the maintainer, the bot or with `authorType: "copilot"`, and on contributor PRs with `takenOver: true`, judged open threads get `drive` or `address_review`. When the profile's `reviewBots` is not empty and open review threads are the only thing left, recommend `drive` and offer `address_review` as the alternative, for when he wants to decide per thread. Otherwise `address_review`.
 - On a contributor PR without `takenOver: true`, never `drive` and never `address_review`. When we would fix the threads or findings ourselves, recommend `take_over` with `mode: "push"`. Offer a `review` with `event: "request_changes"` or `"comment"` as the alternative, for when the contributor should do it himself. Taking over beats asking when the change is small and quick, or the contributor is slow or gone. A round trip with a contributor costs days for a change that takes a minute. When the contributor is active and the change needs his knowledge, recommend the `review` and leave out `take_over`. A drive pushes commits, which can dismiss an earlier approval. The item a drive returns says in `state` when the PR needs a new approval.
 - **`open`**: only for a blocked item (`blocked` set by the routine after a safety-filter stop or three failed analyses). `as: "me"`, no text. The board opens the thread on GitHub. Never write it otherwise.
+- **`format`**: `as: "agent"`, title `Format: fix formatting and lint`, no text. Offered when `autofix.changes` is true and the bot can push to the PR branch. One click applies exactly the autofix result as one commit by the bot. When formatting is the only problem of an otherwise clean PR, it is the recommended route and the item is `easy`. Otherwise it is a quiet alternative.
 - **`chore`**: one bot action from the list in SPEC.md, with that action's params in `params`. Example: `{ "type": "chore", "as": "bot", "params": { "action": "answer_discussion", "commentId": "DC_kwDO…" } }`. Use it as the recommended route only when the chore is the whole job, like marking the correct answer on a discussion or rerunning a flaky CI job.
 
 An item without routes is not shown on the board. It keeps its `section` as classified, `story`, `findings` and `threads`. It has no `hint` and no `effortMinutes`, and `state` says why nothing is to do, like `Waits for the reporter's debug log.` When you rewrite an item that had a hint, send `"hint": null` and `"effortMinutes": null`, so no old placeholder survives. Write no routes, and never a placeholder route, in these cases:
@@ -218,6 +223,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 11a. No route has a type listed in the item's `dismissedRoutes`. A `close` with reason `not_planned` on a feature request is not the only route.
 12. An `address_review` route, or a `take_over` route on an item with threads, appears only when `threads` is non-empty and no thread is `unjudged`. Its title counts the `valid` threads, the only ones that default to fix, like `Address review: 3 of 4 threads` or `Take over: fix 1 review comment`.
 12b. `analyzedBy` is absent or `"fallback"`. With `"fallback"`, `findings` has the `question` entry about the safety-filter stop.
+12d. `autofix`, when present, is `{ changes: boolean, files: number, lines: number, tools: [string] }`. A `format` route appears only with `autofix.changes: true`. No finding, inline comment, `state` or `story` is about formatting or lint autofix.
 12c. `wants`, when present, is `{ labels: { add: [string], remove: [string] }, assignees: [string] }` with every label in the profile's `autoLabels`, and comes with a non-empty one-sentence `wantsReason`.
 13. `rounds`, when present, is an array of `{ n, fixed, dismissed, open }`: `n` a number, `fixed` and `open` arrays of strings, `dismissed` an array of `{ summary, reason }`. `takenOver`, when present, is `true`.
 14. `links`, when present, is an array of `{label, url}` with `https://` URLs.

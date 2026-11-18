@@ -63,6 +63,8 @@ The section follows his effort to decide, not the number of steps after his clic
 - A duplicate: `close` with reason `duplicate`, `params.duplicateOf` and a reply that links the original.
 - A report that belongs in a repo from the profile's `relatedRepos`: a `move` route to that repo (`item-doc.md`). A report for a project outside the org: `close` with reason `not_planned` and a reply that links the right place.
 
+- A PR whose only problem is formatting or lint autofix (`autofix.changes`, nothing else): recommended `format`, with `merge` as `me` as the alternative. A red CI from only the lint or format job does not count against it.
+
 ### `almost`: he has to think
 
 He has to think about whether to act or about the content: a behavior change, several threads with mixed verdicts, a verdict that needs his domain check, a decision on an open question. The route for PRs we would fix ourselves follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. `effortMinutes` is 5 or more.

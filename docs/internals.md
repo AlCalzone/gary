@@ -217,6 +217,10 @@ Every snapshot entry carries `facts`, computed in code: the time-sorted `timelin
 
 Quick classification has two tiers, set by `fastTier` in the instance config. The fast tier (Haiku) settles only cases the facts decide and hands up everything else. The standard tier (Sonnet) does the rest. With `shadow`, both run and only the standard result is stored, while `gary shadow record` keeps the pairs and `gary shadow report` compares them. `triage-learn` proposes `on` once 40 pairs show at least 95 percent section agreement.
 
+## Format check and the format route
+
+Gary never reviews style. A full PR review runs the project's formatter and lint autofix on the PR's changed files in a throwaway worktree of the base branch, with the tools and configs of the instance's checkout, and stores the result as `autofix: { changes, files, lines, tools }`. The board shows it as a badge. The agent route `format` (title `Format: fix formatting and lint`) applies exactly that result to the PR's branch as one bot commit, on files the PR already changed. It is no take-over: it sets no `takenOver` and unlocks neither `drive` nor `address_review`. It refuses when the head moved since `reviewedSha` or the result would touch other files, and it never resolves conflicts. The profile's `rules/review.md` names the commands, the CI jobs that fail on formatting, and the commit message.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):
