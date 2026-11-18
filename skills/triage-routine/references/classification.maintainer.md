@@ -142,9 +142,11 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 `priority` is 1 for the top of a section. The maintainer works a section from the top, so cheap decisions come first. Order within a section:
 
+In every section, other people come before our own work: first items by outside contributors and reporters, then items by the maintainer himself, then items by bots and agents. Someone outside is waiting on the first group, and nobody waits on the others. Within each of these groups:
+
 - `active`: longest wait first.
 - `easy`: lowest `effortMinutes` first, then merges, closes, answers.
-- `almost` and `review`: lowest `effortMinutes` first, then contributor items before bot items, then highest `waitingDays`.
+- `almost` and `review`: lowest `effortMinutes` first, then highest `waitingDays`.
 - `deferred` and `hardware`: newest `updatedAt` first.
 
 ## Autonomous labels and assignments

@@ -2454,7 +2454,8 @@ function buttonTip(b, inst) {
   if (b.actor === "agent") return "The agent does this";
   if (b.actor === "bot") return botLogin(inst) + (b.confirm ? " does this after you confirm" : " does this now");
   if (b.actor === "own") return "Runs right away under your GitHub login" + (b.confirm ? ", after you confirm" : "");
-  return b.copy ? "Copies the text and opens GitHub, you post it" : "Opens GitHub, you do it there";
+  // A route without text has nothing to copy, and its label does not start with "Copy"
+  return b.copy && /^Copy\b/.test(str(b.label)) ? "Copies the text and opens GitHub, you post it" : "Opens GitHub, you do it there";
 }
 
 function repoBase(d) {
