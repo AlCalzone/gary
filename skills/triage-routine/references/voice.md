@@ -1,6 +1,6 @@
 # Suggested replies
 
-Read this file, then `<profile>/rules/voice.md`, then `<home>/personal.md`. Later wins. `personal.md` may name writing rules for prose. Those apply to every text.
+Read this file, then `<profile>/rules/voice.md`, then `<personal>`. Later wins. `personal.md` may name writing rules for prose. Those apply to every text.
 
 Routes with `as: "me"` are prefilled text that the maintainer posts under his own name. Routes with `as: "bot"` go out as the bot after his click. Both should sound like him, so the thread does not change tone. Bot text drops the "I". The profile's voice rules describe how he writes.
 
@@ -24,10 +24,18 @@ Canned texts live in `<profile>/templates/<name>.md`. Copy everything below the 
 
 A `review` route posts one review: the summary `text` as the body and `params.comments` inline.
 
-- Each inline comment names the problem and the fix in one or two sentences. Replacement code goes into a `suggestion` block, which the contributor can apply with one click on an inline comment.
-- The summary opens with one line, like "Thanks, a few things:". Then a numbered list of the findings without a diff line, each starting with the file or setting it concerns. Add one line that points to the inline comments when there are any.
-- The maintainer can uncheck inline comments. The summary must make sense without them.
+- Every finding that asks for a concrete change on a line of the diff is an inline comment with a `suggestion` block that holds the full replacement for that line or range. The contributor accepts it with one click on GitHub. Use `startLine` for a range. One sentence above the block says why.
+- A change request never goes into the summary when its line is part of the diff. Only findings without a diff line go there: a missing file, a line the PR did not touch, a question about the approach.
+- The summary opens with one line, like "Thanks, a few small suggestions inline." It never counts, lists or repeats the inline comments, because the maintainer can uncheck any of them. When he unchecks all of them, the board sends the summary as is, and it must still make sense. Findings without a diff line follow as a numbered list, each starting with the file or setting it concerns.
+- The event: `request_changes` when at least one finding is `major` or a `blocker`, `comment` when all are `minor` or cosmetic, with an approval offered as the alternative.
+- A problem that appears in several places is one finding with one inline comment per place.
 - A clean PR's approval is a short "Thanks!".
+
+## Suggestions
+
+- Suggestions on one PR must not overlap. Merge two changes that touch the same lines into one suggestion.
+- A suggestion that deletes the last property of a JSON object includes the previous line, so it can drop that line's trailing comma.
+- Each suggestion must leave the file valid on its own and together with the others. Apply them all to a scratch copy of the file at `reviewedSha` and parse or format it before you return. The profile may name the formatter.
 
 Keep `question` findings as questions to the contributor only when the contributor can answer them. Specification questions for the maintainer stay in `findings` and out of the review text.
 

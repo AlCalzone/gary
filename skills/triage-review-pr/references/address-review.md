@@ -1,6 +1,6 @@
 # Mode: address review
 
-The maintainer clicked `address_review` on a PR. The action file's `params.decisions` holds one entry per open thread: `{ threadId, decision: "fix" | "dismiss", note }`. Its `text` is an optional note for the whole request. Both are the maintainer's instructions. You fix the threads marked `fix`, reply in every thread, and resolve them.
+The maintainer clicked `address_review` on a PR by the maintainer, the bot or Copilot, or on a contributor PR with `takenOver: true`. On any other contributor PR, return `status: "failed"`: pushing there is a take-over, and `take-over.md` uses the steps below for its threads. The action file's `params.decisions` holds one entry per open thread: `{ threadId, decision: "fix" | "dismiss", note }`. Its `text` is an optional note for the whole request. Both are the maintainer's instructions. You fix the threads marked `fix`, reply in every thread, and resolve them.
 
 This mode builds on the `address-review-comments` skill when it is installed. Read it and use its recipes for fetching threads, replying and resolving. The recipes below cover the same steps when it is missing. The board settles that skill's open questions in advance:
 

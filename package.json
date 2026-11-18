@@ -6,6 +6,10 @@
 	"bin": {
 		"gary": "bin/gary"
 	},
+	"scripts": {
+		"test": "node test/run.mjs",
+		"test:page": "node test/run.mjs --page"
+	},
 	"engines": {
 		"node": ">=24"
 	},

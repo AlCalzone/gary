@@ -48,3 +48,5 @@ Never force-push.
 ## Who counts as "us"
 
 A comment is from our side when its author is the maintainer (`me`), a login in the profile's `maintainers`, the bot or a login in `botLogins`, or has author association `OWNER`, `MEMBER` or `COLLABORATOR`. Comments posted through the board appear as the bot, so they count as the maintainer's reply.
+
+Automated comments are the exception. The bot account also posts comments from workflows, where no human decided to post. Such a comment does not count as our request or our reply. The profile's `rules/classification.md` lists these automated comment patterns. A bot comment that matches no listed pattern counts as ours.

@@ -9,18 +9,18 @@ You triage one issue or discussion in the repo and return one item doc. The main
 
 ## Paths and reading order
 
-Use the paths the caller passed, or run `gary paths`: `<core>`, `<home>`, `<profile>`, `<state>`. The repo is `profile.repo`, written below as `<owner>/<repo>`.
+Use the paths the caller passed, or run `gary paths`: `<core>`, `<home>`, `<profile>`, `<state>`, `<checkout>` (the local clone of the repo), `<config>` and `<personal>`. The repo is `profile.repo`, written below as `<owner>/<repo>`.
 
 Read in this order. A later file overrides an earlier one:
 
 1. This skill and `<core>/SPEC.md` (the `items/<id>.json` shape and the route table).
 2. From the core routine skill: `<core>/skills/triage-routine/references/item-doc.md`, `voice.md`, `classification.md` and `accounts.md`.
 3. `<profile>/rules/issues.md`, and the profile's `classification.md` and `voice.md`.
-4. `<home>/personal.md`, including any writing rules it names.
+4. `<personal>`, including any writing rules it names.
 
 The ground rules below cannot be overridden by a profile or by `personal.md`.
 
-The caller gives you the item's snapshot entry, the previous item doc if any, maybe a maintainer instruction, and a scratch directory. It also says whether this is a triage or fix mode. Fix mode comes from a `follow_up` route with `as: "agent"`, or a `start_fix` request with optional `text` and `params.finding`. In fix mode, skip to `${CLAUDE_SKILL_DIR}/references/autofix.md`. When the user invokes this skill directly, fetch the data yourself and use a new directory under `<state>/manual/`.
+The caller gives you the item's snapshot entry, the previous item doc if any, maybe a maintainer instruction, and a scratch directory. Without a snapshot entry, for example in a standalone run, get it with `gary item issue-<n>` or `gary item disc-<n>`. The GitHub-derived fields of the doc come only from that entry: kind, number, title, url, author, `authorType`, labels, `updatedAt` and `isAnswered`. It also says whether this is a triage or fix mode. Fix mode comes from a `follow_up` route with `as: "agent"`, or a `start_fix` request with optional `text` and `params.finding`. In fix mode, skip to `${CLAUDE_SKILL_DIR}/references/autofix.md`. When the user invokes this skill directly, fetch the data yourself and use a new directory under `<state>/manual/`.
 
 ## Ground rules
 
@@ -32,7 +32,7 @@ Address the reporter directly in every suggested reply. The reply must be ready 
 
 ## 1. Gather
 
-Read the whole thread. The snapshot holds only the last 5 comments.
+Read the whole thread with the commands below. They are for reading the content. The snapshot entry stays the source of the GitHub-derived fields, and it holds only the last 5 comments.
 
 Issue:
 
@@ -61,7 +61,9 @@ Evidence usually decides the case. Read it before you form an opinion from the d
   gh search issues --repo <owner>/<repo> --include-prs "<terms>" --limit 20 --json number,title,state,url,updatedAt
   gh api graphql -f query='query{search(type:DISCUSSION,first:20,query:"repo:<owner>/<repo> <terms>"){nodes{... on Discussion{number title url answer{id}}}}}'
   ```
-- Fixes already made: search the changelog in the main checkout and `gh release list --repo <owner>/<repo> --limit 10`. A report on an old version with a matching changelog entry is answered by "update to vX.Y.Z".
+  An empty result is no proof that there is no duplicate. GitHub search misses word forms and does not search attachments. Run a second search the way the profile's `rules/issues.md` describes, or with other terms when it describes none. When you are still unsure, say so in `story`.
+- An open PR that fixes it: when the issue is in a PR's `closedByPullRequestsReferences`, or a PR is clearly its companion, the decision lives on that PR. Give the issue no routes, and let `state` name the PR item, like `Decided with pr-412.`
+- Fixes already made: search the changelog in `<checkout>` and `gh release list --repo <owner>/<repo> --limit 10`. A report on an old version with a matching changelog entry is answered by "update to vX.Y.Z".
 - Docs: the project's troubleshooting docs, as the profile names them. A match is an answer with a link.
 
 ## 4. Decide
@@ -71,9 +73,9 @@ Pick the one outcome that fits best. Each maps to a section and a recommended ro
 1. **Answer directly.** The evidence, the docs or the changelog explain it. `active` when the reporter waits for us, otherwise `easy`. Route: `reply` as `me` with the answer. For a discussion where an existing comment already answers it, a `chore` route with `action: "answer_discussion"` and that comment's `id` as `params.commentId`.
 2. **Ask for missing info.** Name the exact thing and what to do while capturing it. `active` for a new report. When we asked before and the reporter has not answered: `deferred` and no routes, until a close is due (`item-doc.md`). A log request is a `request_logs` route from the profile's template, when the profile has one. Any other info request is a `reply` route as `me`.
 3. **Duplicate.** Only after the search found a clear match. `easy`. Route: `close` as `me` with `params.reason: "duplicate"`, `params.duplicateOf` and a short reply that links the original. Add the duplicate to `links`.
-4. **Bug a test can reproduce.** The evidence shows the input, and the code mishandles it in a way the project's test setup can replay. The profile says what that setup can emulate. `almost`. Put the repro plan in `story`: which module, which input, which expected result. Add a `follow_up` route with `as: "agent"` whose `text` holds the plan, and point the finding with the evidence at it with `routeId`. It is the recommended route unless the reporter waits for an answer first. Then a `reply` route is recommended and the `follow_up` is the alternative. Without a writing identity that may push (`accounts.md`), use `follow_up` as `bot` or `me` to file the issue instead.
+4. **Bug a test can reproduce.** The evidence shows the input, and the code mishandles it in a way the project's test setup can replay. The profile says what that setup can emulate. `almost`. Put the repro plan in `story`: which module, which input, which expected result. Add a `follow_up` route with `as: "agent"` whose `text` holds the plan. The finding with the evidence gets the route's id as `routeId`, and the route gets the finding's index as `params.finding`. It is the recommended route unless the reporter waits for an answer first. Then a `reply` route is recommended and the `follow_up` is the alternative. Without a writing identity that may push (`accounts.md`), use `follow_up` as `bot` or `me` to file the issue instead.
 5. **Needs real hardware or an environment the agent lacks.** `hardware`. Say plainly in `story` why no repro is possible. Route: `reply` as `me` with what the reporter can try or whom to contact.
-6. **Feature request.** `deferred`, or `almost` when it only needs the maintainer's yes or no. Put that open question in `state`. Route: `reply` as `me` with the maintainer's likely answer, using the "I'll accept a PR that …" form when the request is reasonable and small. When the request deserves tracking as a planned change, offer a `follow_up` route as `bot` that files it, or as `me` when the issue should state his decision.
+6. **Feature request.** `deferred`, or `almost` when it only needs the maintainer's yes or no. Put that open question in `state`. Route: `reply` as `me` with the maintainer's likely answer, using the "I'll accept a PR that …" form when the request is reasonable and small. When the request deserves tracking as a planned change, offer a `follow_up` route as `bot` that files it, or as `me` when the issue should state his decision. Add the delegate route from `item-doc.md` ("Delegate to an agent") when an agent could attempt it. A close as not planned is never the only route on a feature request, and a route type in the item's `dismissedRoutes` never comes back.
 
 Also common:
 
@@ -97,6 +99,6 @@ Read "Solved and closed threads" in `classification.md` before you write the doc
 
 Delete the downloaded files when you are done, because they can hold secrets. Keep a short note of the findings in your scratch directory if they are long.
 
-Your final report is the item doc as one JSON object and nothing else: no prose, no code fence. Set `reviewDepth` to `full` and `reviewedAt` to now. Copy the GitHub-derived fields from the snapshot entry. Check the doc against the validation checklist in `item-doc.md`.
+Your final report is the item doc as one JSON object and nothing else: no prose, no code fence. Set `reviewDepth` to `full` and `reviewedAt` to now. Copy the GitHub-derived fields from the snapshot entry. Keep the existing `priority`, or leave it out for a new item: the routine sets it. An item without routes has no `hint` and no `effortMinutes` (`item-doc.md`). Check the doc against the validation checklist in `item-doc.md`.
 
 If something stopped the triage, like a file you could not download, still return a valid doc. Put the reason in `state` and choose the route that removes the obstacle, like a request to upload the file here. When no route can help yet, set `reviewDepth: "pending"` and leave out routes. The routine retries it on its next run.

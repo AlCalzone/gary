@@ -13,13 +13,13 @@ Opening the draft PR is one of the few things the routine may do without a click
 ## 1. Worktree
 
 ```bash
-git -C <main checkout> fetch origin <default branch>
-git -C <main checkout> worktree add -b triage/issue-<n> <worktree> origin/<default branch>
+git -C <checkout> fetch origin <default branch>
+git -C <checkout> worktree add -b triage/issue-<n> <worktree> origin/<default branch>
 ```
 
 `<worktree>` is `<state>/worktrees/triage-issue-<n>`, unless the profile names another place. Then run the project's setup command from the profile in the worktree.
 
-Subagent shells reset the working directory between calls. Prefix every later command with `cd <worktree> &&`, or use `git -C <worktree>`. A command that runs in the main checkout by mistake changes it.
+Subagent shells reset the working directory between calls. Prefix every later command with `cd <worktree> &&`, or use `git -C <worktree>`. A command that runs in `<checkout>` by mistake changes it.
 
 For a discussion, use `triage/disc-<n>` and `triage-disc-<n>`. For a fix that a PR's finding suggested, use `triage/pr-<n>-followup` and `triage-pr-<n>-followup`, and reference the PR in the body instead of `Fixes`. If the branch or the directory exists, a previous attempt is there. Read its state and continue from it, or stop and say so in `state`.
 
@@ -58,7 +58,7 @@ gh pr create --repo <owner>/<repo> --draft --base <default branch> --head triage
 
 The title follows the project's format for PR titles.
 
-Remove the worktree after the PR is open: `git -C <main checkout> worktree remove <worktree>`. The branch stays on GitHub.
+Remove the worktree after the PR is open: `git -C <checkout> worktree remove <worktree>`. The branch stays on GitHub.
 
 ## 6. Return
 

@@ -2,7 +2,7 @@
 
 The maintainer clicked `drive` on a PR. You drive the PR on your own for up to `params.maxRounds` rounds (1 to 3, default 3). Each round judges and addresses the open review comments, pushes, and requests a review from the profile's review bot. The next round starts when that review has arrived.
 
-`drive` is only valid on PRs by the maintainer, the bot or with `authorType: "copilot"`, and on contributor PRs whose item has `takenOver: true`, and only when the profile's `reviewBots` is not empty. Check that first. Otherwise, return `status: "failed"` without touching the PR.
+When `drive` is allowed and when it is preferred over `address_review` is the rule in `<core>/skills/triage-routine/references/item-doc.md`, "Who may push to a PR". Check that first. Otherwise, return `status: "failed"` without touching the PR.
 
 ## One round per subagent
 
@@ -51,7 +51,7 @@ When the drive ends, for any of the reasons below, return `{ status: "done", res
 - `threads` with the threads still open and your verdicts,
 - `reviewedSha` set to the last pushed head,
 - routes that fit: `merge` as `me` when nothing is open and CI passes. Otherwise `address_review` when the open threads need his decision, or `review` when findings for the contributor remain,
-- a `state` that names why the drive stopped, like `The review bot found nothing new after round 2.` or `CI fails in the build step, which needs a decision on the API.`
+- a `state` that names why the drive stopped, and says when the PR needs a new approval because our pushes dismissed the earlier one, like `The review bot found nothing new after round 2.` or `CI fails in the build step, which needs a decision on the API.`
 
 Then delete the state file.
 

@@ -20,7 +20,7 @@ Ask for:
 - whether a bot account posts for him. If yes: its login and the path of a file with its token. The token file stays on his machine. Never print it.
 - without a bot: whether agents may push and post under his own `gh` login (`allowOwnTokenPushes`). Explain the tradeoff in one sentence: with it, agents can open fix PRs and address reviews, without it every bot route becomes text he posts himself.
 
-Write these into `<home>/config.json` (SPEC.md "Home"). Leave the limits at their defaults.
+Write these into `<config>` (SPEC.md "Home"). Leave the limits at their defaults.
 
 ## 2. Draft the profile
 
@@ -45,7 +45,11 @@ Show him a short summary per file and let him edit before you go on. He owns the
 
 ## 3. Personal rules
 
-Ask whether he has writing rules or personal preferences for replies. Put them, or a pointer to a file that holds them, into `<home>/personal.md`. That file is read last and wins over the profile.
+Ask whether he has writing rules or personal preferences for replies. Put them, or a pointer to a file that holds them, into `<personal>`. That file is read last and wins over the profile.
+
+## How Gary learns
+
+Tell him this in two or three sentences. The board logs his decisions locally: dismissed cards, alternatives he picks over the recommendation, drafts he rewrites, thread verdicts he flips, notes to the agent. Once a day, the `triage-learn` skill looks for recurring patterns and proposes up to three small rules for the profile or `personal.md`. He accepts or dismisses each proposal on the board, and nothing changes in his rules without that.
 
 ## 4. Check
 

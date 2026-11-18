@@ -1,0 +1,432 @@
+// Drives headless Chrome against the real board server (dry run) through the DevTools protocol.
+// Needs Chrome or Chromium. CHROME names the binary, default google-chrome. GitHub reads go to the fake gh.
+import { spawn } from "node:child_process";
+import { cpSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { GARY, ROOT, TEST_DIR, freePort, makeHome, removeDir, tempDir } from "../lib.mjs";
+
+const PORT = await freePort();
+const DEBUG_PORT = await freePort();
+const DIR = tempDir();
+const { home: HOME, env: ENV } = makeHome(DIR, { port: PORT });
+const BOARD = join(HOME, "state", "board");
+const FIXTURE_ITEMS = JSON.parse(readFileSync(join(TEST_DIR, "fixtures", "board-items.json"), "utf8"));
+const writeFixtureItems = () => {
+	for (const [id, data] of Object.entries(FIXTURE_ITEMS)) writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(data));
+};
+writeFixtureItems();
+const SHOT = process.argv[2];
+const PAGE = join(DIR, "page.html");
+cpSync(process.env.BOARD_HTML ?? join(ROOT, "board", "board.html"), PAGE);
+
+let server;
+const STUB = join(DIR, "guard-stub.json");
+const setStub = (o) => writeFileSync(STUB, JSON.stringify({ "*": { state: "OPEN" }, ...o }));
+setStub({});
+function startServer() {
+	server = spawn(process.execPath, [join(ROOT, "server", "server.mjs"), "--dry-run", "--port", String(PORT), "--page-file", PAGE], { stdio: ["ignore", "pipe", "pipe"], env: { ...ENV, GARY_GUARD_STUB: STUB } });
+	return new Promise((r) => server.stderr.on("data", (d) => {
+		if (/Board on/.test(d)) r();
+		else process.stderr.write("[server] " + d);
+	}));
+}
+await startServer();
+
+const chrome = spawn(process.env.CHROME ?? "google-chrome", ["--headless=new", "--disable-gpu", "--no-sandbox", `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${join(DIR, "prof")}`, "--hide-scrollbars", "about:blank"], { stdio: "ignore" });
+let tabs;
+for (let i = 0; i < 50; i++) {
+	try { tabs = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`)).json(); if (tabs.length) break; } catch {}
+	await sleep(200);
+}
+const page = tabs.find((t) => t.type === "page");
+const ws = new WebSocket(page.webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener("open", r));
+let seq = 0;
+const waiting = new Map();
+const problems = [];
+ws.addEventListener("message", (e) => {
+	const m = JSON.parse(e.data);
+	if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id); }
+	if (m.method === "Runtime.exceptionThrown") problems.push("exception: " + m.params.exceptionDetails.exception?.description);
+	if (m.method === "Log.entryAdded" && m.params.entry.level === "error" && !/favicon|ERR_NAME|net::|avatars|github\.com/.test(m.params.entry.text + m.params.entry.url)) problems.push("log: " + m.params.entry.text);
+	if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") problems.push("console: " + m.params.args.map((a) => a.value ?? a.description).join(" "));
+});
+const cmd = (method, params = {}) => new Promise((r) => { const id = ++seq; waiting.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
+const ev = async (expr) => {
+	const r = await cmd("Runtime.evaluate", { expression: `(async () => { ${expr} })()`, awaitPromise: true, returnByValue: true });
+	if (r.result.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? JSON.stringify(r.result.exceptionDetails));
+	return r.result.result.value;
+};
+await cmd("Runtime.enable"); await cmd("Log.enable"); await cmd("Page.enable");
+await cmd("Emulation.setDeviceMetricsOverride", { width: 1100, height: 1400, deviceScaleFactor: 1, mobile: false });
+await cmd("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+await cmd("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
+
+const results = [];
+const ok = (name, v) => results.push((v ? "PASS " : "FAIL ") + name);
+const until = async (expr, ms = 5000) => {
+	const end = Date.now() + ms;
+	while (Date.now() < end) {
+		try { if (await ev(`return !!(${expr});`)) return true; } catch { /* page is reloading */ }
+		await sleep(100);
+	}
+	return false;
+};
+const json = (f) => JSON.parse(readFileSync(f, "utf8"));
+const itemFile = (id) => join(BOARD, "items", id + ".json");
+const actionFiles = () => readdirSync(join(BOARD, "actions")).filter((n) => n.endsWith(".json")).map((n) => json(join(BOARD, "actions", n)));
+const fileUntil = async (fn, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { try { if (fn()) return true; } catch {} await sleep(150); } return false; };
+const put = (id, data) => {
+	const f = join(DIR, "put.json");
+	writeFileSync(f, JSON.stringify(data));
+	const r = spawn(process.execPath, [GARY, "put", "--merge", "items", id, f], { env: ENV });
+	return new Promise((res) => r.on("exit", res));
+};
+
+try {
+	ok("rows render from the server", await until(`document.querySelectorAll("#board .row").length > 0`));
+	ok("title comes from the board info", await until(`document.getElementById("board-title").textContent === "widgets triage" && document.title === "widgets triage"`));
+	ok("dry run marker shows", await ev(`return !document.getElementById("dry-run").hidden;`));
+	ok("connection icon shows connected", await until(`document.getElementById("conn").dataset.state === "connected"`));
+	ok("avatar or placeholder in every row", await ev(`return [...document.querySelectorAll("#board .row")].every((r) => r.querySelector(".r-author .avatar"));`));
+	ok("avatar src through the DOM", await ev(`const i = document.querySelector("#board .row img.avatar"); return !!i && /^https:\\/\\/github\\.com\\/[A-Za-z0-9-]+\\.png\\?size=40$/.test(i.src) && i.loading === "lazy" && i.referrerPolicy === "no-referrer" && i.alt === "";`));
+	ok("author name shown", await ev(`return !!document.querySelector("#board .row .a-name")?.textContent;`));
+	ok("author type icon sits in the second-line cluster", await ev(`return [...document.querySelectorAll(".r-meta svg")].some((s) => /^(Maintainer|Bot|Copilot)$/.test(s.getAttribute("aria-label"))) && !document.querySelector(".r-author svg");`));
+	const align = await ev(`const rows = [...document.querySelectorAll("#board .row")];
+		const left = (el) => el.getBoundingClientRect().left;
+		const firstChar = (t) => { const r = document.createRange(); r.setStart(t.firstChild, 0); r.setEnd(t.firstChild, 1); return r.getBoundingClientRect().left; };
+		const spread = (a) => (a.length ? Math.max(...a) - Math.min(...a) : 0);
+		const meta = rows.filter((r) => r.querySelector(".r-meta svg"));
+		return { avatar: spread(rows.map((r) => left(r.querySelector(".r-author .avatar")))), title: spread(rows.map((r) => firstChar(r.querySelector(".r-title")))),
+			metaVsNum: meta.length ? Math.max(...meta.map((r) => Math.abs(left(r.querySelector(".r-meta svg")) - left(r.querySelector(".r-num"))))) : 99, metaRows: meta.length,
+			oneLine: rows.filter((r) => !r.querySelector(".r-meta") && !r.querySelector(".r-hint") && r.querySelector(".r-title").getBoundingClientRect().height < 30).every((r) => r.getBoundingClientRect().height < 52) };`);
+	ok("avatars share one left edge " + JSON.stringify(align), align.avatar < 1);
+	ok("titles start at one x", align.title < 1);
+	ok("second-line icons start under the number", align.metaRows > 0 && align.metaVsNum < 1);
+
+	// Hot reload of the page
+	const touchPage = () => writeFileSync(PAGE, readFileSync(PAGE, "utf8") + "\n");
+	await ev(`window.__marker = 1;`);
+	touchPage();
+	ok("page reloads itself after a board.html change", await until(`window.__marker === undefined && document.querySelectorAll("#board .row").length > 0`, 8000));
+	await until(`document.getElementById("conn").dataset.state === "connected"`);
+	await ev(`openDetail("issue-9471"); window.__marker = 2;`);
+	await until(`document.getElementById("detail").open`);
+	touchPage();
+	await sleep(1500);
+	ok("open dialog defers the reload and shows the control", await ev(`return window.__marker === 2 && document.getElementById("detail").open && !document.getElementById("reload").hidden;`));
+	await ev(`document.getElementById("d-close").click();`);
+	ok("closing the dialog cleanly reloads", await until(`window.__marker === undefined && document.querySelectorAll("#board .row").length > 0`, 8000));
+	await until(`document.getElementById("conn").dataset.state === "connected"`);
+
+	// Probe items with routes, written as files like the routine does
+	const PR = "https://github.com/acme/widgets/pull/12";
+	const ISSUE = "https://github.com/acme/widgets/issues/21";
+	const probe = (kind, number, url, extra) => ({ kind, number, title: "Probe " + number, url, author: "someone", authorType: "contributor", section: "easy", priority: 0, effortMinutes: 1, reviewDepth: "full", reviewedAt: new Date(Date.now() - 3600000).toISOString(), ...extra });
+	const writeProbes = () => {
+		writeFileSync(itemFile("pr-12"), JSON.stringify(probe("pr", 12, PR, {
+			// address_review needs a taken-over contributor PR
+			takenOver: true,
+			hint: "Request changes: two style nits",
+			threads: [
+				{ id: "t1", author: "copilot-pull-request-reviewer", path: "src/a.ts", line: 4, summary: "Real bug", verdict: "valid" },
+				{ id: "t2", author: "someone", path: "src/b.ts", line: 9, summary: "Not needed", verdict: "wrong" },
+			],
+			routes: [
+				{ id: "r1", type: "review", as: "bot", title: "Request changes: two style nits", recommended: true, text: "Thanks, two nits.", params: { event: "request_changes", comments: [{ id: "c1", path: "src/a.ts", line: 3, text: "Use const" }, { id: "c2", path: "src/b.ts", startLine: 7, line: 9, text: "Rename" }] } },
+				{ id: "r2", type: "merge", as: "me", title: "Merge: after the nits" },
+				{ id: "r3", type: "address_review", as: "agent", title: "Take over: address the review", text: "" },
+				{ id: "r4", type: "take_over", as: "agent", title: "Take over: replace the PR", params: { mode: "replace" }, callout: "The fork does not allow pushes." },
+			],
+		})));
+		writeFileSync(itemFile("issue-21"), JSON.stringify(probe("issue", 21, ISSUE, {
+			hint: "Reply: a PR is welcome",
+			routes: [
+				{ id: "r1", type: "reply", as: "me", title: "Reply: a PR is welcome", recommended: true, text: "A PR is welcome!" },
+				{ id: "r2", type: "request_logs", as: "bot", title: "Ask: debug log", text: "Please post a driver log on loglevel debug." },
+				{ id: "r3", type: "close", as: "me", title: "Close: duplicate of #123", params: { reason: "duplicate", duplicateOf: 123 }, text: "" },
+				{ id: "r4", type: "follow_up", as: "me", title: "File issue: as you", params: { title: "A & B" }, text: "Line 1" },
+			],
+		})));
+		writeFileSync(itemFile("issue-23"), JSON.stringify(probe("issue", 23, "https://github.com/acme/widgets/issues/23", { hint: "Wait: the reporter sends a log", routes: [] })));
+		const simpleReply = [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks", recommended: true, text: "Thanks!" }];
+		writeFileSync(itemFile("issue-24"), JSON.stringify(probe("issue", 24, "https://github.com/acme/widgets/issues/24", { hint: "Reply: thanks", routes: simpleReply })));
+		writeFileSync(itemFile("issue-25"), JSON.stringify(probe("issue", 25, "https://github.com/acme/widgets/issues/25", { hint: "Reply: thanks", routes: simpleReply })));
+	};
+	writeProbes();
+	await until(`!!document.querySelector('.row[data-id="issue-25"]')`);
+	const revealAll = () => ev(`for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden) b.click();`);
+	await revealAll();
+	ok("served hint colors the action", await ev(`return document.querySelector('.row[data-id="pr-12"] .r-hint .h-act')?.textContent === "Request changes" && document.querySelector('.row[data-id="pr-12"] .r-hint').classList.contains("act-push");`));
+	const openItem = async (id) => {
+		await ev(`if (document.getElementById("detail").open) document.getElementById("d-close").click();`);
+		await until(`!document.getElementById("detail").open`);
+		await ev(`openDetail(${JSON.stringify(id)});`);
+		return until(`document.getElementById("detail").open && detail.id === ${JSON.stringify(id)}`);
+	};
+	const closeItem = async () => { await ev(`document.getElementById("d-close").click();`); await until(`!document.getElementById("detail").open`); };
+	const openCardText = `(document.querySelector("#d-routes .card.open")?.textContent ?? "")`;
+	const cardButton = (label) => `[...document.querySelectorAll("#d-routes .card.open .card-actions button")].find((b) => b.textContent === ${JSON.stringify(label)})`;
+	const clickCard = (i) => ev(`document.querySelectorAll("#d-routes .card")[${i}].querySelector(".card-head").click();`).then(() => sleep(150));
+	const press = (label) => ev(`${cardButton(label)}.click();`);
+	const rowButton = (i, label) => `[...document.querySelectorAll("#d-routes .card")[${i}].querySelectorAll(".card-actions button")].find((b) => b.textContent === ${JSON.stringify(label)})`;
+	ok("items without routes are not on the board", await ev(`return !document.querySelector('.row[data-id="issue-23"]') && !!document.querySelector('.row[data-id="issue-25"]');`));
+
+	// review as the bot: the checklist, the second confirm and the action doc the server writes
+	ok("dialog opens", await openItem("pr-12"));
+	ok("dialog shows author", await ev(`return !!document.querySelector("#d-meta .d-author .avatar");`));
+	ok("served route cards: four, the recommended one open", await ev(`return document.querySelectorAll("#d-routes .card").length === 4 && document.querySelectorAll("#d-routes .card.open").length === 1;`));
+	ok("comment range shows as path:start-line", await ev(`return /src\\/b\\.ts:7-9/.test(${openCardText});`));
+	await ev(`document.querySelectorAll("#d-routes .card.open .checklist input")[0].click();`);
+	await press("Request changes");
+	ok("second confirm shown", await until(`!!${cardButton("Confirm: request changes as widgets-bot")}`));
+	await press("Confirm: request changes as widgets-bot");
+	ok("server logs the review as done with only the checked comment", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-12" && a.routeId === "r1" && a.route === "review" && a.status === "done" && a.via === "server" && a.params.comments?.length === 1 && a.params.comments[0].startLine === 7)));
+	ok("the page wrote no action doc of its own", actionFiles().filter((a) => a.itemId === "pr-12").length === 1);
+	ok("the card shows the result", await until(`/Done/.test(${openCardText}) && !${cardButton("Request changes")}`, 8000));
+
+	// Bound actions, repeats and refusals
+	const token = readFileSync(join(HOME, "state", "server-token"), "utf8").trim();
+	const api = async (path, body) => {
+		const res = await fetch(`http://127.0.0.1:${PORT}${path}`, { method: body ? "POST" : "GET", headers: { "X-Board-Token": token, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+		return [res.status, await res.json()];
+	};
+	const hashOf = async (itemId, routeId) => (await api("/api/state"))[1].items.find((i) => i.id === itemId).data.routes.find((r) => r.id === routeId).draftHash;
+	const [s1, r1] = await api("/api/action", { itemId: "pr-12", routeId: "nope", draftHash: "x" });
+	ok("unknown route refused: " + r1.result, s1 === 200 && r1.ok === false && r1.result === "The board is out of date, reload it.");
+	const [s2, r2] = await api("/api/action", { itemId: "pr-12", routeId: "r1", draftHash: "0000000000000000", text: "" });
+	ok("draft hash mismatch refused", s2 === 200 && r2.result === "The board is out of date, reload it.");
+	const [s3, r3] = await api("/api/action", { itemId: "pr-12", routeId: "r1", draftHash: await hashOf("pr-12", "r1"), text: "again", input: {} });
+	ok("second identical review gets 409: " + r3.result, s3 === 409 && r3.ok === false);
+	const [, r6] = await api("/api/action", { itemId: "pr-12", routeId: "r2", draftHash: await hashOf("pr-12", "r2"), force: true, input: {} });
+	ok("a route in the maintainer's name is never run by the server: " + r6.result, r6.ok === false && /yours to do on GitHub/.test(r6.result));
+
+	// address_review as the agent: decisions go into the queued doc, a repeat says already requested
+	await clickCard(2);
+	ok("address_review prefills fix and dismiss", await ev(`return [...document.querySelectorAll("#d-routes .card.open .decisions li")].map((li) => li.querySelector('.seg[aria-pressed="true"]').textContent).join() === "Fix,Dismiss";`));
+	ok("threads list is replaced by the card", await ev(`return document.getElementById("d-threads").hidden;`));
+	await press("Address the review");
+	ok("the server queues address_review with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-12" && a.routeId === "r3" && a.status === "queued" && a.action === "address_review" && a.params.decisions.map((d) => d.decision).join() === "fix,dismiss")));
+	ok("the queued card reads as requested", await until(`/Requested\\. The agent has it on its list\\./.test(${openCardText})`, 8000));
+	await clickCard(3);
+	ok("take_over replace shows its callout", await ev(`return /The fork does not allow pushes/.test(document.querySelector("#d-routes .card.open .callout")?.textContent ?? "");`));
+	await closeItem();
+
+	// The freshness guard: a refusal, then Post anyway with the second confirm
+	const twelveMin = new Date(Date.now() - 12 * 60000).toISOString();
+	setStub({ "issue-21": { comments: [{ author: { login: "jbarreiros", __typename: "User" }, at: twelveMin }] } });
+	await openItem("issue-21");
+	await clickCard(1);
+	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.focus(); ta.value += " Edited."; ta.dispatchEvent(new Event("input"));`);
+	await press("Ask for a debug log");
+	await until(`!!${cardButton("Confirm: ask for a debug log as widgets-bot")}`);
+	await press("Confirm: ask for a debug log as widgets-bot");
+	ok("refusal shows on the card with the reason", await until(`/jbarreiros commented 12 minutes ago/.test(${openCardText})`, 8000));
+	ok("Post anyway offered", await until(`!!${cardButton("Post anyway")}`));
+	await press("Post anyway");
+	ok("Post anyway needs the second confirm", await until(`!!document.querySelector("#d-routes .card.open .btn.confirm")`));
+	await ev(`document.querySelector("#d-routes .card.open .btn.confirm").click();`);
+	ok("Post anyway passes for a newer comment", await fileUntil(() => actionFiles().some((a) => a.itemId === "issue-21" && a.routeId === "r2" && a.status === "done" && a.edited === true && /Edited\./.test(a.text))));
+	await closeItem();
+
+	// A guard read that finds the thread closed shows Already closed on the close card
+	writeFileSync(itemFile("issue-21"), JSON.stringify({ ...json(itemFile("issue-21")), routes: json(itemFile("issue-21")).routes.map((r) => (r.id === "r2" ? { ...r, text: "Second ask." } : r)) }));
+	await sleep(700);
+	setStub({ "issue-21": { state: "CLOSED", stateReason: "COMPLETED" } });
+	await openItem("issue-21");
+	await clickCard(1);
+	await press("Ask for a debug log");
+	await until(`!!${cardButton("Confirm: ask for a debug log as widgets-bot")}`);
+	await press("Confirm: ask for a debug log as widgets-bot");
+	ok("closed thread refused on the card", await until(`/is closed/.test(${openCardText})`, 8000));
+	ok("close row shows Already closed", await until(`/Already closed/.test(document.querySelectorAll("#d-routes .card")[2].textContent) && !${rowButton(2, "Open GitHub to close")}`, 8000));
+	await revealAll();
+	ok("kind icon follows the live state", await until(`document.querySelector('.row[data-id="issue-21"] .r-kind svg')?.getAttribute("aria-label") === "Issue, closed as completed"`));
+	await closeItem();
+	setStub({});
+
+	// Routes in his name: the board copies and opens GitHub, the server is never asked to write
+	await ev(`window.__apiCalls = 0; const f = window.fetch; window.fetch = (u, o) => { if (String(u).includes("/api/action")) window.__apiCalls++; return f(u, o); };
+		window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; };
+		Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__clip = t; } } });`);
+	writeFileSync(itemFile("issue-21"), JSON.stringify({ ...json(itemFile("issue-21")), title: "Probe 21 reopened" }));
+	setStub({});
+	await openItem("issue-21");
+	ok("his buttons carry his avatar", await until(`!!document.querySelector("#d-routes .card.open .me-btn img.avatar[src*='octocat']")`));
+	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.value += " (edited)"; ta.dispatchEvent(new Event("input"));`);
+	await press("Copy reply, open GitHub");
+	ok("me route: clipboard gets the edited text", await until(`String(window.__clip).endsWith(" (edited)")`));
+	ok("me route: opens the thread with the anchor", await until(`window.__opened[0] === ${JSON.stringify(ISSUE + "#issuecomment-new")}`));
+	ok("me route: no /api/action request", await ev(`return window.__apiCalls === 0;`));
+	await sleep(500);
+	ok("me route: no action doc", !actionFiles().some((a) => a.itemId === "issue-21" && a.routeId === "r1"));
+	ok("me route: opened mark shown", await until(`/opened/.test(${openCardText})`));
+	await clickCard(3);
+	await press("Open GitHub to file the issue");
+	ok("me follow_up opens the new-issue form", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/new?title=A%20%26%20B&body=Line%201")`));
+	await openItem("pr-12");
+	await ev(`${rowButton(1, "Open GitHub to merge")}.click();`);
+	ok("me merge opens the PR URL", await until(`window.__opened.includes(${JSON.stringify(PR)})`));
+	ok("still no /api/action request", await ev(`return window.__apiCalls === 0;`));
+	await closeItem();
+
+	// Analyze again: a footer action that opens a note panel
+	await openItem("issue-24");
+	ok("Analyze again sits in the footer", await ev(`return !!document.querySelector("#d-foot .foot-analyze") && document.getElementById("d-analyze").hidden;`));
+	await ev(`document.querySelector("#d-foot .foot-analyze").click();`);
+	ok("the note panel opens", await until(`!document.getElementById("d-analyze").hidden`));
+	await ev(`[...document.querySelectorAll("#d-analyze button")].find((b) => b.textContent === "Send to the agent").click();`);
+	ok("Analyze again queues one reanalyze doc from the page", await fileUntil(() => actionFiles().filter((a) => a.itemId === "issue-24" && a.action === "reanalyze" && a.status === "queued" && a.text === "").length === 1));
+	ok("the panel closes after sending", await until(`document.getElementById("d-analyze").hidden`));
+	await closeItem();
+
+	// Typed drafts survive a reload, and a rewritten draft drops them
+	writeProbes();
+	await sleep(700);
+	await openItem("issue-21");
+	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.focus(); ta.value = "Draft kept across reloads"; ta.dispatchEvent(new Event("input"));`);
+	await ev(`document.getElementById("d-close").click();`);
+	await cmd("Page.reload");
+	await sleep(500);
+	await until(`document.querySelectorAll("#board .row").length > 0`);
+	await until(`document.getElementById("conn").dataset.state === "connected"`);
+	await openItem("issue-21");
+	ok("draft restored after reload", await until(`document.querySelector("#d-routes .card.open textarea")?.value === "Draft kept across reloads"`));
+	await closeItem();
+	await put("issue-21", { reviewedAt: new Date().toISOString() });
+	await sleep(700);
+	await openItem("issue-21");
+	ok("draft for an outdated hash is dropped", await until(`document.querySelector("#d-routes .card.open textarea")?.value === "A PR is welcome!"`));
+	await closeItem();
+
+	// Dismiss and snooze
+	await openItem("issue-25");
+	await until(`!!document.querySelector('#d-foot [aria-label="Snooze until new activity"]')`);
+	await ev(`document.querySelector('#d-foot [aria-label="Snooze until new activity"]').click();`);
+	ok("dismiss writes hidden", await fileUntil(() => json(itemFile("issue-25")).hidden === true));
+	ok("dismiss closes the dialog", await until(`!document.getElementById("detail").open`));
+	await openItem("issue-24");
+	await ev(`document.querySelector('#d-foot [aria-label="Snooze 1 day"]').click();`);
+	ok("snooze writes snoozedUntil", await fileUntil(() => Date.parse(json(itemFile("issue-24")).snoozedUntil) > Date.now()));
+	ok("snooze closes the dialog", await until(`!document.getElementById("detail").open`));
+
+	// Routine write through board-put keeps a click on hidden
+	await put("issue-25", { title: "Rewritten by the routine", effortMinutes: 5 });
+	ok("board-put merge keeps hidden: true", json(itemFile("issue-25")).hidden === true && json(itemFile("issue-25")).title === "Rewritten by the routine");
+
+	// Dialog stays stable while the routine rewrites the open item
+	await openItem("issue-21");
+	await ev(`window.__ta = document.querySelector("#d-routes .card.open textarea"); __ta.focus(); __ta.value = "Typed by hand"; __ta.dispatchEvent(new Event("input")); __ta.setSelectionRange(2, 5);`);
+	await put("issue-21", { title: "Title changed by the routine" });
+	ok("dialog title updates from a file write", await until(`document.getElementById("detail-title").textContent === "Title changed by the routine"`));
+	ok("textarea kept, focus and cursor kept", await ev(`return document.querySelector("#d-routes .card.open textarea") === __ta && document.activeElement === __ta && __ta.value === "Typed by hand" && __ta.selectionStart === 2 && __ta.selectionEnd === 5;`));
+	rmSync(itemFile("issue-21"));
+	ok("dialog closes when the item file is deleted", await until(`!document.getElementById("detail").open`));
+
+	// Synthetic data written as files, like the routine does
+	const iso = (ms) => new Date(Date.now() - ms).toISOString();
+	const simple = (n, section, effort, priority, extra) => ({ kind: "issue", number: n, title: "Item " + n, url: "https://github.com/acme/widgets/issues/" + n, author: "user" + n, authorType: "contributor", section, effortMinutes: effort, priority, updatedAt: iso(n * 1000), routes: [{ id: "r0", type: "chore", as: "bot", title: "", params: { action: "update_branch" }, recommended: true }], ...extra });
+	const setItems = (list) => {
+		for (const n of readdirSync(join(BOARD, "items"))) rmSync(join(BOARD, "items", n));
+		for (const [id, d] of list) writeFileSync(itemFile(id), JSON.stringify(d));
+	};
+	const setActions = (list) => {
+		for (const n of readdirSync(join(BOARD, "actions"))) rmSync(join(BOARD, "actions", n));
+		for (const [id, d] of list) writeFileSync(join(BOARD, "actions", id + ".json"), JSON.stringify(d));
+	};
+	const ids = (g) => ev(`return [...document.querySelectorAll("#group-${g} .row")].map((r) => r.dataset.id).join(",");`);
+	const settle = () => sleep(700);
+	setActions([]);
+	const future = new Date(Date.now() + 3 * 86400000).toISOString();
+	setItems([["issue-1", simple(1, "active", 5, 1)], ["issue-2", simple(2, "easy", 5, 1)], ["issue-3", simple(3, "almost", 5, 1)], ["issue-4", simple(4, "review", 5, 1)], ["issue-5", simple(5, "deferred", 5, 1)], ["issue-6", simple(6, "hardware", 5, 1)], ["issue-7", simple(7, "active", 5, 1, { snoozedUntil: future })], ["issue-8", simple(8, "easy", 5, 1, { hidden: true })]]);
+	await settle();
+	ok("grouping by section", (await ids("quick")) === "issue-1,issue-2" && (await ids("after")) === "issue-3,issue-4" && (await ids("later")) === "issue-5,issue-6");
+	await ev(`document.querySelector("#group-later .show-all").click();`);
+	ok("snoozed item in third group", (await ids("later")) === "issue-5,issue-6,issue-7");
+	ok("dismissed hidden by default", !(await ids("later")).includes("issue-8"));
+	await ev(`state.reveal.clear(); render();`);
+
+	setItems([["issue-1", simple(1, "active", 300, 1)], ["issue-2", simple(2, "almost", 120, 1)], ["issue-3", simple(3, "review", 45, 1)], ["issue-4", simple(4, "deferred", 15, 1)], ["issue-5", simple(5, "hardware", 30, 1)]]);
+	await settle();
+	ok("budget fill across groups with skip", (await ids("quick")) === "issue-1" && (await ids("after")) === "issue-3" && (await ids("later")) === "issue-4");
+
+	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "easy", 10, i + 1)]));
+	await settle();
+	ok("quick capped at 5", (await ids("quick")) === "issue-1,issue-2,issue-3,issue-4,issue-5");
+	setActions([["issue-1-1", { itemId: "issue-1", action: "comment", status: "done", via: "mcp", createdAt: iso(60000), finishedAt: iso(60000), params: {}, text: "", result: "" }]]);
+	await settle();
+	ok("next planned item moves up", (await ids("quick")) === "issue-2,issue-3,issue-4,issue-5,issue-6");
+	ok("handled time counts as spent", await ev(`return document.querySelector("#plan .sum").textContent === "10 min of 6 h";`));
+	setActions([]);
+
+	setItems(Array.from({ length: 25 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "almost", 60, i + 1, i === 0 ? { hint: "Maybe reply that a PR is welcome" } : {})]));
+	await settle();
+	ok("afterwards shows the 6 planned rows", (await ids("after")).split(",").length === 6);
+	await ev(`document.querySelector("#group-after .show-all").click();`);
+	ok("show more reveals 10", (await ids("after")).split(",").length === 16);
+	ok("hint shown", await ev(`return document.querySelector('.row[data-id="issue-1"] .r-hint')?.textContent === "Maybe reply that a PR is welcome";`));
+	ok("no hint without hint", await ev(`return !document.querySelector('.row[data-id="issue-2"] .r-hint');`));
+	ok("no duplicate rows", await ev(`const a = [...document.querySelectorAll("#board .row")].map((r) => r.dataset.id); return new Set(a).size === a.length;`));
+	await ev(`state.reveal.clear(); render();`);
+
+	const yday = iso(2 * 86400000);
+	const prx = (n, extra) => simple(n, "easy", 1, n, { kind: "pr", ci: "passing", ...extra });
+	setItems([
+		["issue-1", simple(1, "easy", 1, 1)], ["issue-2", simple(2, "easy", 1, 2, { solved: true })], ["issue-4", simple(4, "easy", 1, 4)],
+		["pr-6", prx(6, { mergeable: "mergeable", reviewDecision: "approved" })], ["pr-7", prx(7, { mergeable: "conflicting", reviewDecision: "changes_requested" })],
+		["pr-8", prx(8, { reviewDecision: "pending" })], ["pr-9", prx(9, { isDraft: true })], ["pr-10", prx(10, {})],
+		["disc-13", simple(13, "easy", 1, 13, { kind: "discussion" })], ["disc-14", simple(14, "easy", 1, 14, { kind: "discussion", isAnswered: true })], ["disc-15", simple(15, "easy", 1, 15, { kind: "discussion" })],
+	]);
+	setActions([
+		["issue-4-1", { itemId: "issue-4", action: "close", params: { reason: "not_planned" }, status: "done", via: "mcp", createdAt: yday }],
+		["pr-10-1", { itemId: "pr-10", action: "merge", params: {}, status: "done", via: "mcp", createdAt: yday }],
+		["disc-15-1", { itemId: "disc-15", action: "close", params: {}, status: "done", via: "mcp", createdAt: yday }],
+	]);
+	await settle();
+	await ev(`for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden) b.click();`);
+	const labels = await ev(`const o = {}; for (const r of document.querySelectorAll("#board .row")) o[r.dataset.id] = [r.querySelector(".r-kind svg").getAttribute("aria-label"), r.querySelector(".r-rev svg")?.getAttribute("aria-label") ?? ""]; return o;`);
+	const expect = {
+		"issue-1": ["Issue, open", ""], "issue-2": ["Issue, open", ""], "issue-4": ["Issue, closed as not planned", ""],
+		"pr-6": ["Pull request, ready", "Review approved"], "pr-7": ["Pull request, has conflicts", "Changes requested"], "pr-8": ["Pull request, open", "Review pending"],
+		"pr-9": ["Pull request, draft", ""], "pr-10": ["Pull request, merged", ""],
+		"disc-13": ["Discussion, open", ""], "disc-14": ["Discussion, answered", ""], "disc-15": ["Discussion, closed", ""],
+	};
+	const bad = Object.entries(expect).filter(([id, v]) => JSON.stringify(labels[id]) !== JSON.stringify(v)).map(([id]) => id + "=" + JSON.stringify(labels[id]));
+	ok("status icon mapping " + bad.join(" "), bad.length === 0);
+
+	// Restore the real items for the screenshot
+	setActions([]);
+	setItems([]);
+	writeFixtureItems();
+	await settle();
+	await ev(`state.reveal.clear(); render(); window.scrollTo(0, 0);`);
+	await sleep(2500);
+	ok("wrapped rows keep columns on the first title line", await ev(`const rows = [...document.querySelectorAll("#board .row")].filter((r) => r.querySelector(".r-title").getBoundingClientRect().height > 30);
+		return rows.length > 0 && rows.every((r) => { const t = r.querySelector(".r-title").getBoundingClientRect().top; return [".r-num", ".r-cat", ".r-effort", ".r-age"].every((s) => Math.abs(r.querySelector(s).getBoundingClientRect().top - t) < 1.5); });`));
+	ok("short category chips", await ev(`return [...document.querySelectorAll("#board .cat")].every((c) => ["Active", "Easy", "Almost", "Review", "Later", "Hardware", "Snoozed"].includes(c.textContent));`));
+	if (SHOT) {
+		const shot = await cmd("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+		writeFileSync(SHOT, Buffer.from(shot.result.data, "base64"));
+	}
+
+	// Event stream drop switches the icon, reconnect restores it
+	server.kill();
+	ok("icon goes offline when the stream drops", await until(`document.getElementById("conn").dataset.state === "queued"`, 8000));
+	await startServer();
+	ok("reconnects automatically", await until(`document.getElementById("conn").dataset.state === "connected"`, 10000));
+	ok("no script errors or CSP violations " + problems.join(" | "), problems.length === 0);
+} catch (e) {
+	results.push("ERROR " + e.stack);
+} finally {
+	console.log(results.filter((l) => !l.startsWith("PASS")).join("\n"));
+	const pass = results.filter((l) => l.startsWith("PASS")).length;
+	const failed = results.length - pass;
+	console.log(`page (served): ${pass} passed, ${failed} failed`);
+	process.exitCode = failed ? 1 : 0;
+	ws.close();
+	chrome.kill();
+	server.kill();
+	await sleep(300);
+	removeDir(DIR);
+}

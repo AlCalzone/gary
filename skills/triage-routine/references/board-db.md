@@ -16,14 +16,16 @@ Write items and `meta.json` with the launcher, never with a plain file write:
 
 ```
 gary put items <id> <json file>
+gary put --merge items <id> <json file>
 gary put items <id> --delete
 gary put meta <json file>
 ```
 
-It sends a merge update through the board server, which runs one write per doc at a time. A maintainer click can therefore not be erased by a run. When the server is down, it writes the file itself and says so on stderr.
+`gary put items` takes the complete item doc and replaces the stored one. A field the new doc leaves out is gone afterwards, so write every field the item should keep. The maintainer's `hidden`, `snoozedUntil` and `dismissedRoutes` always stay as they are, and `priority` stays when the doc has none. The write goes through the board server, which runs one write per doc at a time, so a run cannot erase a maintainer click. When the server is down, it writes the file itself and says so on stderr.
 
-- Leave `hidden` and `snoozedUntil` out of the JSON file unless you mean to change them. To clear `hidden` on an item that changed on GitHub, send `"hidden": false`.
-- A field set to `null` is removed. When a new quick or pending classification replaces an old full review of a different head SHA, send `"findings": null`.
+`gary put --merge items` changes only the fields in the file. A field set to `null` is removed. Use it for partial updates, and to clear `hidden` on an item that changed on GitHub: after the full write, send `{ "hidden": false }` with `--merge`.
+
+Both modes validate the resulting item and refuse it with a list of problems.
 
 ## Actions
 

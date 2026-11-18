@@ -10,10 +10,12 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
-import { COLLECTIONS, ID_PATTERN, applyWrite, boardDir, docPath, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
+import { COLLECTIONS, PROPOSAL_ID, applyWrite, boardDir, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
+import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
 import { ROOT, loadConfig, loadProfile } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
+import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
 const MAX_BODY = 256 * 1024;
@@ -26,28 +28,8 @@ const ITEM_ID = /^(pr|issue|disc)-\d+$/;
 const MAX_TEXT = 65536;
 const MAX_NOTE = 1000;
 const MAX_TITLE = 256;
-
-/** Allowed actors per route type. The first entry is the default when a route has no `as`. */
-export const ROUTE_TYPES = {
-	reply: ["me", "bot"],
-	request_logs: ["bot", "me"],
-	close: ["me"],
-	reopen: ["bot", "me"],
-	merge: ["me"],
-	review: ["bot", "me"],
-	address_review: ["agent"],
-	follow_up: ["agent", "bot", "me"],
-	take_over: ["agent"],
-	drive: ["agent"],
-	move: ["bot", "me"],
-	chore: ["bot"],
-};
-const DRIVE_AUTHORS = new Set(["maintainer", "bot", "copilot"]);
-// Without a bot these turn into text the maintainer posts himself
-const PREFILL_TYPES = new Set(["reply", "request_logs", "reopen", "follow_up"]);
-const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "drive", "follow_up"]);
-const MOVE_MODES = ["transfer", "close"];
-const CHORE_ACTIONS = new Set(["label", "assign", "ready", "answer_discussion", "react", "update_branch", "rerun_ci"]);
+const MAX_REASON = 500;
+const MAX_RULE = 20000;
 
 /** Fingerprint of a drafted route. It changes when the routine rewrites the route or reviews the item again. */
 export function draftHash(route, item) {
@@ -59,44 +41,6 @@ export function draftHash(route, item) {
 
 function routesOf(item) {
 	return Array.isArray(item?.routes) ? item.routes.filter((r) => r && typeof r === "object" && typeof r.id === "string" && r.id) : [];
-}
-
-/** The route's actor, or undefined when the type is unknown or the given `as` is not allowed for it. */
-export function actorOf(route) {
-	const allowed = ROUTE_TYPES[route?.type];
-	if (!allowed) return undefined;
-	if (route.type === "move") {
-		// The target decides who acts: GitHub has no API to convert between issues and discussions
-		const to = route.params?.to;
-		const as = to === "discussion" || to === "issue" ? "me" : typeof to === "string" ? "bot" : undefined;
-		return route.as === undefined || route.as === as ? as : undefined;
-	}
-	// follow_up has more than one sensible actor, so it needs an explicit `as`
-	if (route.as === undefined) return route.type === "follow_up" ? undefined : allowed[0];
-	return allowed.includes(route.as) ? route.as : undefined;
-}
-
-const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
-
-/**
- * Who acts after a click, given the configured accounts (`mode` from accountMode()):
- * "me" (prefill, he acts on GitHub), "bot", "own" (his stored gh login, only with allowOwnTokenPushes),
- * "agent", "unavailable" (needs a bot or allowOwnTokenPushes), or undefined for an invalid route.
- * A move to a repository has one actor per button, so pass its `moveMode` ("transfer" or "close").
- */
-export function effectiveActor(route, mode, moveMode) {
-	const as = actorOf(route);
-	if (as === "me" && route.type === "review" && Array.isArray(route.params?.comments) && route.params.comments.length) return undefined;
-	if (as === undefined || as === "me") return as;
-	if (as === "agent") return mode === "none" && PUSHING_AGENT_TYPES.has(route.type) ? "unavailable" : "agent";
-	if (mode === "bot") return "bot";
-	if (route.type === "move") {
-		if (moveMode === "close") return "me";
-		return mode === "own" ? "own" : "unavailable";
-	}
-	const comments = Array.isArray(route.params?.comments) ? route.params.comments : [];
-	if (PREFILL_TYPES.has(route.type) || (route.type === "review" && !comments.length)) return "me";
-	return mode === "own" ? "own" : "unavailable";
 }
 
 /** The actor per route as the page shows it. A move to a repository gets one actor per button. */
@@ -139,9 +83,11 @@ export function validateInput(route, item, input) {
 		return { commentIds: [...ids] };
 	}
 
-	if (route.type === "address_review") {
+	if (route.type === "address_review" || route.type === "take_over") {
 		checkKeys(input, ["decisions"], "input");
 		const threads = new Set((Array.isArray(item.threads) ? item.threads : []).map((t) => t?.id).filter((id) => typeof id === "string" && id));
+		// A take-over without open threads sends no decisions
+		if (route.type === "take_over" && input.decisions === undefined) return {};
 		if (!Array.isArray(input.decisions) || !input.decisions.length) {
 			throw new Refusal("input.decisions must list at least one thread.");
 		}
@@ -208,27 +154,22 @@ export function planRoute(route, item, input, text, mode = "bot") {
 
 	if (as === "agent") {
 		switch (route.type) {
-			case "address_review":
+			case "address_review": {
+				const refusal = pushRefusal(item, "address_review");
+				if (refusal) throw new Refusal(refusal);
 				return { agent: true, action: "address_review", params: { decisions: chosen.decisions }, text };
+			}
 			case "follow_up":
 				return { agent: true, action: "start_fix", params: params.finding === undefined ? {} : { finding: params.finding }, text };
 			case "take_over": {
-				const mode = params.mode ?? "push";
-				if (mode !== "push" && mode !== "replace") throw new Refusal('take_over needs params.mode "push" or "replace".');
-				if (mode === "replace" && !(typeof route.callout === "string" && route.callout.trim())) {
-					throw new Refusal("A replacement PR needs a callout that says why pushing is not possible.");
-				}
-				return { agent: true, action: "take_over", params: { mode }, text };
+				const refusal = takeOverRefusal(route);
+				if (refusal) throw new Refusal(refusal);
+				return { agent: true, action: "take_over", params: { mode: params.mode ?? "push", ...(chosen.decisions && { decisions: chosen.decisions }) }, text };
 			}
 			case "drive": {
-				if (item.kind !== "pr") throw new Refusal("Only PRs can be driven.");
-				if (!DRIVE_AUTHORS.has(item.authorType) && item.takenOver !== true) {
-					throw new Refusal("Only PRs by the maintainer, a bot or Copilot, or taken-over PRs can be driven.");
-				}
 				const maxRounds = chosen.maxRounds ?? params.maxRounds ?? 3;
-				if (!Number.isInteger(maxRounds) || maxRounds < 1 || maxRounds > 3) {
-					throw new Refusal("drive needs params.maxRounds from 1 to 3.");
-				}
+				const refusal = driveRefusal(item, maxRounds);
+				if (refusal) throw new Refusal(refusal);
 				return { agent: true, action: "drive", params: { maxRounds }, text };
 			}
 		}
@@ -392,8 +333,8 @@ function shim(token, info) {
   const TOKEN = ${JSON.stringify(token).replace(/</g, "\\u003c")};
   const INFO = ${JSON.stringify(info).replace(/</g, "\\u003c")};
   const SERVER = "host:gary";
-  const cache = { items: null, actions: null, meta: undefined };
-  const subs = { items: new Set(), actions: new Set(), meta: new Set() };
+  const cache = { items: null, actions: null, proposals: null, meta: undefined };
+  const subs = { items: new Set(), actions: new Set(), proposals: new Set(), meta: new Set() };
   let connected = false;
 
   function setConnected(on) {
@@ -427,7 +368,7 @@ function shim(token, info) {
 
   function connect() {
     const es = new EventSource("/api/events?token=" + encodeURIComponent(TOKEN));
-    for (const name of ["items", "actions", "meta"]) {
+    for (const name of ["items", "actions", "proposals", "meta"]) {
       es.addEventListener(name, (e) => {
         try { cache[name] = JSON.parse(e.data); } catch { return; }
         emit(name);
@@ -526,7 +467,14 @@ function shim(token, info) {
   };
 
   // Board-only helper of the local server: project name, repo and accounts
-  const board = { ...INFO, maintainer: INFO.me.login };
+  const board = {
+    ...INFO,
+    maintainer: INFO.me.login,
+    // Reports the use of a route he does on GitHub himself, for the decision log. Failures stay quiet
+    async decision(body) {
+      try { await api("/api/decision", body); } catch { /* the log entry is lost, nothing else */ }
+    },
+  };
 
   window.claude = {
     use(name) {
@@ -589,7 +537,7 @@ export async function startBoardServer({
 		const names = (await readdir(d)).filter((n) => n.endsWith(".json") && !n.startsWith("."));
 		const docs = await Promise.all(names.map(async (n) => {
 			const id = n.slice(0, -5);
-			const data = ID_PATTERN.test(id) ? await readJson(join(d, n)) : null;
+			const data = idPattern(collection).test(id) ? await readJson(join(d, n)) : null;
 			return data ? { id, data } : null;
 		}));
 		return docs.filter(Boolean);
@@ -632,7 +580,12 @@ export async function startBoardServer({
 		}));
 	}
 
-	const snapshotOf = (name) => (name === "meta" ? readMeta() : name === "items" ? readItems() : readCollection(name));
+	const readOpenProposals = async () => (await readCollection("proposals")).filter((p) => p.data.status === "open");
+	const snapshotOf = (name) =>
+		name === "meta" ? readMeta() : name === "items" ? readItems() : name === "proposals" ? readOpenProposals() : readCollection(name);
+	const decisionsFile = join(dirname(dir), "decisions.jsonl");
+	const decide = (type, itemId, item, fields) =>
+		logDecision(type, itemId, item, fields, decisionsFile).catch((e) => log("Writing the decision log failed:", e.message));
 
 	function send(res, event, data) {
 		res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -670,6 +623,7 @@ export async function startBoardServer({
 			}
 		};
 		add(join(dir, "items"), () => schedulePush("items"));
+		add(join(dir, "proposals"), () => schedulePush("proposals"));
 		// Action docs mark routes as done, so they change the served items too
 		add(join(dir, "actions"), () => {
 			schedulePush("actions");
@@ -706,6 +660,8 @@ export async function startBoardServer({
 
 	// Run only what the agent drafted: type, actor, params and the target come from the item file
 	async function handleAction(body) {
+		if (body.action === "dismiss_route") return handleDismissRoute(body);
+		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(body);
 		const { itemId, routeId, text, force, input } = body;
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
@@ -745,6 +701,7 @@ export async function startBoardServer({
 			};
 
 			if (plan.agent) {
+				logRouteDecisions(itemId, item, route, draft, input, true);
 				await logClick(itemId, {
 					...log,
 					action: plan.action,
@@ -775,6 +732,7 @@ export async function startBoardServer({
 				return [200, { ok: false, result: fresh.reason, stale: true, forceable: fresh.forceable }];
 			}
 
+			logRouteDecisions(itemId, item, route, draft, input, false);
 			const [first] = plan.steps;
 			let outcome = await runAction({ ...first, kind, number, dryRun });
 			if (outcome.ok && plan.followUp) {
@@ -815,12 +773,172 @@ export async function startBoardServer({
 		});
 	}
 
+	/** Logs where a clicked route deviates from the agent's proposal. Call only after the click passed every check. */
+	function logRouteDecisions(itemId, item, route, draft, input, agent) {
+		const routes = routesOf(item);
+		const recommended = routes.find((r) => r.recommended === true);
+		const brief = (r) => ({ type: r.type, title: r.title ?? "" });
+		if (recommended && recommended !== route) decide("chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
+		const drafted = typeof route.text === "string" ? route.text : "";
+		if (draft !== drafted) {
+			if (agent) {
+				if (draft.trim()) decide("agent_note", itemId, item, { text: cut(draft) });
+			} else decide("edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(draft) });
+		}
+		let chosen = {};
+		try {
+			chosen = validateInput(route, item, input);
+		} catch {
+			// planRoute validated the same input already
+		}
+		const threads = new Map((Array.isArray(item.threads) ? item.threads : []).map((t) => [t?.id, t]));
+		for (const d of chosen.decisions ?? []) {
+			const thread = threads.get(d.threadId) ?? {};
+			const byVerdict = thread.verdict === "wrong" ? "dismiss" : "fix";
+			if (d.decision !== byVerdict || d.note) {
+				decide("thread_override", itemId, item, {
+					route: { type: route.type },
+					thread: { summary: thread.summary ?? "", verdict: thread.verdict ?? null },
+					decision: d.decision,
+					note: d.note ?? "",
+				});
+			}
+		}
+		if (route.type === "review" && Array.isArray(chosen.commentIds)) {
+			for (const c of Array.isArray(route.params?.comments) ? route.params.comments : []) {
+				if (!chosen.commentIds.includes(c?.id)) decide("unchecked_comment", itemId, item, { comment: { path: c?.path ?? "", text: cut(c?.text ?? "") } });
+			}
+		}
+	}
+
+	// The page reports the use of a route he does on GitHub himself. Nothing goes to GitHub and no action doc is written
+	async function handleDecision(body) {
+		const { itemId, routeId, text } = body;
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return [400, { ok: false, result: "itemId and routeId are required." }];
+		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) {
+			return [400, { ok: false, result: `text must be a string of at most ${MAX_TEXT} characters.` }];
+		}
+		const item = await readJson(join(dir, "items", itemId + ".json"));
+		const route = item && routesOf(item).find((r) => r.id === routeId);
+		if (!route) return [200, { ok: false, result: OUTDATED, outdated: true }];
+		const recommended = routesOf(item).find((r) => r.recommended === true);
+		const brief = (r) => ({ type: r.type, title: r.title ?? "" });
+		if (recommended && recommended !== route) await decide("chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
+		const drafted = typeof route.text === "string" ? route.text : "";
+		if (typeof text === "string" && text !== drafted) await decide("edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
+		return [200, { ok: true, result: "Logged." }];
+	}
+
+	// Removes one suggested route the maintainer does not want and remembers it on the item
+	async function handleDismissRoute(body) {
+		const { itemId, routeId } = body;
+		const reason = body.text ?? "";
+		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
+		if (typeof reason !== "string" || reason.length > MAX_REASON) {
+			return [400, { ok: false, result: `The reason must be a string of at most ${MAX_REASON} characters.` }];
+		}
+		return withLock(actionLocks, itemId, async () => {
+			const file = join(dir, "items", itemId + ".json");
+			const done = await withLock(docLocks, file, async () => {
+				const item = await readJson(file);
+				const route = item && routesOf(item).find((r) => r.id === routeId);
+				if (!route) return null;
+				const at = new Date().toISOString();
+				const remaining = item.routes.filter((r) => r !== route);
+				const next = {
+					...item,
+					routes: remaining,
+					dismissedRoutes: [...(Array.isArray(item.dismissedRoutes) ? item.dismissedRoutes : []), { type: route.type, title: route.title ?? "", reason: reason.trim(), at }],
+				};
+				if (route.recommended === true && remaining.length) {
+					remaining[0] = { ...remaining[0], recommended: true };
+					next.hint = remaining[0].title;
+				}
+				if (!remaining.length) delete next.hint;
+				if (Array.isArray(item.findings)) {
+					next.findings = item.findings.map((f) => (f?.routeId === route.id ? (({ routeId: _, ...rest }) => rest)(f) : f));
+				}
+				await writeAtomic(file, next);
+				return { item, route, remaining, at };
+			});
+			if (!done) return outdated;
+			const { item, route, remaining, at } = done;
+			await logClick(itemId, { routeId, route: route.type, action: "dismiss_route", params: {}, text: reason.trim(), status: "done", via: "board", createdAt: at, finishedAt: at, result: "" });
+			if (!remaining.length) {
+				await logClick(itemId, {
+					action: "reanalyze",
+					params: {},
+					text: `The maintainer dismissed the ${route.type} route "${route.title ?? ""}". Reason: ${reason.trim() || "none given"}. Propose a different route.`,
+					status: "queued",
+					via: "queue",
+					createdAt: at,
+					finishedAt: null,
+					result: "",
+				});
+			}
+			await decide("dismissed_route", itemId, item, { route: { type: route.type, title: route.title ?? "" }, wasRecommended: route.recommended === true, reason: reason.trim() });
+			schedulePush("items");
+			return [200, { ok: true, result: "Route dismissed.", reanalyze: !remaining.length }];
+		});
+	}
+
+	// Accepting appends the rule to its file. Both run in dry-run mode too, because they change only local files
+	async function handleProposal(body) {
+		const { proposalId, text } = body;
+		if (typeof proposalId !== "string" || !PROPOSAL_ID.test(proposalId)) return [400, { ok: false, result: "proposalId is invalid." }];
+		const accept = body.action === "accept_proposal";
+		const max = accept ? MAX_RULE : MAX_REASON;
+		if (text !== undefined && (typeof text !== "string" || text.length > max)) {
+			return [400, { ok: false, result: `text must be a string of at most ${max} characters.` }];
+		}
+		const file = join(dir, "proposals", proposalId + ".json");
+		const reply = await withLock(docLocks, file, async () => {
+			const p = await readJson(file);
+			if (!p) return [200, { ok: false, result: "This proposal no longer exists. Reload the board." }];
+			if (p.status !== "open") return [409, { ok: false, result: `This proposal is already ${p.status}.` }];
+			const decidedAt = new Date().toISOString();
+			if (!accept) {
+				await writeAtomic(file, { ...p, status: "dismissed", decidedAt, reason: (text ?? "").trim() });
+				await decide("dismissed_proposal", null, null, { proposal: { id: p.id, title: p.title, target: p.target, file: p.file }, reason: (text ?? "").trim() });
+				return [200, { ok: true, result: "Proposal dismissed." }];
+			}
+			const rule = typeof text === "string" && text.trim() ? text : p.text;
+			let applied;
+			try {
+				applied = await applyProposal(p, rule);
+			} catch (e) {
+				return [200, { ok: false, result: e.message }];
+			}
+			await writeAtomic(file, { ...p, text: rule, status: "accepted", decidedAt });
+			return [200, { ok: true, result: applied.file, committed: applied.committed, ...(applied.warning && { warning: applied.warning }) }];
+		});
+		schedulePush("proposals");
+		return reply;
+	}
+
+	// The page snoozes, hides and asks to analyze again through plain document writes
+	async function logPageWrite({ op, path, data }) {
+		if (!["update", "set"].includes(op) || !data || typeof data !== "object") return;
+		const m = /^(items|actions)\/(.+)$/.exec(path ?? "");
+		if (!m) return;
+		if (m[1] === "items") {
+			const item = await readJson(join(dir, "items", m[2] + ".json"));
+			if (typeof data.snoozedUntil === "string" && Number.isFinite(Date.parse(data.snoozedUntil))) {
+				decide("snoozed", m[2], item, { days: Math.max(0, Math.round((Date.parse(data.snoozedUntil) - Date.now()) / 86400000)) });
+			} else if (data.hidden === true) decide("snoozed", m[2], item, { untilActivity: true });
+		} else if (data.action === "reanalyze" && typeof data.text === "string" && data.text.trim() && typeof data.itemId === "string") {
+			decide("agent_note", data.itemId, await readJson(join(dir, "items", data.itemId + ".json")), { text: cut(data.text) });
+		}
+	}
+
 	// Serialize writes per file, so a merge never reads a file that another write is replacing
 	async function handleDb(body) {
 		const file = docPath(dir, body.path);
-		if (!file) return [400, { error: "Only items/<id>, actions/<id> and meta can be written." }];
+		if (!file) return [400, { error: "Only items/<id>, actions/<id>, proposals/<id> and meta can be written." }];
 		return withLock(docLocks, file, async () => {
 			const reply = await applyWrite(dir, body);
+			if (reply[0] === 200) await logPageWrite(body);
 			if (reply[0] === 200) schedulePush(body.path === "meta" ? "meta" : body.path.split("/")[0]);
 			return reply;
 		});
@@ -891,20 +1009,21 @@ export async function startBoardServer({
 			res.write("retry: 3000\n\n");
 			clients.add(res);
 			req.on("close", () => clients.delete(res));
-			const [items, actions, meta] = await Promise.all([readItems(), readCollection("actions"), readMeta()]);
+			const [items, actions, proposals, meta] = await Promise.all([readItems(), readCollection("actions"), readOpenProposals(), readMeta()]);
 			send(res, "items", items);
 			send(res, "actions", actions);
+			send(res, "proposals", proposals);
 			send(res, "meta", meta);
 			return;
 		}
 		if (req.method === "GET" && url.pathname === "/api/state") {
-			const [items, actions, meta] = await Promise.all([readItems(), readCollection("actions"), readMeta()]);
-			return json(res, 200, { board: boardInfo({ dryRun }), items, actions, meta });
+			const [items, actions, proposals, meta] = await Promise.all([readItems(), readCollection("actions"), readOpenProposals(), readMeta()]);
+			return json(res, 200, { board: boardInfo({ dryRun }), items, actions, proposals, meta });
 		}
 		if (req.method === "GET" && url.pathname === "/api/tools") {
 			return json(res, 200, { tools: Object.keys(ACTIONS), dryRun });
 		}
-		if (req.method === "POST" && ["/api/db", "/api/action"].includes(url.pathname)) {
+		if (req.method === "POST" && ["/api/db", "/api/action", "/api/decision"].includes(url.pathname)) {
 			if (!/^application\/json\b/.test(req.headers["content-type"] ?? "")) {
 				return json(res, 415, { error: "Send JSON." });
 			}
@@ -913,7 +1032,7 @@ export async function startBoardServer({
 				const [status, data] = await handleDb(body);
 				return json(res, status, data);
 			}
-			const [status, data] = await handleAction(body);
+			const [status, data] = url.pathname === "/api/decision" ? await handleDecision(body) : await handleAction(body);
 			return json(res, status, data);
 		}
 		return json(res, 404, { error: "Not found." });

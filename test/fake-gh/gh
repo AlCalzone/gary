@@ -1,0 +1,127 @@
+#!/usr/bin/env node
+// A stand-in for the gh binary in tests. It answers the reads Gary makes from test/fixtures/github.mjs
+// and refuses every write, so no test can reach GitHub.
+//   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
+//   FAKE_GH_LOGIN          the stored login without GH_TOKEN, default octocat. Empty means not logged in
+//   FAKE_GH_LOG            a file that gets one line per call, for tests that check what ran
+import { appendFileSync, readFileSync } from "node:fs";
+import * as gh from "../fixtures/github.mjs";
+
+const args = process.argv.slice(2);
+const stdin = args.includes("-") ? readFileSync(0, "utf8") : "";
+if (process.env.FAKE_GH_LOG) appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify({ args, stdin, token: !!process.env.GH_TOKEN }) + "\n");
+
+function out(data) {
+	process.stdout.write(JSON.stringify(data) + "\n");
+	process.exit(0);
+}
+
+function fail(message, data) {
+	if (data !== undefined) process.stdout.write(JSON.stringify({ data, errors: [{ type: "NOT_FOUND", message }] }) + "\n");
+	process.stderr.write(`gh: ${message}\n`);
+	process.exit(1);
+}
+
+if (args[0] === "--version") {
+	process.stdout.write("gh version 0.0.0 (fake)\n");
+	process.exit(0);
+}
+if (args[0] !== "api") fail(`fake gh does not support "${args.join(" ")}"`, undefined);
+
+if (args[1] === "user") {
+	if (process.env.GH_TOKEN) {
+		process.stdout.write((process.env.GH_TOKEN === gh.BOT_TOKEN ? gh.BOT : "someone-else") + "\n");
+		process.exit(0);
+	}
+	const login = process.env.FAKE_GH_LOGIN ?? gh.ME;
+	if (!login) {
+		process.stderr.write("To get started with GitHub CLI, please run:  gh auth login\n");
+		process.exit(4);
+	}
+	process.stdout.write(login + "\n");
+	process.exit(0);
+}
+
+if (args[1] !== "graphql") {
+	if (args.includes("-X") || args.includes("--method")) fail("fake gh refuses every write", undefined);
+	const m = /^repos\/[^/]+\/[^/]+\/actions\/runs\?head_sha=([0-9a-f]{40})/.exec(args[1]);
+	if (m) out({ workflow_runs: gh.runs[m[1]] ?? [] });
+	fail(`fake gh has no answer for ${args[1]}`, undefined);
+}
+
+const { query, variables: v = {} } = JSON.parse(stdin || "{}");
+if (/^\s*mutation\b/.test(query)) fail("fake gh refuses every write", undefined);
+const repository = (data) => out({ data: { repository: data } });
+
+if (query.includes("issueOrPullRequest(number")) {
+	const item = gh.issuesAndPrs[v.number];
+	if (!item) fail(`Could not resolve to an issue or pull request with the number of ${v.number}.`, { repository: { issueOrPullRequest: null } });
+	repository({ issueOrPullRequest: item });
+}
+if (/label\(name:/.test(query)) {
+	const data = {};
+	for (const [k, name] of Object.entries(v).filter(([k]) => /^n\d+$/.test(k))) {
+		data["l" + k.slice(1)] = gh.labels[name] ? { id: gh.labels[name], name } : null;
+	}
+	repository(data);
+}
+if (/user\(login:/.test(query)) {
+	const data = {};
+	for (const [k, login] of Object.entries(v).filter(([k]) => /^l\d+$/.test(k))) {
+		if (!gh.users[login]) fail(`Could not resolve to a User with the login of '${login}'.`, {});
+		data["u" + k.slice(1)] = { id: gh.users[login] };
+	}
+	out({ data });
+}
+if (/repository\(owner: \$owner, name: \$name\) \{ id \}/.test(query)) {
+	if (!gh.repos[v.name]) fail(`Could not resolve to a Repository with the name '${v.owner}/${v.name}'.`, { repository: null });
+	repository({ id: gh.repos[v.name] });
+}
+if (query.includes("node(id: $id)")) {
+	const node = gh.nodes[v.id];
+	if (!node) fail(`Could not resolve to a node with the global id of '${v.id}'`, { node: null });
+	out({ data: { node } });
+}
+if (query.includes("pullRequests(states: OPEN")) {
+	repository({ pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: Object.values(gh.prNodes) } });
+}
+if (query.includes("issues(states: OPEN")) {
+	const nodes = Object.values(gh.issueNodes);
+	repository({ issues: { totalCount: gh.openTotals.issues, pageInfo: { hasNextPage: false, endCursor: null }, nodes } });
+}
+if (query.includes("discussions(states: OPEN")) {
+	const nodes = Object.values(gh.discussionNodes);
+	repository({ discussions: { totalCount: gh.openTotals.discussions, pageInfo: { hasNextPage: false, endCursor: null }, nodes } });
+}
+if (query.includes("pullRequest(number: $number)")) {
+	if (query.includes("allReviews")) {
+		const node = gh.prNodes[v.number];
+		if (!node) fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null } });
+		repository({ pullRequest: node });
+	}
+	const item = gh.issuesAndPrs[v.number];
+	if (!item || item.__typename !== "PullRequest") fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null } });
+	repository({ pullRequest: { state: item.state, headRefOid: item.headRefOid, comments: { nodes: [] }, reviews: { nodes: [] } } });
+}
+if (query.includes("issue(number: $number)")) {
+	if (query.includes("closedByPullRequestsReferences")) {
+		const node = gh.issueNodes[v.number];
+		if (!node) fail(`Could not resolve to an Issue with the number of ${v.number}.`, { repository: { issue: null } });
+		repository({ issue: node });
+	}
+	const item = gh.issuesAndPrs[v.number];
+	if (!item || item.__typename !== "Issue") fail(`Could not resolve to an Issue with the number of ${v.number}.`, { repository: { issue: null } });
+	repository({ issue: { state: item.state, stateReason: null, comments: { nodes: [] } } });
+}
+if (query.includes("discussion(number: $number)")) {
+	if (query.includes("isAnswered")) {
+		const node = gh.discussionNodes[v.number];
+		if (!node) fail(`Could not resolve to a Discussion with the number of ${v.number}.`, { repository: { discussion: null } });
+		repository({ discussion: node });
+	}
+	const d = gh.discussions[v.number];
+	if (!d) fail(`Could not resolve to a Discussion with the number of ${v.number}.`, { repository: { discussion: null } });
+	if (query.includes("category")) repository({ discussion: d });
+	repository({ discussion: { closed: d.closed, comments: { nodes: [] } } });
+}
+fail(`fake gh has no answer for this query: ${query.slice(0, 120)}`, undefined);

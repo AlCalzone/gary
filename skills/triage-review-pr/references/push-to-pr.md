@@ -29,8 +29,8 @@ If a check fails, stop before editing. Return `status: "failed"` with the reason
 ## Worktree
 
 ```bash
-git -C <main checkout> fetch origin +pull/<n>/head:refs/triage/fix-pr-<n>
-git -C <main checkout> worktree add --detach <scratch>/fix-pr-<n> refs/triage/fix-pr-<n>
+git -C <checkout> fetch origin +pull/<n>/head:refs/triage/fix-pr-<n>
+git -C <checkout> worktree add --detach <scratch>/fix-pr-<n> refs/triage/fix-pr-<n>
 ```
 
 Check that the worktree's `HEAD` is the expected `reviewedSha`. Pass `-c core.hooksPath=/dev/null` to every `git` command in the worktree, so no hook from the checkout runs. Subagent shells reset the working directory between calls, so use `git -C <worktree>`.
@@ -53,8 +53,8 @@ A rejected push means the branch moved or the identity lacks access. Do not retr
 Remove the worktree and the ref afterwards:
 
 ```bash
-git -C <main checkout> worktree remove --force <scratch>/fix-pr-<n>
-git -C <main checkout> update-ref -d refs/triage/fix-pr-<n>
+git -C <checkout> worktree remove --force <scratch>/fix-pr-<n>
+git -C <checkout> update-ref -d refs/triage/fix-pr-<n>
 ```
 
 ## Return
@@ -70,7 +70,7 @@ Your final report is one JSON object and nothing else:
 - Findings and threads you handled are removed. The rest stay.
 - `reviewedSha` is the new head SHA you pushed.
 - `links` gets `{ "label": "Our commit", "url": "<commit URL>" }`.
-- `routes` fit the new state. Usually one route: `review` with `event: "approve"` and text `Thanks!`, or `merge` as `me` when the PR is already approved. `state` says that CI has to pass first.
+- `routes` fit the new state. Usually one route: `review` with `event: "approve"` and text `Thanks!`, or `merge` as `me` when the PR is already approved. `state` says that CI has to pass first. Our push can dismiss an earlier approval. When the PR had one, `state` says it needs a new approval.
 - A short note to the contributor that the maintainer may want to send goes into a `reply` route with ready text, like `I pushed the missing fields from the sibling file.` You never post it yourself.
 
 On failure, return `status: "failed"`, the reason in `result`, and the item doc unchanged except for a `state` that names the reason.

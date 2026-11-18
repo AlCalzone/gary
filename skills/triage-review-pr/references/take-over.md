@@ -1,14 +1,15 @@
 # Mode: take over
 
-The maintainer clicked `take_over` on a stalled contributor PR. Finishing it ourselves is quicker than another round trip. You get the action file (`params.mode`, optional `text` with instructions), the item doc with the review's findings, and a scratch directory.
+The maintainer clicked `take_over` on a contributor PR that is not taken over yet, or on a PR by the bot or a dependency bot whose CI fails because of its own change. Finishing it ourselves is quicker than another round trip. You get the action file (`params.mode`, optional `params.decisions` with one decision per open thread, optional `text` with instructions), the item doc with the review's findings and threads, and a scratch directory.
 
 ## `mode: "push"`
 
 The normal mode. Continue in the contributor's PR with our commits, pushed under the writing identity:
 
-1. Follow `push-to-pr.md`: preconditions, worktree, edits, commit, push.
+1. Check the preconditions and set up the worktree as `push-to-pr.md` describes.
 2. Apply the review's findings that block a merge, plus the instructions in `text`. Take every fact from the PR thread, the maintainer's comments, the action's `text` or files on the default branch. If a finding needs something only the contributor knows, like a detail of their hardware, leave it and say so in the returned `state`.
-3. Return as `push-to-pr.md` describes, with `takenOver: true` on the item. From now on the PR can get a `drive` route. Add a `reply` route with a short note for the maintainer to send, like `I pushed the missing fields from the sibling file, so this is ready to merge.`
+3. When the action carries `params.decisions`, handle the threads exactly as `address-review.md` describes in its steps 2 to 5: fix the threads marked `fix`, push one commit with these fixes and the ones from step 2, reply in every handled thread, give dismissed ones a short reason, resolve them. Without decisions, commit and push as `push-to-pr.md` describes.
+4. Return as `push-to-pr.md` describes, with `takenOver: true` on the item. Handled threads leave `threads`. From now on the PR can get `drive` and `address_review` routes. Add a `reply` route with a short note for the maintainer to send, like `I pushed the missing fields from the sibling file, so this is ready to merge.`
 
 ## `mode: "replace"`
 
@@ -17,8 +18,8 @@ The exception. The route's `callout` said why pushing to the branch is not possi
 1. Check that the PR is open and touches no sensitive path.
 2. Create a worktree on a new branch from the default branch:
    ```bash
-   git -C <main checkout> fetch origin <default branch>
-   git -C <main checkout> worktree add -b triage/replace-pr-<n> <scratch>/replace-pr-<n> origin/<default branch>
+   git -C <checkout> fetch origin <default branch>
+   git -C <checkout> worktree add -b triage/replace-pr-<n> <scratch>/replace-pr-<n> origin/<default branch>
    ```
 3. Bring over the contributor's changes as text: read their files at `reviewedSha` with `gh api "repos/<owner>/<repo>/contents/<path>?ref=<sha>" -H "Accept: application/vnd.github.raw"` and write them into the worktree. Then apply the findings and the instructions in `text`. Run nothing from the contributor's files. Follow the profile's edit rules from `rules/review.md`.
 4. Commit under the writing identity with a message in the project's format. Credit the contributor with a `Co-authored-by: <name> <email>` trailer, taking name and email from their commits (`gh pr view <n> --repo <owner>/<repo> --json commits`).

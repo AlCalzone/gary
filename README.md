@@ -78,15 +78,21 @@ The first command never touches the baseline in `state/snapshot.json`. `--commit
 
 `closed` also lists issues and discussions that are still open but had no activity within `activeWindowDays`. Text fields are cut at 1500 characters and PRs list at most 50 changed files. A PR whose files match the profile's `sensitivePaths` carries them in `sensitiveFiles`. Authors count as `maintainer` when they are in the profile's `maintainers` or are `me`, and as `bot` when they are in `botLogins`, are the configured bot or are a GitHub App.
 
+## gary item
+
+`gary item pr-9488` prints the fresh snapshot entry of one item as JSON, read from GitHub with the same fields as `gary snapshot`. It writes no state. Use it to re-check one item without a full snapshot.
+
 ## gary action
 
 ```sh
 echo '{"action":"label","kind":"issue","number":6,"params":{"add":["bug"]}}' | gary action --dry-run
 gary action action.json
-gary action --check-fresh queued.json
+gary action --check-fresh label.json
 ```
 
 It prints `{ "ok": …, "result": … }` and exits with 1 when `ok` is false. Every `gh` call stops after 60 s, and a failure ends with the tail of gh's stderr. Instead of `kind` and `number`, the input may carry the `itemId` of a queued board action, like `"pr-9488"`.
+
+`--autonomous` marks an action nobody clicked. The routine passes it for every label and assign change it makes on its own. With it, only `label` and `assign` run, and `label` refuses any label outside the profile's `autoLabels`.
 
 `--check-fresh` runs the same freshness check as a click on the board before the action. It needs the `itemId` of a board item and refuses when the thread moved since the review. `"force": true` in the input skips it, except for a moved head on a merge, an approval or a review with inline comments.
 
@@ -132,9 +138,31 @@ The page cannot send an arbitrary action. A click sends `{ itemId, routeId, text
 - A route that already ran or was queued with the same draft is refused with 409.
 - A route whose actor is `me` never reaches GitHub through the server: the page copies its text and opens the thread, and the maintainer acts there. That covers replies to people, every close and every merge. The one close the server runs is a `move` with `input.mode: "close"`, which posts the route's text and closes as not planned.
 - A bot route runs after the click as the bot, or under the maintainer's login in `own` mode. An `unavailable` route is refused.
-- An agent route writes a queued action doc. `drive` is refused unless the PR is by a maintainer, a bot or Copilot, or carries `takenOver: true`.
+- An agent route writes a queued action doc. `drive` and `address_review` are refused unless the PR is by a maintainer, a bot or Copilot, or carries `takenOver: true`. Pushing our commits to a contributor's PR is always a take-over, so a `take_over` route carries the per-thread decisions there.
+- `dismiss_route` removes one suggested route and remembers it with the reason. When it was the last route, a `reanalyze` request is queued so the agent proposes something else.
 - Before a route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends the click again past that check after a second confirm. A moved head still blocks an approval and a review with inline comments. The code is in `scripts/lib/guard.mjs`.
 - The server writes one action doc per bot or agent click with `routeId`, `route`, `draftHash`, `edited`, the action it ran and the result.
+
+## gary validate
+
+`gary validate` runs the same validation over every stored item, read-only, and prints the problems grouped by rule. `gary validate pr-9488 issue-9401` checks only those. `--json` prints the result as JSON. It exits with 1 when an item fails.
+
+## Learning
+
+The board server logs where the maintainer deviates from the agent's proposals in `state/decisions.jsonl`: a dismissed route, another route than the recommended one, an edited text, a thread decision against the agent's verdict, an unchecked review comment, a note to the agent, a snooze. Routes he does on GitHub himself are reported by the page to `/api/decision`, which writes only that local log entry.
+
+The `triage-learn` skill reads new entries with `gary decisions --since <ISO>`, writes rule proposals with `gary put proposals <id> <file>` and its cursor with `gary put learn <file>`. The board shows open proposals. Accepting one appends the rule under its heading in the profile's `rules/` or `templates/`, or in the home's `personal.md`, and commits that file when the profile is a git repository. It never pushes. Dismissing one stores the reason and logs it, so the pattern is not proposed again. Both work in dry-run mode, because they change only local files. `gary proposals` lists every proposal with its status.
+
+A dismissed route goes into the item's `dismissedRoutes`, which the routine never clears. `gary put` refuses a doc that brings back a dismissed route type.
+
+## Tests
+
+```sh
+npm test            # actions, server, accounts, learning, sharing, validate. Needs node and zsh
+npm run test:page   # the board page, mocked and served. Needs Chrome or Chromium
+```
+
+The suites run offline. `test/fake-gh/gh` stands in for the `gh` binary on PATH, answers Gary's reads from `test/fixtures/github.mjs` and refuses every write. Each suite makes its own temp home with the fixture profile `test/fixtures/profile` (the project `acme/widgets`) and picks free ports, so they never touch a real home or a running board. `CHROME` names the browser binary for the page suites, default `google-chrome`. Avatars from github.com may fail to load offline, and the page suites accept the letter placeholder then.
 
 ## gary watch-queue
 
@@ -143,9 +171,14 @@ The page cannot send an arbitrary action. A click sends `{ itemId, routeId, text
 ## gary put
 
 ```sh
-gary put items pr-9488 item.json   # merge the fields into the item, null removes a field
-gary put items pr-9488 --delete    # remove the item
-gary put meta meta.json            # replace meta.json
+gary put items pr-9488 item.json           # the file is the complete item and replaces the stored one
+gary put --merge items pr-9488 patch.json  # change only these fields, null removes a field
+gary put items pr-9488 --delete            # remove the item
+gary put meta meta.json                    # replace meta.json
 ```
 
-It sends the write through the board server, so it queues behind clicks on the same item. Leave `hidden` and `snoozedUntil` out of the file and a dismiss or snooze from the board survives the write. When the server is not running, it writes the file directly with the same merge rules and says so on stderr. It prints `{ "ok": true }`, or `{ "ok": false, "error": … }` and exits with 1.
+A replace keeps the maintainer's `hidden` and `snoozedUntil`, and `priority` when the file has none. Every other field the file leaves out is gone afterwards.
+
+Before every replace, and before a merge that touches `routes`, `threads`, `hint` or `findings`, it validates the item as it will be after the write, with the rules in SPEC.md under Validation. A broken rule refuses the write and prints every problem in `problems`. A warning, like an approval while a thread is judged valid, goes to stderr. `--no-validate` skips the check, for migrations.
+
+It sends the write through the board server, so it queues behind clicks on the same item. When the server is not running, it writes the file directly with the same merge rules and says so on stderr. It prints `{ "ok": true }`, or `{ "ok": false, "error": … }` and exits with 1.

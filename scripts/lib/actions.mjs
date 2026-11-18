@@ -452,11 +452,13 @@ export const ACTIONS = {
 /**
  * Validates and runs one GitHub action as the bot. Never throws.
  * With `dryRun`, read-only lookups still run and every write is returned in `result.invocations` instead.
+ * With `autonomous`, the action counts as one nobody clicked, and only label and assign within the profile's rules may run.
  */
-export async function runAction({ action, kind, number, params, text, dryRun = false } = {}) {
+export async function runAction({ action, kind, number, params, text, dryRun = false, autonomous = false } = {}) {
 	try {
 		const ctx = validate({ action, kind, number, params, text });
 		forbidBotCommands(ctx);
+		if (autonomous) checkAutonomous(ctx);
 		ctx.dryRun = !!dryRun;
 		ctx.invocations = [];
 		const result = await ACTIONS[action].run(ctx);
@@ -503,6 +505,25 @@ function validate({ action, kind, number, params, text }) {
 	}
 
 	return { action, kind, number, params, text };
+}
+
+const AUTONOMOUS_ACTIONS = ["label", "assign"];
+
+/**
+ * Limits an action nobody clicked to what the routine may do on its own: labels from the profile's autoLabels,
+ * and assignments.
+ */
+function checkAutonomous(ctx) {
+	if (!AUTONOMOUS_ACTIONS.includes(ctx.action)) {
+		throw new Error(`"${ctx.action}" needs a click on the board. Without one only ${AUTONOMOUS_ACTIONS.join(" and ")} may run`);
+	}
+	if (ctx.action !== "label") return;
+	const allowed = loadProfile().autoLabels.map((l) => l.toLowerCase());
+	const labels = [...(Array.isArray(ctx.params.add) ? ctx.params.add : []), ...(Array.isArray(ctx.params.remove) ? ctx.params.remove : [])];
+	const outside = labels.filter((l) => typeof l === "string" && !allowed.includes(l.toLowerCase()));
+	if (outside.length) {
+		throw new Error(`Label ${outside.map((l) => `"${l}"`).join(", ")} is not in the profile's autoLabels, so it needs a click on the board`);
+	}
 }
 
 /** Rejects text that contains a bot command from the profile. Only the maintainer posts those, on GitHub. */

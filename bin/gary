@@ -2,19 +2,24 @@
 // The one entry point for everything the skills and the maintainer run. `gary help` lists the commands.
 import { SettingsError, paths } from "../scripts/lib/config.mjs";
 
+// Each entry: module, exported function, help text
 const COMMANDS = {
-	snapshot: ["../scripts/snapshot.mjs", "Fetch open items and print the work list. --commit saves the staged snapshot"],
-	put: ["../scripts/board-put.mjs", "Write one board document: put items <id> <file> | items <id> --delete | meta <file>"],
-	action: ["../scripts/execute-action.mjs", "Run one GitHub action from a JSON file or stdin. --dry-run, --check-fresh"],
-	"watch-queue": ["../scripts/watch-queue.mjs", "Print queued agent requests as JSON lines. --once"],
-	setup: ["../scripts/setup.mjs", "Create the home directory and config.json. --help for the flags"],
-	doctor: ["../scripts/doctor.mjs", "Check the installation, read-only. --json"],
+	snapshot: ["../scripts/snapshot.mjs", "main", "Fetch open items and print the work list. --commit saves the staged snapshot"],
+	item: ["../scripts/snapshot.mjs", "itemMain", "Print the fresh snapshot entry of one item: item pr-<n> | issue-<n> | disc-<n>"],
+	put: ["../scripts/board-put.mjs", "main", "Write one board document: put items <id> <file> | items <id> --delete | meta <file> | proposals <id> <file> | learn <file>. --merge, --no-validate"],
+	validate: ["../scripts/validate.mjs", "main", "Check board items against the rules: validate [<id> ...]. Read-only"],
+	action: ["../scripts/execute-action.mjs", "main", "Run one GitHub action from a JSON file or stdin. --dry-run, --check-fresh, --autonomous"],
+	decisions: ["../scripts/learn-cli.mjs", "decisionsMain", "Print the decision log. --since <ISO> (exclusive), --json"],
+	proposals: ["../scripts/learn-cli.mjs", "proposalsMain", "List the rule proposals with their status. --json"],
+	"watch-queue": ["../scripts/watch-queue.mjs", "main", "Print queued agent requests as JSON lines. --once"],
+	setup: ["../scripts/setup.mjs", "main", "Create the home directory and config.json. --help for the flags"],
+	doctor: ["../scripts/doctor.mjs", "main", "Check the installation, read-only. --json"],
 };
 
 function help() {
 	const lines = ["Usage: gary <command> [options]", ""];
-	for (const [name, [, text]] of Object.entries(COMMANDS)) lines.push(`  ${name.padEnd(12)} ${text}`);
-	lines.push(`  ${"paths".padEnd(12)} Print the core, home, profile and state directories as JSON`);
+	for (const [name, [, , text]] of Object.entries(COMMANDS)) lines.push(`  ${name.padEnd(12)} ${text}`);
+	lines.push(`  ${"paths".padEnd(12)} Print the core, home, profile, state, checkout, config and personal paths as JSON`);
 	console.log(lines.join("\n"));
 }
 
@@ -27,8 +32,8 @@ try {
 		console.log(JSON.stringify(out, null, 2));
 		if (out.error) process.exitCode = 2;
 	} else if (Object.hasOwn(COMMANDS, command)) {
-		const { main } = await import(COMMANDS[command][0]);
-		await main(args);
+		const [module, fn] = COMMANDS[command];
+		await (await import(module))[fn](args);
 	} else {
 		console.error(`Unknown command "${command}".`);
 		help();

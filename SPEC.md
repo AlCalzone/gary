@@ -12,9 +12,9 @@ The examples below use the project `acme/widgets`, the maintainer `octocat` and 
 - **Author tags**: `maintainer` (the profile's `maintainers` and `me`), `bot` (the profile's `botLogins`, the configured bot and every GitHub App), `copilot` (GitHub's Copilot coding agent), `contributor` (everyone else). All are included and filterable.
 - **Review depth**: tiered. Every changed item gets a quick classification. Contributor PRs and active issues get a full review. The profile's `rules/review.md` names the project's own review skills and tools.
 - **Budget per run**: at most `maxFullReviewsPerRun` full reviews and `maxAutoFixesPerRun` auto-fix attempts. Remaining changed items get `reviewDepth: "pending"`.
-- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. Everything else needs a click.
+- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. Everything else needs a click. The routine passes `--autonomous` to `gary action` for every label and assign change nobody clicked, and the code then refuses labels outside `autoLabels` and every other action.
 - **Board server**: `server/server.mjs` serves the board on `127.0.0.1` at the `port` from `config.json`. It runs inside the `gary` MCP server of the master session, which starts it with the `board_start` tool at the beginning of every run. Other sessions leave it alone. It watches `<state>/board/` and pushes changes to the open page.
-- **Buttons**: a click on a bot route makes the server run it live through `scripts/lib/actions.mjs`. When the server cannot reach GitHub, it writes the action to `<state>/board/actions/` with status `queued`, and the next hourly run executes it. Agent requests are always queued.
+- **Buttons**: a click on a bot route makes the server run it live through `scripts/lib/actions.mjs`. When GitHub cannot be reached, the action fails, the board shows the error, and the maintainer can click again. Agent requests are always queued.
 - **Confirmation**: merge, close and any posting of public text need a second confirm click on the board.
 - **Suggested text**: an editable textarea. The button posts the textarea content.
 - **Project tools**: tools a project needs, like a log analyzer, are listed in the profile's `requiredTools`. The routine checks them at the start of a run.
@@ -102,10 +102,15 @@ Reading order for every rule: the core reference, then the profile's file of the
 `gary <command>` runs every command the skills and the maintainer need. Skills never use a path into the core.
 
 - `gary snapshot`, `gary snapshot --commit`: see Snapshot.
-- `gary put items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run.
-- `gary action [--dry-run] [--check-fresh] [file]`: run one GitHub action from a JSON file or stdin.
+- `gary item <id>`: print the fresh snapshot entry of one item (`pr-<n>`, `issue-<n>`, `disc-<n>`), read from GitHub with the same fields as the snapshot. It writes no state.
+- `gary put items <id> <file>`, `gary put --merge items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run. Without `--merge` the file is the complete item and replaces the stored one. Only the maintainer's `hidden` and `snoozedUntil` carry over, and `priority` when the file has none. With `--merge` only the fields in the file change, and `null` removes a field. Both modes validate the resulting item, see Validation. A merge that touches none of `routes`, `threads`, `hint` and `findings` is not validated. `--no-validate` skips the check, for migrations.
+- `gary validate [<id> ...] [--json]`: run the same validation over the stored items, read-only. Without ids it checks all of them and groups the problems.
+- `gary action [--dry-run] [--check-fresh] [--autonomous] [file]`: run one GitHub action from a JSON file or stdin. `--autonomous` marks an action nobody clicked: only `label` within `autoLabels` and `assign` may run.
 - `gary watch-queue [--once]`: print queued agent requests as JSON lines.
-- `gary paths`: print JSON with the keys `core`, `home`, `profile`, `state` and `checkout`.
+- `gary decisions [--since <ISO>] [--json]`: print the decision log, see Learning. `--since` is exclusive.
+- `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
+- `gary put proposals <id> <file>`: write one rule proposal, validated. `gary put learn <file>`: write the learn cursor.
+- `gary paths`: print JSON with the keys `core`, `home`, `profile`, `state`, `checkout`, `config` and `personal`.
 - `gary setup`: create the home with `config.json`, `personal.md` and `state/`. It asks in a terminal and takes flags in a script: `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. A new project gets a profile copied from `profiles/template/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
 - `gary doctor`: read-only checks of Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the port, the skill links and the launcher.
 
@@ -180,14 +185,14 @@ Rules:
 | type | allowed `as` | params | what the click does |
 | --- | --- | --- | --- |
 | `reply` | `me` (default), `bot` | | `me`: copy `text`, open the thread. `bot`: post `text` |
-| `request_logs` | `bot`, `me` without a bot | | post `text`, a request for logs or details (template `request-logs`) |
+| `request_logs` | `bot`, `me` | | post `text`, a request for logs or details (template `request-logs`). `me` is accepted in every account mode and is always prefill |
 | `close` | `me` | `reason`: `completed`, `not_planned`, `duplicate`. `duplicateOf`: number, with `duplicate` | copy `text` when present, open the thread. He closes there with that reason. For a PR there is no reason |
 | `reopen` | `bot` (default), `me` | | `bot`: reopen, and post `text` first when present. `me`: copy `text`, open the thread |
 | `merge` | `me` | | copy `text` when present, open the PR page |
-| `review` | `bot`, `me` without a bot (prefill of the body, no inline comments) | `event`: `approve`, `request_changes`, `comment`. `comments`: `[{ id, path, line, startLine, text, diffHunk }]`. `diffHunk` holds the at most 12 diff lines the comment refers to, shown on the card and never sent to GitHub. `line` is on the right side of a diff hunk at `reviewedSha`. `startLine` is optional, for a range | submit one PR review with `text` as the body and the checked `comments` inline |
-| `address_review` | `agent` | | offered only when every open thread has a verdict. When the bot cannot push to the branch it is offered only if no thread needs a fix. The agent fixes or dismisses each open review thread per the maintainer's decisions, replies in each thread, resolves it and pushes to the PR branch |
+| `review` | `bot`, `me` (in every account mode, always prefill of the body, no inline comments) | `event`: `approve`, `request_changes`, `comment`. `comments`: `[{ id, path, line, startLine, text, diffHunk }]`. `diffHunk` holds the at most 12 diff lines the comment refers to, shown on the card and never sent to GitHub. `line` is on the right side of a diff hunk at `reviewedSha`. `startLine` is optional, for a range | submit one PR review with `text` as the body and the checked `comments` inline |
+| `address_review` | `agent` | | offered only where `drive` is: on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true`. Pushing our commits to a contributor's PR is always a take-over. Also offered only when every open thread has a verdict, and when the bot cannot push to the branch only if no thread needs a fix. The agent fixes or dismisses each open review thread per the maintainer's decisions, replies in each thread, resolves it and pushes to the PR branch |
 | `follow_up` | `agent`, `bot`, `me` | `title` for an issue | `agent`: queued as `start_fix` with the route's `text` as instructions and `params.finding`. `bot`: file an issue with `title` and `text`, then link it in the thread. `me`: open GitHub's new-issue form with `title` and `text` filled in |
-| `take_over` | `agent` | `mode`: `push` (default), `replace` | `push`: the agent finishes the PR in the contributor's PR with our commits, pushed as the bot. `replace`: it opens a replacement PR. `replace` is the exception and needs a `callout` that says why pushing is not possible. After a take-over the item carries `takenOver: true` |
+| `take_over` | `agent` | `mode`: `push` (default), `replace` | `push`: the agent finishes the PR in the contributor's PR with our commits, pushed as the bot. `replace`: it opens a replacement PR. `replace` is the exception and needs a `callout` that says why pushing is not possible. On PRs by the bot or a dependency bot only `push` is offered. On a contributor PR that is not taken over, open review threads are handled by a `take_over` with mode `push`, with the same per-thread decisions as `address_review`. After a take-over the item carries `takenOver: true`, and from then on `address_review` and `drive` are allowed |
 | `drive` | `agent` | `maxRounds`: 1 to 3, default 3 | the agent drives the PR on its own: address the open review comments by its own verdicts, push, request a Copilot review, wait for it, repeat. It stops when no valid comment is left, after `maxRounds`, or when it is stuck. Offered only on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true` |
 | `move` | per button | `to`: a name from `relatedRepos`, `discussion`, or `issue` | Repo name, on an issue: two buttons, both bot. "Transfer" moves the issue. "Close, ask to reopen there" posts `text` (template `reopen-elsewhere`) and closes as not planned, for issues that lack the info the other repo needs. `discussion`, on an issue: `me`, opens the issue, he converts it there. GitHub has no API for it and it needs no reply. `issue`, on a discussion: `me`, copies `botCommands.escalate` and opens the discussion. Without that command there is no such route |
 | `chore` | `bot` | `action`: `label`, `assign`, `ready`, `answer_discussion`, `react`, `update_branch`, `rerun_ci`, plus that action's params | run the action |
@@ -196,6 +201,7 @@ The click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/ac
 
 - `review`: `{ commentIds: ["c1", "c3"] }`, the checked inline comments. All are checked by default.
 - `address_review`: `{ decisions: [{ threadId, decision: "fix" | "dismiss", note }] }`. The card lists the item's `threads`. Each switch starts from the agent's verdict: `valid` is `fix`, `wrong` is `dismiss`, `optional` and `unjudged` are `fix`. `note` is optional per thread. `text` is an optional note for the whole run.
+- `take_over`: `{ decisions }`, the same as for `address_review` and validated the same way. Optional: a take-over without open threads sends none.
 - `follow_up`: `{ title }` when the maintainer edited it.
 - `drive`: `{ maxRounds }`, 1 to 3, when the maintainer changed it.
 - `move` to a repo: `{ mode: "transfer" | "close" }`. Required. `close` needs a non-empty `text`. The two buttons share one route, so after one ran the other is refused.
@@ -204,11 +210,17 @@ The server checks every id and value in `input` against the route and the item. 
 
 Before a bot route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends `force: true` after a second confirm. A moved head still blocks a merge, an approval and a review with inline comments.
 
-Routes with `as: "me"` are never logged and never reach GitHub through the server. The page marks them "opened today" in localStorage.
+Routes with `as: "me"` never reach GitHub through the server and get no action doc. When the maintainer uses one, the page reports it to `POST /api/decision`, and the server writes a local entry in the decision log (see Learning). The page marks them "opened today" in localStorage.
+
+`dismiss_route` removes a suggested route the maintainer does not want: `{ itemId, routeId, text }` to `/api/action`, with `text` an optional reason of at most 500 characters. The server removes the route from the item and appends `{ type, title, reason, at }` to the item's `dismissedRoutes`. When the removed route was the recommended one and routes remain, the first remaining route becomes recommended and `hint` becomes its title. When no route remains, the server also writes a queued `reanalyze` action doc whose `text` names the dismissed route and the reason, so the agent proposes something else. The dismissal is logged as a done action doc with `via: "board"` and in the decision log.
 
 ## Board page
 
-`GET /api/state` returns `{ board, items, actions, meta }`. `board` holds what the page needs to name the project and the accounts without hard-coding them: `name`, `repo`, `repoUrl`, `me` and `bot` with `login` and `avatarUrl` (`bot` is `null` without one), `accountMode`, `relatedRepos`, `botCommands`, `reviewBots` and `dryRun`. The page gets the same object from `window.claude.use("board")`. It calls the server through `window.claude.use("mcp")` with the server name `host:gary`.
+`GET /api/state` returns `{ board, items, actions, meta }`. `board` holds what the page needs to name the project and the accounts without hard-coding them: `name`, `repo`, `repoUrl`, `me` and `bot` with `login` and `avatarUrl` (`bot` is `null` without one), `accountMode`, `relatedRepos`, `botCommands`, `reviewBots` and `dryRun`. The page talks to the server only through `window.claude`, which the server injects into the page:
+
+- `use("board")` returns the `board` object above, plus `maintainer` (his login) and `decision(body)`. `decision` posts `{ itemId, routeId, text }` to `/api/decision` when he uses a route he does on GitHub himself. It resolves quietly, also when the post fails.
+- `use("db")` returns `collection(name).orderBy(field, dir).limit(n).onSnapshot(cb)` for `items`, `actions` and `proposals`, and `doc("meta/status").onSnapshot(cb)`. `proposals` holds the open proposals only. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`. The server pushes every change over its event stream, with one event each for `items`, `actions`, `proposals` and `meta`, and `reload` when `board.html` changed.
+- `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ itemId, routeId, text, draftHash, force, input }`, for example `input.decisions` on `address_review` and `take_over`. The board-only calls are `dismiss_route` with `{ itemId, routeId, text }`, and `accept_proposal` and `dismiss_proposal` with `{ proposalId, text }`.
 
 The page keeps filters, drafts and "opened today" marks in localStorage under keys prefixed `gary:<owner>/<repo>:`, so two boards on one machine keep their own.
 
@@ -216,9 +228,24 @@ The page keeps filters, drafts and "opened today" marks in localStorage under ke
 
 The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`almost`, `review`) and "When you have time" (`deferred`, `hardware`, snoozed items). A chip on each row names the section. The page shows at most the time budget (6 hours by default, set on the board), filled in group order by `priority`, using `effortMinutes`. An item that does not fit is skipped. Items handled today count as spent time. "Quick & Easy" shows at most 5 rows at a time. More rows appear only on click. The default view shows no backlog counts.
 
+## Validation
+
+`gary put` and `gary validate` check an item against these rules. A broken rule refuses the write and lists every problem.
+
+- The required fields are present and every enum holds one of its values: `kind`, `number`, `title`, `url`, `author`, `authorType`, `section`, `priority`, `effortMinutes`, `reviewDepth`, `state`, and where present `ci`, `mergeable`, `reviewDecision`, thread verdicts and finding severities. The file name matches `kind` and `number`.
+- 0 to 4 routes with the ids `r1` to `r4`, each id once. With routes, exactly one is `recommended`, and `hint` equals its title and has at most 60 characters. An item without routes needs no hint.
+- No routes while a thread is `unjudged`.
+- Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
+- `address_review` only when every thread has an id and a verdict, and only where `drive` would be accepted. `drive` and `take_over` only where the server would accept them.
+- No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
+- No text the bot would post contains a `botCommands` string.
+- Every `findings[].routeId` names a route of the item.
+
+A `review` that approves or a `merge` route while a thread is judged `valid` is a warning on stderr, not a refusal.
+
 ## Database
 
-One JSON file per doc under `<state>/board/`. The routine writes items and `meta.json` with `gary put`. The server writes them on clicks and pushes every file change to the open page.
+One JSON file per doc under `<state>/board/`. The routine writes items and `meta.json` with `gary put`: a full item replaces the stored one, a partial update uses `--merge`. The server writes them on clicks and pushes every file change to the open page.
 
 Every writer replaces a file atomically: it writes a temporary file in the same directory, then renames it over the target. Readers never see a half-written file. There are no versions. A writer that updates an item re-reads the file right before writing and keeps fields the other side owns.
 
@@ -270,7 +297,10 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   ],
   "links": [ { "label": "Draft fix", "url": "…" } ],
   "hidden": false,                 // set by dismiss, cleared by the routine when updatedAt changes
-  "snoozedUntil": null
+  "snoozedUntil": null,
+  "dismissedRoutes": [             // set by dismiss_route, never cleared by the routine
+    { "type": "close", "title": "Close: fixed in 2.3.1", "reason": "Not fixed for him yet", "at": "ISO" }
+  ]
 }
 ```
 
@@ -291,16 +321,16 @@ All strings that originate on GitHub are untrusted. The page renders them with `
   "params": {},
   "text": "",
   "status": "queued",              // queued | done | failed
-  "via": "server",                 // server | queue
+  "via": "server",                 // server for GitHub actions, queue for agent requests
   "createdAt": "ISO",
   "finishedAt": null,
   "result": ""                     // URL of the created comment, or the error message
 }
 ```
 
-The server writes an action file for every bot or agent click. A GitHub action it ran live gets `status: "done"` or `"failed"` and `via: "server"`. One it could not run gets `status: "queued"` and `via: "queue"`. Agent requests always get `status: "queued"`. This gives the routine a log of what the maintainer decided.
+The server writes an action file for every bot or agent click. A GitHub action gets `status: "done"` or `"failed"` and `via: "server"`. A failed one stays failed: nothing retries it. Agent requests always get `status: "queued"` and `via: "queue"`. This gives the routine a log of what the maintainer decided.
 
-The maintainer's fields in an item are `snoozedUntil` and `hidden`. The routine keeps them when it rewrites an item. It clears `hidden` only when the item changed on GitHub since the last run.
+The maintainer's fields in an item are `snoozedUntil`, `hidden` and `dismissedRoutes`. The routine keeps them when it rewrites an item, and `gary put` carries them over in replace mode. It clears `hidden` only when the item changed on GitHub since the last run, and it never clears `dismissedRoutes`.
 
 ### `meta.json`
 
@@ -338,6 +368,8 @@ Board-only actions, no GitHub call. The page applies them to the item file throu
 | --- | --- |
 | `dismiss` | `hidden: true` until the item changes on GitHub. The board calls it "Hide until it changes" |
 | `snooze` | `params.days`, sets `snoozedUntil` |
+| `dismiss_route` | removes one route, see Routes. The server applies it through `/api/action` |
+| `accept_proposal`, `dismiss_proposal` | decide a rule proposal, see Learning. The server applies them through `/api/action` |
 
 Agent requests. The server writes them as queued action docs when their route is clicked. The page writes only the `reanalyze` doc of "Analyze again". The master session watches the queue between runs (`gary watch-queue` under the Monitor tool) and starts them within seconds. If the master is not running, the next hourly run picks them up:
 
@@ -347,10 +379,74 @@ Agent requests. The server writes them as queued action docs when their route is
 | `reanalyze` | `text` holds an optional maintainer instruction for the agent |
 | `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from |
 | `address_review` | `params.decisions` as sent by the card. The agent fixes or dismisses each thread and pushes to the PR branch as the bot |
-| `take_over` | `params.mode` `push` or `replace`, optional `text` with instructions |
+| `take_over` | `params.mode` `push` or `replace`, optional `params.decisions` as for `address_review`, optional `text` with instructions |
 | `drive` | `params.maxRounds`. When it ends the agent writes `rounds: [{ n, fixed: ["…"], dismissed: [{ summary, reason }], open: ["…"] }]` into the item and the fitting routes: merge when nothing is open, otherwise a review or address_review card. The dialog shows the rounds as a short summary |
 
 Every action returns `{ ok, result }` and never throws past the entry point. `--dry-run` applies the account rules and the read-only lookups and returns the writes it would send instead.
+
+## Learning
+
+Gary learns from where the maintainer deviates from the agent's proposals. The server keeps a decision log. A daily skill turns patterns in it into rule proposals. The maintainer accepts or dismisses each proposal on the board, and an accepted one is appended to a rules file.
+
+### Decision log
+
+`<state>/decisions.jsonl`, append-only, one JSON object per line. Only the server writes it, one entry at a time. Every entry has these fields, plus the fields of its type:
+
+```jsonc
+{ "at": "ISO", "type": "chose_alternative", "itemId": "pr-512",
+  "item": { "kind": "pr", "authorType": "contributor", "section": "easy", "labels": ["bug"], "title": "…" } }
+```
+
+| type | fields | written when |
+| --- | --- | --- |
+| `dismissed_route` | `route: { type, title }`, `wasRecommended`, `reason` | `dismiss_route` ran |
+| `chose_alternative` | `recommended: { type, title }`, `chosen: { type, title }` | the used route is not the recommended one |
+| `edited_text` | `route: { type, title }`, `draft`, `final`, each cut at 8000 characters | the sent or copied text differs from the route's draft |
+| `thread_override` | `route: { type }`, `thread: { summary, verdict }`, `decision`, `note` | a fix or dismiss switch differs from the default for the agent's verdict, or carries a note |
+| `unchecked_comment` | `comment: { path, text }` | one entry per inline review comment the maintainer unchecked |
+| `agent_note` | `text` | the note of "Analyze again", or the instruction text of an agent route |
+| `snoozed` | `days`, or `untilActivity: true` | the maintainer snoozed or hid the item |
+| `dismissed_proposal` | `proposal: { id, title, target, file }`, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
+
+The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", snooze and hide. Routes with `as: "me"` never reach `/api/action`. The page reports their use to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
+
+`gary decisions [--since <ISO>] [--json]` prints the entries. `--since` is exclusive: it prints entries whose `at` is later than the value.
+
+### Proposals
+
+`<state>/board/proposals/<id>.json`, one file per proposal:
+
+```jsonc
+{
+  "id": "learn-2026-11-18-close-stale-config-prs",   // set by the skill: learn-<YYYY-MM-DD>-<slug>, matches ^[a-z0-9-]{1,80}$
+  "createdAt": "ISO",
+  "title": "Close config PRs after 30 days without reply",   // at most 60 characters
+  "why": "One or two sentences on the pattern.",
+  "evidence": [ { "at": "ISO", "itemId": "pr-512", "type": "chose_alternative", "gist": "…" } ],
+  "target": "profile",             // profile | personal
+  "file": "rules/classification.md",   // relative: rules/<topic>.md or templates/<name>.md for the profile, personal.md for personal
+  "heading": "## Stale PRs",       // an existing heading to append under, or null or empty for the end of the file
+  "text": "The rule as markdown, editable on the board.",
+  "status": "open",                // open | accepted | dismissed
+  "decidedAt": null,
+  "reason": ""                     // the dismissal reason
+}
+```
+
+The skill writes proposals with `gary put proposals <id> <file>`, which validates them. `gary proposals [--json]` lists every proposal with its status and the dismissal reason. `/api/state` serves the open proposals as `proposals`, and the event stream pushes their changes.
+
+### Accept and dismiss
+
+Both go through `/api/action` with `{ proposalId, text }`.
+
+- `accept_proposal` appends `text`, the edited rule, to the target file: under `heading` when the file has that heading, at the end of the file otherwise. The path must resolve inside the profile's `rules/` or `templates/` directory, or be exactly the home's `personal.md`. Symlinks that lead elsewhere are refused, and the write is atomic. When the profile directory is a git repository, the server commits that one file there with the message `Add rule: <title>` and does not push. Then it sets `status: "accepted"` and `decidedAt`.
+- `dismiss_proposal` sets `status: "dismissed"`, `decidedAt` and `reason` from `text`, and logs a `dismissed_proposal` entry.
+
+Both run in dry-run mode too, because they change only local files and never GitHub.
+
+### Cursor
+
+`<state>/learn.json` is `{ "reviewedUntil": "ISO", "lastLearnAt": "ISO" }`. The skill writes it with `gary put learn <file>`. `reviewedUntil` is the `at` of the newest log entry it read, `lastLearnAt` the time of its last pass.
 
 ## MCP server
 
@@ -365,7 +461,7 @@ gary snapshot            # prints JSON work list to stdout, stages <state>/snaps
 gary snapshot --commit   # after a successful run: save the staged snapshot as the new baseline
 ```
 
-Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, last 5 comments with author and author association, comment count, updatedAt. It diffs against `<state>/snapshot.json`.
+Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`.
 
 Output:
 
@@ -383,12 +479,12 @@ Output:
 The `triage-routine` skill has the full sequence. In short:
 
 1. Run `gary paths` and read `config.json` and the profile. Take the run lock. Check the profile's `requiredTools`. Start the board server with `board_start`. If it does not answer, continue and warn in the run summary.
-2. Process queued action files in `<state>/board/actions/`. Agent requests go onto this run's work list. A queued GitHub action goes to `gary action --check-fresh`. Write back status and result.
+2. Process queued action files in `<state>/board/actions/`. They are agent requests and go onto this run's work list. Write back status and result.
 3. Run `gary snapshot`.
 4. Delete the items for `closed` ids with `gary put items <id> --delete`.
 5. Quick-classify every `changed` item. Pick up to `maxFullReviewsPerRun` for a full review: first items that need analysis, then contributor PRs, then items in `active`, then the rest by updatedAt.
 6. Run full reviews as parallel subagents. PRs use `triage-review-pr`, issues and discussions use `triage-issue`.
 7. Attempt up to `maxAutoFixesPerRun` fixes that the issue triage marked as solvable.
-8. Write item files with `gary put`, keeping the maintainer's fields. Clear `hidden` on changed items. Apply the autonomous label and assignment changes.
+8. Write each item as a complete doc with `gary put`, which keeps the maintainer's fields. Clear `hidden` on changed items with `gary put --merge`. Apply the autonomous label and assignment changes with `gary action --autonomous`.
 9. Write `meta.json`. Run `gary snapshot --commit`.
 10. Between runs, follow `gary watch-queue` and handle each agent request as it arrives.

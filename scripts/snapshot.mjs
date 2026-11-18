@@ -35,11 +35,7 @@ const REVIEW_STATE_FIELDS = `
 	nodes { author { login __typename } state submittedAt url }
 `;
 
-const PR_QUERY = `query($owner: String!, $name: String!, $after: String) {
-	repository(owner: $owner, name: $name) {
-		pullRequests(states: OPEN, first: 25, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
-			pageInfo { hasNextPage endCursor }
-			nodes {
+const PR_FIELDS = `
 				number title url body createdAt updatedAt isDraft
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
@@ -63,7 +59,13 @@ const PR_QUERY = `query($owner: String!, $name: String!, $after: String) {
 					}
 				}
 				reviewThreads(last: ${THREAD_PAGE}) { ${THREAD_FIELDS} }
-			}
+`;
+
+const PR_QUERY = `query($owner: String!, $name: String!, $after: String) {
+	repository(owner: $owner, name: $name) {
+		pullRequests(states: OPEN, first: 25, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+			pageInfo { hasNextPage endCursor }
+			nodes { ${PR_FIELDS} }
 		}
 	}
 }`;
@@ -84,28 +86,26 @@ const MORE_REVIEWS_QUERY = `query($owner: String!, $name: String!, $number: Int!
 	}
 }`;
 
-const ISSUE_QUERY = `query($owner: String!, $name: String!, $after: String) {
-	repository(owner: $owner, name: $name) {
-		issues(states: OPEN, first: 50, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
-			totalCount
-			pageInfo { hasNextPage endCursor }
-			nodes {
+const ISSUE_FIELDS = `
 				number title url body createdAt updatedAt
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
-			}
+				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft } }
+`;
+
+const ISSUE_QUERY = `query($owner: String!, $name: String!, $after: String) {
+	repository(owner: $owner, name: $name) {
+		issues(states: OPEN, first: 50, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+			totalCount
+			pageInfo { hasNextPage endCursor }
+			nodes { ${ISSUE_FIELDS} }
 		}
 	}
 }`;
 
-const DISCUSSION_QUERY = `query($owner: String!, $name: String!, $after: String) {
-	repository(owner: $owner, name: $name) {
-		discussions(states: OPEN, first: 30, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
-			totalCount
-			pageInfo { hasNextPage endCursor }
-			nodes {
+const DISCUSSION_FIELDS = `
 				number title url body createdAt updatedAt
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
@@ -118,10 +118,23 @@ const DISCUSSION_QUERY = `query($owner: String!, $name: String!, $after: String)
 						replies(last: 2) { totalCount nodes { id author { login __typename } authorAssociation createdAt body } }
 					}
 				}
-			}
+`;
+
+const DISCUSSION_QUERY = `query($owner: String!, $name: String!, $after: String) {
+	repository(owner: $owner, name: $name) {
+		discussions(states: OPEN, first: 30, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+			totalCount
+			pageInfo { hasNextPage endCursor }
+			nodes { ${DISCUSSION_FIELDS} }
 		}
 	}
 }`;
+
+const ITEM_QUERIES = {
+	pr: ["pullRequest", PR_FIELDS],
+	issue: ["issue", ISSUE_FIELDS],
+	disc: ["discussion", DISCUSSION_FIELDS],
+};
 
 export async function main(argv = []) {
 	if (argv.includes("--commit")) return commit();
@@ -190,6 +203,43 @@ export async function main(argv = []) {
 		},
 	};
 	process.stdout.write(JSON.stringify(output) + "\n");
+}
+
+/**
+ * Fetches one item fresh from GitHub, with the same fields as the full snapshot. Writes no state.
+ * `id` is pr-<n>, issue-<n> or disc-<n>.
+ */
+export async function fetchItem(id) {
+	const m = /^(pr|issue|disc)-(\d+)$/.exec(id ?? "");
+	if (!m) throw new Error(`Invalid item id "${id}". Use pr-<n>, issue-<n> or disc-<n>`);
+	const [field, fields] = ITEM_QUERIES[m[1]];
+	const { owner, name } = repoParts();
+	let data;
+	try {
+		data = await graphql(
+			`query($owner: String!, $name: String!, $number: Int!) {
+				repository(owner: $owner, name: $name) { ${field}(number: $number) { ${fields} } }
+			}`,
+			{ owner, name, number: Number(m[2]) },
+		);
+	} catch (e) {
+		if (/Could not resolve/i.test(e.message)) throw new Error(`${id} not found in ${owner}/${name}`);
+		throw e;
+	}
+	const node = data.repository[field];
+	if (!node) throw new Error(`${id} not found in ${owner}/${name}`);
+	const classify = authorClassifier(maintainerLogins(), botLogins());
+	if (m[1] === "pr") {
+		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node)]);
+		return toPr(node, classify, loadProfile().sensitivePaths);
+	}
+	return m[1] === "issue" ? toIssue(node, classify) : toDiscussion(node, classify);
+}
+
+/** gary item <id>: prints the fresh snapshot entry of one item. */
+export async function itemMain(argv) {
+	if (argv.length !== 1) throw new Error("Usage: gary item <pr-<n>|issue-<n>|disc-<n>>");
+	process.stdout.write(JSON.stringify(await fetchItem(argv[0]), null, 2) + "\n");
 }
 
 // Compare review and thread state too because a PR's updatedAt does not reliably move for them
@@ -328,6 +378,7 @@ function toThread(t, classify) {
 		isBot: first?.author?.__typename === "Bot",
 		createdAt: first?.createdAt,
 		body: trim(cleanReviewText(first?.body), MAX_THREAD_TEXT),
+		...(t.isOutdated && { outdated: true }),
 	};
 }
 
@@ -405,7 +456,8 @@ function toPr(n, classify, sensitivePaths) {
 	const reviews = n.reviews.nodes
 		.filter((r) => r.submittedAt)
 		.map((r) => toReview(r, classify));
-	const open = n.reviewThreads.nodes.filter((t) => !t.isResolved && !t.isOutdated);
+	// An outdated thread that nobody resolved is still open on GitHub
+	const open = n.reviewThreads.nodes.filter((t) => !t.isResolved);
 	const summary = summarizeReviews(n.allReviews.nodes, open);
 	const requested = n.reviewRequests.nodes.map(toRequestedReviewer).filter(Boolean);
 	return {
@@ -438,10 +490,21 @@ function sensitiveFiles(files, patterns) {
 	return hits.length ? { sensitiveFiles: hits } : {};
 }
 
+function closingPrs(n) {
+	const prs = (n.closedByPullRequestsReferences?.nodes ?? []).map((p) => ({
+		number: p.number,
+		url: p.url,
+		state: p.state.toLowerCase(),
+		isDraft: p.isDraft,
+	}));
+	return prs.length ? { closingPrs: prs } : {};
+}
+
 function toIssue(n, classify) {
 	return {
 		...common("issue", `issue-${n.number}`, n, classify),
 		assignees: n.assignees.nodes.map((a) => a.login),
+		...closingPrs(n),
 	};
 }
 

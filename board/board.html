@@ -469,6 +469,17 @@ button.card-head:hover { background: color-mix(in srgb, var(--int) calc(var(--ti
 .card-head .r-hint { flex: 1; font-size: 14px; line-height: 20px; }
 .card.open .card-head .r-hint { font-size: 15px; }
 .card-head > .avatar, .card-head > .actor-icon { width: 20px; height: 20px; flex: none; }
+.card-top { display: flex; align-items: center; }
+.card-top > .card-head { flex: 1; min-width: 0; }
+.card-x { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 8px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--faint); cursor: pointer; }
+.card-x .i { width: 14px; height: 14px; }
+.card-x:hover { color: var(--fg); background: color-mix(in srgb, var(--int) 10%, transparent); }
+.card.compact .card-x { margin-right: -6px; }
+.dismiss-box { display: flex; flex-direction: column; gap: 8px; margin: 0 14px 12px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); }
+.dismiss-box[hidden] { display: none; }
+.dismiss-box .field { width: 100%; }
+.dismiss-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.farewell { margin: 0; padding: 12px 2px; color: var(--muted); font-size: 14px; }
 .card-head .chev { width: 16px; height: 16px; flex: none; color: var(--muted); transition: transform 0.15s ease; }
 .card.open .card-head .chev { transform: rotate(180deg); }
 button.card-head:hover .chev { color: var(--fg); }
@@ -608,6 +619,23 @@ textarea.short { min-height: 5.4em; }
 .foot-status:empty { display: none; }
 .reload-btn { margin-left: auto; font-size: 12.5px; }
 .reload-btn:not([hidden]) + .conn { margin-left: 0; }
+/* Suggested rules: a quiet header entry, never part of the plan */
+.learn-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--act-think); font: 600 12.5px/1 var(--font-body); cursor: pointer; }
+.learn-btn:hover { background: color-mix(in srgb, var(--act-think) 10%, transparent); }
+.learn-btn .i { width: 16px; height: 16px; }
+.reload-btn:not([hidden]) ~ .learn-btn { margin-left: 0; }
+.learn-btn:not([hidden]) + .conn { margin-left: 0; }
+.intent-think { --int: var(--act-think); }
+.learn-intro { margin: 0; max-width: 64ch; font-family: var(--font-read); font-size: 15.5px; line-height: 1.55; color: var(--muted); }
+.pcard .card-head { cursor: default; }
+.p-title { font-weight: 600; font-size: 15px; line-height: 1.4; }
+.evidence summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+.evidence ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.evidence li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.ev-day { color: var(--faint); font-variant-numeric: tabular-nums; min-width: 3.6em; }
+.ev-ref { color: var(--muted); }
+.ev-link { padding: 0; font-size: 13px; }
+.ev-gist { font-family: var(--font-read); color: var(--fg); flex-basis: 100%; padding-left: 4.6em; line-height: 1.5; }
 .r-num { grid-area: num; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .r-title { min-width: 0; font-size: 14.5px; line-height: var(--line-h); font-weight: 500; overflow-wrap: anywhere; }
 .wait { display: inline-flex; flex: none; align-items: center; gap: 3px; white-space: nowrap; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -793,6 +821,7 @@ textarea {
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
       <span class="run" id="run-info">Loading</span>
       <button class="btn quiet reload-btn" id="reload" type="button" hidden>Updated, reload</button>
+      <button class="learn-btn" id="learn" type="button" aria-haspopup="dialog" hidden></button>
       <span class="conn" id="conn" data-state="checking"></span>
       <div class="controls" id="filters"></div>
     </div>
@@ -828,6 +857,21 @@ textarea {
   </div>
   <div class="d-analyze" id="d-analyze" role="group" aria-label="Analyze again" hidden></div>
   <div class="d-foot" id="d-foot" role="group" aria-label="Put it away"></div>
+</dialog>
+
+<dialog class="detail learn" id="learn-dialog" aria-labelledby="learn-title">
+  <div class="d-bar">
+    <span class="d-ref">Suggested rules</span>
+    <button class="iconbtn" type="button" id="learn-close" aria-label="Close" title="Close"></button>
+  </div>
+  <div class="d-body">
+    <div class="d-head">
+      <h2 class="d-title" id="learn-title">What your decisions suggest</h2>
+      <p class="learn-intro">You decided differently from the agent more than once. Add a rule and the agent follows it from the next run.</p>
+    </div>
+    <div class="routes" id="learn-cards"></div>
+    <p class="farewell" id="learn-empty" hidden>Nothing to learn right now.</p>
+  </div>
 </dialog>
 
 <script>
@@ -898,6 +942,7 @@ const state = {
   slow: false,
   loaded: { items: false, actions: false, meta: false },
   items: new Map(),
+  proposals: [],
   latestAction: new Map(),
   meta: null,
   server: "checking",
@@ -957,6 +1002,7 @@ const ICONS = {
   sparkles: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z")],
   bot: [["rect", { x: 3, y: 8, width: 18, height: 12, rx: 2 }], p("M12 8V4H8"), p("M2 14h2"), p("M20 14h2"), p("M15 13v2"), p("M9 13v2")],
   archive: [["rect", { x: 2, y: 3, width: 20, height: 5, rx: 1 }], p("M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"), p("M10 12h4")],
+  lightbulb: [p("M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"), p("M9 18h6"), p("M10 22h4")],
   chevronDown: [p("m6 9 6 6 6-6")],
   moon: [p("M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z")],
   plug: [p("M12 22v-5"), p("M9 8V2"), p("M15 8V2"), p("M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z")],
@@ -1739,7 +1785,7 @@ const INTENTS = [
   ["talk", ["comment", "review_comment", "react", "answer_discussion"], ["Reply", "Ask", "React"]],
   ["push", ["request_changes"], ["Request changes"]],
   ["think", [], ["Decide", "Review"]],
-  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Apply fixes", "Start fix", "Drive", "Analyze"]],
+  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Address review", "Apply fixes", "Start fix", "Drive", "Analyze"]],
   ["away", ["snooze", "dismiss"], ["Snooze", "Dismiss"]],
 ];
 
@@ -1874,6 +1920,8 @@ const detail = {
   linksSec: document.getElementById("d-links-sec"),
   links: document.getElementById("d-links"),
   routes: document.getElementById("d-routes"),
+  dismissed: new Set(),
+  farewell: false,
   cards: new Map(),
   openRoute: null,
   lastRoute: null,
@@ -1950,8 +1998,10 @@ function renderDetailInfo(d) {
   const badges = reviewBadges(d);
   detail.reviews.replaceChildren(...badges);
   detail.reviews.hidden = badges.length === 0;
-  // An address_review route lists the threads on its card
-  const threads = routesOf(d).some((r) => r.type === "address_review") ? null : buildThreads(d.threads);
+  // An address_review card, or a take_over card that covers every thread, lists the threads itself
+  const onCard = routesOf(d).some((r) => r.type === "address_review"
+    || (r.type === "take_over" && takeOverThreads(d).length && takeOverThreads(d).length === reviewThreads(d).length));
+  const threads = onCard ? null : buildThreads(d.threads);
   if (threads) {
     threads.open = detail.threadsOpen;
     threads.addEventListener("toggle", () => { detail.threadsOpen = threads.open; });
@@ -2427,6 +2477,45 @@ function segControl(label, options, value, onPick) {
   return h("span", { class: "seg-group", role: "group", "aria-label": label }, buttons);
 }
 
+function reviewThreads(d) {
+  return (Array.isArray(d.threads) ? d.threads : []).filter((t) => t && typeof t === "object" && typeof t.id === "string");
+}
+
+// On a contributor's PR fixing review comments ourselves is a take-over, so its card carries the judged threads
+function takeOverThreads(d) {
+  return reviewThreads(d).filter((t) => t.verdict === "valid" || t.verdict === "optional" || t.verdict === "wrong");
+}
+
+// One row per review thread: the agent's verdict, his fix or dismiss decision and an optional note
+function buildDecisions(rec, threads) {
+  return h("ul", { class: "decisions" }, threads.map((t) => {
+    const verdict = Object.hasOwn(VERDICT_LABELS, t.verdict) ? t.verdict : "unjudged";
+    if (!rec.decisions.has(t.id)) rec.decisions.set(t.id, { decision: verdict === "wrong" ? "dismiss" : "fix", note: "", noteOpen: false });
+    const st = rec.decisions.get(t.id);
+    const [label, cls] = VERDICT_LABELS[verdict];
+    const note = h("input", { type: "text", class: "field d-note", "aria-label": "Note for this comment", value: st.note, hidden: !st.noteOpen });
+    note.addEventListener("input", () => { st.note = note.value; });
+    const addNote = h("button", { type: "button", class: "lane-switch", text: "Add a note", hidden: st.noteOpen });
+    addNote.addEventListener("click", () => {
+      st.noteOpen = true;
+      note.hidden = false;
+      addNote.hidden = true;
+      note.focus();
+    });
+    return h("li", null,
+      h("span", { class: "t-head" },
+        h("span", { class: "t-summary" }, richText(str(t.summary) || "No summary yet.")),
+        h("span", { class: "vlabel " + cls, title: "The agent's verdict", text: label })),
+      str(t.note) ? h("span", { class: "t-note" }, richText(t.note)) : null,
+      h("span", { class: "t-ref" }, reviewerName(str(t.author)) || "unknown",
+        t.path ? " · " : null, t.path ? h("code", { text: str(t.path) + (Number.isInteger(t.line) ? ":" + t.line : "") }) : null),
+      h("span", { class: "seg-row" },
+        segControl("Decision", [["fix", "Fix"], ["dismiss", "Dismiss"]], st.decision, (v) => { st.decision = v; }),
+        addNote),
+      note);
+  }));
+}
+
 // Inputs a card collects besides its main text. Kept per card, so a re-render does not lose choices.
 function buildCardInputs(id, d, r, rec) {
   const out = [];
@@ -2461,6 +2550,8 @@ function buildCardInputs(id, d, r, rec) {
     // The canned text only matters for "Close, ask to reopen there", so it shows once he picks that button
     rec.revealBox = h("div", { class: "reveal", hidden: !rec.revealed }, ...editor);
     out.push(rec.revealBox);
+  } else if (r.type === "take_over" && takeOverThreads(d).length) {
+    out.push(buildDecisions(rec, takeOverThreads(d)), ...editor);
   } else if (r.type !== "address_review") {
     out.push(...editor);
   }
@@ -2482,34 +2573,7 @@ function buildCardInputs(id, d, r, rec) {
     }
   }
   if (r.type === "address_review") {
-    const threads = (Array.isArray(d.threads) ? d.threads : []).filter((t) => t && typeof t === "object" && typeof t.id === "string");
-    out.push(h("ul", { class: "decisions" }, threads.map((t) => {
-      const verdict = Object.hasOwn(VERDICT_LABELS, t.verdict) ? t.verdict : "unjudged";
-      if (!rec.decisions.has(t.id)) rec.decisions.set(t.id, { decision: verdict === "wrong" ? "dismiss" : "fix", note: "", noteOpen: false });
-      const st = rec.decisions.get(t.id);
-      const [label, cls] = VERDICT_LABELS[verdict];
-      const note = h("input", { type: "text", class: "field d-note", "aria-label": "Note for this comment", value: st.note, hidden: !st.noteOpen });
-      note.addEventListener("input", () => { st.note = note.value; });
-      const addNote = h("button", { type: "button", class: "lane-switch", text: "Add a note", hidden: st.noteOpen });
-      addNote.addEventListener("click", () => {
-        st.noteOpen = true;
-        note.hidden = false;
-        addNote.hidden = true;
-        note.focus();
-      });
-      return h("li", null,
-        h("span", { class: "t-head" },
-          h("span", { class: "t-summary" }, richText(str(t.summary) || "No summary yet.")),
-          h("span", { class: "vlabel " + cls, title: "The agent's verdict", text: label })),
-        str(t.note) ? h("span", { class: "t-note" }, richText(t.note)) : null,
-        h("span", { class: "t-ref" }, reviewerName(str(t.author)) || "unknown",
-          t.path ? " · " : null, t.path ? h("code", { text: str(t.path) + (Number.isInteger(t.line) ? ":" + t.line : "") }) : null),
-        h("span", { class: "seg-row" },
-          segControl("Decision", [["fix", "Fix"], ["dismiss", "Dismiss"]], st.decision, (v) => { st.decision = v; }),
-          addNote),
-        note);
-    })));
-    out.push(...editor);
+    out.push(buildDecisions(rec, reviewThreads(d)), ...editor);
   }
   if (r.type === "drive") {
     const max = Number.isInteger(p.maxRounds) && p.maxRounds >= 1 && p.maxRounds <= 3 ? p.maxRounds : 3;
@@ -2526,7 +2590,7 @@ function buildCardInputs(id, d, r, rec) {
 function routePayload(d, r, rec, b) {
   const input = { ...(b && b.input ? b.input : {}) };
   if (r.type === "review") input.commentIds = [...rec.checks].filter(([, on]) => on).map(([cid]) => cid);
-  if (r.type === "address_review") {
+  if (r.type === "address_review" || (r.type === "take_over" && takeOverThreads(d).length)) {
     input.decisions = [...rec.decisions].map(([threadId, st]) => ({ threadId, decision: st.decision, ...(st.note.trim() ? { note: st.note.trim() } : {}) }));
   }
   if (r.type === "follow_up" && rec.titleInput && rec.titleInput.value !== str(paramsOf(r).title)) input.title = rec.titleInput.value;
@@ -2549,6 +2613,7 @@ function meButton(id, d, r, rec, b, intent, locked) {
         if (rec.ta) rec.ta.focus();
         return;
       }
+      postDecision({ itemId: id, routeId: r.id, text: rec.ta ? rec.ta.value : "" });
       const copy = b.copy === "escalate" ? escalateCommand() : b.copy === "draft" && rec.ta ? rec.ta.value : "";
       let fallback = false;
       if (copy.trim()) {
@@ -2691,10 +2756,19 @@ function buildCard(id, d, r, rec) {
   rec.actions = h("div", { class: "card-actions" });
   rec.status = h("div", { class: "z-status" });
   const callout = str(r.callout) ? h("div", { class: "callout" + (r.type === "take_over" && p.mode === "replace" ? " strong" : "") }, icon("alert"), h("span", null, richText(r.callout))) : null;
+  rec.dismissBox = buildDismissBox(id, r, rec);
+  const dismissX = h("button", {
+    class: "card-x", type: "button", "data-focus-key": "r:" + r.id + ":dismiss", "aria-label": "Not this suggestion", title: "Not this suggestion",
+    onclick: () => {
+      rec.dismissOpen = !rec.dismissOpen;
+      rec.dismissBox.hidden = !rec.dismissOpen;
+      if (rec.dismissOpen) rec.dismissInput.focus();
+    },
+  }, icon("x"));
   if (compact) {
-    rec.head = h("div", { class: "card-head" }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.actions);
+    rec.head = h("div", { class: "card-head" }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.actions, dismissX);
     rec.body = null;
-    rec.card.replaceChildren(...[rec.head, callout, rec.status].filter(Boolean));
+    rec.card.replaceChildren(...[rec.head, rec.dismissBox, callout, rec.status].filter(Boolean));
     return;
   }
   const actor = cardActor(d, r);
@@ -2715,12 +2789,67 @@ function buildCard(id, d, r, rec) {
     ...buildCardInputs(id, d, r, rec),
     rec.actions,
     rec.status);
-  rec.card.replaceChildren(rec.head, rec.body);
+  rec.card.replaceChildren(h("div", { class: "card-top" }, rec.head, dismissX), rec.dismissBox, rec.body);
+}
+
+// "Not this": an optional reason, then the server drops the route and the agent proposes another one
+function buildDismissBox(id, r, rec) {
+  rec.dismissInput = h("input", {
+    type: "text", class: "field", "aria-label": "Why not? (optional)", placeholder: "Why not? (optional)",
+    "data-focus-key": "r:" + r.id + ":dismiss-why", value: rec.dismissText || "",
+  });
+  rec.dismissInput.addEventListener("input", () => { rec.dismissText = rec.dismissInput.value; });
+  return h("div", { class: "dismiss-box", hidden: !rec.dismissOpen },
+    rec.dismissInput,
+    h("div", { class: "dismiss-actions" },
+      h("button", {
+        class: "btn quiet", type: "button", "data-focus-key": "r:" + r.id + ":dismiss-send", text: "Dismiss suggestion",
+        onclick: () => dismissRoute(id, r, rec.dismissInput.value.trim()),
+      }),
+      h("button", {
+        class: "btn quiet", type: "button", "data-focus-key": "r:" + r.id + ":dismiss-cancel", text: "Cancel",
+        onclick: () => {
+          rec.dismissOpen = false;
+          rec.dismissBox.hidden = true;
+        },
+      })));
+}
+
+async function dismissRoute(id, r, reason) {
+  if (state.busy.has(id)) return;
+  detail.lastZone = "route";
+  detail.lastRoute = r.id;
+  state.notes.delete(id);
+  state.busy.add(id);
+  render();
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    await state.mcp.callTool(SERVER, "dismiss_route", { itemId: id, routeId: r.id, text: reason });
+    // Hide the card until the server pushes the item without it
+    detail.dismissed.add(r.id);
+    const d = state.items.get(id);
+    if (d && !routesOf(d).some((x) => !detail.dismissed.has(x.id))) {
+      // The item leaves the board with its last route, so the dialog says why before it closes
+      detail.farewell = true;
+      setTimeout(() => {
+        if (detail.id === id && detail.farewell) closeDetail();
+      }, 2500);
+    }
+  } catch (e) {
+    state.notes.set(id, { kind: "failed", text: routeFailure(e, r) });
+  } finally {
+    state.busy.delete(id);
+    render();
+  }
 }
 
 // One card per route. The recommended route starts expanded, the others are one line until clicked.
 function renderRoutes(id, d, locked) {
-  const routes = routesOf(d);
+  if (detail.farewell) {
+    placeChildren(detail.routes, [h("p", { class: "farewell", text: "Suggestion dismissed. The agent will propose something else." })]);
+    return;
+  }
+  const routes = routesOf(d).filter((r) => !detail.dismissed.has(r.id));
   if (detail.openRoute === undefined || (detail.openRoute !== null && !routes.some((r) => r.id === detail.openRoute))) {
     const done = routes.find((r) => r.done && !routeCompact(r));
     const rec = recommendedRoute(d);
@@ -2927,6 +3056,8 @@ function renderDetail() {
   if (!id) return;
   const d = state.items.get(id);
   if (!d) {
+    // After the last route was dismissed the dialog keeps its note on screen until its timer closes it
+    if (detail.farewell) return;
     closeDetail();
     return;
   }
@@ -2955,6 +3086,8 @@ function openDetail(id, row) {
   detail.id = id;
   detail.deps.clear();
   detail.cards.clear();
+  detail.dismissed.clear();
+  detail.farewell = false;
   detail.routes.replaceChildren();
   detail.openRoute = undefined;
   detail.lastRoute = null;
@@ -2975,6 +3108,181 @@ function openDetail(id, row) {
 function closeDetail() {
   if (detail.el.open) detail.el.close();
   finishDetail();
+}
+
+// ---------- learning from his decisions ----------
+
+// The board server's own helper object, kept as it came, so methods the server adds stay callable
+let boardApi = null;
+
+// Tells the server which prefill he used and with what text. It must never get in the way of the click.
+function postDecision(body) {
+  try {
+    const send = boardApi && boardApi.decision;
+    if (typeof send === "function") Promise.resolve(send.call(boardApi, body)).catch(() => {});
+  } catch {
+    // Nothing to report: the decision only feeds suggestions
+  }
+}
+
+const learn = {
+  el: document.getElementById("learn-dialog"),
+  cards: document.getElementById("learn-cards"),
+  empty: document.getElementById("learn-empty"),
+  btn: document.getElementById("learn"),
+  recs: new Map(),
+  added: new Map(),
+  gone: new Set(),
+  busy: new Set(),
+};
+
+function openProposals() {
+  return state.proposals.filter((p) => !learn.gone.has(p.id));
+}
+
+function proposalTarget(p) {
+  // The heading arrives as markdown, like "## Stale PRs"
+  const heading = str(p.heading).replace(/^#+\s*/, "").trim();
+  const under = heading ? " under “" + heading + "”" : "";
+  return p.target === "personal" ? "Adds to your personal rules" + under : "Adds to " + str(p.file) + under + " in the project profile";
+}
+
+function proposalAdded(p) {
+  return p.target === "personal" ? "Added to your personal rules" : "Added to " + str(p.file);
+}
+
+function evidenceLine(e) {
+  const itemId = str(e.itemId);
+  const num = "#" + (itemId.split("-").pop() || "?");
+  const at = Date.parse(str(e.at));
+  const day = Number.isFinite(at) ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const ref = state.items.has(itemId)
+    ? h("button", {
+      type: "button", class: "lane-switch ev-link", text: num, title: "Open " + num,
+      onclick: () => {
+        learn.el.close();
+        openDetail(itemId);
+      },
+    })
+    : h("span", { class: "ev-ref", text: num });
+  return h("li", null,
+    day ? h("span", { class: "ev-day", text: day }) : null,
+    ref,
+    str(e.type) ? h("span", { class: "vlabel v-wrong", text: str(e.type).replace(/_/g, " ") }) : null,
+    h("span", { class: "ev-gist" }, richText(str(e.gist))));
+}
+
+async function proposalAction(p, rec, action, text) {
+  if (learn.busy.has(p.id)) return;
+  learn.busy.add(p.id);
+  rec.status.replaceChildren(h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the board server" })));
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    await state.mcp.callTool(SERVER, action, { proposalId: p.id, text });
+    if (action === "accept_proposal") learn.added.set(p.id, proposalAdded(p));
+    else learn.gone.add(p.id);
+    rec.sig = null;
+  } catch (e) {
+    rec.status.replaceChildren(h("div", { class: "status failed" }, icon("alert"), h("span", { text: routeFailure(e, { type: "chore" }) })));
+  } finally {
+    learn.busy.delete(p.id);
+    renderLearn();
+  }
+}
+
+function buildProposal(p, rec) {
+  const evidence = (Array.isArray(p.evidence) ? p.evidence : []).filter((e) => e && typeof e === "object");
+  rec.ta = h("textarea", { class: "short", "aria-label": "Rule text", value: rec.draft ?? str(p.text) });
+  rec.ta.addEventListener("input", () => { rec.draft = rec.ta.value; });
+  rec.status = h("div", { class: "z-status" });
+  rec.actions = h("div", { class: "card-actions" });
+  const why = h("input", { type: "text", class: "field", placeholder: "Why not? (optional)", "aria-label": "Why not? (optional)" });
+  rec.dismissBox = h("div", { class: "dismiss-box", hidden: true }, why,
+    h("div", { class: "dismiss-actions" },
+      h("button", { class: "btn quiet", type: "button", text: "Dismiss suggestion", onclick: () => proposalAction(p, rec, "dismiss_proposal", why.value.trim()) }),
+      h("button", { class: "btn quiet", type: "button", text: "Cancel", onclick: () => { rec.dismissBox.hidden = true; } })));
+  rec.card.replaceChildren(
+    h("div", { class: "card-head" }, h("span", { class: "p-title", text: str(p.title) })),
+    h("div", { class: "card-body" },
+      str(p.why) ? h("p", { class: "card-why" }, richText(p.why)) : null,
+      evidence.length ? h("details", { class: "evidence" },
+        h("summary", null, "Based on " + evidence.length + (evidence.length === 1 ? " decision" : " decisions")),
+        h("ul", null, evidence.map(evidenceLine))) : null,
+      h("p", { class: "quiet-line", text: proposalTarget(p) }),
+      h("label", { class: "card-label", text: "Rule" }),
+      rec.ta,
+      rec.actions,
+      rec.dismissBox,
+      rec.status));
+}
+
+function proposalButtons(p, rec) {
+  if (learn.added.has(p.id)) {
+    return [h("span", { class: "status done step-done" }, icon("doneCheck"), h("span", { text: learn.added.get(p.id) }))];
+  }
+  return [
+    h("button", { class: "btn intent-think primary", type: "button", text: "Add rule", onclick: () => proposalAction(p, rec, "accept_proposal", rec.ta.value) }),
+    h("button", { class: "btn quiet", type: "button", text: "Not this", onclick: () => { rec.dismissBox.hidden = false; rec.dismissBox.querySelector("input").focus(); } }),
+  ];
+}
+
+function renderLearn() {
+  const list = openProposals();
+  const waiting = list.filter((p) => !learn.added.has(p.id)).length;
+  learn.btn.hidden = waiting === 0;
+  learn.btn.replaceChildren(icon("lightbulb"), h("span", { class: "learn-count", text: String(waiting) }));
+  const label = waiting === 1 ? "1 suggested rule" : waiting + " suggested rules";
+  learn.btn.setAttribute("aria-label", label);
+  learn.btn.title = label;
+  if (!learn.el.open) return;
+  const keep = new Set(list.map((p) => p.id));
+  for (const k of [...learn.recs.keys()]) if (!keep.has(k)) learn.recs.delete(k);
+  const nodes = list.map((p) => {
+    let rec = learn.recs.get(p.id);
+    if (!rec) {
+      rec = { card: h("section", { class: "card open intent-think pcard" }), core: null, sig: null, draft: null };
+      learn.recs.set(p.id, rec);
+    }
+    const core = JSON.stringify(p);
+    if (core !== rec.core) {
+      rec.core = core;
+      rec.sig = null;
+      buildProposal(p, rec);
+    }
+    const sig = JSON.stringify([learn.added.get(p.id), learn.busy.has(p.id)]);
+    if (sig !== rec.sig) {
+      rec.sig = sig;
+      rec.actions.replaceChildren(...proposalButtons(p, rec));
+      if (learn.added.has(p.id)) {
+        rec.ta.disabled = true;
+        rec.dismissBox.hidden = true;
+      }
+    }
+    return rec.card;
+  });
+  placeChildren(learn.cards, nodes);
+  learn.empty.hidden = nodes.length > 0;
+}
+
+function setupLearn() {
+  learn.btn.addEventListener("click", () => {
+    learn.el.showModal();
+    renderLearn();
+  });
+  const close = document.getElementById("learn-close");
+  close.append(icon("x", null, "lg"));
+  close.addEventListener("click", () => learn.el.close());
+  learn.el.addEventListener("click", (e) => {
+    if (e.target !== learn.el) return;
+    const r = learn.el.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) learn.el.close();
+  });
+  learn.el.addEventListener("close", () => {
+    // Added cards stay until the next open, so he sees the result, then they make room
+    for (const id of learn.added.keys()) learn.gone.add(id);
+    learn.recs.clear();
+    renderLearn();
+  });
 }
 
 // ---------- page reload ----------
@@ -3001,6 +3309,8 @@ function finishDetail() {
   detail.id = null;
   state.confirming.delete(id);
   detail.cards.clear();
+  detail.dismissed.clear();
+  detail.farewell = false;
   detail.routes.replaceChildren();
   detail.deps.clear();
   detail.zoneCtl = null;
@@ -3087,6 +3397,7 @@ function renderNotice() {
 
 function render() {
   renderHeader();
+  renderLearn();
   renderNotice();
   renderList();
   renderDetail();
@@ -3238,6 +3549,16 @@ function subscribe(db) {
     render();
   }, onDbError);
 
+  // Rule proposals are their own collection. A server without them leaves the header entry hidden.
+  try {
+    db.collection("proposals").onSnapshot((snap) => {
+      state.proposals = snap.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((x) => x && typeof x.title === "string");
+      renderLearn();
+    }, () => {});
+  } catch {
+    state.proposals = [];
+  }
+
   db.doc("meta/status").onSnapshot((snap) => {
     state.meta = snap.exists ? snap.data() : null;
     markLoaded("meta", snap.metadata);
@@ -3260,7 +3581,9 @@ async function boot() {
   const claude = window.claude;
   const use = claude && typeof claude.use === "function" ? (n) => claude.use(n).catch(() => null) : async () => null;
   // The project info names the storage keys, so it comes before the saved filters
-  applyBoardInfo(await use("board"));
+  boardApi = await use("board");
+  applyBoardInfo(boardApi);
+  setupLearn();
   state.filters = loadFilters();
   buildFilters();
   setupDetail();

@@ -9,13 +9,13 @@ You run one triage pass for the repo in the profile. The maintainer reads the re
 
 ## Paths, config and reading order
 
-Run `gary paths` first. It prints JSON with the core root, home, profile and state directories. Below they are `<core>`, `<home>`, `<profile>` and `<state>`.
+Run `gary paths` first. It prints JSON with `core`, `home`, `profile`, `state`, `checkout` (the local clone of the repo), `config` and `personal`. Below they are `<core>`, `<home>`, `<profile>`, `<state>`, `<checkout>`, `<config>` and `<personal>`.
 
 - `<core>/SPEC.md` is the contract: doc shapes, sections, routes, actions, budget, accounts. Read it at the start of every run. When this skill and the spec disagree, the spec wins.
-- `<home>/config.json`: the maintainer (`me`), the bot (`bot`, or `null`), `allowOwnTokenPushes`, limits.
+- `<config>`: the maintainer (`me`), the bot (`bot`, or `null`), `allowOwnTokenPushes`, limits.
 - `<profile>/profile.json`: the repo, maintainers, bot logins, review bots, related repos, sensitive paths, auto labels, bot commands, required tools.
 
-Every rule has up to three layers. Read them in this order: the core reference, then `<profile>/rules/<topic>.md`, then `<home>/personal.md`. A later file overrides an earlier one. The hard limits below cannot be overridden by a profile or by `personal.md`. Subagents follow the same order. Pass them the paths from `gary paths`.
+Every rule has up to three layers. Read them in this order: the core reference, then `<profile>/rules/<topic>.md`, then `<personal>`. A later file overrides an earlier one. The hard limits below cannot be overridden by a profile or by `personal.md`. Subagents follow the same order. Pass them the paths from `gary paths`.
 
 `personal.md` may name writing rules for prose. Apply them to every briefing and every suggested reply, and pass them on to subagents.
 
@@ -67,7 +67,7 @@ Check each tool in the profile's `requiredTools` with ToolSearch `select:<name>`
 
 ### 2. Queued actions
 
-GitHub actions run live in the board server when the maintainer clicks. Queued files in `<state>/board/actions/` are mostly agent requests.
+GitHub actions run live in the board server when the maintainer clicks. When GitHub cannot be reached, the server marks the action failed and nothing retries it. Queued files in `<state>/board/actions/` are always agent requests.
 
 First resume waiting drives. For each file in `<state>/drive/` whose PR has no armed drive Monitor in this session, check `reviewRequestedAt`. Less than 30 minutes ago: arm the Monitor from the `triage-review-pr` skill's `references/drive.md` again. Older: start the final round that ends the drive. A session restart would otherwise leave the drive waiting forever.
 
@@ -79,10 +79,8 @@ Then read all action files, keep those with `status: "queued"`, and sort them by
    - `start_fix` comes from a `follow_up` route with `as: "agent"`. It goes onto the fix list of step 7, outside `maxAutoFixesPerRun`. Pass `text` and `params.finding` to the subagent.
    - `address_review` and `take_over`: start one subagent per request right away, with the `triage-review-pr` skill in the matching mode. Pass the action file path, the item file path, the paths from `gary paths` and a fresh scratch subdirectory. These run in parallel with the rest of the run, because each works in its own worktree. The subagent returns `{ status, result, item }`. Copy `status` and `result` into the action file, and validate `item` like any returned doc before writing it in step 8.
    - `drive`: start round 1 the same way, with the drive mode and the state file path `<state>/drive/<itemId>.json`. A round that returns `status: "waiting"` keeps the action file claimed. Arm the Monitor its `references/drive.md` describes and go on with the run. On its event, start the next round's subagent. On its expiry, start a final round that ends the drive. Only the final round's `{ status, result, item }` goes into the action file and the item.
-3. A queued GitHub action from a bot route means the server could not reach GitHub at click time. Copy its `itemId`, `action`, `params` and `text` unchanged into `<run>/actions/<id>.json` and run `gary action --check-fresh <that file>`. It prints `{ ok, result }`. `--check-fresh` makes it refuse when the thread was closed, a person commented after the review, or the PR head moved. A refusal is a failed action with that reason. Do not retry it with force: that choice is the maintainer's. Never edit, shorten, reformat or "fix" the text.
-4. Before a queued `review` with `event: "approve"`, compare the PR's current head (`gh pr view <n> --repo <repo> --json headRefOid`) with the item's `reviewedSha`. If they differ, do not execute. Mark the action `failed` with result `PR head changed since the review. Re-review first.` and add the item to this run's work list. The maintainer approved the code he saw, and new commits are unreviewed.
-5. Board-only actions (`dismiss`, `snooze`) are applied by the server. If one is queued anyway, apply its effect to the item file and mark it done.
-6. Write back `status`, `finishedAt` and `result` (comment URL or error message).
+3. Board-only actions (`dismiss`, `snooze`) are applied by the server. If one is queued anyway, apply its effect to the item file and mark it done.
+4. Write back `status`, `finishedAt` and `result` (comment URL or error message).
 
 ### 3. Snapshot
 
@@ -103,7 +101,7 @@ Then build the full-review list:
 1. Agent requests from step 2, outside the budget.
 2. Up to `maxFullReviewsPerRun` more. First the items that need analysis: every item at `reviewDepth: "pending"` and every PR with an `unjudged` thread. They have no routes, so the board hides them until they are reviewed. Then the other candidates from `references/classification.md`: contributor PRs, then items in `active`, then the rest by `updatedAt`, newest first.
 
-Candidates that do not fit the budget get `reviewDepth: "pending"`. Items that already sit at `pending` from an earlier run are candidates too, even when the snapshot lists them as `unchanged`. Otherwise a pending item would wait until someone comments on it again. The snapshot lists unchanged items by id only. For those, pass the item file to the subagent and let it fetch the rest with `gh`.
+Candidates that do not fit the budget get `reviewDepth: "pending"`. Items that already sit at `pending` from an earlier run are candidates too, even when the snapshot lists them as `unchanged`. Otherwise a pending item would wait until someone comments on it again. The snapshot lists unchanged items by id only. For those, pass the item file to the subagent. It gets the fresh entry with `gary item <id>`.
 
 ### 6. Full reviews in subagents
 
@@ -133,9 +131,9 @@ The fix subagent returns the updated item doc, with the draft PR in `links` when
 
 ### 8. Write item files and autonomous changes
 
-Apply the autonomous label and assignment rules from `references/classification.md` and the profile with `gary action`, one input file per change.
+Apply the autonomous label and assignment rules from `references/classification.md` and the profile with `gary action --autonomous <file>`, one input file per change. `--autonomous` refuses every label outside the profile's `autoLabels` and every action other than `label` and `assign`.
 
-Assign `priority` within each section. Then write each item with `gary put items <id> <file>`, as described in `references/board-db.md`. Changed items get `hidden: false`. Leave `unchanged` items alone unless they were reviewed in this run.
+Assign `priority` within each section once all docs of the run are in, over all items with routes, the unchanged ones included. Items without routes get none. Then write each item with `gary put items <id> <file>`, as described in `references/board-db.md`. The file is the complete doc and replaces the stored one. For each changed item, clear `hidden` afterwards with `gary put --merge items <id>` and the file `{ "hidden": false }`. Leave `unchanged` items alone unless they were reviewed in this run or their `priority` changed. An unchanged item whose `priority` changed gets only `{ "priority": <n> }` with `gary put --merge`. `gary put` validates every doc and refuses an invalid one with a list of problems. A refused doc counts as a failed write: keep the item at `pending`, note the problems in the run summary, and skip the commit in step 9.
 
 ### 9. Status, commit, reply
 
@@ -153,6 +151,10 @@ Top: issue-405 waits 3 days for an answer about the timeout on reconnect.
 
 Line 3 names the item at `active` priority 1. If `active` is empty, it names the first `easy` item. Use the same three lines as `lastRunSummary`.
 
+### 9a. Learn
+
+After the reply of step 9, check whether a learning pass is due: this is the first run of the day (the previous `lastRunAt` in `meta.json` is from an earlier day), or `gary decisions --since <reviewedUntil from <state>/learn.json> --json` returns 20 or more entries. If it is due, start one background subagent with the `triage-learn` skill and the paths. Do not wait for it, and do not let its failure fail the run. Its one-line results go into the next run's summary.
+
 ### 10. Listen for requests between runs
 
 The maintainer's agent requests (`full_review`, `reanalyze`, `start_fix`, `address_review`, `take_over`, `drive`) should start within seconds of his click. After the reply of step 9, arm a watch with the Monitor tool (load it with ToolSearch `select:Monitor`):
@@ -163,7 +165,7 @@ Monitor command="gary watch-queue" description="queued agent requests on the tri
 
 Each event is one line of JSON with the action doc's `id`, `itemId` and `action`. When one arrives:
 
-1. Handle exactly that request as in step 2: claim the action file, start the subagent, write the result and the item, mark the action done or failed. Do not take a snapshot and do not classify other items. That is the hourly run's job.
+1. Handle exactly that request as in step 2: claim the action file, start the subagent, write the result and the item, mark the action done or failed. The item keeps its `priority` until the next hourly run. Do not take a snapshot and do not classify other items. That is the hourly run's job.
 2. Reply with one line, like `take_over for pr-412: pushed 1 commit.`
 
 Drive monitors from step 2 run next to the queue watch, one per driven PR, and are not re-armed on expiry. Their event or expiry starts the next or final round, as step 2 says.

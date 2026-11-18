@@ -1,6 +1,7 @@
-// Usage: gary action [--dry-run] [--check-fresh] [action.json]
+// Usage: gary action [--dry-run] [--check-fresh] [--autonomous] [action.json]
 // Reads the action from stdin when no file is given.
 // --check-fresh refuses when the thread moved since the item's review, like a click on the board does.
+// --autonomous marks an action nobody clicked: only label (within autoLabels) and assign may run.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,17 +9,18 @@ import { runAction } from "./lib/actions.mjs";
 import { boardDir, readJson } from "./lib/board-store.mjs";
 import { checkFresh } from "./lib/guard.mjs";
 
-const FLAGS = ["--dry-run", "--check-fresh"];
+const FLAGS = ["--dry-run", "--check-fresh", "--autonomous"];
 
 export async function main(args) {
 	const dryRun = args.includes("--dry-run");
 	const checkFreshness = args.includes("--check-fresh");
+	const autonomous = args.includes("--autonomous");
 	const files = args.filter((a) => !FLAGS.includes(a));
 
 	let outcome;
 	try {
 		if (files.length > 1 || files.some((f) => f.startsWith("--"))) {
-			throw new Error("Usage: gary action [--dry-run] [--check-fresh] [action.json]");
+			throw new Error("Usage: gary action [--dry-run] [--check-fresh] [--autonomous] [action.json]");
 		}
 		const input = readFileSync(files[0] ?? 0, "utf8");
 		let request;
@@ -47,7 +49,7 @@ export async function main(args) {
 			const fresh = await checkFresh({ action, kind, number, item, params, force: request.force === true });
 			if (!fresh.ok) throw new Error(fresh.reason);
 		}
-		outcome = await runAction({ action, kind, number, params, text, dryRun });
+		outcome = await runAction({ action, kind, number, params, text, dryRun, autonomous });
 	} catch (e) {
 		outcome = { ok: false, result: e.message };
 	}

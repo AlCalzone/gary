@@ -1,0 +1,12 @@
+{
+	"name": "widgets",
+	"repo": "acme/widgets",
+	"maintainers": ["octocat"],
+	"botLogins": ["widgets-bot"],
+	"reviewBots": ["copilot"],
+	"relatedRepos": ["widgets-desktop"],
+	"sensitivePaths": [".github/**", "**/package.json"],
+	"autoLabels": ["needs-info"],
+	"botCommands": { "escalate": "@widgets-bot escalate", "automerge": "@widgets-bot automerge" },
+	"requiredTools": []
+}
