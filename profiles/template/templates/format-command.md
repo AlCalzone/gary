@@ -1,0 +1,1 @@
+<!-- The paragraph in an automatic review on a PR that does not allow edits by maintainers. Gary's code appends the text below this comment and replaces {files} with the count and {command} with the profile's formatCommand. Leave the file without text to keep the default. -->

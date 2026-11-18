@@ -546,6 +546,29 @@ try {
 	rmSync(fixClaim);
 	ok("fix parked: the row is back when the fix no longer parks it", await until(`!!document.querySelector('#board .row[data-id="widgets/issue-33"]') && document.getElementById("fix-parked").hidden`, 8000));
 
+	// An automatic review parks its PR until the snapshot shows that the contributor moved
+	const autoFile = join(HOME, "state", "auto-reviews.json");
+	const autoSha = "a".repeat(40);
+	const autoAt = new Date(Date.now() - 60000).toISOString();
+	// Any PR he has not handled, hidden or snoozed works
+	const autoId = await ev(`return [...state.items].find(([k, d]) => d.kind === "pr" && !handledOf(k, d) && !isHiddenItem(d) && !isSnoozed(d) && !workingOf(d))?.[0].split("/")[1];`);
+	const autoNumber = Number(autoId.split("-")[1]);
+	const autoRow = `document.querySelector('#auto-waiting .handled-row[data-id="widgets/${autoId}"]')`;
+	writeFileSync(autoFile, JSON.stringify({ [autoId]: { repo: "acme/widgets", number: autoNumber, author: "hubot", reviews: [{ sha: autoSha, at: autoAt, url: "https://github.com/acme/widgets/pull/1#pullrequestreview-9", run: "r", event: "request_changes", reason: "first", findings: [{ severity: "major", text: "The range allows 255." }], comments: 0, offered: null }] } }));
+	ok("auto review: the server marks the PR as waiting and the row moves to the line", await until(`state.items.get("widgets/${autoId}")?.autoReview?.waiting === true && !document.querySelector('#board .group .row[data-id="widgets/${autoId}"]') && !!${autoRow}`, 8000));
+	ok("auto review: the line counts it", await ev(`return document.querySelector("#auto-waiting summary").textContent === "Reviewed automatically, waiting: 1" && !document.getElementById("auto-waiting").hidden;`));
+	await ev(`[...${autoRow}.querySelectorAll("button")].find((b) => b.textContent === "Open").click();`);
+	ok("auto review: its dialog names the wait and what was asked", await until(`document.getElementById("detail").open && detail.id === "widgets/${autoId}" && /^Reviewed automatically, waiting for the contributor\\./.test(document.getElementById("d-auto").textContent) && document.querySelector("#d-auto li")?.textContent === "The range allows 255."`));
+	await closeItem();
+	const snapFile = join(HOME, "state", "snapshot.json");
+	const snapBefore = existsSync(snapFile) ? readFileSync(snapFile, "utf8") : null;
+	writeFileSync(snapFile, JSON.stringify({ fetchedAt: new Date().toISOString(), items: { ...(snapBefore ? JSON.parse(snapBefore).items : {}), [autoId]: { updatedAt: new Date().toISOString(), headSha: "b".repeat(40), autoReview: { lastAuthorAt: null, maintainerAt: null, reRequestedAt: null } } } }));
+	ok("auto review: a new head in the snapshot brings the row back", await until(`state.items.get("widgets/${autoId}")?.autoReview?.changed?.join() === "pushed" && document.getElementById("auto-waiting").hidden`, 8000));
+	rmSync(autoFile);
+	if (snapBefore === null) rmSync(snapFile);
+	else writeFileSync(snapFile, snapBefore);
+	ok("auto review: without the record the item carries no state", await until(`!state.items.get("widgets/${autoId}")?.autoReview`, 8000));
+
 	// The review rounds of a recorded fix PR show on the issue as each stage is written, without a triage run
 	const fixesFile = join(HOME, "state", "fixes.json");
 	writeFileSync(fixesFile, JSON.stringify({ "issue-33": [{ number: 14, url: "https://github.com/acme/widgets/pull/14", branch: "triage/issue-33", run: "r", startedBy: "routine", at: new Date().toISOString() }] }));

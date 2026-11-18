@@ -297,6 +297,50 @@
       await wait(5);
       ok("when the fix no longer parks the item, the row is back with its chip", inGroups("issue-9495") && chipOf("issue-9495")?.textContent === "Fix: #9496 draft" && line.hidden);
     }
+    // A PR with an automatic review waits for its contributor outside the plan
+    {
+      const AR = { at: new Date(Date.now() - 3600000).toISOString(), url: "https://github.com/zwave-js/zwave-js/pull/9496#pullrequestreview-1", sha: "a".repeat(40), event: "request_changes", count: 1, asked: ["Parameter 3 allows 0 to 255, but the manual lists 0 to 99."], offer: { kind: "push", state: "open", at: new Date().toISOString() }, waiting: true, changed: [] };
+      const withAuto = (ids, auto) => F.map(([k, d]) => [k, ids.includes(k) ? { ...d, autoReview: auto } : d]);
+      const inGroups = (k) => !!document.querySelector('#board .group .row[data-id="' + k + '"]');
+      const waitRow = (k) => document.querySelector('#auto-waiting .handled-row[data-id="' + k + '"]');
+      const line = document.getElementById("auto-waiting");
+      const reveal = async () => { for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click(); await wait(5); };
+      await reveal();
+      ok("no waiting line without an automatic review", line.hidden && inGroups("pr-9496"));
+      const spentBefore = document.querySelector("#plan .sum").textContent;
+      items(withAuto(["pr-9496"], AR)); await wait(10);
+      await reveal();
+      ok("auto review: the waiting PR leaves the plan", !inGroups("pr-9496") && !!waitRow("pr-9496"));
+      ok("auto review: a quiet line counts it, below the fix line", !line.hidden && line.querySelector("summary").textContent === "Reviewed automatically, waiting: 1" && !line.querySelector("details").open && line.previousElementSibling === document.getElementById("fix-parked"));
+      ok("auto review: waiting counts no minutes as spent", document.querySelector("#plan .sum").textContent === spentBefore);
+      line.querySelector("details").open = true;
+      [...waitRow("pr-9496").querySelectorAll("button")].find((b) => b.textContent === "Open").click(); await wait(20);
+      const block = document.getElementById("d-auto");
+      ok("auto review: the dialog opens from the line", dlgR.open && detail.id === "pr-9496");
+      ok("auto review: the meta row says it waits for the contributor", [...document.querySelectorAll("#d-meta .auto-review-tag")].map((e) => e.textContent).join() === "Reviewed automatically, waiting for the contributor");
+      ok("auto review: the block above the story says so and links the review", !block.hidden && block.querySelector(".ar-lead span").textContent === "Reviewed automatically, waiting for the contributor." && block.querySelector("a")?.getAttribute("href") === AR.url && block.nextElementSibling === document.getElementById("d-story"));
+      ok("auto review: it lists what was asked and the open offer", block.querySelector("li")?.textContent === AR.asked[0] && /It offered to push the formatting\. No answer yet\./.test(block.textContent));
+      ok("auto review: the item keeps its own cards for his review", cards().length > 0);
+      document.getElementById("d-close").click(); await wait(5);
+      items(withAuto(["pr-9496"], { ...AR, waiting: false, changed: ["pushed", "replied"], offer: { ...AR.offer, state: "accepted" } })); await wait(10);
+      await reveal();
+      ok("auto review: after the author pushed, the PR is back in the plan", inGroups("pr-9496") && line.hidden);
+      await openItem("pr-9496");
+      ok("auto review: his card shows what was asked and what changed since", block.querySelector(".ar-lead span").textContent === "Reviewed automatically. Since then the author pushed, the author replied." && block.querySelector("li")?.textContent === AR.asked[0] && /The author accepted the offer/.test(block.textContent));
+      ok("auto review: the meta row no longer says waiting", [...document.querySelectorAll("#d-meta .auto-review-tag")].map((e) => e.textContent).join() === "Reviewed automatically");
+      document.getElementById("d-close").click(); await wait(5);
+      items(withAuto(["pr-9496"], { ...AR, asked: ["<img src=x onerror=alert(1)>"], url: "javascript:alert(1)" })); await wait(10);
+      line.querySelector("details").open = true;
+      [...waitRow("pr-9496").querySelectorAll("button")].find((b) => b.textContent === "Open").click(); await wait(20);
+      ok("auto review: finding text is rendered as text and a bad URL gets no link", block.querySelector("li")?.textContent === "<img src=x onerror=alert(1)>" && !block.querySelector("img") && !block.querySelector("a"));
+      document.getElementById("d-close").click(); await wait(5);
+      items(F.map(([k, d]) => [k, k === "pr-9496" ? { ...d, autoReview: AR, handled: { at: new Date().toISOString(), routeId: "r1", routeType: "review", verified: null } } : d])); await wait(10);
+      ok("a handled item with a waiting automatic review is listed once, as handled", !!document.querySelector('#handled .handled-row[data-id="pr-9496"]') && !waitRow("pr-9496"));
+      items(F); await wait(10);
+      await openItem("pr-9496");
+      ok("a PR without an automatic review shows no block and no tag", block.hidden && !document.querySelector("#d-meta .auto-review-tag"));
+      document.getElementById("d-close").click(); await wait(5);
+    }
     state.reveal.clear(); render();
     // Dialog banners
     await openItem("issue-9494");
