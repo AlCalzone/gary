@@ -4646,7 +4646,8 @@ function subscribe(db) {
       const d = doc.data();
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
       // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
-      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d))) next.set(doc.id, d);
+      // A PR that waits after its automatic review stays loaded too, so the waiting line can list it
+      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d) || autoWaiting(d))) next.set(doc.id, d);
       // Once the server carries the mark, it decides, including clearing it after the next run
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }

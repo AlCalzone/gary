@@ -74,7 +74,8 @@ export function fixPrNumbers(records) {
 	return out;
 }
 
-async function readSnapshotItems() {
+/** The entries of the staged snapshot, or of the baseline when nothing is staged. */
+export async function readSnapshotItems() {
 	for (const file of ["snapshot.pending.json", "snapshot.json"]) {
 		const data = await readJson(join(stateDir(), file));
 		if (data?.items) return data.items;

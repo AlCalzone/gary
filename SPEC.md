@@ -491,13 +491,13 @@ A contributor's PR can get one review without a click, so it had a review before
 | `off` | `autoReview` is not enabled, no account may post, or the profile names no paths for the kinds |
 | `settings` | the instance runs on its last valid settings because the files on disk are broken |
 | `not-open`, `draft` | the PR is closed, merged or a draft |
-| `author` | the PR is by a maintainer, the bot, another bot or Copilot, or it is a fix PR of Gary. Only `authorType: "contributor"` qualifies |
+| `author` | the PR is by a maintainer, the bot, another bot or Copilot, or it is a fix PR of Gary. Only `authorType: "contributor"` qualifies, and only with an author association other than `OWNER`, `MEMBER` and `COLLABORATOR` |
 | `ai-authored` | `facts.aiAuthored` is true |
 | `sensitive` | the PR touches one of the profile's `sensitivePaths` |
 | `kind` | not every changed file matches the `autoReviewPaths` of one of the `kinds`, or the PR changes more files than the snapshot lists |
 | `head-moved` | the PR head is not `--sha` |
 | `timeline-truncated` | the thread is longer than the snapshot reads, so nothing proves that no maintainer joined |
-| `maintainer-active` | a maintainer commented or reviewed on the PR, at any time. From then on the thread is his. The automatic review itself does not count, also when it went out under his login in `own` mode |
+| `maintainer-active` | a maintainer commented or reviewed on the PR, at any time. From then on the thread is his. The automatic review itself does not count, also when it went out under his login in `own` mode. A comment among the PR's last 5 by an `OWNER`, `MEMBER` or `COLLABORATOR` the profile does not list counts too |
 | `already-reviewed` | the PR has an automatic review, and its author did not re-request one since |
 | `run-limit` | the run already posted `maxPerRun` automatic reviews. A paused or dry run counts the steps in its `would-have.json` |
 | `invalid-review` | the review doc breaks a rule below. `problems` lists each one |

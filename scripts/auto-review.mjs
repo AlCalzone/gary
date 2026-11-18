@@ -10,18 +10,19 @@
 //   gary auto-review rerequest --pr <n>
 //     Queues a full review after the author re-requested one.
 //   gary auto-review list [--json]
+//     The recorded reviews, and per PR whether it still waits for its contributor.
 // Exit codes: 0 done, 3 refused by a rule, 4 paused, 1 everything else.
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runAction } from "./lib/actions.mjs";
-import { autoReviewsFile, composeBody, actionComments, lastReview, maintainerJoinedAt, offerKind, reRequestedAt, readAutoReviews, refusal, templateText, TEMPLATE_DEFAULTS, validateAutoReview, writeAutoReview } from "./lib/auto-review.mjs";
+import { autoReviewState, autoReviewsFile, composeBody, actionComments, lastReview, maintainerJoinedAt, offerKind, reRequestedAt, readAutoReviews, refusal, templateText, TEMPLATE_DEFAULTS, validateAutoReview, writeAutoReview } from "./lib/auto-review.mjs";
 import { boardDir, readJson, writeAtomic } from "./lib/board-store.mjs";
 import { listClaims, releaseClaim, takeClaim } from "./lib/claims.mjs";
 import { autoReviewOf, instanceName, loadInstance, maintainerLogins } from "./lib/config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
-import { prItemId } from "./lib/fixes.mjs";
-import { accountMode } from "./lib/gh.mjs";
+import { prItemId, readSnapshotItems } from "./lib/fixes.mjs";
+import { accountMode, writeLogin } from "./lib/gh.mjs";
 import { logDecision } from "./lib/learning.mjs";
 import { fetchItem } from "./snapshot.mjs";
 
@@ -86,7 +87,7 @@ async function writeAction(itemId, doc) {
 async function checkRules(c, entry, { sha, run, counted = true }) {
 	const posted = Object.values(c.records).flatMap((r) => r.reviews ?? []).filter((r) => run && r.run === run).length;
 	const intended = run && counted ? (await readWouldHave(c.instance, run)).filter((e) => e?.action === "auto_review").length : 0;
-	const no = refusal({ entry, sha, settings: c.settings, profile: c.instance.profile, maintainers: maintainerLogins(), record: c.record, runCount: posted + intended });
+	const no = refusal({ entry, sha, settings: c.settings, profile: c.instance.profile, maintainers: maintainerLogins(), writeLogin: writeLogin(), record: c.record, runCount: posted + intended });
 	if (no) throw new Refused(no.code, no.message);
 }
 
@@ -252,10 +253,17 @@ async function rerequest(argv) {
 
 async function list(argv) {
 	const records = await readAutoReviews();
-	if (argv.includes("--json")) return { ok: true, records };
-	const lines = Object.entries(records).map(([id, r]) => {
-		const last = lastReview(r);
-		return `${id}  ${r.reviews.length} review${r.reviews.length === 1 ? "" : "s"}, last ${last.at} (${last.event})${r.offer ? `, format offer ${r.offer.state}` : ""}  ${last.url}`;
+	// The same state the board serves, so the routine knows which PRs still wait for their contributor
+	const snapshot = await readSnapshotItems();
+	const states = {};
+	for (const [id, record] of Object.entries(records)) {
+		const state = autoReviewState(await readJson(join(boardDir(), "items", id + ".json")), record, snapshot[id]);
+		if (state) states[id] = state;
+	}
+	if (argv.includes("--json")) return { ok: true, records, states };
+	const lines = Object.entries(states).map(([id, st]) => {
+		const r = records[id];
+		return `${id}  ${st.count} review${st.count === 1 ? "" : "s"}, last ${st.at} (${st.event}), ${st.waiting ? "waiting for the contributor" : `since then: ${st.changed.join(", ")}`}${r.offer ? `, format offer ${r.offer.state}` : ""}  ${st.url}`;
 	});
 	return { ok: true, listing: lines.join("\n") || "No automatic review yet." };
 }

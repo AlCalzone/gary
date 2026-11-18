@@ -67,6 +67,8 @@ Each item has a short verdict, a story of what happened so far, and cards with s
 
 Gary never comments on formatting. When the project's formatter or lint autofix would change a PR, the item shows a badge and a "Format" card that commits exactly those fixes to the PR, without taking it over.
 
+**One review can go out without your click, and it is off by default.** With `"autoReview": { "enabled": true }` in the instance's `config.json`, a PR by an outside contributor that only touches the paths your profile names in `autoReviewPaths` gets one review from the bot before you first look at it. It holds only findings the agent is certain about and can show with a concrete case, as a change request, and ends with "A maintainer will review this PR after these are addressed." Questions, taste and everything uncertain stay on your own card. When the formatter would change the PR, the review offers once to push that as one commit, and does it when the PR's author answers with a thumbs-up or a yes. The PR then waits in the line "Reviewed automatically, waiting" below the groups and returns to your plan when the contributor pushes, replies or re-requests a review. Its card shows what was asked and what changed since. `gary doctor` shows the setting.
+
 A reply that asks the reporter for something has a second button that also sets the project's "waiting" label, and the label is set by the next run when you post without it.
 
 On review cards you can uncheck inline comments and switch each open review thread between Fix and Dismiss. Only comments the agent judged valid start on Fix.
@@ -87,12 +89,13 @@ From a clone, `gary setup` links the command into `~/.local/bin`, which must be 
 
 - `gary setup`: install or reconfigure Gary on this machine. `gary setup --instance <name>` adds a project.
 - `gary instances`: list the projects on this machine.
-- `gary doctor`: check the installation without changing anything: Node, `gh` and its login, the bot token, the profile, the checkout, the port, the skill links, the pause switch.
+- `gary doctor`: check the installation without changing anything: Node, `gh` and its login, the bot token, the profile, the checkout, the port, the skill links, the pause switch, and whether the automatic review is on.
 - `gary pause`: stop every write to GitHub at once. The board stays up, nothing needs a restart.
 - `gary resume`: end the pause.
 - `gary decisions --since <date>`: show the log of your decisions that Gary learns from.
 - `gary proposals`: list the rule proposals and their status.
 - `gary validate`: check the stored items against the rules, read-only.
+- `gary auto-review list`: show the reviews Gary posted without a click, and which PRs still wait for their contributor.
 
 While paused, every click that would post, review, label or transfer is refused with "Gary is paused. Nothing was sent." Agent requests still queue and start after `gary resume`. Snoozing, dismissing a suggestion and deciding rule proposals keep working. The board header shows the pause.
 
@@ -120,11 +123,12 @@ The agents read a rule in this order: the core, then the profile file of the sam
 
 - **What reaches GitHub**: only what you clicked, plus labels from the profile's `autoLabels` and assignments that record a fact, like a draft fix PR that exists. The routine also opens draft fix PRs on new branches without a click, up to `maxAutoFixesPerRun` per run (`0` turns this off), using the agent's own approach unless the card says otherwise. A fix you start with instructions follows your instructions exactly, and your click always wins over an autonomous attempt on the same item. While a fix is in progress, in draft or open as a PR, the item says so plainly and offers no way to start another fix. At most `maxPendingAutoFixes` (default 10) of these automatic fixes are pending at a time. A fix PR you merged or closed frees a slot, and fixes you started yourself do not count. On Gary's own fix PRs, and only there, three more things happen without a click: Gary requests a Copilot review, pushes the fixes for its comments to the fix branch for up to 3 rounds, and marks the PR ready for review. `fixReview` in the instance's `config.json` sets the reviewer (`copilot` or `off`), the account that requests it (`me` or `bot`), the number of rounds and whether the PR is marked ready. After the rounds the fix PR shows up as its own card for your review, within seconds. Merging, approving and closing stay yours. Nothing else happens without a click.
 - **Under which account**: with a bot, everything Gary writes goes out as the bot. Without one, you post yourself, or Gary uses your own login when you allowed it. Requesting a Copilot review runs under your own login, unless `fixReview.requestAs` is `bot`.
-- **Never without a click**: comments, reviews, approvals, merges, closes, pushes to someone else's branch. Merges and closes are always done by you on GitHub.
+- **The one review without a click**: with `autoReview.enabled` set to true, and only then, one review reaches a contributor without your click. `gary auto-review post` is the only path, and its code refuses everything outside these rules: the PR is by an outside contributor, is no draft, is not AI-written, touches only the profile's `autoReviewPaths` and none of its `sensitivePaths`, you or another maintainer never commented or reviewed on it, and it has no automatic review yet. Every finding in it is marked certain and names its concrete case, and the review never approves. A second one needs the PR's author to press "Re-request review", and never happens after you joined the thread. `maxPerRun` limits how many go out per run. The format commit after an accepted offer is the existing "Format" job: tools and configuration from the base branch, never code from the PR.
+- **Never without a click**: comments, approvals, merges, closes, every other review, and every other push to someone else's branch. Merges and closes are always done by you on GitHub.
 - **Untrusted content**: issue texts, PR diffs and attached files are treated as data. Instructions inside them are never followed, and agents never run code from a PR branch.
 - **Stale clicks**: before sending, the server checks that nobody commented and nobody pushed since the review. Otherwise it asks you to confirm again.
 - **Dry run**: `node server/server.mjs --dry-run` starts the board without writing anything to GitHub.
-- **Pause**: `gary pause` stops all writes at once. A paused run still triages and records in its run directory what it would have labeled or fixed.
+- **Pause**: `gary pause` stops all writes at once. A paused run still triages and records in its run directory what it would have labeled, fixed or reviewed automatically.
 
 ## More
 

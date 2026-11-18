@@ -126,6 +126,10 @@ override({ author: { login: "renovate", __typename: "Bot" } });
 t.check("another bot's PR gets none", refused(post(), "author"));
 override({ author: { login: "copilot-swe-agent", __typename: "Bot" } });
 t.check("a Copilot PR gets none", refused(post(), "author"));
+override({ authorAssociation: "COLLABORATOR" });
+t.check("a collaborator's PR gets none, also when the profile does not list him", refused(post(), "author"));
+override({ authorAssociation: "MEMBER" });
+t.check("an organization member's PR gets none", refused(post(), "author"));
 override({ headRefName: "claude/add-w1" });
 t.check("an AI-authored PR gets none", refused(post(), "ai-authored"));
 override({ files: { totalCount: 2, nodes: [{ path: "config/devices/acme/w1.json" }, { path: ".github/workflows/ci.yml" }] } });
@@ -143,6 +147,9 @@ override({ timelineComments: { totalCount: 1, nodes: [{ author: user(ME), create
 t.check("a maintainer's comment ends it", refused(post(), "maintainer-active"));
 override({ allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ author: user(ME), state: "COMMENTED", submittedAt: iso(5), url: `${PR}#pullrequestreview-5` }] } });
 t.check("a maintainer's review ends it", refused(post(), "maintainer-active"));
+const memberComment = { id: "IC_5", author: user("someone"), authorAssociation: "MEMBER", createdAt: iso(5), body: "Looking", url: `${PR}#issuecomment-5` };
+override({ comments: { totalCount: 1, nodes: [memberComment] }, timelineComments: { totalCount: 1, nodes: [memberComment] } });
+t.check("a comment by a member the profile does not list ends it too", refused(post(), "maintainer-active"));
 override({ timelineComments: { totalCount: 90, nodes: [{ author: user("hubot"), createdAt: iso(5), body: "ping", url: `${PR}#issuecomment-2` }] } });
 t.check("a thread longer than the snapshot reads gets none", refused(post(), "timeline-truncated"));
 override({ timelineComments: { totalCount: 1, nodes: [{ author: user("someone"), createdAt: iso(5), body: "+1", url: `${PR}#issuecomment-3` }] } });
@@ -387,6 +394,12 @@ override({ timelineComments: { totalCount: 1, nodes: [{ author: user("hubot"), c
 gary("snapshot");
 const staged = read(join(state, "snapshot.pending.json")).items["pr-25"];
 t.check("the staged snapshot keeps the author's last event for the board", Date.parse(staged.autoReview?.lastAuthorAt) > Date.now() && staged.autoReview.maintainerAt === null && staged.autoReview.reRequestedAt === null && staged.headSha === SHA, staged);
+let listed = json(gary("auto-review", "list", "--json"));
+t.check("the list names the PR as no longer waiting after the author's reply", listed.states?.["pr-25"]?.waiting === false && listed.states["pr-25"].changed.join() === "replied" && listed.records["pr-25"].reviews.length === 1, listed);
+override();
+gary("snapshot");
+listed = json(gary("auto-review", "list", "--json"));
+t.check("the list names a PR that still waits", listed.states["pr-25"].waiting === true && /pr-25  1 review, last .* waiting for the contributor, format offer open/.test(gary("auto-review", "list").stdout), listed);
 t.check("a PR without an automatic review keeps no such entry", read(join(state, "snapshot.pending.json")).items["pr-12"].autoReview === undefined);
 
 // The setting in gary doctor

@@ -41,7 +41,7 @@ Read the repo with `gh` and from a local clone, read-only:
 
 Draft from that:
 
-1. `profile.json` with the SPEC.md shape. `sensitivePaths` starts with `.github/**`, the agent instruction files and the dependency manifests and lock files the repo uses. `botCommands` lists only commands the workflows really react to. Leave `reviewBots` empty unless a review bot already reviews PRs in the repo.
+1. `profile.json` with the SPEC.md shape. `sensitivePaths` starts with `.github/**`, the agent instruction files and the dependency manifests and lock files the repo uses. `botCommands` lists only commands the workflows really react to. Leave `reviewBots` empty unless a review bot already reviews PRs in the repo. `autoReviewPaths.config` names the globs of the project's data or config files when it has such a category with its own rules, and `formatCommand` the one command a contributor runs to format. Both only matter once the maintainer turns `autoReview` on in his `config.json`. Never turn it on for him: it lets a review reach contributors without his click, so he sets it himself.
 2. `rules/classification.md`, `rules/voice.md`, `rules/review.md` and `rules/issues.md`, following the guide in each template file. Write only rules you found evidence for, and quote that evidence in your summary to him.
 3. `templates/request-logs.md` when the project asks reporters for logs, with the logging guide the issue templates already link. `templates/reopen-elsewhere.md` when `relatedRepos` is not empty.
 

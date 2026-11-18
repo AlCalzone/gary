@@ -140,6 +140,8 @@ export function composeBody({ summary, hasFindings, offer, autofix, formatComman
 }
 
 const REVIEW_SLACK_MS = 10000;
+// GitHub's author associations of people with a role in the repository. None of them is an outside contributor
+const INSIDERS = ["OWNER", "MEMBER", "COLLABORATOR"];
 
 /**
  * When a maintainer last commented or reviewed on the PR, or null. Our own automatic reviews do not count, also when
@@ -162,13 +164,14 @@ export function reRequestedAt(entry, since) {
  * Why this PR gets no automatic review now, as `{ code, message }`, or null when it may get one.
  * `entry` is the PR's fresh snapshot entry, `settings` comes from autoReviewOf, `record` is its entry in auto-reviews.json.
  */
-export function refusal({ entry, sha, settings, profile, maintainers, record, runCount }) {
+export function refusal({ entry, sha, settings, profile, maintainers, writeLogin, record, runCount }) {
 	const no = (code, message) => ({ code, message });
 	if (!settings.enabled) return no("off", `The automatic review is off${settings.reason ? `: ${settings.reason}` : ""}.`);
 	if (entry.githubState !== "open") return no("not-open", `PR #${entry.number} is ${entry.githubState}.`);
 	if (entry.isDraft) return no("draft", `PR #${entry.number} is a draft.`);
 	if (entry.garyFix) return no("author", `PR #${entry.number} is a fix PR of Gary.`);
 	if (entry.authorType !== "contributor") return no("author", `PR #${entry.number} is by a ${entry.authorType}. Only PRs by outside contributors get an automatic review.`);
+	if (INSIDERS.includes(entry.authorAssociation)) return no("author", `PR #${entry.number} is by a ${entry.authorAssociation.toLowerCase()} of the repository. Only PRs by outside contributors get an automatic review.`);
 	if (entry.facts?.aiAuthored) return no("ai-authored", `PR #${entry.number} looks written by an AI agent or a bot: ${(entry.facts.aiSignals ?? []).join(", ")}.`);
 	if ((entry.sensitiveFiles ?? []).length) return no("sensitive", `PR #${entry.number} touches sensitive paths: ${entry.sensitiveFiles.join(", ")}.`);
 	// Only a complete file list can prove what kind of PR this is
@@ -179,6 +182,8 @@ export function refusal({ entry, sha, settings, profile, maintainers, record, ru
 	if (entry.facts?.timelineTruncated) return no("timeline-truncated", `The thread of PR #${entry.number} is longer than the snapshot reads, so nothing proves that no maintainer joined it.`);
 	const joined = maintainerJoinedAt(entry, { maintainers, ownReviewUrls: (record?.reviews ?? []).map((r) => r.url) });
 	if (joined) return no("maintainer-active", `A maintainer commented or reviewed on PR #${entry.number} at ${joined}. The thread is his.`);
+	const insider = (entry.comments ?? []).find((c) => INSIDERS.includes(c.authorAssociation) && c.authorType !== "bot" && !same(c.author, writeLogin));
+	if (insider) return no("maintainer-active", `${insider.author}, a ${insider.authorAssociation.toLowerCase()} of the repository, commented on PR #${entry.number}. The thread is theirs.`);
 	const last = lastReview(record);
 	if (last && !reRequestedAt(entry, last.at)) return no("already-reviewed", `PR #${entry.number} got its automatic review at ${last.at}. Another one needs the author to re-request it.`);
 	if (runCount >= settings.maxPerRun) return no("run-limit", `This run already posted ${runCount} automatic review${runCount === 1 ? "" : "s"}, the limit in autoReview.maxPerRun.`);

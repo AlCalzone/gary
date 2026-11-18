@@ -336,6 +336,8 @@
       document.getElementById("d-close").click(); await wait(5);
       items(F.map(([k, d]) => [k, k === "pr-9496" ? { ...d, autoReview: AR, handled: { at: new Date().toISOString(), routeId: "r1", routeType: "review", verified: null } } : d])); await wait(10);
       ok("a handled item with a waiting automatic review is listed once, as handled", !!document.querySelector('#handled .handled-row[data-id="pr-9496"]') && !waitRow("pr-9496"));
+      items(F.map(([k, d]) => [k, k === "pr-9496" ? { ...d, autoReview: AR, routes: [], hint: undefined } : d])); await wait(10);
+      ok("a waiting PR without routes is still listed in the waiting line", !!waitRow("pr-9496") && !inGroups("pr-9496") && line.querySelector("summary").textContent === "Reviewed automatically, waiting: 1");
       items(F); await wait(10);
       await openItem("pr-9496");
       ok("a PR without an automatic review shows no block and no tag", block.hidden && !document.querySelector("#d-meta .auto-review-tag"));
