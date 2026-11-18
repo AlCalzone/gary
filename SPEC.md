@@ -109,7 +109,8 @@ Code looks up an instance through `loadInstance(name)`. Its allowed repos are th
   "requiredTools": ["mcp__widgets-logs__loadLogFile"],   // checked at the start of a run
   "automatedComments": [           // comments a workflow posts on its own. They do not count as anyone's turn in the snapshot facts
     { "name": "logfile feedback", "pattern": "<!-- LOGFILE_COMMENT_TAG -->", "origin": "the workflow that posts it" }
-  ]
+  ],
+  "aiAuthors": ["devin"]           // extra names of AI agents for facts.aiAuthored, matched as case-insensitive parts of a commit author's name or login
 }
 ```
 
@@ -158,6 +159,12 @@ Two older layouts are moved by commands, never silently:
 - `gary shadow report [--since <ISO> | --week] [--json]`: pair the latest fast and standard entry per run and item, and print the number of pairs and how many came from sampling, how often the fast tier handed up, the agreement on section and on the recommended route type over the pairs the fast tier answered, and every disagreement with both answers. It warns when the section agreement over the last 40 pairs the fast tier answered is below 95 percent. `--week` means `--since` 7 days ago.
   The second part, "Your decisions by tier", counts per `classifiedBy` value the items of that tier: board items reviewed since `--since` plus the items the decision log names with that tier since then. For each tier it counts the items with a `dismissed_route` of the recommended route, a `chose_alternative`, an `edited_text`, and any of the three, with rates. It says when a tier has fewer than 20 items. `--json` adds the item ids, under `decisions.<tier>`: `{ items, itemIds, tooFew, dismissedRecommended, choseAlternative, editedText, any }`, each count as `{ count, rate, itemIds }`. The pair counts are `sampledPairs` and `recentSectionAgreement: { pairs, same, share, warning }`.
 - `gary decisions [--since <ISO>] [--json]`: print the decision log, see Learning. `--since` is exclusive.
+- `gary claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>] [--request <action id>]`: claim work on an item before starting it. It creates `<state>/claims/<itemId>.<kind>.json` exclusively with `{ run, at, expiresAt }`, default ttl 60 minutes, and exits 3 with the holder when another run holds an unexpired claim. The same run renews its claim, an expired claim is taken over. `push` covers take_over, address_review, drive rounds and format. A `fix` claim also exits 3 while a fix PR for the item is a draft or open, and while a `start_fix` request other than `--request` is queued for it: a request worker passes the id of its own action doc. A refused claim needs no item doc: the caller skips the item.
+- `gary release <itemId> <kind> --run <run>`: remove the claim when `run` holds it, exit 3 when another run does. Every exit of a job, also a failed one, releases its claims. A claim a crashed job leaves behind expires.
+- `gary claims [--json]`: list the claims with `itemId`, `kind`, `run`, `at`, `expiresAt` and `expired`.
+- `gary fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer`: record a fix PR Gary opened in `<state>/fixes.json`, `{ <itemId>: [{ number, url, branch, run, startedBy, at }] }`. The autofix skill calls it right after `gh pr create`.
+- `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
+- `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
 - `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
 - `gary put proposals <id> <file>`: write one rule proposal, validated. `gary put learn <file>`: write the learn cursor.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
@@ -249,7 +256,7 @@ Rules:
 | --- | --- | --- | --- |
 | `reply` | `me` (default), `bot` | `alsoLabel`: `{ add, remove }`, optional | `me`: copy `text`, open the thread. `bot`: post `text`. With `alsoLabel` see below |
 | `request_logs` | `bot`, `me` | `alsoLabel`, as for `reply` | post `text`, a request for logs or details (template `request-logs`). `me` is accepted in every account mode and is always prefill |
-| `close` | `me` | `reason`: `completed`, `not_planned`, `duplicate`. `duplicateOf`: number, with `duplicate` | copy `text` when present, open the thread. He closes there with that reason. For a PR there is no reason |
+| `close` | `me` | `reason`: `completed`, `not_planned`, `duplicate`. `duplicateOf`: number, with `duplicate`. `alsoAnswer`: `{ commentId, url, gist }`, discussions only | copy `text` when present, open the thread. He closes there with that reason. For a PR there is no reason. With `alsoAnswer` see below |
 | `reopen` | `bot` (default), `me` | | `bot`: reopen, and post `text` first when present. `me`: copy `text`, open the thread |
 | `merge` | `me` | | copy `text` when present, open the PR page |
 | `review` | `bot`, `me` (in every account mode, always prefill of the body, no inline comments) | `event`: `approve`, `request_changes`, `comment`. `comments`: `[{ id, path, line, startLine, text, diffHunk, original, suggestion }]`. `diffHunk` holds the at most 12 diff lines the comment refers to, starting with its `@@` header, shown on the card and never sent to GitHub. A comment that proposes a change carries `suggestion`, the replacement text without a fence, and `original`, the exact text of lines `startLine`..`line` (or `line` alone) of the file at `reviewedSha`, joined with newlines. The server composes the GitHub body from `text` and `suggestion`. `line` is on the right side of a diff hunk at `reviewedSha`. `startLine` is optional, for a range | submit one PR review with `text` as the body and the checked `comments` inline |
@@ -275,6 +282,12 @@ The click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/ac
 
 `alsoLabel` holds the labels a reply or log request also sets, like `{ "add": ["needs-info"] }`. Every label is one of the profile's `autoLabels`, at least one is named, and none is in both lists. When the maintainer posts the text himself, the card shows a second button next to the copy button. That button runs the `label` action with exactly the route's `alsoLabel`, as the bot, or under his own login in `own` mode. It is refused without a bot and without `allowOwnTokenPushes`, while paused, when the settings are invalid, and when the thread is closed or merged. Newer comments do not block it. It has its own done state: the served route carries `labelDone: { status, result }` next to `done`, and a repeat answers 409. Its key is the labels and the item's `reviewedAt`. Its action doc has `part: "label"`, `labelHash`, `action: "label"` and the labels as `params`, and no `draftHash`. The button logs no decision. A bot route that also set labels records them in its action doc as `label: { params, status, result }`. A label failure after a successful post keeps the click done and answers `{ ok: true, result, warning: "Posted. The label could not be set: …" }`.
 
+`alsoAnswer` names the comment a discussion close also marks as the answer: `commentId` is its node id, `url` its URL in the discussion, `gist` at most 200 characters of what it says. The card shows a second button next to the copy button, sent as `{ input: { part: "answer" } }` without `text` and `draftHash`. It runs `answer_discussion` with exactly the route's `commentId`, as the bot or under his own login in `own` mode, and has the same rules as the label button, except that a closed discussion does not block it. The served route carries `answerDone: { status, result }`, its action doc has `part: "answer"` and `answerHash`.
+
+While a pushing agent job runs on a PR (`take_over`, `address_review`, `drive`, also a drive that waits for a review bot between rounds, `format`), every route that decides the PR on its current state answers 409 "The agent is changing this PR. Decide after it is done.": `review`, `merge`, `close`, a `chore` with `action: "ready"`, and the pushing routes `address_review`, `take_over`, `drive` and `format`. Replies, request_logs, labels and other chores stay allowed. The block ends when the job's action doc is `done` or `failed` and no `push` claim is left. A click on any agent route answers 409 "The agent is already working on this." while an unexpired claim of its kind or a queued or claimed request of the same kind exists for the item.
+
+A `follow_up` with `as: "agent"` (Start fix) on an issue or discussion whose `fix` state is `working`, `draft` or `open` answers 409 with a message that names the running job or the PR, also when the item file still has the route.
+
 The server checks every id and value in `input` against the route and the item. It refuses a route whose actor is `me` or `unavailable`, every merge, and a route that already ran or was queued with the same draft (409). The draft hash covers the route's stored text, its params and the item's `reviewedAt`. When the routine rewrote the route after the page showed it, the server answers that the board is out of date.
 
 Before a bot route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends `force: true` after a second confirm. A moved head still blocks a merge, an approval and a review with inline comments.
@@ -288,12 +301,12 @@ Routes with `as: "me"` never reach GitHub through the server and get no action d
 One page serves every instance. `GET /api/state` returns `{ board, items, proposals }`:
 
 - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos, repoUrl, bot, accountMode, paused, relatedRepos, botCommands, reviewBots } ] }`. `title` is the profile's `name`, `bot` is `{ login, avatarUrl }` or `null`. The page takes links, avatars, bot names, bot commands and new-issue URLs from the item's own instance entry, never from one global repo.
-- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` on a route with `alsoLabel` whose label button ran.
+- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working` and `fix` when there are any. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
 - `proposals[]`: the open proposals, each with `instance`.
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
 
-- `use("board")` returns the `board` object above plus `decision(body)`, which posts `{ instance, itemId, routeId, text }` to `/api/decision` when he uses a route he does on GitHub himself. It resolves quietly, also when the post fails.
+- `use("board")` returns the `board` object above plus `refresh({ instance, itemId })`, see `/api/refresh`, and `decision(body)`, which posts `{ instance, itemId, routeId, text }` to `/api/decision` when he uses a route he does on GitHub himself. It resolves quietly, also when the post fails.
 - `use("db")` returns `collection("items" | "actions" | "proposals").orderBy(field, dir).limit(n).onSnapshot(cb)`, with the docs of all instances, each doc with `instance` and keyed `<instance>/<id>`, and `doc("meta/status").onSnapshot(cb)`. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`, whose paths gain the instance. The event stream names the instance in every event, sends a `board` event with the full `board` object when a pause changes, and `reload` when `board.html` changed.
 - `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ instance, action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ instance, itemId, routeId, text, draftHash, force, input }`. The board-only calls are `dismiss_route` with `{ instance, itemId, routeId, text }`, and `accept_proposal` and `dismiss_proposal` with `{ instance, proposalId, text }`.
 
@@ -316,6 +329,10 @@ The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
+- `effortMinutes` is required and one of 1, 2, 5, 10, 15, 30, 60 and 120. The message names the allowed values.
+- `params.alsoAnswer` only on `close` routes of items with `kind: "discussion"`, with a node id, a `url` that starts with the item's `url` and `#`, and a `gist` of at most 200 characters.
+- `handled` is `{ at, routeId, routeType, verified }` with a `verified` from its list. `fixFor` only on PRs, as `{ itemId, ref }`.
+- No `follow_up` with `as: "agent"` while the item's fix state is `working`, `draft` or `open`. `gary put` and `gary validate` compute it like the server.
 - `lastEventUrl`, when present, starts with the item's own `url` followed by `#`.
 - `params.alsoLabel` only on `reply` and `request_logs`, as `{ add?, remove? }` with at least one label, every label in `autoLabels`, and no label in both lists.
 - `autofix`, only on PRs, is `{ changes, files, lines, tools }` with `changes` true exactly when `files` is above 0. A `format` route needs `autofix.changes: true` and a `reviewedSha`, and has no text and no params.
@@ -389,9 +406,21 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
     { "type": "close", "title": "Close: fixed in 2.3.1", "reason": "Not fixed for him yet", "at": "ISO" }
   ],
   "wants": { "labels": { "add": ["needs-info"], "remove": [] }, "assignees": ["octocat"] },   // optional, the agent's: labels and assignees it would set. Replaced with the doc
-  "wantsReason": "One sentence."   // required with wants
+  "wantsReason": "One sentence.",  // required with wants
+  "handled": { "at": "ISO", "routeId": "r1", "routeType": "reply", "verified": null },   // the maintainer's, see below
+  "live": { "state": "closed", "checkedAt": "ISO" },   // set by a refresh that found the thread closed or merged. The next snapshot drops the item
+  "fixFor": { "itemId": "issue-23", "ref": "acme/widgets#19" }   // code-owned, PRs: the item this Gary fix PR is for, from <state>/fixes.json
 }
 ```
+
+`handled` says the maintainer acted on the item. The server sets it when he reports a prefill button (`/api/decision`), when a bot route or a second button ran, and when an agent route was queued. `verified` is `null` (not checked), `"closed"`, `"merged"`, `"commented"` (a comment by `me`, a maintainer or the bot newer than `at`), `"labeled"` (the route's labels are on the thread) or `"unchanged"`. A posted text sets `"commented"`, a label `"labeled"`, a queued agent job `null`. It is a maintainer field like `hidden`: a replace keeps it, `gary put --merge` with `{ "handled": null }` clears it.
+
+`POST /api/refresh` with `{ instance, itemId }` reads the item from GitHub, read-only, with the bot token or the own login without a bot, through the same fetch as `gary item`. It runs at most once per 20 seconds per item and 30 times a minute in total, and answers 429 with `retryAfter` in seconds beyond that. It sets `handled.verified`, `live` for a closed or merged thread, and the GitHub fields the page shows: `mergeable`, `ci` and `lastEventUrl`. It answers `{ ok, result: { state: "open" | "closed" | "merged", checkedAt, verified } }`. The shim offers it as `use("board").refresh({ instance, itemId })`.
+
+The server serves derived state on items, never stored:
+
+- `working: { kind: "fix" | "review" | "push", action, since }` while an unexpired claim, a queued or claimed agent request, or a waiting drive (`<state>/drive/<itemId>.json`) exists. Push work wins over other kinds, then the oldest. `action` is the agent action, missing for a bare claim.
+- `fix` on issues and discussions: `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy: "routine" | "maintainer" | "other", since }`. Sources, strongest first: a `fix` claim or a queued `start_fix` request (`working`, the maintainer when a request is queued, else the routine), Gary's records in `fixes.json`, the snapshot's `closingPrs` of an issue in any state, and for a discussion the PRs that name it by URL or as `#<number>`. The PR's own snapshot entry gives its live fields. A recorded PR that no source shows counts as open. With several PRs an open or draft one wins, then merged, then closed.
 
 All strings that originate on GitHub are untrusted. The page renders them with `textContent`, never `innerHTML`.
 
@@ -577,9 +606,18 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   "approvedBy": ["octocat"], "changesRequestedBy": [],
   "isClean": true,                 // mergeable, CI green, no open thread, no requested changes
   // issues and discussions
-  "hasClosingPr": false, "isAnswered": false, "authorIsUs": false
+  "changedFiles": 3, "changedLines": 120,   // PRs: additions plus deletions without lock files
+  "aiAuthored": true, "aiSignals": ["branch claude/restore-timeout", "co-author Claude"],   // PRs
+  // issues and discussions
+  "hasClosingPr": false, "isAnswered": false, "authorIsUs": false,
+  // discussions
+  "answerable": true, "answerChosen": false
 }
 ```
+
+`aiAuthored` is true when a commit of the PR (the first 100) has an author or committer whose name or login is `claude`, `copilot`, ends in `[bot]`, is the configured bot, one of the profile's `botLogins`, or contains one of its `aiAuthors`, when a `Co-Authored-By` trailer names one, or when the head branch starts with `claude/` or `copilot/`. `aiSignals` lists the reasons, at most 10. `changedLines` leaves out lock files only, because GitHub's API does not say which files are generated. Lock files beyond the first 50 files still count. `answerable` says the discussion's category allows an answer, `answerChosen` that one is marked.
+
+Draft PRs stay out of the snapshot, except the ones in `fixes.json`, which carry `garyFix: { itemId }`. A discussion entry carries `referencingPrs` with the PRs that name it: the snapshot reads the 100 most recently updated PRs of the repo in one search, because discussions have no cross-reference events in the API. The staged and committed entries keep `lastEventAt`, and for the fix state `title`, `author`, `isDraft`, `ci` and `garyFix` of PRs, `closingPrs` of issues and `referencingPrs` of discussions.
 
 `kind` is `opened`, `comment`, `reply` (discussion replies), `review` or `thread_comment`. `side` is `automated` when the body matches an `automatedComments` pattern, `us` for maintainers, `me` and the configured bot, `bot` for GitHub Apps, `[bot]` accounts and the Copilot agent, and `them` for everyone else. Only `us` and `them` decide `waitingOn`. The timeline reads the last 50 comments, the last 20 replies per discussion comment and the last 20 comments per review thread. A discussion comment with more replies gets them all, up to 300, through extra calls. `dependencyOnly` needs the complete file list and only manifests, lock files and version pin files in it. `hasClosingPr` counts closing PRs that are open or merged.
 
