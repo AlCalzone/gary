@@ -6,19 +6,28 @@ import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { ACTIONS, KINDS, runAction } from "../scripts/lib/actions.mjs";
-import { loadConfig, resolveInstance } from "../scripts/lib/config.mjs";
+import { resolveInstance, rootConfig } from "../scripts/lib/config.mjs";
 import * as boardModule from "../server/server.mjs";
-import { boardInstance } from "../server/server.mjs";
 
-// The instance comes from the session's working directory, resolved once. GARY_INSTANCE keeps reloaded
-// server code on the same instance
+// The action tools act on the instance of the session's working directory, resolved once.
+// The board tools work from any directory, because one board server serves every instance
 let instance = null;
 let instanceError = null;
 try {
 	instance = resolveInstance().name;
-	process.env.GARY_INSTANCE = instance;
 } catch (e) {
 	instanceError = e.message;
+}
+
+/** The instances the board server on `url` serves, or null when no board server answers there. */
+async function servedInstances(url) {
+	try {
+		const res = await fetch(new URL("/api/health", url), { signal: AbortSignal.timeout(2000) });
+		const body = await res.json();
+		return res.status === 200 && body?.name === "gary" ? (Array.isArray(body.instances) ? body.instances : []) : null;
+	} catch {
+		return null;
+	}
 }
 
 const ROOT_URL = new URL("../", import.meta.url).href;
@@ -77,7 +86,7 @@ for (const [name, def] of Object.entries(ACTIONS)) {
 			},
 		},
 		async ({ kind, number, params, text }) => {
-			const outcome = instanceError ? { ok: false, result: instanceError } : await runAction({ action: name, kind, number, params, text });
+			const outcome = instanceError ? { ok: false, result: instanceError } : await runAction({ instance, action: name, kind, number, params, text });
 			return {
 				content: [{ type: "text", text: JSON.stringify(outcome) }],
 				isError: !outcome.ok,
@@ -88,8 +97,8 @@ for (const [name, def] of Object.entries(ACTIONS)) {
 
 // The master triage session starts the board with board_start. Other sessions leave it alone.
 // stdout carries only MCP frames, so the board logs to stderr.
-const port = instance ? loadConfig().port : null;
-const boardUrl = instance ? `http://127.0.0.1:${port}/` : null;
+const { port } = rootConfig();
+const boardUrl = `http://127.0.0.1:${port}/`;
 let board = null;
 let starting = null;
 let serverModule = boardModule;
@@ -161,25 +170,23 @@ function reply(data, isError = false) {
 }
 
 async function startBoard() {
-	if (instanceError) return { running: false, owner: false, instance: null, url: null, error: instanceError };
-	if (board) return { running: true, owner: true, instance, url: board.url };
+	if (board) return { running: true, owner: true, url: board.url, instances: await servedInstances(board.url) };
 	try {
 		board = await serverModule.startBoardServer(boardOptions());
 		watchCode();
-		return { running: true, owner: true, instance, url: board.url };
+		return { running: true, owner: true, url: board.url, instances: await servedInstances(board.url) };
 	} catch (e) {
-		if (e.code !== "EADDRINUSE") return { running: false, owner: false, instance, url: boardUrl, error: e.message };
-		const owner = await boardInstance(boardUrl);
-		if (owner === instance) return { running: true, owner: false, instance, url: boardUrl };
-		if (owner !== null) return { running: false, owner: false, instance, url: boardUrl, error: `Port ${port} runs the board of instance ${owner || "(unnamed)"}.` };
-		return { running: false, owner: false, instance, url: boardUrl, error: `Another program uses port ${port}.` };
+		if (e.code !== "EADDRINUSE") return { running: false, owner: false, url: boardUrl, error: e.message };
+		const served = await servedInstances(boardUrl);
+		if (served !== null) return { running: true, owner: false, url: boardUrl, instances: served };
+		return { running: false, owner: false, url: boardUrl, error: `Another program uses port ${port}.` };
 	}
 }
 
 server.registerTool(
 	"board_start",
 	{
-		description: "Start the local triage board server in this session, or report the one that already runs. Safe to call repeatedly.",
+		description: "Start the one board server for every instance in this session, or report the one that already runs. Works from any directory. Safe to call repeatedly.",
 		annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
 	},
 	async () => {
@@ -199,26 +206,24 @@ server.registerTool(
 	},
 	async () => {
 		await reloading;
-		if (instanceError) return reply({ stopped: false, error: instanceError }, true);
-		if (!board) return reply({ stopped: false, owner: false, instance, url: boardUrl });
+		if (!board) return reply({ stopped: false, owner: false, url: boardUrl });
 		unwatchCode();
 		const b = board;
 		board = null;
 		await b.close();
-		return reply({ stopped: true, owner: true, instance, url: boardUrl });
+		return reply({ stopped: true, owner: true, url: boardUrl });
 	},
 );
 
 server.registerTool(
 	"board_status",
 	{
-		description: "Report the instance, the board URL, whether this session runs the board server, and which instance's board answers on the port.",
+		description: "Report the board URL, whether this session runs the board server, the instances it serves, and the instance of this session's directory.",
 		annotations: { readOnlyHint: true, openWorldHint: false },
 	},
 	async () => {
-		if (instanceError) return reply({ instance: null, error: instanceError }, true);
-		const answering = await boardInstance(boardUrl);
-		return reply({ instance, url: boardUrl, owner: !!board, portAnswers: answering === instance, answeringInstance: answering });
+		const served = await servedInstances(boardUrl);
+		return reply({ url: boardUrl, owner: !!board, portAnswers: served !== null, instances: served ?? [], sessionInstance: instance, ...(instanceError && { sessionInstanceError: instanceError }) });
 	},
 );
 

@@ -15,7 +15,9 @@ const COMMANDS = {
 	pause: ["../scripts/lib/control.mjs", "pauseMain", "Stop every GitHub write and every queued agent start until resume. --all"],
 	resume: ["../scripts/lib/control.mjs", "resumeMain", "End a pause. --all"],
 	instances: ["../scripts/instances.mjs", "main", "List the instances and mark the one this directory resolves to. --json"],
-	"watch-queue": ["../scripts/watch-queue.mjs", "main", "Print queued agent requests as JSON lines. --once"],
+	serve: ["../scripts/serve.mjs", "main", "Start the one board server for every instance. --watch, --dry-run"],
+	migrate: ["../scripts/migrate.mjs", "main", "Move instances to the single-server layout. Safe to run again"],
+	"watch-queue": ["../scripts/watch-queue.mjs", "main", "Print queued agent requests as JSON lines. --all, --once"],
 	setup: ["../scripts/setup.mjs", "main", "Create an instance with its config.json. --help for the flags"],
 	doctor: ["../scripts/doctor.mjs", "main", "Check the installation, read-only. --json, --all"],
 };
@@ -25,7 +27,7 @@ const ANNOUNCED = new Set(["snapshot", "put", "action"]);
 function help() {
 	const lines = ["Usage: gary [--instance <name>] <command> [options]", ""];
 	for (const [name, [, , text]] of Object.entries(COMMANDS)) lines.push(`  ${name.padEnd(12)} ${text}`);
-	lines.push(`  ${"paths".padEnd(12)} Print the instance, root, home, config, personal, profile, state, checkout and core paths as JSON`);
+	lines.push(`  ${"paths".padEnd(12)} Print the instance, root, home, config, personal, profile, state, checkout and core paths as JSON. --root: only core and root`);
 	console.log(lines.join("\n"));
 }
 
@@ -48,9 +50,14 @@ try {
 	if (!command || command === "help" || command === "--help" || command === "-h") {
 		help();
 	} else if (command === "paths") {
-		const out = paths();
-		console.log(JSON.stringify(out, null, 2));
-		if (out.error) process.exitCode = 2;
+		if (args.includes("--root")) {
+			const { core, root } = paths();
+			console.log(JSON.stringify({ core, root }, null, 2));
+		} else {
+			const out = paths();
+			console.log(JSON.stringify(out, null, 2));
+			if (out.error) process.exitCode = 2;
+		}
 	} else if (Object.hasOwn(COMMANDS, command)) {
 		if (ANNOUNCED.has(command)) console.error(`Instance ${instanceName()}.`);
 		const [module, fn] = COMMANDS[command];

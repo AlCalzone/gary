@@ -3,7 +3,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { boardDir, readJson } from "./lib/board-store.mjs";
-import { loadProfile } from "./lib/config.mjs";
+import { instanceName, loadInstance, loadProfile } from "./lib/config.mjs";
 import { accountMode } from "./lib/gh.mjs";
 import { validateItem } from "./lib/validate-item.mjs";
 
@@ -13,7 +13,7 @@ export async function main(argv) {
 	let ids = argv.filter((a) => !a.startsWith("--"));
 	if (!ids.length) ids = (await readdir(dir)).filter((n) => n.endsWith(".json") && !n.startsWith(".")).map((n) => n.slice(0, -5)).sort();
 
-	const options = { mode: accountMode(), profile: loadProfile() };
+	const options = { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instanceName()).repos };
 	const results = [];
 	for (const id of ids) {
 		const item = await readJson(join(dir, id + ".json"));
