@@ -318,7 +318,7 @@
     ok("dialog: one calm line on top, the cards stay usable", !hl.hidden && /^You handled this at \d\d:\d\d\. It returns after the next run if something is left to do\.$/.test(hl.textContent) && cards().length > 0 && !cards()[0].querySelector("button:disabled.card-head"));
     window.__refreshes.length = 0;
     document.getElementById("d-close").click(); await wait(10);
-    ok("closing a handled item's dialog asks the server to check GitHub", window.__refreshes.some((b) => b.instance === "widgets" && b.id === "pr-9474"));
+    ok("closing a handled item's dialog asks the server to check GitHub", window.__refreshes.some((b) => b.instance === "widgets" && b.itemId === "pr-9474"));
     // A prefill click: the item stays while the dialog is open, leaves when it closes
     hset({}); await wait(10);
     localHandled.clear();
@@ -333,7 +333,7 @@
     hset({ "issue-9471": H(5), "issue-9472": H(5, { verified: "unchanged" }), "pr-9473": H(5, { verified: "merged" }), "pr-9474": H(40) }); await wait(10);
     localHandled.clear();
     window.dispatchEvent(new Event("focus")); await wait(10);
-    const ids = window.__refreshes.map((b) => b.id).sort().join();
+    const ids = window.__refreshes.map((b) => b.itemId).sort().join();
     ok("focus: refresh items handled in the last 15 minutes that are not verified yet", ids === "issue-9471,issue-9472");
     window.__refreshFails = true;
     document.dispatchEvent(new Event("visibilitychange")); await wait(10);

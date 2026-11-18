@@ -1600,7 +1600,7 @@ function refreshHandled(keys) {
     refreshedThisFocus.add(key);
     // The server rate-limits as well, so a refusal is no news
     try {
-      Promise.resolve(send.call(boardApi, refOf(key))).catch(() => {});
+      Promise.resolve(send.call(boardApi, { instance: refOf(key).instance, itemId: refOf(key).id })).catch(() => {});
     } catch {
       // Nothing to show
     }
