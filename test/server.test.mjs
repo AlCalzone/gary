@@ -115,6 +115,11 @@ const items = {
 		kind: "discussion", repo: REPO, number: 31, title: "answered", url: "https://github.com/acme/widgets/discussions/31", reviewedAt, hint: "Close: answered",
 		routes: [{ id: "r1", type: "close", title: "Close: answered", recommended: true, text: "Thanks, closing.", params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/31#c1", gist: "Hold the button" } } }],
 	},
+	"issue-60": { kind: "issue", repo: REPO, number: 22, title: "refresh unchanged", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x" }] },
+	"issue-61": { kind: "issue", repo: REPO, number: 23, title: "refresh closed", reviewedAt, hint: "Close: x", routes: [{ id: "r1", type: "close", title: "Close: x", recommended: true, text: "x" }] },
+	"disc-62": { kind: "discussion", repo: REPO, number: 35, title: "refresh commented", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x" }] },
+	"pr-63": { kind: "pr", repo: REPO, number: 18, title: "refresh merged", authorType: "maintainer", reviewedAt, ci: "pending", mergeable: "unknown", hint: "Merge: x", routes: [{ id: "r1", type: "merge", title: "Merge: x", as: "me", recommended: true }] },
+	...Object.fromEntries(Array.from({ length: 30 }, (_, k) => [`issue-${70 + k}`, { kind: "issue", repo: REPO, number: 22, title: "budget", reviewedAt, routes: [] }])),
 	"issue-41": { kind: "issue", repo: REPO, number: 20, title: "closed", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { add: ["needs-info"] } } }] },
 };
 for (const [id, data] of Object.entries(items)) writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(data));
@@ -150,9 +155,11 @@ writeFileSync(stubFile, JSON.stringify({
 	"acme/widgets#20": { state: "CLOSED" },
 }));
 const ghLog = join(T, "gh.log");
+const ghOverrides = join(T, "gh-overrides.json");
+writeFileSync(ghOverrides, "{}");
 
 const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-run", "--port", String(PORT)], {
-	env: { ...env, GARY_GUARD_STUB: stubFile, FAKE_GH_LOG: ghLog },
+	env: { ...env, GARY_GUARD_STUB: stubFile, FAKE_GH_LOG: ghLog, FAKE_GH_OVERRIDES: ghOverrides },
 	stdio: ["ignore", "inherit", "pipe"],
 });
 process.on("exit", () => child.kill("SIGTERM"));
@@ -391,6 +398,46 @@ check("the answer button writes its own action doc", answerDoc?.part === "answer
 const labelled = after["issue-40"].routes[0];
 check("state serves labelDone next to done", labelled.labelDone?.status === "done" && typeof labelled.labelDone.result === "string" && labelled.done === undefined, labelled);
 
+
+// handled and the refresh
+const itemNow = (id) => JSON.parse(readFileSync(join(BOARD, "items", id + ".json"), "utf8"));
+check("a bot post sets handled to commented", itemNow("issue-40").handled?.routeId === "r5" && itemNow("issue-40").handled.routeType === "request_logs" && itemNow("issue-40").handled.verified === "commented", itemNow("issue-40").handled);
+check("a queued agent job sets handled unchecked", itemNow("pr-12").handled?.routeType === "address_review" && itemNow("pr-12").handled.verified === null, itemNow("pr-12").handled);
+check("the answer button sets handled", itemNow("disc-31").handled?.routeType === "close" && itemNow("disc-31").handled.verified === null, itemNow("disc-31").handled);
+for (const id of ["issue-60", "issue-61", "disc-62", "pr-63"]) await api("/api/decision", { instance: "widgets", itemId: id, routeId: "r1" });
+await sleep(100);
+const h60 = itemNow("issue-60").handled;
+check("a reported prefill sets handled with verified null", h60?.routeId === "r1" && h60.routeType === "reply" && h60.verified === null && Date.parse(h60.at) > Date.now() - 10000, h60);
+const soon = new Date(Date.now() + 60000).toISOString();
+writeFileSync(ghOverrides, JSON.stringify({
+	"issue-23": { state: "CLOSED" },
+	"disc-35": { timelineComments: { totalCount: 1, nodes: [{ id: "DC_new", author: { login: "octocat", __typename: "User" }, createdAt: soon, body: "Done", url: "https://github.com/acme/widgets/discussions/35#discussioncomment-900" }] } },
+	"pr-18": { state: "MERGED", mergeable: "CONFLICTING", commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] } },
+}));
+const refresh = (itemId, instance = "widgets") => api("/api/refresh", { instance, itemId });
+r = await refresh("issue-60");
+check("a refresh without a change says unchanged", r.status === 200 && r.data.ok && r.data.result.verified === "unchanged" && r.data.result.state === "open" && itemNow("issue-60").handled.verified === "unchanged" && itemNow("issue-60").live === undefined, r);
+r = await refresh("issue-60");
+check("a second refresh of the item within 20 s gets 429 with a retry hint", r.status === 429 && r.data.retryAfter > 0 && r.data.retryAfter <= 20, r);
+r = await refresh("issue-61");
+check("a thread closed after the click is verified closed and served live", r.data.ok && r.data.result.verified === "closed" && itemNow("issue-61").live?.state === "closed" && typeof itemNow("issue-61").live.checkedAt === "string", r);
+r = await refresh("disc-62");
+check("our comment after the click is verified commented", r.data.ok && r.data.result.verified === "commented" && itemNow("disc-62").lastEventUrl === "https://github.com/acme/widgets/discussions/35#discussioncomment-900", { r, item: itemNow("disc-62") });
+r = await refresh("pr-63");
+const p63 = itemNow("pr-63");
+check("a merged PR is verified merged and its GitHub fields refreshed", r.data.ok && r.data.result.verified === "merged" && p63.live?.state === "merged" && p63.mergeable === "conflicting" && p63.ci === "failing" && p63.title === "refresh merged" && p63.routes.length === 1, p63);
+const refreshedItems = (await api("/api/state")).data.items.filter((i) => i.instance === "widgets");
+check("the state serves live and handled", refreshedItems.find((i) => i.id === "issue-61").live?.state === "closed" && refreshedItems.find((i) => i.id === "issue-60").handled?.verified === "unchanged");
+r = await refresh("issue-70");
+check("a refresh of an item without handled only refreshes the fields", r.data.ok && r.data.result.verified === undefined && itemNow("issue-70").handled === undefined, r);
+const before = readFileSync(ghLog, "utf8").length;
+let last;
+for (let k = 71; k < 100 && (!last || last.status !== 429); k++) last = await refresh(`issue-${k}`);
+check("more than 30 refreshes a minute get 429", last.status === 429 && last.data.retryAfter > 0 && last.data.retryAfter <= 60, last);
+check("a refresh never writes to GitHub", !readFileSync(ghLog, "utf8").slice(before).includes("mutation"));
+r = await refresh("issue-60", "nope");
+check("a refresh needs a served instance", r.status === 400, r);
+writeFileSync(ghOverrides, "{}");
 
 // Suggestions in inline review comments
 check("a suggestion follows the text after a blank line", commentBody({ text: "Use const", suggestion: "const a = 1;" }) === "Use const\n\n```suggestion\nconst a = 1;\n```", commentBody({ text: "Use const", suggestion: "const a = 1;" }));

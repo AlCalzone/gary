@@ -17,6 +17,7 @@ import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceS
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
+import { fetchItem } from "../scripts/snapshot.mjs";
 import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
@@ -33,6 +34,13 @@ const MAX_NOTE = 1000;
 const MAX_TITLE = 256;
 const MAX_REASON = 500;
 const MAX_RULE = 20000;
+// A refresh reads GitHub, so it is limited per item and in total
+const REFRESH_ITEM_MS = 20000;
+const REFRESH_PER_MINUTE = 30;
+export const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "unchanged"];
+// What a bot action that ran says about the thread, for `handled.verified`
+const VERIFIED_BY_ACTION = { comment: "commented", review: "commented", create_issue: "commented", close: "closed", label: "labeled" };
+const MERGEABLE_STATES = { MERGEABLE: "mergeable", CONFLICTING: "conflicting", UNKNOWN: "unknown" };
 
 /** Fingerprint of a drafted route. It changes when the routine rewrites the route or reviews the item again. */
 export function draftHash(route, item) {
@@ -694,6 +702,11 @@ function shim(token, info, version) {
     async decision(body) {
       try { await api("/api/decision", scoped(body)); } catch { /* the log entry is lost, nothing else */ }
     },
+    // Reads one item's live state from GitHub. Answers { ok, result } or, when asked too often, { ok: false, retryAfter }
+    async refresh(body) {
+      const r = await api("/api/refresh", scoped(body));
+      return r.data ?? { ok: false, result: "The board server failed." };
+    },
   };
 
   window.claude = {
@@ -1157,6 +1170,7 @@ export async function startBoardServer({
 					result: "",
 				});
 				doneKeys.add(key);
+				await setHandled(name, itemId, route, null);
 				return [200, { ok: true, result: "Queued for the master session.", queued: true }];
 			}
 
@@ -1227,10 +1241,97 @@ export async function startBoardServer({
 			if (outcome.ok) {
 				doneKeys.add(key);
 				refusals.delete(key);
+				await setHandled(name, itemId, route, VERIFIED_BY_ACTION[first.action] ?? null);
 			}
 			schedulePush(name, "items");
 			return [200, outcome];
 		});
+	}
+
+	/** Marks the item as handled by the maintainer through `route`. The routine and the refresh read it. */
+	async function setHandled(name, itemId, route, verified) {
+		const file = itemFile(name, itemId);
+		await withLock(docLocks, file, async () => {
+			const item = await readJson(file);
+			if (!item) return;
+			await writeAtomic(file, { ...item, handled: { at: new Date().toISOString(), routeId: route.id, routeType: route.type, verified } });
+		});
+		schedulePush(name, "items");
+	}
+
+	const refreshedAt = new Map();
+	const refreshWindow = [];
+
+	/**
+	 * Reads one item from GitHub, read-only, and stores what changed: `handled.verified`, `live` for a closed or
+	 * merged thread, and the GitHub fields the page shows. Nothing the agent wrote changes.
+	 */
+	async function handleRefresh(body) {
+		const name = instanceOf(body.instance);
+		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
+		const { itemId } = body;
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return [400, { ok: false, result: "itemId is required." }];
+		const { error: settingsError } = settingsOf(name);
+		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid. ${settingsError}`, settingsError }];
+		const file = itemFile(name, itemId);
+		const item = await readJson(file);
+		if (!item) return [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (!allowedRepo(name, item.repo) || !["pr", "issue", "discussion"].includes(item.kind) || !Number.isSafeInteger(item.number)) {
+			return [200, { ok: false, result: "The item names no thread of this instance." }];
+		}
+		const now = Date.now();
+		const key = `${name}/${itemId}`;
+		while (refreshWindow.length && refreshWindow[0] <= now - 60000) refreshWindow.shift();
+		const itemWait = (refreshedAt.get(key) ?? -Infinity) + REFRESH_ITEM_MS - now;
+		const totalWait = refreshWindow.length >= REFRESH_PER_MINUTE ? refreshWindow[0] + 60000 - now : 0;
+		const wait = Math.max(itemWait, totalWait);
+		if (wait > 0) {
+			const retryAfter = Math.ceil(wait / 1000);
+			return [429, { ok: false, result: `Checked a moment ago. Try again in ${retryAfter} s.`, retryAfter }];
+		}
+		refreshedAt.set(key, now);
+		refreshWindow.push(now);
+		let entry;
+		try {
+			entry = await withInstance(name, () => fetchItem(item.kind, item.number, item.repo));
+		} catch (e) {
+			return [200, { ok: false, result: `Reading the thread from GitHub failed: ${e.message}` }];
+		}
+		const checkedAt = new Date().toISOString();
+		const state = entry.githubState ?? "open";
+		let next;
+		await withLock(docLocks, file, async () => {
+			const cur = await readJson(file);
+			if (!cur) return;
+			next = { ...cur };
+			if (state === "closed" || state === "merged") next.live = { state, checkedAt };
+			else delete next.live;
+			if (entry.mergeable !== undefined) next.mergeable = MERGEABLE_STATES[entry.mergeable] ?? "unknown";
+			if (entry.ci !== undefined) next.ci = entry.ci;
+			if (entry.facts?.lastEventUrl) next.lastEventUrl = entry.facts.lastEventUrl;
+			if (isObject(cur.handled)) next.handled = { ...cur.handled, verified: verify(cur, cur.handled, entry, state) };
+			await writeAtomic(file, next);
+		});
+		if (!next) return [200, { ok: false, result: OUTDATED, outdated: true }];
+		schedulePush(name, "items");
+		return [200, { ok: true, result: { state, checkedAt, ...(next.handled && { verified: next.handled.verified }) } }];
+	}
+
+	/** What GitHub shows since the maintainer handled the item. */
+	function verify(item, handled, entry, state) {
+		if (state === "closed" || state === "merged") return state;
+		const since = Date.parse(handled.at);
+		const ours = (entry.facts?.timeline ?? []).some((e) => e.side === "us" && e.kind !== "opened" && Date.parse(e.at) > since);
+		if (ours) return "commented";
+		const route = routesOf(item).find((r) => r.id === handled.routeId);
+		const wanted = route?.type === "chore" && route.params?.action === "label" ? route.params : route?.params?.alsoLabel;
+		if (isObject(wanted)) {
+			const has = new Set((entry.labels ?? []).map((l) => l.toLowerCase()));
+			const add = Array.isArray(wanted.add) ? wanted.add : [];
+			const remove = Array.isArray(wanted.remove) ? wanted.remove : [];
+			if (add.length + remove.length && add.every((l) => has.has(String(l).toLowerCase())) && remove.every((l) => !has.has(String(l).toLowerCase()))) return "labeled";
+		}
+		return "unchanged";
 	}
 
 	/**
@@ -1293,7 +1394,10 @@ export async function startBoardServer({
 				finishedAt: new Date().toISOString(),
 				result: typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result),
 			});
-			if (outcome.ok) doneKeys.add(`${part}|${key}`);
+			if (outcome.ok) {
+				doneKeys.add(`${part}|${key}`);
+				await setHandled(name, itemId, route, VERIFIED_BY_ACTION[def.action] ?? null);
+			}
 			schedulePush(name, "items");
 			return [200, outcome];
 		});
@@ -1356,6 +1460,7 @@ export async function startBoardServer({
 		if (recommended && recommended !== route) await decide(name, "chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
 		const drafted = typeof route.text === "string" ? route.text : "";
 		if (typeof text === "string" && text !== drafted) await decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
+		await setHandled(name, itemId, route, null);
 		return [200, { ok: true, result: "Logged." }];
 	}
 
@@ -1588,12 +1693,12 @@ export async function startBoardServer({
 		if (req.method === "GET" && url.pathname === "/api/tools") {
 			return json(res, 200, { tools: Object.keys(ACTIONS), dryRun });
 		}
-		if (req.method === "POST" && ["/api/db", "/api/action", "/api/decision"].includes(url.pathname)) {
+		if (req.method === "POST" && ["/api/db", "/api/action", "/api/decision", "/api/refresh"].includes(url.pathname)) {
 			if (!/^application\/json\b/.test(req.headers["content-type"] ?? "")) {
 				return json(res, 415, { error: "Send JSON." });
 			}
 			const body = await readBody(req);
-			const handler = { "/api/db": handleDb, "/api/action": handleAction, "/api/decision": handleDecision }[url.pathname];
+			const handler = { "/api/db": handleDb, "/api/action": handleAction, "/api/decision": handleDecision, "/api/refresh": handleRefresh }[url.pathname];
 			const [status, data] = await handler(body);
 			return json(res, status, data);
 		}

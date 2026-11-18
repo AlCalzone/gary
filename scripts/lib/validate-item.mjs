@@ -8,6 +8,7 @@ const SECTIONS = ["active", "easy", "almost", "review", "deferred", "hardware"];
 const EFFORTS = [1, 2, 5, 10, 15, 30, 60, 120];
 const DEPTHS = ["quick", "full", "pending"];
 export const CLASSIFIERS = ["fast", "standard", "full"];
+const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "unchanged"];
 const CI = ["passing", "failing", "pending", "none"];
 const MERGEABLE = ["mergeable", "conflicting", "unknown"];
 const DECISIONS = ["approved", "changes_requested", "pending"];
@@ -60,6 +61,11 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
 	if (item.lastEventUrl !== undefined && !(typeof item.lastEventUrl === "string" && typeof item.url === "string" && item.lastEventUrl.startsWith(item.url + "#"))) {
 		err("lastEventUrl", "lastEventUrl must be a URL of the item's own thread, its url followed by #anchor");
+	}
+	if (item.handled !== undefined && item.handled !== null) {
+		const h = item.handled;
+		const ok = isObject(h) && Object.keys(h).every((k) => ["at", "routeId", "routeType", "verified"].includes(k)) && Number.isFinite(Date.parse(h.at ?? "")) && isString(h.routeId) && isString(h.routeType) && (h.verified === null || HANDLED_VERIFIED.includes(h.verified));
+		if (!ok) err("handled", `handled must be { at, routeId, routeType, verified: null | ${HANDLED_VERIFIED.join(" | ")} }`);
 	}
 	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
@@ -322,4 +328,4 @@ function checkWants(item, profile, err) {
 }
 
 /** Item fields whose change needs a validation of the merged item. */
-export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason"];
+export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason", "handled"];

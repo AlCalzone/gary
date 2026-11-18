@@ -47,7 +47,7 @@ const REVIEW_STATE_FIELDS = `
 `;
 
 const PR_FIELDS = `
-				number title url body createdAt updatedAt isDraft
+				number title url body createdAt updatedAt isDraft state
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
@@ -100,7 +100,7 @@ const MORE_REVIEWS_QUERY = `query($owner: String!, $name: String!, $number: Int!
 }`;
 
 const ISSUE_FIELDS = `
-				number title url body createdAt updatedAt
+				number title url body createdAt updatedAt state
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
@@ -120,7 +120,7 @@ const ISSUE_QUERY = `query($owner: String!, $name: String!, $after: String) {
 }`;
 
 const DISCUSSION_FIELDS = `
-				number title url body createdAt updatedAt
+				number title url body createdAt updatedAt closed
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				category { name isAnswerable }
@@ -304,6 +304,8 @@ function baselineEntry(item) {
 		// Kept for every entry, so `gary wants` can compare unchanged items too
 		labels: item.labels ?? [],
 		assignees: item.assignees ?? [],
+		// `gary handled` compares it with the time the maintainer handled the item
+		lastEventAt: item.facts?.timeline?.at(-1)?.at ?? null,
 	};
 }
 
@@ -555,6 +557,8 @@ function common(kind, id, n, classify) {
 		authorType: classify(n.author),
 		authorAssociation: n.authorAssociation,
 		labels: n.labels.nodes.map((l) => l.name),
+		// The board's refresh reads one item that may have been closed since the snapshot
+		githubState: n.state === "MERGED" ? "merged" : n.state === "CLOSED" || n.closed === true ? "closed" : "open",
 		createdAt: n.createdAt,
 		updatedAt: n.updatedAt,
 		body: trim(n.body),
