@@ -33,8 +33,8 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("expandable cards carry a chevron, compact rows do not", cards().filter((c) => !c.classList.contains("compact")).every((c) => !!c.querySelector(".card-head .chev")) && !cards()[1].querySelector(".chev"));
   ok("cards are tinted by intent", cards()[0].classList.contains("intent-talk") && cards()[1].classList.contains("intent-close") && cards()[2].classList.contains("intent-agent")
     && getComputedStyle(cards()[2]).backgroundColor !== getComputedStyle(cards()[0]).backgroundColor);
-  ok("collapsed single-actor cards show the actor on the line", !cards()[2].querySelector(".card-body").hidden === false && getComputedStyle(cards()[2].querySelector(".card-head .actor-icon")).display !== "none");
-  ok("the open card keeps the actor on its button only", getComputedStyle(openCard().querySelector(".card-head .avatar")).display === "none");
+  ok("collapsed single-actor cards show the actor on the line", !cards()[2].querySelector(".card-body").hidden === false && getComputedStyle(cards()[2].querySelector(".card-head .head-actor")).display !== "none" && !!cards()[2].querySelector(".card-head .head-actor .actor-icon"));
+  ok("the open card keeps the actor on its button only", getComputedStyle(openCard().querySelector(".card-head .head-actor")).display === "none");
   ok("close without text is a compact row with one button and no body", cards()[1].classList.contains("compact") && !cards()[1].querySelector(".card-body") && [...cards()[1].querySelectorAll(".card-actions button")].length === 1 && !!cardBtn("Open GitHub to close", cards()[1]));
   ok("a route finding is the card's body, others stay in the findings list", /stored node data looks corrupted/.test(cards()[2].querySelector(".card-finding").textContent) && !/corrupted/.test(document.getElementById("d-findings").textContent) && /two releases behind/.test(document.getElementById("d-findings").textContent));
   const replyBtn = cardBtn("Copy reply, open GitHub");

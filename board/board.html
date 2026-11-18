@@ -486,7 +486,8 @@ button.card-head:hover { background: color-mix(in srgb, var(--int) calc(var(--ti
 .card.open button.card-head { padding-bottom: 6px; border-radius: 12px 12px 0 0; }
 .card-head .r-hint { flex: 1; font-size: 14px; line-height: 20px; }
 .card.open .card-head .r-hint { font-size: 15px; }
-.card-head > .avatar, .card-head > .actor-icon { width: 20px; height: 20px; flex: none; }
+.card-head > .head-actor { display: inline-flex; flex: none; }
+.card-head .head-actor .avatar, .card-head .head-actor .actor-icon { width: 20px; height: 20px; flex: none; }
 .card-top { display: flex; align-items: center; }
 .card-top > .card-head { flex: 1; min-width: 0; }
 .card-x { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 8px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--faint); cursor: pointer; }
@@ -2941,7 +2942,8 @@ function buildCard(id, d, r, rec) {
     return;
   }
   const actor = cardActor(d, r);
-  rec.headActor = actor ? actorMark(actor, instOf(d)) : null;
+  // A wrapper, because an avatar that fails to load replaces its own element with a placeholder
+  rec.headActor = actor ? h("span", { class: "head-actor" }, actorMark(actor, instOf(d))) : null;
   rec.head = h("button", {
     class: "card-head", type: "button", "data-focus-key": "card:" + r.id, "aria-expanded": "false",
     onclick: () => {
