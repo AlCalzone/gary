@@ -42,6 +42,9 @@ const items = {
 			{ id: "r12", type: "take_over", title: "Take over: default mode", as: "agent" },
 			{ id: "r13", type: "chore", title: "Chore: Copilot review", as: "bot", params: { action: "request_review", reviewer: "copilot" } },
 			{ id: "r14", type: "format", title: "Format: no autofix check", as: "agent" },
+			{ id: "r15", type: "chore", title: "Chore: ready", as: "bot", params: { action: "ready" } },
+			{ id: "r16", type: "reply", title: "Reply: while it works", as: "bot", text: "Working on it" },
+			{ id: "r17", type: "review", title: "Review: approve later", as: "bot", params: { event: "approve" }, text: "" },
 		],
 	},
 	"issue-21": {
@@ -268,8 +271,8 @@ await expect("drive on an issue is refused", "issue-21", "r15", {}, refused(/onl
 await expect("drive on a contributor PR is refused", "pr-14", "r2", {}, refused(/taken-over PRs/));
 await expect("drive with maxRounds 4 is refused", "pr-14", "r1", {}, refused(/taken-over PRs|maxRounds/));
 await expect("drive on a taken-over PR is queued with 3 rounds", "pr-13", "r1", {}, (r) => r.data.ok && r.data.queued);
-await expect("drive on a maintainer PR is queued", "pr-12", "r11", {}, (r) => r.data.ok && r.data.queued);
 await expect("format without an autofix check is refused", "pr-12", "r14", {}, refused(/autofix check to have found changes/));
+await expect("drive on a maintainer PR is queued", "pr-12", "r11", {}, (r) => r.data.ok && r.data.queued);
 await expect("format when the autofix changes nothing is refused", "pr-15", "r1", {}, refused(/autofix check to have found changes/));
 await expect("format takes no input", "pr-14", "r3", { input: { files: ["a"] } }, refused(/unknown field/));
 await expect("format on a contributor PR that is not taken over is queued", "pr-14", "r3", {}, (r) => r.data.ok && r.data.queued);
@@ -281,10 +284,20 @@ const finishQueued = () => {
 		if (d.status === "queued") writeFileSync(f, JSON.stringify({ ...d, status: "done", finishedAt: new Date().toISOString() }));
 	}
 };
-await expect("a second push job on an item with a queued one gets 409", "pr-12", "r12", {}, (r) => r.status === 409 && r.data.working === true && r.data.result === "The agent is already working on this.");
+await expect("a second push job on an item with a queued one gets 409", "pr-12", "r12", {}, (r) => r.status === 409 && r.data.working === true && r.data.result === "The agent is changing this PR. Decide after it is done.");
+await expect("a review is blocked while the agent pushes to the PR", "pr-12", "r17", {}, (r) => r.status === 409 && r.data.result === "The agent is changing this PR. Decide after it is done.");
+await expect("a ready chore is blocked too", "pr-12", "r15", {}, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
+await expect("a reply stays allowed", "pr-12", "r16", {}, (r) => r.data.ok === true);
 let st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
-check("the item is served as working while a push job is queued", st.working?.kind === "push" && typeof st.working.since === "string", st.working);
+check("the item is served as working while a push job is queued", st.working?.kind === "push" && st.working.action === "drive" && typeof st.working.since === "string", st.working);
 finishQueued();
+// A drive that waits for a review bot between rounds still pushes
+mkdirSync(join(home, "state", "drive"), { recursive: true });
+writeFileSync(join(home, "state", "drive", "pr-12.json"), JSON.stringify({ reviewRequestedAt: new Date().toISOString(), repo: REPO, number: 12 }));
+st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("a waiting drive is served as push work", st.working?.kind === "push" && st.working.action === "drive", st.working);
+await expect("a waiting drive blocks a review", "pr-12", "r17", {}, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
+rmSync(join(home, "state", "drive", "pr-12.json"));
 st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
 check("a finished job leaves the item without working", st.working === undefined, st.working);
 await expect("take_over defaults to push", "pr-12", "r12", {}, (r) => r.data.ok && r.data.queued);

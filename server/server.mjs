@@ -40,6 +40,9 @@ const REFRESH_PER_MINUTE = 30;
 export const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "unchanged"];
 // What a bot action that ran says about the thread, for `handled.verified`
 const VERIFIED_BY_ACTION = { comment: "commented", review: "commented", create_issue: "commented", close: "closed", label: "labeled" };
+// The routes a pushing agent job blocks on its PR
+export const PUSH_BLOCKED_TYPES = ["review", "merge", "close", "address_review", "take_over", "drive", "format"];
+const PUSH_BLOCKED = (route) => PUSH_BLOCKED_TYPES.includes(route.type) || (route.type === "chore" && route.params?.action === "ready");
 const MERGEABLE_STATES = { MERGEABLE: "mergeable", CONFLICTING: "conflicting", UNKNOWN: "unknown" };
 
 /** Fingerprint of a drafted route. It changes when the routine rewrites the route or reviews the item again. */
@@ -830,23 +833,45 @@ export async function startBoardServer({
 
 	const modeOf = (name) => settingsOf(name).mode ?? "none";
 
-	/** Whether an unexpired claim or a queued agent request of `kind` exists for the item. */
-	async function busyWith(name, itemId, kind) {
-		if ((await listClaims({ instance: name })).some((c) => c.itemId === itemId && c.kind === kind && !c.expired)) return true;
-		return (await readCollection(name, "actions")).some(({ data: a }) => a.itemId === itemId && a.status === "queued" && ACTION_KINDS[a.action] === kind);
-	}
-
-	/** Per item, the agent work in progress: an unexpired claim or a queued agent request. `{ kind, since }`, the oldest wins. */
-	async function workingByItem(name, actions) {
-		const out = new Map();
-		const add = (itemId, kind, since) => {
-			const cur = out.get(itemId);
-			if (!cur || String(since) < String(cur.since)) out.set(itemId, { kind, since });
-		};
-		for (const c of await listClaims({ instance: name })) if (!c.expired) add(c.itemId, c.kind, c.at);
+	/**
+	 * The agent work in progress per item: unexpired claims, queued or claimed agent requests, and drives that wait
+	 * for a review bot between rounds. Each entry is `{ itemId, kind, action, since }`.
+	 */
+	async function workList(name, actions) {
+		const out = [];
+		for (const c of await listClaims({ instance: name })) if (!c.expired) out.push({ itemId: c.itemId, kind: c.kind, action: null, since: c.at });
 		for (const { data: a } of actions) {
 			const kind = ACTION_KINDS[a.action];
-			if (kind && a.status === "queued" && typeof a.itemId === "string") add(a.itemId, kind, a.createdAt ?? null);
+			if (kind && a.status === "queued" && typeof a.itemId === "string") out.push({ itemId: a.itemId, kind, action: a.action, since: a.createdAt ?? null });
+		}
+		const driveDir = join(served.get(name).state, "drive");
+		let names = [];
+		try {
+			names = readdirSync(driveDir).filter((n) => n.endsWith(".json") && !n.startsWith("."));
+		} catch {
+			// No drive waits
+		}
+		for (const n of names) {
+			const itemId = n.slice(0, -".json".length);
+			if (!ITEM_ID.test(itemId)) continue;
+			const d = await readJson(join(driveDir, n));
+			if (d) out.push({ itemId, kind: "push", action: "drive", since: d.reviewRequestedAt ?? d.startedAt ?? null });
+		}
+		return out;
+	}
+
+	/** The work of `kind` in progress on the item, or undefined. */
+	async function busyWith(name, itemId, kind) {
+		return (await workList(name, await readCollection(name, "actions"))).find((w) => w.itemId === itemId && w.kind === kind);
+	}
+
+	/** Per item, the work in progress to serve as `item.working`: push work first, then the oldest. */
+	async function workingByItem(name, actions) {
+		const out = new Map();
+		for (const w of await workList(name, actions)) {
+			const cur = out.get(w.itemId);
+			const better = !cur || (w.kind === "push" && cur.kind !== "push") || (w.kind === cur.kind && String(w.since) < String(cur.since));
+			if (better) out.set(w.itemId, { kind: w.kind, ...(w.action && { action: w.action }), since: w.since });
 		}
 		return out;
 	}
@@ -1134,6 +1159,11 @@ export async function startBoardServer({
 			const key = `${name}|${itemId}|${routeId}|${hash}`;
 			if (doneKeys.has(key) || clickedByKey(name, await readCollection(name, "actions")).has(key)) {
 				return [409, { ok: false, result: "This route already ran. The board shows its result.", duplicate: true }];
+			}
+
+			// While the agent pushes to the PR, nothing may decide it on its current state
+			if (PUSH_BLOCKED(route) && (await busyWith(name, itemId, "push"))) {
+				return [409, { ok: false, result: "The agent is changing this PR. Decide after it is done.", working: true }];
 			}
 
 			const draft = typeof text === "string" ? text : typeof route.text === "string" ? route.text : "";
