@@ -505,6 +505,8 @@ A contributor's PR can get one review without a click, so it had a review before
 | `clean` | the doc has no finding and there is no format offer to make. A clean PR gets no automatic review and goes to the plan with its decision route |
 | `pushing`, `claimed` | an agent is changing the PR, or another run holds its `review` claim |
 
+`gary auto-review check --pr <n> [--sha <head>] [--run <run>]` applies the same rules without a doc and writes nothing. It prints `{ ok: true, qualifies, refused, result }`, and for a PR that qualifies `reason`, `headSha`, `maintainerCanModify` and `offerMade`. `gary auto-review list [--json]` prints the records and, as `states`, the `autoReview` state the board serves per PR.
+
 The command takes the item's `review` claim for the post. A claim the same run already holds stays, any other is released after the post.
 
 The review doc is `{ summary, findings, comments }`:

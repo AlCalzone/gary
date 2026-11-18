@@ -1,7 +1,7 @@
 // The one automatic first review on a contributor's PR: every refusal of `gary auto-review post`, the check of the
 // review doc, the format offer and its acceptance, the facts behind them, the watcher's lines and the board state.
 // Runs offline against the fake gh.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BOT, ME, URL } from "./fixtures/github.mjs";
@@ -260,6 +260,17 @@ t.check("the profile's templates replace the core texts", r.status === 0 && writ
 rmSync(join(profile, "templates", "auto-review-closing.md"));
 rmSync(join(profile, "templates", "format-offer.md"));
 
+// Without a bot the review goes out under the maintainer's own login, when he allowed that
+reset();
+setConfig({ enabled: true, maxPerRun: 1 }, { bot: null, allowOwnTokenPushes: true });
+r = post();
+t.check("own mode: the review goes out under his login", r.status === 0 && json(r).posted === true && writes()[0].as === ME && writes()[0].variables.event === "REQUEST_CHANGES", [r.stdout, writes()]);
+override({ reviewRequestEvents: { nodes: [{ createdAt: soon(5), actor: { login: "hubot" }, requestedReviewer: { __typename: "User", login: ME } }] } });
+t.check("own mode: a re-request for his login counts", json(gary("auto-review", "check", "--pr", "25")).reason === "re_requested");
+setConfig({ enabled: true, maxPerRun: 1 }, { bot: { login: BOT, tokenFile: join(T, "bot-token") }, allowOwnTokenPushes: false });
+reset();
+post();
+
 // The facts: edits by maintainers, re-requests, and the answer to the offer
 const reaction = (login, content = "THUMBS_UP") => ({ content, createdAt: soon(2), user: { login } });
 const comment = (login, minutes, text) => ({ url: `${PR}#issuecomment-${minutes}`, createdAt: soon(minutes), body: text, author: { login } });
@@ -305,6 +316,19 @@ gary("resume");
 setConfig({ enabled: false });
 t.check("switched off: the watcher polls nothing", watch().length === 0);
 setConfig({ enabled: true, maxPerRun: 1 });
+
+// A running watcher prints each answer once, without a restart
+override({}, offerFacts());
+const watcher = spawn(process.execPath, [GARY, "watch-queue", "--all"], { env: { ...env, GARY_OFFER_POLL_MS: "200" }, stdio: ["ignore", "pipe", "pipe"] });
+let seen = "";
+watcher.stdout.on("data", (d) => (seen += d));
+await new Promise((res) => setTimeout(res, 700));
+const before = seen;
+override({}, offerFacts([reaction("hubot")]));
+for (let i = 0; i < 40 && !/offer-accepted/.test(seen); i++) await new Promise((res) => setTimeout(res, 100));
+await new Promise((res) => setTimeout(res, 600));
+watcher.kill("SIGTERM");
+t.check("the running watcher prints the acceptance once", before === "" && seen.trim().split("\n").filter((l) => /offer-accepted/.test(l)).length === 1, [before, seen]);
 
 // The re-request queues a full review, once
 override(request("hubot"), offerFacts([], [], request("hubot")));
