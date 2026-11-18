@@ -482,7 +482,8 @@ a.rv:hover { border-color: var(--muted); text-decoration: none; }
   text-align: left;
 }
 button.card-head { cursor: pointer; }
-button.card-head:hover { background: color-mix(in srgb, var(--int) calc(var(--tint) + 5%), var(--surface)); }
+.card-top:has(> button.card-head:hover) { background: color-mix(in srgb, var(--int) calc(var(--tint) + 5%), var(--surface)); border-radius: 12px; }
+.card.open .card-top:has(> button.card-head:hover) { border-radius: 12px 12px 0 0; }
 .card.open button.card-head { padding-bottom: 6px; border-radius: 12px 12px 0 0; }
 .card-head .r-hint { flex: 1; font-size: 14px; line-height: 20px; }
 .card.open .card-head .r-hint { font-size: 15px; }
@@ -537,6 +538,8 @@ button.card-head:hover .chev { color: var(--fg); }
 .hunk .h-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
 .hunk .h-del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .hunk .h-hdr { color: var(--muted); }
+.hunk .h-ctx { color: var(--muted); }
+.c-note { display: block; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
 /* The agent's verdict is a quiet colored word. The maintainer's decision is a control whose chosen side is filled. */
 .vlabel { font-family: var(--font-body); font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; color: var(--muted); }
 .vlabel::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
@@ -550,6 +553,8 @@ button.card-head:hover .chev { color: var(--fg); }
 .decisions > li:first-child { padding-top: 0; border-top: 0; }
 .t-head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
 .seg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.seg-row > .card-label { margin: 0; padding: 0; line-height: 1; display: inline-flex; align-items: center; }
+.seg { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; }
 .seg-group { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; background: var(--surface); }
 .seg { font: 500 12.5px/1 var(--font-body); padding: 6px 12px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
 .seg + .seg { border-left: 1px solid var(--line-strong); }
@@ -576,7 +581,8 @@ button.card-head:hover .chev { color: var(--fg); }
 .intent-away { --int: var(--muted); }
 .intent-other { --int: var(--accent); }
 .btn[class*="intent-"] { border-color: var(--int); color: var(--int); background: var(--surface); font-weight: 600; }
-.btn[class*="intent-"]:hover:not(:disabled) { border-color: var(--int); background: var(--surface-2); }
+.btn[class*="intent-"]:hover:not(:disabled) { border-color: var(--int); background: color-mix(in srgb, var(--int) 14%, var(--surface)); }
+.btn[class*="intent-"].primary:hover:not(:disabled), .btn[class*="intent-"].confirm:hover:not(:disabled) { background: color-mix(in srgb, var(--int) 86%, var(--fg)); border-color: var(--int); color: var(--surface); }
 .btn[class*="intent-"].primary, .btn[class*="intent-"].confirm { background: var(--int); border-color: var(--int); color: var(--surface); }
 /* The second confirm keeps the intent color and adds a ring, so it reads as "are you sure" */
 .btn.confirm { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--int, var(--accent)); }
@@ -2631,6 +2637,79 @@ function diffHunk(text) {
   })));
 }
 
+// Split a comment into prose and the replacement code of its suggestion blocks
+function splitSuggestions(text) {
+  const prose = [];
+  const suggestions = [];
+  const re = /```suggestion[^\n]*\n([\s\S]*?)\n?```/g;
+  let last = 0;
+  let m;
+  const src = str(text);
+  while ((m = re.exec(src))) {
+    prose.push(src.slice(last, m.index));
+    suggestions.push(m[1]);
+    last = re.lastIndex;
+  }
+  prose.push(src.slice(last));
+  return { prose: prose.join(" ").replace(/\s+\n/g, "\n").trim(), suggestions };
+}
+
+// Map each hunk line to its line number in the new file. Needs the @@ header.
+function hunkLines(text) {
+  const out = [];
+  let n = null;
+  for (const l of str(text).replace(/\n$/, "").split("\n")) {
+    const hdr = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l);
+    if (hdr) { n = Number(hdr[1]); continue; }
+    if (n === null) return null;
+    if (l.startsWith("-")) out.push({ kind: "del", text: l.slice(1), line: null });
+    else { out.push({ kind: l.startsWith("+") ? "add" : "ctx", text: l.slice(1), line: n }); n++; }
+  }
+  return out;
+}
+
+// A hunk without a header has no line numbers. A replacement usually starts with the first line it
+// replaces, so that line anchors the numbering.
+function guessHunkLines(text, firstAdded, start) {
+  if (typeof firstAdded !== "string" || !firstAdded.trim()) return null;
+  const rows = str(text).replace(/\n$/, "").split("\n").filter((l) => !l.startsWith("-") && !l.startsWith("@@"));
+  const at = rows.findIndex((l) => l.slice(1) === firstAdded);
+  if (at < 0 || rows.findIndex((l, i) => i > at && l.slice(1) === firstAdded) >= 0) return null;
+  return rows.map((l, i) => ({ kind: l.startsWith("+") ? "add" : "ctx", text: l.slice(1), line: start - at + i }));
+}
+
+function hunkRow(cls, sign, text) {
+  return h("span", { class: cls, text: sign + text + "\n" });
+}
+
+// A suggestion shows as a diff: the commented lines removed, the replacement added.
+// Without line numbers in the hunk it shows the hunk as context and the replacement below.
+function commentBody(c) {
+  const { prose, suggestions } = splitSuggestions(c.text);
+  const parts = [];
+  if (prose) parts.push(h("span", { class: "c-text" }, richText(prose)));
+  if (!suggestions.length) return [diffHunk(c.diffHunk), ...parts];
+  const end = Number.isInteger(c.line) ? c.line : null;
+  const start = Number.isInteger(c.startLine) ? c.startLine : end;
+  const added = suggestions.flatMap((sug) => sug.split("\n"));
+  const mapped = end === null ? null : hunkLines(c.diffHunk) ?? guessHunkLines(c.diffHunk, added[0], start);
+  const target = mapped ? mapped.filter((l) => l.line !== null && l.line >= start && l.line <= end) : [];
+  if (mapped && target.length === end - start + 1) {
+    const before = mapped.filter((l) => l.line !== null && l.line < start).slice(-3);
+    const after = mapped.filter((l) => l.line !== null && l.line > end).slice(0, 3);
+    parts.push(h("pre", { class: "hunk" },
+      ...before.map((l) => hunkRow("h-ctx", " ", l.text)),
+      ...target.map((l) => hunkRow("h-del", "-", l.text)),
+      ...added.map((t) => hunkRow("h-add", "+", t)),
+      ...after.map((l) => hunkRow("h-ctx", " ", l.text))));
+    return parts;
+  }
+  const range = start !== null && end !== null && start < end ? "lines " + start + "-" + end : end !== null ? "line " + end : "the marked lines";
+  return [diffHunk(c.diffHunk), ...parts,
+    h("span", { class: "c-note", text: "Suggested replacement for " + range + ":" }),
+    h("pre", { class: "hunk" }, added.map((t) => hunkRow("h-add", "+", t)))];
+}
+
 function segControl(label, options, value, onPick) {
   const buttons = options.map(([v, text]) => {
     const b = h("button", { type: "button", class: "seg", "data-v": v, "aria-pressed": v === value ? "true" : "false", text });
@@ -2733,8 +2812,7 @@ function buildCardInputs(id, d, r, rec) {
         const where = str(c.path) + (range ? ":" + range : "");
         return h("li", null, box, h("div", { class: "c-body" },
           h("label", { for: box.id }, where ? h("code", { class: "c-where", text: where }) : "Comment"),
-          diffHunk(c.diffHunk),
-          h("span", { class: "c-text" }, richText(c.text))));
+          ...commentBody(c)));
       })));
     }
   }
