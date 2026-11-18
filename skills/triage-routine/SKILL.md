@@ -120,7 +120,7 @@ Then build the full-review list:
 1. Agent requests from step 2, outside the budget.
 2. Up to `maxFullReviewsPerRun` more. First the items that need analysis: every item at `reviewDepth: "pending"` and every PR with an `unjudged` thread. They have no routes, so the board hides them until they are reviewed. Then the other candidates from the classification file: contributor PRs, then items in `active`, then the rest by `updatedAt`, newest first.
 
-Candidates that do not fit the budget get `reviewDepth: "pending"`. Items that already sit at `pending` from an earlier run are candidates too, even when the snapshot lists them as `unchanged`. Otherwise a pending item would wait until someone comments on it again. The snapshot lists unchanged items by id only. For those, pass the item file to the subagent. It gets the fresh entry with `gary item <id>`.
+Candidates that do not fit the budget get `reviewDepth: "pending"`. Items that already sit at `pending` from an earlier run are candidates too, even when the snapshot lists them as `unchanged`. Otherwise a pending item would wait until someone comments on it again. The snapshot lists unchanged items by id only. For those, pass the item file to the subagent. It gets the fresh entry with `gary item <kind> <number> --repo <repo>`, taken from the stored item.
 
 ### 6. Full reviews in subagents
 

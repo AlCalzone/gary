@@ -34,7 +34,7 @@ Every `gary` command resolves the instance in this order:
 4. the only instance, when exactly one exists,
 5. otherwise an error that lists the instances. There is no silent default.
 
-`gary paths` prints `instance`, `root` (`$GARY_HOME`), `home` (the instance directory), `config`, `personal` (an array, shared file first), `profile`, `state`, `checkout` and `core`. `gary instances` lists the instances. `gary pause --all`, `gary resume --all` and `gary doctor --all` act on every instance. Commands that change something print the instance they acted on. `gary setup --instance <name>` creates an instance. Each instance has its own state, pause switch and decision log, and its own tab on the one board. `gary instances --json` lists `name`, `kind`, `repos`, `checkout` and `paused`.
+`gary paths` prints `instance`, `root` (`$GARY_HOME`), `home` (the instance directory), `config`, `personal` (an array, shared file first), `profile`, `state`, `checkout` and `core`. `gary instances` lists the instances. `gary pause --all`, `gary resume --all` and `gary doctor --all` act on every instance. Commands that change something print the instance they acted on. `gary setup --instance <name>` creates an instance. Each instance has its own state, pause switch and decision log, and its own tab on the one board. `gary instances --json` lists the instances, see "One server, one master".
 
 The skills resolve the instance once with `gary paths` and pass `--instance <name>` on every later command, also in subagent briefs. Only humans rely on the inference.
 
@@ -45,7 +45,8 @@ The contract is the SPEC section "One server, one master".
 - **One board server per machine** serves every instance, on the one port in `<root>/config.json` (`{ "port": 7878 }`, set with `gary setup --port`). Instance configs have no port. `gary serve` starts it (also `--watch`, `--dry-run`), and `board_start` starts or finds it from any directory. The server watches `<root>/instances/` and picks up a new instance without a restart.
 - **Server-wide files** live in `<root>/state/`: `server-token` and `server.log`. Everything else stays in each instance's `state/`.
 - **One master session** runs the `triage-master` skill every hour. It starts the server, starts one worker per instance that runs `triage-routine`, arms one `gary watch-queue --all` Monitor and starts one worker per agent request, and waits for drives. A worker is a child session, a headless `claude -p` run, or the master itself with subagents, in that order of preference. Workers report through `<state>/runs/<run>/summary.txt`, item docs and action results only.
-- **`gary watch-queue --all`** prints one line per queued agent request of any instance: `{ "instance", "id", "itemId", "action" }`.
+- **`gary watch-queue --all`** prints one line per queued agent request of any instance that is not paused: `{ "instance", "id", "itemId", "action" }`.
+- **`gary paths --root`** prints `core` and `root` from any directory. `gary instances --json` returns `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served` and `current`. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`.
 - **Kinds**: an instance has a `kind`, today only `maintainer`. Rules that differ by kind live in files named for it, like `skills/triage-routine/references/classification.maintainer.md`. Each instance has a list of allowed repos. For `maintainer` it is the profile's one `repo`, and an action on an item of another repo is refused.
 - **Item identity**: every item doc carries `repo` (`owner/name`) next to `kind` and `number`. Ids are opaque (`^[a-z0-9][a-z0-9._-]{0,99}$`), and no code derives anything from one. Outside one instance an item is `{ instance, id }`. The server adds `instance` and `ref` (`owner/name#number`) to every item it serves. Decision log entries carry `instance`, `instanceKind` and `repo`.
 - **API**: every endpoint names the instance. `GET /api/state` returns `board.instances[]` with each instance's title, kind, repos, bot, account mode, pause switch, related repos, bot commands and review bots, and items and proposals of all instances, each with `instance`. Clicks, decisions and board actions send `instance` in the body. Every SSE event names its instance.
@@ -76,7 +77,7 @@ The first command never touches the baseline in `state/snapshot.json`. `--commit
 
 ### gary item
 
-`gary item pr-412` prints the fresh snapshot entry of one item as JSON, read from GitHub with the same fields as `gary snapshot`. It writes no state. Use it to re-check one item without a full snapshot.
+`gary item <pr|issue|discussion> <number> [--repo owner/name]` prints the fresh snapshot entry of one item as JSON, read from GitHub with the same fields as `gary snapshot`. It writes no state. Use it to re-check one item without a full snapshot. `gary item <id>` reads an item already stored on the board. Every item doc carries `repo`.
 
 ### gary action
 

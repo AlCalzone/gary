@@ -7,7 +7,7 @@ description: The one hourly Gary session for the whole machine. Starts the board
 
 You are the one master session on this machine. You own the board server and the queue watcher, and you start workers. Workers do the triage. You never read items, diffs or logs, and you never triage yourself, so your context stays small across many hours.
 
-`SPEC.md` in the core is the contract, section "One server, one master". `gary paths` from any directory prints `core` when an instance resolves. Otherwise use the plugin or clone root.
+`SPEC.md` in the core is the contract, section "One server, one master". `gary paths --root` prints `core` and `root` from any directory.
 
 ## Hard limits
 
@@ -19,7 +19,7 @@ Find the `board_start` MCP tool with ToolSearch and call it. It starts the one b
 
 ## 2. List the instances
 
-Run `gary instances --json`. Each entry has `name`, `kind`, `repos`, `checkout` and `paused`. A paused instance still gets its hourly worker, because a paused run triages read-only.
+Run `gary instances --json`. Each entry has `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served` and `current`. A paused instance still gets its hourly worker, because a paused run triages read-only. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`. An instance missing from its `instances`, or with `served: false`, is not on the board yet. Note it in the summary.
 
 ## 3. Hourly workers
 
@@ -48,7 +48,7 @@ Arm one Monitor for all instances:
 Monitor command="gary watch-queue --all" description="queued agent requests of all Gary instances" timeout_ms=1800000
 ```
 
-Each event line is `{ "instance", "id", "itemId", "action" }`. For each, start one worker:
+It skips paused instances, so their requests wait until `gary resume`. Each event line is `{ "instance", "id", "itemId", "action" }`. For each, start one worker:
 
 ```
 Run the triage-routine skill for Gary instance <instance>, job agent request {"id":"<id>","itemId":"<itemId>","action":"<action>"}, run directory <state>/runs/<run>/.
