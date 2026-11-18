@@ -30,7 +30,7 @@ setStub({});
 function startServer() {
 	server = spawn(process.execPath, [join(ROOT, "server", "server.mjs"), "--dry-run", "--port", String(PORT), "--page-file", PAGE], { stdio: ["ignore", "pipe", "pipe"], env: { ...ENV, GARY_GUARD_STUB: STUB } });
 	return new Promise((r) => server.stderr.on("data", (d) => {
-		if (/Board on/.test(d)) r();
+		if (/Board of \S+ on/.test(d)) r();
 		else process.stderr.write("[server] " + d);
 	}));
 }
@@ -295,15 +295,17 @@ try {
 		threads: [
 			{ id: "t1", author: "copilot-pull-request-reviewer", path: "config/zen52.json", line: 18, summary: "Parameter 2 is called ledIndicator in the manual", verdict: "valid" },
 			{ id: "t2", author: "copilot-pull-request-reviewer", path: "config/zen52.json", line: 31, summary: "Add unsigned to parameter 5", verdict: "wrong" },
+			{ id: "t3", author: "copilot-pull-request-reviewer", path: "config/zen52.json", line: 40, summary: "Mention the unit in the label", verdict: "optional" },
 		],
 		routes: [{ id: "r1", type: "take_over", as: "agent", title: "Take over: fix the parameter name", params: { mode: "push" }, recommended: true }],
 	})));
 	await until(`!!state.items.get("pr-14")`);
 	await openItem("pr-14");
-	ok("take_over lists the judged threads", await until(`document.querySelectorAll("#d-routes .card.open .decisions > li").length === 2`));
+	ok("take_over lists the judged threads", await until(`document.querySelectorAll("#d-routes .card.open .decisions > li").length === 3`));
+	ok("only the valid thread starts on Fix", await ev(`return [...document.querySelectorAll("#d-routes .card.open .decisions > li")].map((li) => li.querySelector('.seg[aria-pressed="true"]').textContent).join() === "Fix,Dismiss,Dismiss";`));
 	await ev(`document.querySelectorAll("#d-routes .card.open .decisions > li")[1].querySelector('.seg[data-v="fix"]').click();`);
 	await press("Take over");
-	ok("the server queues take_over with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-14" && a.action === "take_over" && a.status === "queued" && a.params.decisions?.map((d) => d.decision).join() === "fix,fix")));
+	ok("the server queues take_over with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-14" && a.action === "take_over" && a.status === "queued" && a.params.decisions?.map((d) => d.decision).join() === "fix,fix,dismiss")));
 	ok("the take_over card reads as requested", await until(`/Requested\\. The agent has it on its list\\./.test(${openCardText})`, 8000));
 	await closeItem();
 
@@ -354,6 +356,47 @@ try {
 	ok("the dismissed card leaves the dialog", await until(`document.querySelectorAll("#learn-dialog .pcard").length === 1`));
 	await ev(`document.getElementById("learn-close").click();`);
 	ok("with nothing open the lightbulb hides", await until(`document.getElementById("learn").hidden`));
+
+	// An item the agent could not analyze: one "open" route and a notice
+	writeFileSync(itemFile("issue-28"), JSON.stringify(probe("issue", 28, "https://github.com/acme/widgets/issues/28", {
+		hint: "Open: read it yourself", blocked: { reason: "safety_filter", at: new Date().toISOString() },
+		routes: [{ id: "r1", type: "open", as: "me", title: "Open: read it yourself", recommended: true }],
+	})));
+	await until(`!!state.items.get("issue-28")`);
+	await revealAll();
+	ok("blocked: the row shows the not-analyzed icon", await until(`!!document.querySelector('.row[data-id="issue-28"] .r-meta svg[aria-label="Not analyzed by the agent"]')`));
+	await openItem("issue-28");
+	ok("blocked: the safety filter notice and one Open on GitHub row without dismiss", await ev(`return /safety filter/.test(document.querySelector("#d-routes .blocked-note")?.textContent ?? "") && document.querySelectorAll("#d-routes .card").length === 1 && !document.querySelector("#d-routes .card-x") && !!${rowButton(0, "Open on GitHub")};`));
+	await ev(`window.__apiCalls = 0; ${rowButton(0, "Open on GitHub")}.click();`);
+	ok("Open on GitHub opens the thread and runs nothing", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/28")`) && await ev(`return window.__apiCalls === 0;`));
+	await closeItem();
+
+	// Paused: gary pause and gary resume change the header live, server writes are refused calmly
+	const gary = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: ENV, encoding: "utf8" });
+	writeFileSync(itemFile("issue-29"), JSON.stringify(probe("issue", 29, "https://github.com/acme/widgets/issues/29", {
+		hint: "Ask: debug log",
+		routes: [
+			{ id: "r1", type: "request_logs", as: "bot", title: "Ask: debug log", recommended: true, text: "Please post a debug log." },
+			{ id: "r2", type: "reply", as: "me", title: "Reply: thanks", text: "Thanks!" },
+		],
+	})));
+	await until(`!!state.items.get("issue-29")`);
+	await ev(`window.__marker = 3;`);
+	gary("pause");
+	ok("gary pause shows the marker without a reload", await until(`!document.getElementById("paused").hidden`, 8000) && await ev(`return window.__marker === 3;`));
+	await openItem("issue-29");
+	ok("paused: the bot button carries the paused hint", await until(`/paused/.test(document.querySelector("#d-routes .card.open .paused-hint")?.textContent ?? "")`));
+	await press("Ask for a debug log");
+	await until(`!!${cardButton("Confirm: ask for a debug log as widgets-bot")}`);
+	await press("Confirm: ask for a debug log as widgets-bot");
+	ok("paused: the refusal shows as information on the card", await until(`/Gary is paused\\. Nothing was sent\\./.test(document.querySelector("#d-routes .card.open .status.info")?.textContent ?? "") && !document.querySelector("#d-routes .card.open .status.failed")`, 8000));
+	ok("paused: no action doc", !actionFiles().some((a) => a.itemId === "issue-29"));
+	await closeItem();
+	gary("resume");
+	ok("gary resume hides the marker without a reload", await until(`document.getElementById("paused").hidden`, 8000) && await ev(`return window.__marker === 3;`));
+	await openItem("issue-29");
+	ok("resumed: no paused hint", await until(`!document.querySelector("#d-routes .paused-hint") && !!${cardButton("Ask for a debug log")}`));
+	await closeItem();
 
 	// Typed drafts survive a reload, and a rewritten draft drops them
 	writeProbes();

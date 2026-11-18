@@ -20,7 +20,7 @@ const item = { kind: "issue", number: 21, title: "Probe", url: "https://github.c
 	] };
 writeFileSync(join(BOARD, "items", "issue-21.json"), JSON.stringify(item));
 const server = spawn(process.execPath, [join(ROOT, "server", "server.mjs"), "--dry-run", "--port", String(PORT), "--page-file", PAGE], { stdio: ["ignore", "pipe", "pipe"], env: ENV });
-await new Promise((r) => server.stderr.on("data", (d) => { if (/Board on/.test(d)) r(); else process.stderr.write("[server] " + d); }));
+await new Promise((r) => server.stderr.on("data", (d) => { if (/Board of \S+ on/.test(d)) r(); else process.stderr.write("[server] " + d); }));
 const results = [];
 const ok = (n, v) => results.push((v ? "PASS " : "FAIL ") + n);
 try {

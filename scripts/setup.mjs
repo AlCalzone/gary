@@ -1,12 +1,16 @@
-// gary setup: creates the home directory with config.json, personal.md and state/.
+// gary setup: creates an instance under the root with config.json and state/, and the shared personal.md.
 // It asks for missing values in a terminal. Elsewhere it needs them as flags.
+// It also moves the layout from before instances into instances/<name>.
 import { execFile } from "node:child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs, promisify } from "node:util";
-import { ROOT, configFile, expandHome, homeDir, personalFile, stateDir, validateConfig, validateProfile } from "./lib/config.mjs";
+import {
+	INSTANCE_NAME, ROOT, expandHome, explicitInstance, hasFlatLayout, instanceDir, instanceFacts, listInstances, personalFile, rootDir, validateConfig, validateProfile,
+} from "./lib/config.mjs";
 
 const run = promisify(execFile);
 
@@ -20,17 +24,62 @@ const USAGE = `Usage: gary setup [options]
   --bot-login <login>       bot account that acts for the board
   --bot-token-file <path>   file with the bot's GitHub token
   --no-bot                  run without a bot account
-  --port <n>                board server port, default 7878
+  --instance <name>         name of the instance, default the repository name in lower case
+  --port <n>                board server port, default the next free one from 7878
   --force                   replace an existing config.json and existing links
   --no-links                do not link skills and the launcher, do not print the MCP command
   --register-mcp            run \`claude mcp add\` for a clone install
 `;
 
 const PERSONAL_HEADER = `<!--
-Your own rules for the triage agents, as plain text. Nothing here is shared.
-The agents read this file last, so it wins over the core and profile rules.
+Your own rules for the triage agents, as plain text, for every instance. Nothing here is shared with others.
+The agents read this file last, so it wins over the core and profile rules. An instance can add its own personal.md.
 -->
 `;
+const FIRST_PORT = 7878;
+
+const realOrSelf = (p) => {
+	try {
+		return realpathSync(p);
+	} catch {
+		return p;
+	}
+};
+
+function portBindable(port) {
+	return new Promise((done) => {
+		const s = createServer();
+		s.once("error", () => done(false));
+		s.listen(port, "127.0.0.1", () => s.close(() => done(true)));
+	});
+}
+
+/** An instance name from a repository name: lower case, other characters as dashes. */
+export function nameFromRepo(repo) {
+	return String(repo ?? "").split("/").pop().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+/, "").slice(0, 40);
+}
+
+/** Moves config.json and state/ from the root into instances/<name>. Paths in the config become absolute. */
+function migrateFlat(report) {
+	const root = rootDir();
+	const config = JSON.parse(readFileSync(join(root, "config.json"), "utf8"));
+	const abs = (p) => (typeof p === "string" && !p.startsWith("~") && !isAbsolute(p) ? resolve(root, p) : p);
+	config.profile = abs(config.profile);
+	if (config.checkout) config.checkout = abs(config.checkout);
+	if (config.bot?.tokenFile) config.bot.tokenFile = abs(config.bot.tokenFile);
+	const profile = resolve(expandHome(config.profile ?? ""));
+	const repo = JSON.parse(readFileSync(join(profile, "profile.json"), "utf8")).repo;
+	const name = nameFromRepo(repo);
+	if (!INSTANCE_NAME.test(name)) throw new Error(`Cannot name an instance after ${repo}. Move ${root}/config.json by hand.`);
+	const dir = instanceDir(name);
+	if (existsSync(dir)) throw new Error(`${dir} already exists, so the old layout in ${root} cannot move there.`);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "config.json"), JSON.stringify(config, null, "\t") + "\n");
+	unlinkSync(join(root, "config.json"));
+	if (existsSync(join(root, "state"))) renameSync(join(root, "state"), join(dir, "state"));
+	report.push(`moved the old layout into ${dir}`);
+	return name;
+}
 
 function collapseHome(path) {
 	const rel = relative(homedir(), path);
@@ -96,9 +145,10 @@ export async function main(argv) {
 	});
 	if (o.help) return console.log(USAGE);
 
-	const home = homeDir();
-	if (existsSync(configFile()) && !o.force) {
-		throw new Error(`${configFile()} already exists. Pass --force to replace it.`);
+	const report = [];
+	if (hasFlatLayout()) {
+		const moved = migrateFlat(report);
+		console.error(`Moved the old layout into instance ${moved}.`);
 	}
 
 	const tty = process.stdin.isTTY && process.stdout.isTTY;
@@ -124,7 +174,7 @@ export async function main(argv) {
 		if (!profile) {
 			const repo = o.repo ?? (await ask("Repository to triage (owner/name)"));
 			if (!repo) throw new Error("A new profile needs --repo <owner/name>.");
-			const dir = profileArg ? resolve(expandHome(profileArg)) : join(home, "profiles", basename(repo));
+			const dir = profileArg ? resolve(expandHome(profileArg)) : join(rootDir(), "profiles", basename(repo));
 			if (existsSync(dir) && readdirSync(dir).length && !o.force) {
 				throw new Error(`${dir} exists but holds no profile.json. Pass --force to fill it from the template.`);
 			}
@@ -149,7 +199,30 @@ export async function main(argv) {
 			}
 		}
 
-		const config = { profile: collapseHome(profile), me, ...(checkout && { checkout }), bot, allowOwnTokenPushes: false, port: o.port ? Number(o.port) : 7878, activeWindowDays: 30, activeMaxWaitDays: 14, maxFullReviewsPerRun: 10, maxAutoFixesPerRun: 2 };
+		// Instance name, and no second instance for the same repo, checkout or port
+		const repo = created.length ? created[0][2].repo : JSON.parse(readFileSync(join(profile, "profile.json"), "utf8")).repo;
+		const name = explicitInstance() ?? nameFromRepo(repo);
+		if (!INSTANCE_NAME.test(name)) throw new Error(`"${name}" is not a valid instance name. Use lower case letters, digits and dashes, at most 40.`);
+		const dir = instanceDir(name);
+		const exists = existsSync(join(dir, "config.json"));
+		if (exists && !o.force) throw new Error(`Instance ${name} already exists in ${dir}. Pass --force to replace its config.json.`);
+		const others = listInstances().filter((n) => n !== name).map(instanceFacts);
+		const sameRepo = others.find((f) => f.repo && repo && f.repo.toLowerCase() === repo.toLowerCase());
+		if (sameRepo) throw new Error(`Instance ${sameRepo.name} already triages ${repo}.`);
+		if (checkout) {
+			const mine = realOrSelf(resolve(expandHome(checkout)));
+			const sameCheckout = others.find((f) => f.checkout && realOrSelf(f.checkout) === mine);
+			if (sameCheckout) throw new Error(`Instance ${sameCheckout.name} already uses the checkout ${mine}.`);
+		}
+		const taken = new Set(others.map((f) => f.port));
+		let port = o.port ? Number(o.port) : null;
+		if (port !== null && taken.has(port)) throw new Error(`Instance ${others.find((f) => f.port === port).name} already uses port ${port}.`);
+		if (port === null) {
+			port = FIRST_PORT;
+			while (taken.has(port) || !(await portBindable(port))) port++;
+		}
+
+		const config = { profile: collapseHome(profile), me, ...(checkout && { checkout }), bot, allowOwnTokenPushes: false, port, activeWindowDays: 30, activeMaxWaitDays: 14, maxFullReviewsPerRun: 10, maxAutoFixesPerRun: 2 };
 		const errors = validateConfig(config);
 		for (const [, , data] of created) {
 			if (bot) data.botLogins = [...new Set([...(data.botLogins ?? []), bot.login])];
@@ -161,11 +234,12 @@ export async function main(argv) {
 			cpSync(join(ROOT, "profiles", "template"), dir, { recursive: true, force: false, errorOnExist: false });
 			writeFileSync(join(dir, "profile.json"), JSON.stringify(data, null, "\t") + "\n");
 		}
-		mkdirSync(stateDir(), { recursive: true });
-		writeFileSync(configFile(), JSON.stringify(config, null, "\t") + "\n");
+		mkdirSync(join(dir, "state"), { recursive: true });
+		writeFileSync(join(dir, "config.json"), JSON.stringify(config, null, "\t") + "\n");
 		if (!existsSync(personalFile())) writeFileSync(personalFile(), PERSONAL_HEADER);
+		console.error(`${exists ? "Updated" : "Created"} instance ${name}.`);
 
-		const report = [`wrote ${configFile()}`, ...created.map(([, dir]) => `created profile ${dir} from profiles/template`)];
+		report.push(`wrote ${join(dir, "config.json")} with port ${port}`, ...created.map(([, d]) => `created profile ${d} from profiles/template`));
 		if (!o["no-links"] && !isPluginInstall()) {
 			for (const name of readdirSync(join(ROOT, "skills"))) {
 				link(join(ROOT, "skills", name), join(homedir(), ".claude", "skills", name), o.force, report);

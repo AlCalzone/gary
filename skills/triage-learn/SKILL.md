@@ -9,13 +9,13 @@ Every click on the board that differs from what the agents proposed is a signal:
 
 ## Paths and reading order
 
-Run `gary paths`, or use the paths the caller passed: `<core>`, `<profile>`, `<state>`, `<personal>`. The contract for the log, proposals and cursor is the "Learning" section of `<core>/SPEC.md`. When this skill and the spec disagree, the spec wins.
+Run `gary paths`, or use the paths the caller passed: `<instance>`, `<core>`, `<profile>`, `<state>`, `<personal>`. Several Gary instances can live on one machine, one per repo. `gary paths` resolves the instance once, from the session's working directory, which is the repo's checkout. If it fails to resolve, stop and report its error text. Never pick an instance yourself. From then on, every `gary` command in this skill runs as `gary --instance <instance> …`, also from worktrees and scratch directories, where the working directory could point to another instance or none. The commands below leave the flag out to stay short. Add it every time. Every subagent brief names the instance. `<personal>` is a list: the shared `personal.md` first, then the instance's own, when it has one. Read them in that order. The contract for the log, proposals and cursor is the "Learning" section of `<core>/SPEC.md`. When this skill and the spec disagree, the spec wins.
 
 Read before you look for patterns, so you know what the rules already say:
 
 1. The core references in `<core>/skills/triage-routine/references/` and the core skills.
 2. `<profile>/rules/*.md` and `<profile>/templates/*.md`.
-3. `<personal>`.
+3. The `<personal>` files, shared first.
 
 ## Limits
 
@@ -85,7 +85,7 @@ One proposal holds one small, concrete rule, in his words where possible. Exampl
 Where it goes:
 
 - Project facts and project policy go to the profile: `rules/classification.md`, `rules/voice.md`, `rules/review.md`, `rules/issues.md`. A canned text he keeps rewriting goes to its template in `templates/`.
-- Personal habits and style go to `personal.md` (`target: "personal"`).
+- Personal habits and style go to the shared `personal.md` (`target: "personal"`), because they hold for all his projects. When the evidence is clearly about this one project, the rule goes to the profile instead.
 
 `heading` names an existing heading of that file, or a new one that fits its structure. A template has no headings: leave `heading` empty, and the text is appended at its end. `text` is the exact text to append under it, written in the file's style, at most a few lines. `why` cites the evidence in one or two sentences. `evidence` lists every entry you used. `title` has at most 60 characters.
 

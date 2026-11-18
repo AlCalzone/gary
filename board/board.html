@@ -183,6 +183,13 @@ header { display: flex; flex-direction: column; gap: 14px; }
 h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .dry { font-size: 11.5px; font-weight: 600; color: var(--warn); padding: 1px 7px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--warn); }
 .dry[hidden] { display: none; }
+/* Paused is a state he chose, so it reads calm: muted ink, a soft pill */
+.paused-mark { font-size: 11.5px; font-weight: 600; color: var(--fg); padding: 1px 8px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: help; }
+.paused-mark[hidden] { display: none; }
+.paused-hint { font-size: 11.5px; color: var(--muted); cursor: help; }
+.status.info { color: var(--muted); }
+.blocked-note { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 2px 2px 4px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.blocked-note .i { width: 15px; height: 15px; flex: none; margin-top: 2px; }
 .run { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .conn { margin-left: auto; display: inline-flex; padding: 4px; color: var(--faint); }
 .conn[data-state="connected"] { color: var(--ok); }
@@ -819,6 +826,7 @@ textarea {
     <div class="top">
       <h1 id="board-title">Gary</h1>
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
+      <span class="paused-mark" id="paused" title="No GitHub writes. Run `gary resume` to turn them on." hidden>Paused</span>
       <span class="run" id="run-info">Loading</span>
       <button class="btn quiet reload-btn" id="reload" type="button" hidden>Updated, reload</button>
       <button class="learn-btn" id="learn" type="button" aria-haspopup="dialog" hidden></button>
@@ -999,6 +1007,8 @@ const ICONS = {
   check: [p("M20 6 9 17l-5-5")],
   alert: [p("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), p("M12 9v4"), p("M12 17h.01")],
   shield: [p("M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z")],
+  pause: [["rect", { x: 6, y: 4, width: 4, height: 16, rx: 1 }], ["rect", { x: 14, y: 4, width: 4, height: 16, rx: 1 }]],
+  sparklesOff: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"), p("M3 3l18 18")],
   sparkles: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z")],
   bot: [["rect", { x: 3, y: 8, width: 18, height: 12, rx: 2 }], p("M12 8V4H8"), p("M2 14h2"), p("M20 14h2"), p("M15 13v2"), p("M9 13v2")],
   archive: [["rect", { x: 2, y: 3, width: 20, height: 5, rx: 1 }], p("M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"), p("M10 12h4")],
@@ -1605,6 +1615,7 @@ function stateIcons(id, d, dim, withPassing) {
   if (withPassing && d.kind === "pr" && d.ci === "passing") out.push(["ciPass", "ok", "CI passing"]);
   if (open && d.solved === true && !(d.kind === "discussion" && d.isAnswered === true)) out.push(["solved", "muted", "Looks solved, still open", null, "Looks solved"]);
   if (d.reviewDepth === "pending") out.push(["eye", "muted", "Not analyzed yet", null, "Not analyzed yet"]);
+  if (d.blocked && typeof d.blocked === "object") out.push(["sparklesOff", "muted", "Not analyzed by the agent", null, "Not analyzed"]);
   if (d.hidden === true) out.push(["archive", "muted", "Dismissed"]);
   else if (dim && withPassing) {
     const until = new Date(parseTime(d.snoozedUntil)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -2098,6 +2109,7 @@ const ROUTE_ACTORS = {
   drive: ["agent"],
   move: ["bot", "me"],
   chore: ["bot"],
+  open: ["me"],
 };
 const CHORE_LABELS = {
   label: "Change labels", assign: "Assign", ready: "Mark ready", answer_discussion: "Mark as answer",
@@ -2174,6 +2186,7 @@ function routeIntent(r) {
     case "drive": return "agent";
     case "follow_up": return actorOf(r) === "agent" ? "agent" : "talk";
     case "chore": return intentOf(str(p.action));
+    case "open": return "away";
     default: return "other";
   }
 }
@@ -2181,7 +2194,8 @@ function routeIntent(r) {
 // A route without text or choices is one row with its button. Everything else is a card that expands.
 function routeCompact(r) {
   switch (r.type) {
-    case "chore": return true;
+    case "chore":
+    case "open": return true;
     case "merge":
     case "close":
     case "reopen": return !hasText(r);
@@ -2257,6 +2271,7 @@ function routeButtons(d, r) {
       else if (ca) out.push({ id: "close", actor: ca, label: "Close, ask to reopen there", confirm: true, reveal: true, needsText: true, confirmVerb: "post and close", input: { mode: "close" } });
       return out;
     }
+    case "open": return [me("Open on GitHub", { copy: null })];
     case "chore": {
       const label = CHORE_LABELS[p.action] || str(p.action) || "Run";
       return [run(p.action === "react" ? (REACTION_EMOJI[p.content] || REACTION_EMOJI.THUMBS_UP) + " " + label : label)];
@@ -2288,7 +2303,7 @@ function routeTarget(d, r, title, body) {
   if (r.type === "follow_up") {
     return repoBase(d) + "/issues/new?title=" + encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
   }
-  if (r.type === "merge" || r.type === "move" || d.kind === "discussion") return url;
+  if (r.type === "merge" || r.type === "move" || r.type === "open" || d.kind === "discussion") return url;
   if (r.type === "review") return url + "/files";
   return url + "#issuecomment-new";
 }
@@ -2366,6 +2381,7 @@ function applyBoardInfo(b) {
   document.title = name ? name + " triage" : "Gary";
   document.getElementById("board-title").textContent = name ? name + " triage" : "Gary";
   document.getElementById("dry-run").hidden = boardCap.dryRun !== true;
+  document.getElementById("paused").hidden = boardCap.paused !== true;
 }
 
 // ---------- running a route ----------
@@ -2376,6 +2392,14 @@ function confirmMode(id, key) {
 }
 
 // Maps a failed /api/action call to a readable note. Refusals carry their reason from the server.
+// The server's reply to a refused call, or null when the call failed some other way
+function refusalPayload(e) {
+  if (!e || e.code !== "tool_error") return null;
+  const env = e.result;
+  const t = env && Array.isArray(env.content) ? env.content.find((c) => c && c.type === "text") : null;
+  return parseToolPayload(t && t.text);
+}
+
 function routeFailure(e, r) {
   if (e && e.code === "tool_error") {
     const env = e.result;
@@ -2411,7 +2435,7 @@ async function runRoute(id, r, payload) {
     dropSavedDraft(id, r.id);
     detail.openRoute = r.id;
   } catch (e) {
-    state.notes.set(id, { kind: "failed", text: routeFailure(e, r) });
+    state.notes.set(id, refusalPayload(e)?.paused === true ? { kind: "info", text: refusalPayload(e).result || "Nothing was sent." } : { kind: "failed", text: routeFailure(e, r) });
   } finally {
     state.busy.delete(id);
     render();
@@ -2490,7 +2514,7 @@ function takeOverThreads(d) {
 function buildDecisions(rec, threads) {
   return h("ul", { class: "decisions" }, threads.map((t) => {
     const verdict = Object.hasOwn(VERDICT_LABELS, t.verdict) ? t.verdict : "unjudged";
-    if (!rec.decisions.has(t.id)) rec.decisions.set(t.id, { decision: verdict === "wrong" ? "dismiss" : "fix", note: "", noteOpen: false });
+    if (!rec.decisions.has(t.id)) rec.decisions.set(t.id, { decision: verdict === "valid" ? "fix" : "dismiss", note: "", noteOpen: false });
     const st = rec.decisions.get(t.id);
     const [label, cls] = VERDICT_LABELS[verdict];
     const note = h("input", { type: "text", class: "field d-note", "aria-label": "Note for this comment", value: st.note, hidden: !st.noteOpen });
@@ -2717,6 +2741,9 @@ function buildCardActions(id, d, r, rec, locked) {
       },
     }, actorMark(b.actor), b.label);
   });
+  if (boardCap.paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
+    out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
+  }
   if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (boardCap.bot ? botLogin() : str(boardCap.me && boardCap.me.login) || "you") }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   const ownButtons = buttons.filter((b) => b.actor === "own");
@@ -2766,7 +2793,8 @@ function buildCard(id, d, r, rec) {
     },
   }, icon("x"));
   if (compact) {
-    rec.head = h("div", { class: "card-head" }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.actions, dismissX);
+    // Opening the thread is all that is left when the agent could not analyze it, so there is nothing to dismiss
+    rec.head = h("div", { class: "card-head" }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.actions, r.type === "open" ? null : dismissX);
     rec.body = null;
     rec.card.replaceChildren(...[rec.head, rec.dismissBox, callout, rec.status].filter(Boolean));
     return;
@@ -2837,7 +2865,7 @@ async function dismissRoute(id, r, reason) {
       }, 2500);
     }
   } catch (e) {
-    state.notes.set(id, { kind: "failed", text: routeFailure(e, r) });
+    state.notes.set(id, refusalPayload(e)?.paused === true ? { kind: "info", text: refusalPayload(e).result || "Nothing was sent." } : { kind: "failed", text: routeFailure(e, r) });
   } finally {
     state.busy.delete(id);
     render();
@@ -2886,7 +2914,7 @@ function renderRoutes(id, d, locked) {
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
     const sig = JSON.stringify([r.done, r.refused, state.confirming.get(id), locked, isClosedThread(id, d), openedToday(id, r),
-      detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, str(boardCap.me && boardCap.me.login)]);
+      detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, str(boardCap.me && boardCap.me.login), boardCap.paused === true]);
     if (sig !== rec.sig) {
       rec.sig = sig;
       rec.actions.replaceChildren(...buildCardActions(id, d, r, rec, locked));
@@ -2894,7 +2922,24 @@ function renderRoutes(id, d, locked) {
     if (open && rec.ta && !rec.ta.hidden) grow(rec.ta);
     return rec.card;
   });
+  const notice = blockedNotice(d);
+  if (notice) {
+    if (!detail.blockedEl || detail.blockedEl.dataset.reason !== notice) {
+      detail.blockedEl = h("p", { class: "blocked-note", "data-reason": notice }, icon("sparklesOff"), h("span", { text: notice }));
+    }
+    nodes.unshift(detail.blockedEl);
+  }
   placeChildren(detail.routes, nodes);
+}
+
+const BLOCKED_NOTES = {
+  safety_filter: "The agent could not analyze this. Its topic triggered the model's safety filter.",
+  failed: "The agent could not analyze this after three tries.",
+};
+
+function blockedNotice(d) {
+  const b = d.blocked && typeof d.blocked === "object" ? d.blocked : null;
+  return b ? BLOCKED_NOTES[b.reason] || BLOCKED_NOTES.failed : null;
 }
 
 // Place children in order, moving only nodes that are out of place, so a focused field stays attached
@@ -3017,7 +3062,8 @@ function renderZoneStatus(id) {
     for (const [rid, other] of detail.cards) if (rid !== detail.lastRoute) other.status.replaceChildren();
     if (rec) {
       const line = state.busy.has(id) ? h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the board server" }))
-        : state.notes.get(id).kind === "failed" ? h("div", { class: "status failed" }, icon("alert"), h("span", { text: state.notes.get(id).text })) : null;
+        : state.notes.get(id).kind === "failed" ? h("div", { class: "status failed" }, icon("alert"), h("span", { text: state.notes.get(id).text }))
+        : state.notes.get(id).kind === "info" ? h("div", { class: "status info" }, icon("pause"), h("span", { text: state.notes.get(id).text })) : null;
       rec.status.replaceChildren(...(line ? [line] : []));
     }
     return;
@@ -3597,6 +3643,12 @@ async function boot() {
   // The project info names the storage keys, so it comes before the saved filters
   boardApi = await use("board");
   applyBoardInfo(boardApi);
+  // The shim updates the board object in place when the pause switch changes, then tells the page
+  window.addEventListener("board:info", () => {
+    applyBoardInfo(boardApi);
+    for (const rec of detail.cards.values()) rec.sig = null;
+    render();
+  });
   setupLearn();
   state.filters = loadFilters();
   buildFilters();

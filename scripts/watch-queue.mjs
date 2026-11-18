@@ -6,6 +6,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
+import { isPaused } from "./lib/control.mjs";
 
 const RESCAN_MS = 5000;
 const DEBOUNCE_MS = 100;
@@ -23,6 +24,8 @@ export async function main(argv) {
 	const skipped = new Set();
 
 	async function scan() {
+		// While paused nothing is printed, so the master session starts nothing. The docs wait in the queue
+		if (isPaused()) return;
 		let names;
 		try {
 			names = (await readdir(dir)).filter((n) => n.endsWith(".json") && !n.startsWith("."));

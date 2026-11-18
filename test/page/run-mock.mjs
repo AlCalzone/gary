@@ -13,7 +13,8 @@ const harness = join(dir, "harness.html");
 writeFileSync(harness, html);
 
 const chrome = process.env.CHROME ?? "google-chrome";
-const r = spawnSync(chrome, ["--headless=new", "--disable-gpu", "--no-sandbox", `--user-data-dir=${join(dir, "profile")}`, "--virtual-time-budget=10000", "--dump-dom", `file://${harness}`], { encoding: "utf8", timeout: 90000 });
+// External hosts fail at once, so pending avatar and font requests cannot hold up virtual time
+const r = spawnSync(chrome, ["--headless=new", "--disable-gpu", "--no-sandbox", "--host-resolver-rules=MAP * ~NOTFOUND", `--user-data-dir=${join(dir, "profile")}`, "--virtual-time-budget=30000", "--dump-dom", `file://${harness}`], { encoding: "utf8", timeout: 90000 });
 removeDir(dir);
 const m = /<pre id="result">([\s\S]*?)<\/pre>/.exec(r.stdout ?? "");
 if (!m) {

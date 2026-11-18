@@ -8,7 +8,7 @@ The normal mode. Continue in the contributor's PR with our commits, pushed under
 
 1. Check the preconditions and set up the worktree as `push-to-pr.md` describes.
 2. Apply the review's findings that block a merge, plus the instructions in `text`. Take every fact from the PR thread, the maintainer's comments, the action's `text` or files on the default branch. If a finding needs something only the contributor knows, like a detail of their hardware, leave it and say so in the returned `state`.
-3. When the action carries `params.decisions`, handle the threads exactly as `address-review.md` describes in its steps 2 to 5: fix the threads marked `fix`, push one commit with these fixes and the ones from step 2, reply in every handled thread, give dismissed ones a short reason, resolve them. Without decisions, commit and push as `push-to-pr.md` describes.
+3. When the action carries `params.decisions`, handle the threads exactly as `address-review.md` describes in its steps 2 to 5, including its replies for dismissed and optional threads: fix the threads marked `fix`, push one commit with these fixes and the ones from step 2, reply in every handled thread, give dismissed ones a short reason, resolve them. Without decisions, commit and push as `push-to-pr.md` describes.
 4. Return as `push-to-pr.md` describes, with `takenOver: true` on the item. Handled threads leave `threads`. From now on the PR can get `drive` and `address_review` routes. Add a `reply` route with a short note for the maintainer to send, like `I pushed the missing fields from the sibling file, so this is ready to merge.`
 
 ## `mode: "replace"`

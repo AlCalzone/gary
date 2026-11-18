@@ -9,14 +9,14 @@ You triage one issue or discussion in the repo and return one item doc. The main
 
 ## Paths and reading order
 
-Use the paths the caller passed, or run `gary paths`: `<core>`, `<home>`, `<profile>`, `<state>`, `<checkout>` (the local clone of the repo), `<config>` and `<personal>`. The repo is `profile.repo`, written below as `<owner>/<repo>`.
+Use the paths the caller passed, or run `gary paths`: `<instance>`, `<core>`, `<home>`, `<profile>`, `<state>`, `<checkout>` (the local clone of the repo), `<config>` and `<personal>`. Several Gary instances can live on one machine, one per repo. `gary paths` resolves the instance once, from the session's working directory, which is the repo's checkout. If it fails to resolve, stop and report its error text. Never pick an instance yourself. From then on, every `gary` command in this skill runs as `gary --instance <instance> …`, also from worktrees and scratch directories, where the working directory could point to another instance or none. The commands below leave the flag out to stay short. Add it every time. Every subagent brief names the instance. If the model provider's safety filter stops this run, you cannot switch your own model: the caller retries once on the smaller model, as the routine skill describes. `<personal>` is a list: the shared `personal.md` first, then the instance's own, when it has one. Read them in that order. The repo is `profile.repo`, written below as `<owner>/<repo>`.
 
 Read in this order. A later file overrides an earlier one:
 
 1. This skill and `<core>/SPEC.md` (the `items/<id>.json` shape and the route table).
 2. From the core routine skill: `<core>/skills/triage-routine/references/item-doc.md`, `voice.md`, `classification.md` and `accounts.md`.
 3. `<profile>/rules/issues.md`, and the profile's `classification.md` and `voice.md`.
-4. `<personal>`, including any writing rules it names.
+4. The `<personal>` files, shared first, including any writing rules they name.
 
 The ground rules below cannot be overridden by a profile or by `personal.md`.
 

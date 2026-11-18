@@ -107,6 +107,22 @@ window.makeRouteFixtures = (iso) => {
         { id: "r2", type: "review", as: "bot", title: "Comment: ask the contributor", params: { event: "comment", comments: [] }, text: "Thanks! Could you rename parameter 2 to match the manual?", draftHash: "h2" },
       ],
     }),
+    issue(9481, {
+      title: "Hub crashes when a sensor reports a negative temperature",
+      author: "someone",
+      story: "",
+      state: "",
+      blocked: { reason: "safety_filter", at: iso(3600000) },
+      routes: [{ id: "r1", type: "open", as: "me", title: "Open: Read it yourself on GitHub", recommended: true, draftHash: "h1" }],
+    }),
+    issue(9482, {
+      title: "Pairing fails with a 0x0E status on the third attempt",
+      author: "someone",
+      story: "",
+      state: "",
+      blocked: { reason: "failed", at: iso(7200000) },
+      routes: [{ id: "r1", type: "open", as: "me", title: "Open: Read it yourself on GitHub", recommended: true, draftHash: "h1" }],
+    }),
     disc(9476, {
       title: "Fibaro FGS-223 reports wrong power after a firmware update",
       author: "memphi2",

@@ -10,6 +10,7 @@ const CI = ["passing", "failing", "pending", "none"];
 const MERGEABLE = ["mergeable", "conflicting", "unknown"];
 const DECISIONS = ["approved", "changes_requested", "pending"];
 const VERDICTS = ["valid", "optional", "wrong", "unjudged"];
+const BLOCKED_REASONS = ["safety_filter", "failed"];
 const SEVERITIES = ["blocker", "major", "minor", "idea", "question"];
 const REVIEW_EVENTS = ["approve", "request_changes", "comment"];
 const ROUTE_IDS = ["r1", "r2", "r3", "r4"];
@@ -51,6 +52,7 @@ export function validateItem(id, item, { mode, profile }) {
 	if (item.reviewDecision !== undefined && !DECISIONS.includes(item.reviewDecision)) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);
 	}
+	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
 		err("labels", "labels must be a list of strings");
 	}
@@ -66,6 +68,12 @@ export function validateItem(id, item, { mode, profile }) {
 	if (!Array.isArray(routes)) {
 		err("routes", "routes must be a list");
 		return { errors, warnings };
+	}
+	if (item.blocked !== undefined && item.blocked !== null) {
+		if (!isObject(item.blocked) || !BLOCKED_REASONS.includes(item.blocked.reason) || !Number.isFinite(Date.parse(item.blocked.at ?? ""))) {
+			err("blocked", `blocked must be { reason: ${BLOCKED_REASONS.join(" | ")}, at: ISO }`);
+		}
+		if (routes.length !== 1 || routes[0]?.type !== "open") err("blocked-routes", "a blocked item has exactly one route, of type open");
 	}
 
 	const findings = item.findings === undefined ? [] : item.findings;
@@ -175,6 +183,11 @@ export function validateItem(id, item, { mode, profile }) {
 				break;
 			case "chore":
 				if (!CHORE_ACTIONS.has(params.action)) err("chore-action", `${where}: a chore cannot run "${params.action}"`);
+				break;
+			case "open":
+				if ((typeof route.text === "string" && route.text.trim()) || Object.keys(params).length) {
+					err("open-route", `${where}: an open route has no text and no params`);
+				}
 				break;
 		}
 

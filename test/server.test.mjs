@@ -98,7 +98,7 @@ const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-r
 let stderr = "";
 child.stderr.on("data", (d) => (stderr += d));
 const base = `http://127.0.0.1:${PORT}`;
-for (let i = 0; i < 50 && !stderr.includes("Board on"); i++) await new Promise((r) => setTimeout(r, 100));
+for (let i = 0; i < 50 && !stderr.includes(" on http://127.0.0.1:"); i++) await new Promise((r) => setTimeout(r, 100));
 const TOKEN = readFileSync(join(home, "state", "server-token"), "utf8").trim();
 
 async function api(path, body) {

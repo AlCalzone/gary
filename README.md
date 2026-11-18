@@ -1,6 +1,21 @@
 # Gary
 
-Gary is maintainer triage for one GitHub repository. An hourly Claude routine reviews the open PRs, issues and discussions and writes one briefing per item. A local server shows them as a board on `http://127.0.0.1:<port>/`. A click on the board is the maintainer's approval. `SPEC.md` is the contract.
+Gary triages one GitHub repository for its maintainer. Every hour, a Claude session reviews the open PRs, issues and discussions and writes a short briefing for each. A local board shows the briefings, each with one or more suggested actions. You read the board and click. A click is your approval, and nothing else reaches GitHub without one, apart from a few labels you allow.
+
+<!-- Screenshot of the board goes here. -->
+
+## Who does what
+
+| You | The agent |
+| --- | --- |
+| Install Gary once and run `gary setup` | Runs the hourly triage in one Claude session |
+| Create your project profile with the `triage-setup` skill | Fetches the repo's state, reviews PRs, triages issues and discussions |
+| Open the board and read the briefings | Writes the briefings and suggested actions to the board |
+| Click the suggestions you agree with, or dismiss them | Carries out what you clicked: reviews, fixes, replies by the bot |
+| Edit the rules as plain text | Proposes new rules from your decisions |
+| Pause and resume Gary | Runs every other `gary` command |
+
+The commands you run yourself are listed under [Commands you run](#commands-you-run). Every other `gary` command is for the agent. [docs/internals.md](docs/internals.md) describes them.
 
 ## Install
 
@@ -20,165 +35,88 @@ cd ~/repositories/gary && npm install
 bin/gary setup --register-mcp
 ```
 
-`setup` asks for what it needs in a terminal. In a script, pass flags:
+`gary setup` asks in the terminal for your GitHub login, the repo, its local checkout and the account setup. It creates the home directory, by default `~/.config/gary/`, with a shared, empty `personal.md`, and one instance in `instances/<name>/` with `config.json` and `state/`. It never overwrites an existing `config.json` without `--force` and never touches an existing `personal.md`. From a clone it also links the skills into `~/.claude/skills` and the `gary` command into `~/.local/bin`, and registers the MCP server with `--register-mcp`.
 
-```sh
-gary setup --profile ~/repositories/gary-profile-widgets --me octocat --checkout ~/repositories/widgets \
-  --bot-login widgets-bot --bot-token-file ~/.config/widgets-bot/gh-token
-gary setup --repo acme/widgets --me octocat --no-bot   # new profile from profiles/template
-```
+### Accounts
 
-It writes `config.json`, an empty `personal.md` and `state/` into the home directory. It never replaces an existing `config.json` without `--force`, and it never touches an existing `personal.md`. For a clone it also links every skill into `~/.claude/skills`, links the launcher into `~/.local/bin` and prints the `claude mcp add` command, or runs it with `--register-mcp`. `--no-links` skips that step.
+Pick one of three setups:
 
-`gary doctor` checks the installation without changing anything: Node version, `gh`, that the stored `gh` login is `me`, that the bot token belongs to the bot, the profile, the checkout, the port and the skill links.
+- **With a bot account**: replies, reviews, labels and pushes that you approve go out as the bot. `setup` asks for its login and a file with its token. This is the setup with the most one-click actions.
+- **Without a bot**: Gary prepares texts, and you post them yourself on GitHub. Actions without a text, like a transfer, a label or inline review comments, are not offered. Agents push nothing.
+- **Without a bot, own token allowed** (`allowOwnTokenPushes`): like the first setup, but everything runs under your own `gh` login.
 
-## Three layers
+### Create the profile
 
-- **Core**: this repository. It holds no repo name, no account name and no path of one machine, so nobody edits it to adapt the tool. `profiles/template/` is the skeleton for a new project.
-- **Home**: `$GARY_HOME`, default `~/.config/gary/`. `config.json` holds the local settings, `personal.md` the maintainer's own rules, `state/` the board store, snapshots, runs, the server token and logs.
-- **Profile**: one directory per project, named by `profile` in `config.json`. `profile.json` holds the facts the code needs, `rules/` and `templates/` the texts the agents read. A team can share it.
+Start a Claude session and ask it to set up Gary. The `triage-setup` skill reads your repo, read-only: labels, CODEOWNERS, the contributing guide, issue templates, workflows and your recent replies. It drafts the profile for you to review:
 
-`gary paths` prints where each of these lives on this machine.
+- `profile.json`: the repo, maintainers, bot logins, related repos, sensitive paths, labels Gary may set on its own, bot commands.
+- `rules/*.md`: how items are classified, how you write, how PRs and issues are reviewed in this project.
+- `templates/*.md`: canned texts, like a request for logs.
 
-## Accounts
+It asks only what it cannot read: your login, whether a bot posts for you, your writing preferences for `personal.md`. Then it runs `gary doctor` and creates the hourly scheduled task. It never writes to GitHub.
 
-`me` in `config.json` is the maintainer's GitHub login. The `gh` binary acts for him with the login stored by `gh auth login`. `bot` names a second account and its token file, or is `null`.
+## Daily use
 
-- With a bot, every GitHub write runs as the bot with its token in `GH_TOKEN`. No `gh` shell function or alias plays a part.
-- Without a bot, bot routes with a text become text the maintainer posts himself. Routes without a text, like a transfer, a chore or inline review comments, run only when `allowOwnTokenPushes` is true. They then run under his stored login, after a check that this login is `me`.
-- `request_review` with `reviewer: "copilot"` always runs under his stored login, after the same check. With a bot configured, the helper in `scripts/lib/gh.mjs` that does this is the only way to that login, and it sends only that one mutation.
-- No text the bot posts may contain a command from the profile's `botCommands`.
+Open the board at `http://127.0.0.1:<port>/`. Items are grouped by how much attention they need, from "Quick & Easy" to "When you have time". An item with nothing to do right now is not shown. It comes back when it changes on GitHub.
 
-## How the pieces connect
+Each item has a short verdict, a story of what happened so far, and cards with suggested actions. One card is recommended. A card shows who acts after your click:
 
-1. `gary snapshot` fetches the open items and prints what changed since the last run.
-2. The routine in `skills/triage-routine/` reviews the changed items and writes them with `gary put`.
-3. The board server in `server/server.mjs` serves `board/board.html` and pushes every change in `state/board/` to open pages. A click runs the GitHub action right away.
-4. Agent requests from the board are queued in `state/board/actions/`. `gary watch-queue` wakes the master session for them.
+- **You**: replies to people, every close and every merge. The board copies the text and opens the thread on GitHub. You post or merge there yourself.
+- **The bot**: reviews with inline comments, requests for logs, labels, transfers. They are sent after your click. Anything that posts text asks for a second confirm first.
+- **The agent**: work that takes a session, like taking over a PR, addressing review comments, or writing a fix with a test as a draft PR. The request starts within seconds.
 
-The board server, the MCP server and `gary action` share one implementation in `scripts/lib/actions.mjs`. It accepts only the actions in the spec table and always targets the repo from the profile.
+On review cards you can uncheck inline comments and switch each open review thread between Fix and Dismiss. Only comments the agent judged valid start on Fix.
 
-## gary snapshot
+When a suggestion is wrong, dismiss its card and say why. The agent never offers that kind of action on the item again and takes your reason into account. "Analyze again" sends the item back to the agent, optionally with a note.
 
-```sh
-gary snapshot           # print the work list, stage state/snapshot.pending.json
-gary snapshot --commit  # promote the staged snapshot to state/snapshot.json
-```
+Items Gary could not analyze show one card that opens the thread on GitHub, so you decide yourself. That happens when the model's safety filter stopped the agent or the analysis failed three times. "Analyze again" retries.
 
-The first command never touches the baseline in `state/snapshot.json`. `--commit` saves the snapshot from the previous plain run. Items that change on GitHub between the two calls show up again in the next run.
+Gary learns from your decisions. When you often dismiss the same kind of card, pick the alternative, or rewrite drafts the same way, it proposes a small rule. Proposals appear on the board. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`.
 
-```jsonc
-{
-  "changed": [{ "id": "pr-9488", "reason": "head_changed", "kind": "pr", "ci": "passing", /* … */ }],
-  "unchanged": ["issue-9401"],
-  "closed": ["disc-9310"],
-  "stale": { "issues": 259, "discussions": 547 }
-}
-```
+## Commands you run
 
-`closed` also lists issues and discussions that are still open but had no activity within `activeWindowDays`. Text fields are cut at 1500 characters and PRs list at most 50 changed files. A PR whose files match the profile's `sensitivePaths` carries them in `sensitiveFiles`. Authors count as `maintainer` when they are in the profile's `maintainers` or are `me`, and as `bot` when they are in `botLogins`, are the configured bot or are a GitHub App.
+Run these in any terminal. `gary` reads its settings from `~/.config/gary/`. You never run them inside the triage session. That session calls `gary` on its own and shares the same settings and state.
 
-## gary item
+With one project, the current folder does not matter. With several, `gary` picks the instance from where you run it: inside a project's checkout or one of its worktrees, `gary pause` pauses that project. Elsewhere, name it with `--instance <name>`, or use `--all` with `pause`, `resume` and `doctor`. When `gary` cannot tell which instance you mean, it lists them and does nothing. Commands that change something print the instance they acted on.
 
-`gary item pr-9488` prints the fresh snapshot entry of one item as JSON, read from GitHub with the same fields as `gary snapshot`. It writes no state. Use it to re-check one item without a full snapshot.
+From a clone, `gary setup` links the command into `~/.local/bin`, which must be on your `PATH`. A plugin install puts `gary` on the `PATH` inside Claude Code sessions only. There you run a command by typing `! gary pause` in a session, or you ask Claude to run it.
 
-## gary action
+- `gary setup`: install or reconfigure Gary on this machine. `gary setup --instance <name>` adds a project.
+- `gary instances`: list the projects on this machine.
+- `gary doctor`: check the installation without changing anything: Node, `gh` and its login, the bot token, the profile, the checkout, the port, the skill links, the pause switch.
+- `gary pause`: stop every write to GitHub at once. The board stays up, nothing needs a restart.
+- `gary resume`: end the pause.
+- `gary decisions --since <date>`: show the log of your decisions that Gary learns from.
+- `gary proposals`: list the rule proposals and their status.
+- `gary validate`: check the stored items against the rules, read-only.
 
-```sh
-echo '{"action":"label","kind":"issue","number":6,"params":{"add":["bug"]}}' | gary action --dry-run
-gary action action.json
-gary action --check-fresh label.json
-```
+While paused, every click that would post, review, label or transfer is refused with "Gary is paused. Nothing was sent." Agent requests still queue and start after `gary resume`. Snoozing, dismissing a suggestion and deciding rule proposals keep working. The board header shows the pause.
 
-It prints `{ "ok": …, "result": … }` and exits with 1 when `ok` is false. Every `gh` call stops after 60 s, and a failure ends with the tail of gh's stderr. Instead of `kind` and `number`, the input may carry the `itemId` of a queued board action, like `"pr-9488"`.
+## Several projects
 
-`--autonomous` marks an action nobody clicked. The routine passes it for every label and assign change it makes on its own. With it, only `label` and `assign` run, and `label` refuses any label outside the profile's `autoLabels`.
+One machine can run Gary for several repos. Each repo gets its own instance with its own board and port, settings, pause switch, decision log and hourly scheduled task. Ask Claude to set up Gary for the next repo, and the `triage-setup` skill creates a new instance next to the existing ones. Your shared `personal.md` applies to all of them. Each instance can add its own `personal.md` on top. Instances of the same project on different machines can share one profile.
 
-`--check-fresh` runs the same freshness check as a click on the board before the action. It needs the `itemId` of a board item and refuses when the thread moved since the review. `"force": true` in the input skips it, except for a moved head on a merge, an approval or a review with inline comments.
+## Adapting Gary
 
-`--dry-run` validates the input, applies the account rules and runs the read-only lookups, like node ids and labels. It prints each write as the `gh` command, the account it would run as and the GraphQL body it would send on stdin.
+Gary has three layers. Each kind of change has one place:
 
-## MCP server
+- **Core**: this repository. It holds no repo name, no account name and no path of one machine, so nobody edits it to adapt the tool. `profiles/template/` is the skeleton for a new profile.
+- **Profile**: one directory per project, named by `profile` in `config.json`. It can live in its own repo or inside your project, so a team can share it. Project facts go into `profile.json`, project rules into `rules/classification.md`, `rules/voice.md`, `rules/review.md` and `rules/issues.md`, canned texts into `templates/`.
+- **Home**: `~/.config/gary/` or `$GARY_HOME`. `personal.md` holds your own rules and writing style for all projects. Each instance lives in `instances/<name>/` with its `config.json`, an optional `personal.md` for that project, and `state/` with the board's data.
 
-The stdio server `gary` has one tool per GitHub action and three tools for the board server. In a plugin install Claude Code starts it from `.mcp.json`. For a clone, `setup` prints the `claude mcp add` command.
+The agents read a rule in this order: the core, then the profile file of the same topic, then the shared `personal.md`, then the instance's `personal.md`. A later file wins. The safety limits below cannot be changed by a profile or by `personal.md`.
 
-- `board_start` starts the board server inside this MCP process and returns its URL. When another process already serves the board, it returns `{ "running": true, "owner": false, "url": … }`. Calling it again is safe.
-- `board_stop` stops the board server if this MCP process started it.
-- `board_status` returns the URL, whether this process runs the board server, and whether the port answers like the board.
+## Safety
 
-The master triage session calls `board_start` at the start of every run. Other sessions never start it on their own.
+- **What reaches GitHub**: only what you clicked, plus labels from the profile's `autoLabels` and assignments that record a fact, like a draft fix PR that exists. Agents may also open a draft fix PR on a new branch. Nothing else happens without a click.
+- **Under which account**: with a bot, everything Gary writes goes out as the bot. Without one, you post yourself, or Gary uses your own login when you allowed it. One action always runs under your own login: requesting a Copilot review.
+- **Never without a click**: comments, reviews, approvals, merges, closes, pushes to someone else's branch. Merges and closes are always done by you on GitHub.
+- **Untrusted content**: issue texts, PR diffs and attached files are treated as data. Instructions inside them are never followed, and agents never run code from a PR branch.
+- **Stale clicks**: before sending, the server checks that nobody commented and nobody pushed since the review. Otherwise it asks you to confirm again.
+- **Dry run**: `node server/server.mjs --dry-run` starts the board without writing anything to GitHub.
+- **Pause**: `gary pause` stops all writes at once. A paused run still triages and records in its run directory what it would have labeled or fixed.
 
-## Board server
+## More
 
-```sh
-node server/server.mjs              # start the board without a Claude session
-node server/server.mjs --dry-run    # nothing is written to GitHub
-node server/server.mjs --watch      # restart on edits in server/ and scripts/lib/
-```
-
-It listens on `127.0.0.1` at the `port` from `config.json`. `GARY_DRY_RUN=1` turns on dry-run mode for the MCP server too. `--port` and `--board-dir` override the port and the data directory for tests.
-
-`GET /api/state` returns `board` next to the items: the project `name`, `repo` and `repoUrl`, `me` and `bot` with login and avatar URL (`bot` is `null` without one), `accountMode` (`bot`, `own` or `none`), `relatedRepos`, `botCommands` and `reviewBots`. The page gets the same object from `window.claude.use("board")`. Every served route carries `actor`, who acts after a click: `me`, `bot`, `own`, `agent` or `unavailable`. A move to a repository carries `actors` with one entry per button.
-
-Edits reach open pages without a manual reload. When `board/board.html` changes, the server tells open pages to reload. A page with an open dialog or typed text waits and shows "Updated, reload" instead. After `board_start`, the MCP server watches `server/server.mjs` and `scripts/lib/*.mjs` and restarts the board server with the new code. When the new code fails to load, the old server keeps running.
-
-The server can write to GitHub, so it locks itself down:
-
-- On the first start it writes a random token to `state/server-token` with mode 600. The page gets the token inline. Every `/api` request must send it, except `GET /api/health`.
-- It rejects any `Origin` other than its own and any `Host` other than `127.0.0.1:<port>` or `localhost:<port>`.
-- It accepts only JSON bodies up to 256 KB and sends no CORS headers. It serves nothing besides the board page.
-- The page runs under a strict Content-Security-Policy. Images may come only from GitHub, for the avatars.
-- GitHub actions run one at a time per item, so a double click cannot run twice. Writes run one at a time per file.
-
-## What a click can run
-
-The page cannot send an arbitrary action. A click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/action`. The server reads the route from `state/board/items/<id>.json` and takes its type, actor, params and the target from there. `input` carries only what the maintainer chose on the card, like the checked review comments, the decision per review thread, the mode of a move or the rounds of a drive. The server checks every id and value in it.
-
-- The draft hash covers the route's stored text, its params and the item's `reviewedAt`. When the routine rewrote the route after the page showed it, the server answers "The board is out of date, reload it."
-- A route that already ran or was queued with the same draft is refused with 409.
-- A route whose actor is `me` never reaches GitHub through the server: the page copies its text and opens the thread, and the maintainer acts there. That covers replies to people, every close and every merge. The one close the server runs is a `move` with `input.mode: "close"`, which posts the route's text and closes as not planned.
-- A bot route runs after the click as the bot, or under the maintainer's login in `own` mode. An `unavailable` route is refused.
-- An agent route writes a queued action doc. `drive` and `address_review` are refused unless the PR is by a maintainer, a bot or Copilot, or carries `takenOver: true`. Pushing our commits to a contributor's PR is always a take-over, so a `take_over` route carries the per-thread decisions there.
-- `dismiss_route` removes one suggested route and remembers it with the reason. When it was the last route, a `reanalyze` request is queued so the agent proposes something else.
-- Before a route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends the click again past that check after a second confirm. A moved head still blocks an approval and a review with inline comments. The code is in `scripts/lib/guard.mjs`.
-- The server writes one action doc per bot or agent click with `routeId`, `route`, `draftHash`, `edited`, the action it ran and the result.
-
-## gary validate
-
-`gary validate` runs the same validation over every stored item, read-only, and prints the problems grouped by rule. `gary validate pr-9488 issue-9401` checks only those. `--json` prints the result as JSON. It exits with 1 when an item fails.
-
-## Learning
-
-The board server logs where the maintainer deviates from the agent's proposals in `state/decisions.jsonl`: a dismissed route, another route than the recommended one, an edited text, a thread decision against the agent's verdict, an unchecked review comment, a note to the agent, a snooze. Routes he does on GitHub himself are reported by the page to `/api/decision`, which writes only that local log entry.
-
-The `triage-learn` skill reads new entries with `gary decisions --since <ISO>`, writes rule proposals with `gary put proposals <id> <file>` and its cursor with `gary put learn <file>`. The board shows open proposals. Accepting one appends the rule under its heading in the profile's `rules/` or `templates/`, or in the home's `personal.md`, and commits that file when the profile is a git repository. It never pushes. Dismissing one stores the reason and logs it, so the pattern is not proposed again. Both work in dry-run mode, because they change only local files. `gary proposals` lists every proposal with its status.
-
-A dismissed route goes into the item's `dismissedRoutes`, which the routine never clears. `gary put` refuses a doc that brings back a dismissed route type.
-
-## Tests
-
-```sh
-npm test            # actions, server, accounts, learning, sharing, validate. Needs node and zsh
-npm run test:page   # the board page, mocked and served. Needs Chrome or Chromium
-```
-
-The suites run offline. `test/fake-gh/gh` stands in for the `gh` binary on PATH, answers Gary's reads from `test/fixtures/github.mjs` and refuses every write. Each suite makes its own temp home with the fixture profile `test/fixtures/profile` (the project `acme/widgets`) and picks free ports, so they never touch a real home or a running board. `CHROME` names the browser binary for the page suites, default `google-chrome`. Avatars from github.com may fail to load offline, and the page suites accept the letter placeholder then.
-
-## gary watch-queue
-
-`gary watch-queue` prints one line like `{"id":"pr-9469-1763400000000","itemId":"pr-9469","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits.
-
-## gary put
-
-```sh
-gary put items pr-9488 item.json           # the file is the complete item and replaces the stored one
-gary put --merge items pr-9488 patch.json  # change only these fields, null removes a field
-gary put items pr-9488 --delete            # remove the item
-gary put meta meta.json                    # replace meta.json
-```
-
-A replace keeps the maintainer's `hidden` and `snoozedUntil`, and `priority` when the file has none. Every other field the file leaves out is gone afterwards.
-
-Before every replace, and before a merge that touches `routes`, `threads`, `hint` or `findings`, it validates the item as it will be after the write, with the rules in SPEC.md under Validation. A broken rule refuses the write and prints every problem in `problems`. A warning, like an approval while a thread is judged valid, goes to stderr. `--no-validate` skips the check, for migrations.
-
-It sends the write through the board server, so it queues behind clicks on the same item. When the server is not running, it writes the file directly with the same merge rules and says so on stderr. It prints `{ "ok": true }`, or `{ "ok": false, "error": … }` and exits with 1.
+- [docs/internals.md](docs/internals.md): the commands the agents run, the board server and its endpoints, the MCP server, the state layout, the tests. For people changing Gary itself and for the agents' skills.
+- `SPEC.md`: the contract between the skills, the scripts and the board.

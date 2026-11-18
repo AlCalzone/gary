@@ -1,4 +1,5 @@
 import { loadProfile, repoParts } from "./config.mjs";
+import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReviewAsMaintainer, verifyOwnLogin, writeLogin } from "./gh.mjs";
 
 export const KINDS = ["pr", "issue", "discussion"];
@@ -456,6 +457,7 @@ export const ACTIONS = {
  */
 export async function runAction({ action, kind, number, params, text, dryRun = false, autonomous = false } = {}) {
 	try {
+		if (isPaused()) return { ok: false, result: PAUSED_MESSAGE, paused: true };
 		const ctx = validate({ action, kind, number, params, text });
 		forbidBotCommands(ctx);
 		if (autonomous) checkAutonomous(ctx);

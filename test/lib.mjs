@@ -25,18 +25,20 @@ export function testEnv(extra = {}) {
 }
 
 /**
- * Creates a home with config.json for the fixture profile and returns `{ home, env }`.
+ * Creates a root with one instance (default "widgets") for the fixture profile and returns `{ home, root, env }`.
+ * `home` is the instance directory.
  * `config` overrides config.json fields, like `{ bot: null }`.
  */
-export function makeHome(dir, config = {}) {
-	const home = join(dir, "home");
+export function makeHome(dir, config = {}, name = "widgets") {
+	const root = join(dir, "root");
+	const home = join(root, "instances", name);
 	mkdirSync(join(home, "state", "board", "items"), { recursive: true });
 	mkdirSync(join(home, "state", "board", "actions"), { recursive: true });
 	const tokenFile = join(dir, "bot-token");
 	writeFileSync(tokenFile, BOT_TOKEN + "\n", { mode: 0o600 });
 	writeFileSync(join(home, "state", "board", "meta.json"), "{}");
 	writeFileSync(join(home, "config.json"), JSON.stringify({ profile: PROFILE, me: ME, bot: { login: BOT, tokenFile }, port: 9, ...config }, null, "\t"));
-	return { home, env: testEnv({ GARY_HOME: home }) };
+	return { home, root, env: testEnv({ GARY_HOME: root }) };
 }
 
 export function freePort() {

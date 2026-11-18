@@ -9,13 +9,17 @@ You run one triage pass for the repo in the profile. The maintainer reads the re
 
 ## Paths, config and reading order
 
-Run `gary paths` first. It prints JSON with `core`, `home`, `profile`, `state`, `checkout` (the local clone of the repo), `config` and `personal`. Below they are `<core>`, `<home>`, `<profile>`, `<state>`, `<checkout>`, `<config>` and `<personal>`.
+Run `gary paths` first. It prints JSON with `instance`, `root`, `home` (the instance directory), `config`, `personal`, `profile`, `state`, `checkout` (the local clone of the repo) and `core`. Below they are `<instance>`, `<home>`, `<config>`, `<personal>`, `<profile>`, `<state>`, `<checkout>` and `<core>`.
+
+Several Gary instances can live on one machine, one per repo. `gary paths` resolves the instance once, from the session's working directory, which is the repo's checkout. If it fails to resolve, stop and report its error text. Never pick an instance yourself. From then on, every `gary` command in this skill runs as `gary --instance <instance> …`, also from worktrees and scratch directories, where the working directory could point to another instance or none. The commands below leave the flag out to stay short. Add it every time. Every subagent brief names the instance.
+
+`<personal>` is a list: the shared `personal.md` first, then the instance's own, when it has one. Read them in that order.
 
 - `<core>/SPEC.md` is the contract: doc shapes, sections, routes, actions, budget, accounts. Read it at the start of every run. When this skill and the spec disagree, the spec wins.
 - `<config>`: the maintainer (`me`), the bot (`bot`, or `null`), `allowOwnTokenPushes`, limits.
 - `<profile>/profile.json`: the repo, maintainers, bot logins, review bots, related repos, sensitive paths, auto labels, bot commands, required tools.
 
-Every rule has up to three layers. Read them in this order: the core reference, then `<profile>/rules/<topic>.md`, then `<personal>`. A later file overrides an earlier one. The hard limits below cannot be overridden by a profile or by `personal.md`. Subagents follow the same order. Pass them the paths from `gary paths`.
+Every rule has up to three layers. Read them in this order: the core reference, then `<profile>/rules/<topic>.md`, then the `<personal>` files. A later file overrides an earlier one. The hard limits below cannot be overridden by a profile or by `personal.md`. Subagents follow the same order. Pass them the full JSON from `gary paths`, which includes the instance.
 
 `personal.md` may name writing rules for prose. Apply them to every briefing and every suggested reply, and pass them on to subagents.
 
@@ -56,6 +60,15 @@ Work in a fresh run directory `<state>/runs/<UTC timestamp>/`. Put action input 
 ### 1. Config, lock, tools
 
 Read the config and the profile.
+
+Check `<state>/control.json`. When Gary is paused (`gary pause`), the run still does the whole read-only triage: snapshot, classification, full reviews, item docs, priorities. It changes nothing on GitHub:
+
+- Every autonomous label or assign still goes through `gary action --autonomous`. Take the refusal ("Gary is paused. Nothing was sent.") and record the intended action in `<run>/would-have.json` as `[{ itemId, action, params, reason }]`.
+- Step 7 starts no fix agent and pushes nothing. Each fix it would attempt goes into `would-have.json` with `action: "start_fix"`.
+- Queued agent requests stay queued and unclaimed.
+- Line 1 of the run summary says `Paused.` and counts the would-have actions per kind, like `Paused. Would have: 4 label, 1 assign, 1 start_fix.`
+
+After `gary resume`, nothing from `would-have.json` is replayed. The next run decides again from the current state.
 
 Check `<state>/run.lock`. If it exists and holds a timestamp less than 90 minutes old, another run is active. Stop and say so. Otherwise write the current timestamp into it. Two runs at once would process the same queued action twice.
 
@@ -121,7 +134,23 @@ Each subagent prompt contains:
 
 Validate each returned doc with the checklist in `references/item-doc.md` before you use it. Then overwrite the GitHub-derived fields (`kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `updatedAt`, and for the status icons `mergeable`, `reviewDecision`, `isAnswered`, `openThreads` and `reviews`, mapped to the lowercase values in SPEC.md) with the snapshot values and set `reviewedAt` to now. Those fields come from the snapshot. A subagent that read an injected PR body could otherwise change them.
 
-A subagent that fails, times out or returns JSON that fails validation leaves its item at `reviewDepth: "pending"` with the quick classification. Note the failure in the run summary. Do not retry in this run.
+A subagent that fails, times out or returns JSON that fails validation leaves its item at `reviewDepth: "pending"` with the quick classification. Note the failure in the run summary. Do not retry in this run. Count the failures per item in `<state>/failures.json` (`{ "<itemId>": <count> }`). After the third failure, write the blocked doc below with `reason: "failed"`, and take the item off the full-review list.
+
+**Stopped by a safety filter.** When the error of a subagent mentions safeguards or a usage policy, the model provider's safety filter ended it. Do not read or reason about the item's content after such a stop.
+
+First retry the same item exactly once, with the same skill and the unchanged brief, on the Sonnet model (`model: "sonnet"`). Do not reword the brief and do not add or remove content to get past the filter. When the retry returns a valid doc, write it as usual with two additions:
+
+- `analyzedBy: "fallback"`,
+- one `findings` entry with severity `question`: `The full analysis was stopped by the safety filter. This result comes from the smaller model, so code-level conclusions need your check.`
+
+When the retry is stopped too, do not retry in this or a later run. Write this fixed doc from the snapshot fields only:
+
+- the GitHub-derived fields from the snapshot entry, `section` from the quick classification,
+- `reviewDepth: "pending"`, `blocked: { "reason": "safety_filter", "at": "<ISO now>" }`,
+- `state`: `The agent could not analyze this. Its topic triggered the model's safety filter.`,
+- exactly one route: `{ "id": "r1", "type": "open", "title": "Decide yourself: agent could not analyze this", "as": "me", "recommended": true }`, without text, and the same string as `hint`.
+
+A blocked item is left out of every later full-review list. It is retried only when the maintainer clicks "Analyze again", which queues a `reanalyze`. That request clears `blocked` and the failure count, starts on the full model again, and falls back to Sonnet the same way. The same applies to single requests between runs (step 10).
 
 ### 7. Auto-fixes
 
@@ -160,7 +189,7 @@ After the reply of step 9, check whether a learning pass is due: this is the fir
 The maintainer's agent requests (`full_review`, `reanalyze`, `start_fix`, `address_review`, `take_over`, `drive`) should start within seconds of his click. After the reply of step 9, arm a watch with the Monitor tool (load it with ToolSearch `select:Monitor`):
 
 ```
-Monitor command="gary watch-queue" description="queued agent requests on the triage board" timeout_ms=1800000
+Monitor command="gary --instance <instance> watch-queue" description="queued agent requests on the triage board" timeout_ms=1800000
 ```
 
 Each event is one line of JSON with the action doc's `id`, `itemId` and `action`. When one arrives:

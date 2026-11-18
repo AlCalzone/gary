@@ -29,7 +29,7 @@ expect "setup refuses to overwrite" 1 "Pass --force" env GARY_HOME=$H/bot node $
 expect "setup --force overwrites" 0 "wrote" env GARY_HOME=$H/bot node $B setup --profile $P --me octocat --bot-login widgets-bot --bot-token-file $TOKEN --port $PORT --no-links --force
 expect "setup without a bot" 0 "wrote" env GARY_HOME=$H/nobot node $B setup --profile $P --me octocat --checkout $CHECKOUT --no-bot --port $PORT --no-links
 expect "paths has the checkout" 0 "\"checkout\": \"$CHECKOUT\"" env GARY_HOME=$H/nobot node $B paths
-expect "config stores the checkout" 0 "\"checkout\": \"$CHECKOUT\"" cat $H/nobot/config.json
+expect "config stores the checkout" 0 "\"checkout\": \"$CHECKOUT\"" cat $H/nobot/instances/widgets/config.json
 mkdir -p $H/keep; print "# mine" > $H/keep/personal.md
 expect "setup keeps an existing personal.md" 0 "wrote" env GARY_HOME=$H/keep node $B setup --profile $P --me octocat --no-bot --no-links
 expect "personal.md unchanged" 0 "# mine" cat $H/keep/personal.md
@@ -40,7 +40,7 @@ expect "setup needs --repo for a new profile" 1 "--repo" env GARY_HOME=$H/norepo
 expect "setup rejects a bad login" 1 '"me" must be' env GARY_HOME=$H/badme node $B setup --profile $P --me "not a login" --no-bot --no-links
 expect "setup needs a token file with a bot" 1 "--bot-token-file" env GARY_HOME=$H/notoken node $B setup --profile $P --me octocat --bot-login widgets-bot --no-links
 expect "setup writes personal.md" 0 "read this file last" cat $H/nobot/personal.md
-expect "setup creates state/" 0 "" test -d $H/nobot/state
+expect "setup creates state/" 0 "" test -d $H/nobot/instances/widgets/state
 
 # setup links into a temp HOME, never the real one
 expect "setup links skills and the launcher" 0 "linked" env HOME=$H/fakehome GARY_HOME=$H/links node $B setup --profile $P --me octocat --no-bot
@@ -55,34 +55,34 @@ expect "paths" 0 "\"profile\": \"$P\"" env GARY_HOME=$H/bot node $B paths
 expect "doctor passes with the bot" 0 "widgets-bot, token in" env GARY_HOME=$H/bot node $B doctor
 expect "doctor checks the checkout" 0 "$CHECKOUT" env GARY_HOME=$H/nobot node $B doctor
 expect "doctor without a bot" 0 "bot routes become text you post yourself" env GARY_HOME=$H/nobot node $B doctor
-cp -r $H/bot $H/wrongme; sed -i 's/"me": "octocat"/"me": "someone-else"/' $H/wrongme/config.json
+cp -r $H/bot $H/wrongme; sed -i 's/"me": "octocat"/"me": "someone-else"/' $H/wrongme/instances/widgets/config.json
 expect "doctor fails on a gh login that is not me" 1 'config.json names "someone-else"' env GARY_HOME=$H/wrongme node $B doctor
-cp -r $H/bot $H/wrongbot; sed -i 's/"login": "widgets-bot"/"login": "other-bot"/' $H/wrongbot/config.json
+cp -r $H/bot $H/wrongbot; sed -i 's/"login": "widgets-bot"/"login": "other-bot"/' $H/wrongbot/instances/widgets/config.json
 expect "doctor fails on a token of another account" 1 'belongs to "widgets-bot"' env GARY_HOME=$H/wrongbot node $B doctor
-expect "doctor without config" 1 "does not exist" env GARY_HOME=$H/none node $B doctor
+expect "doctor without config" 1 "There is no Gary instance" env GARY_HOME=$H/none node $B doctor
 expect "doctor --json" 0 '"name": "gh login"' env GARY_HOME=$H/bot node $B doctor --json
 
 # profile and config validation
 mkdir -p $H/badprofile-p; print '{"name":"x","repo":"not a repo","maintainers":["a b"],"reviewBots":["coderabbit"],"relatedRepos":["a/b"],"botCommands":{"x":""},"extra":1}' > $H/badprofile-p/profile.json
-cp -r $H/nobot $H/badprofile; sed -i "s|\"profile\": \"[^\"]*\"|\"profile\": \"$H/badprofile-p\"|" $H/badprofile/config.json
+cp -r $H/nobot $H/badprofile; sed -i "s|\"profile\": \"[^\"]*\"|\"profile\": \"$H/badprofile-p\"|" $H/badprofile/instances/widgets/config.json
 for pat in '"repo" must look like' '"maintainers" must be' '"reviewBots" may only contain' '"relatedRepos" must be' '"botCommands" must map' 'unknown field "extra"'; do
 	expect "profile validation: $pat" 2 "$pat" env GARY_HOME=$H/badprofile node $B snapshot
 done
-mkdir -p $H/badconfig; print '{"profile":"x","me":"octocat","bot":{"login":"octocat"},"port":0,"typo":1}' > $H/badconfig/config.json
+mkdir -p $H/badconfig/instances/widgets; print '{"profile":"x","me":"octocat","bot":{"login":"octocat"},"port":0,"typo":1}' > $H/badconfig/instances/widgets/config.json
 for pat in 'must be null or' 'must be a port number' 'unknown field' 'typo'; do
 	expect "config validation: $pat" 2 "$pat" env GARY_HOME=$H/badconfig node $B paths
 done
-mkdir -p $H/notjson; print '{' > $H/notjson/config.json
+mkdir -p $H/notjson/instances/widgets; print '{' > $H/notjson/instances/widgets/config.json
 expect "config that is not JSON" 2 "is not valid JSON" env GARY_HOME=$H/notjson node $B paths
 
 # account modes for actions
 expect "bot mode writes as the bot" 0 '"as": "widgets-bot"' act $H/bot '{"action":"comment","kind":"pr","number":12,"text":"x"}'
 expect "no bot: writes are refused" 1 "No bot account is configured" act $H/nobot '{"action":"comment","kind":"pr","number":12,"text":"x"}'
 expect "no bot: request_review still runs as me" 0 '"as": "octocat"' act $H/nobot '{"action":"request_review","kind":"pr","number":12,"params":{"reviewer":"copilot"}}'
-cp -r $H/nobot $H/own; sed -i 's/"allowOwnTokenPushes": false/"allowOwnTokenPushes": true/' $H/own/config.json
+cp -r $H/nobot $H/own; sed -i 's/"allowOwnTokenPushes": false/"allowOwnTokenPushes": true/' $H/own/instances/widgets/config.json
 expect "allowOwnTokenPushes: writes run as me" 0 '"as": "octocat"' act $H/own '{"action":"comment","kind":"pr","number":12,"text":"x"}'
 expect "allowOwnTokenPushes: REST write as me" 0 '"as": "octocat"' act $H/own '{"action":"rerun_ci","kind":"pr","number":14}'
-cp -r $H/own $H/ownwrong; sed -i 's/"me": "octocat"/"me": "someone-else"/' $H/ownwrong/config.json
+cp -r $H/own $H/ownwrong; sed -i 's/"me": "octocat"/"me": "someone-else"/' $H/ownwrong/instances/widgets/config.json
 expect "allowOwnTokenPushes: refused when the stored login is not me" 1 'but config.json names' act $H/ownwrong '{"action":"comment","kind":"pr","number":12,"text":"x"}'
 expect "bot mode: request_review refused when the stored login is not me" 1 'but config.json names' act $H/wrongme '{"action":"request_review","kind":"pr","number":12,"params":{"reviewer":"copilot"}}'
 print '{"name":"x","repo":"acme/widgets"}' > $H/badprofile-p/profile.json
@@ -94,9 +94,9 @@ expect "action passes --check-fresh through" 1 "needs the itemId" act $H/bot '{"
 # put, snapshot and watch-queue pass their flags through
 print '{"kind":"issue","number":21,"title":"t"}' > $H/item.json
 expect "put writes an item" 0 '"ok":true' env GARY_HOME=$H/nobot node $B put --merge items issue-21 $H/item.json
-expect "the item is in the home state" 0 '"number": 21' cat $H/nobot/state/board/items/issue-21.json
+expect "the item is in the home state" 0 '"number": 21' cat $H/nobot/instances/widgets/state/board/items/issue-21.json
 expect "put --delete removes it" 0 '"ok":true' env GARY_HOME=$H/nobot node $B put items issue-21 --delete
-expect "item is gone" 1 "" test -e $H/nobot/state/board/items/issue-21.json
+expect "item is gone" 1 "" test -e $H/nobot/instances/widgets/state/board/items/issue-21.json
 expect "snapshot --commit without a staged snapshot" 1 "without --commit first" env GARY_HOME=$H/nobot node $B snapshot --commit
 expect "watch-queue --once" 0 "" env GARY_HOME=$H/nobot node $B watch-queue --once
 expect "unknown command" 2 "Unknown command" node $B frobnicate

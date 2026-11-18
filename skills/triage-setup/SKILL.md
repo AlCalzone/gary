@@ -1,6 +1,6 @@
 ---
 name: triage-setup
-description: Set up the triage board for a maintainer's own GitHub project. Runs gary setup, drafts a project profile (profile.json and rules files) by reading the repo's labels, CODEOWNERS, contributing guide, issue templates and workflows, runs gary doctor and creates the hourly scheduled triage task. Use when a maintainer wants to start using the triage board, add a project to it, or create or redo a triage profile.
+description: Set up the triage board for a maintainer's own GitHub project, or add another project as a new Gary instance. Runs gary setup, drafts a project profile (profile.json and rules files) by reading the repo's labels, CODEOWNERS, contributing guide, issue templates and workflows, runs gary doctor and creates the hourly scheduled triage task. Use when a maintainer wants to start using the triage board, add a project to it, or create or redo a triage profile.
 ---
 
 # Set up the triage board
@@ -9,9 +9,13 @@ You walk a maintainer through setting up the triage board for his repo. You read
 
 Ask one question at a time, and only for facts you cannot read from the repo or the local machine.
 
-## 1. Install and home
+## 1. Install and instance
 
-Run `gary setup`. It creates the home directory with `config.json`, `personal.md` and `state/`, and links the launcher when the tool runs from a clone. Then run `gary paths` and note `<core>`, `<home>` and `<profile>`.
+Gary runs one instance per repo. Each instance has its own config, board and port, state, pause switch, decision log and scheduled task, under `~/.config/gary/instances/<name>/`. The shared `~/.config/gary/personal.md` holds his rules for all projects.
+
+Run `gary instances` first. When one exists already, this is a second project: create a new instance, and leave the existing ones alone.
+
+Choose the instance name with him: short, lowercase, after the repo, like `widgets` for `acme/widgets`. Run `gary setup --instance <name>`. It creates the instance directory with `config.json` and `state/`, gives the instance its own port, and links the launcher when the tool runs from a clone. Then run `gary --instance <name> paths` and note `<core>`, `<home>`, `<profile>` and `<config>`. Pass `--instance <name>` on every later `gary` command in this setup.
 
 Ask for:
 
@@ -24,7 +28,7 @@ Write these into `<config>` (SPEC.md "Home"). Leave the limits at their defaults
 
 ## 2. Draft the profile
 
-Create `profiles/<name>/` as a copy of `<core>/profiles/template/`, in a place he chooses. The profile can live in his repo, so his team can share it. Set `profile` in `config.json` to that directory.
+Create `profiles/<name>/` as a copy of `<core>/profiles/template/`, in a place he chooses. The profile can live in its own repo or in his project, so his team can share it. Instances of the same project on different machines can share one profile, for example as a git repo each machine clones. Set `profile` in the instance's `config.json` to that directory. When a profile for this project exists already, point to it and skip the drafting.
 
 Read the repo with `gh` and from a local clone, read-only:
 
@@ -45,7 +49,7 @@ Show him a short summary per file and let him edit before you go on. He owns the
 
 ## 3. Personal rules
 
-Ask whether he has writing rules or personal preferences for replies. Put them, or a pointer to a file that holds them, into `<personal>`. That file is read last and wins over the profile.
+Ask whether he has writing rules or personal preferences for replies. Put rules for all his projects, or a pointer to a file that holds them, into the shared `~/.config/gary/personal.md`. Rules for this one project's instance only go into `<home>/personal.md`, which is read after the shared one. Both are read last and win over the profile.
 
 ## How Gary learns
 
@@ -53,8 +57,8 @@ Tell him this in two or three sentences. The board logs his decisions locally: d
 
 ## 4. Check
 
-Run `gary doctor` and fix what it reports together with him. It checks the config, the profile, the tools in `requiredTools`, `gh` access and the bot token.
+Run `gary --instance <name> doctor` and fix what it reports together with him. `gary doctor --all` checks every instance. It checks the config, the profile, the tools in `requiredTools`, `gh` access and the bot token.
 
 ## 5. Schedule
 
-Create the hourly scheduled task that runs the `triage-routine` skill in one master session, with the repo's local clone as working directory. Use the scheduling tool the harness offers. Then start the first run, so he sees the board fill.
+Create one hourly scheduled task per instance. It runs the `triage-routine` skill in one master session, with the repo's local clone (`<checkout>`) as the session's project directory, and its prompt names the instance, like `Run the triage routine for Gary instance widgets.` Use the scheduling tool the harness offers. Then start the first run, so he sees the board fill.

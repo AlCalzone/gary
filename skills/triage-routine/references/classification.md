@@ -1,6 +1,6 @@
 # Quick classification
 
-Read this file, then `<profile>/rules/classification.md`, then `<personal>`. Later wins.
+Read this file, then `<profile>/rules/classification.md`, then the `<personal>` files, shared first. Later wins.
 
 Draft PRs never reach the routine. `gary snapshot` leaves them out, so they get no review, no board item and no label changes. A draft that is marked ready appears as a new item. The draft fix PRs the routine opens itself are reachable through the link on their issue's item.
 
@@ -41,9 +41,9 @@ Every rule in this section also needs the waiting comment to be at most `activeM
 - A new issue or discussion in a support category has no comment from our side yet.
 - A contributor asks for a re-review after pushing changes ("addressed", "updated", "PTAL") and also asks a question. Without a question, the re-review goes to `review` or `almost` after the full review.
 
-### `easy`: done with one click
+### `easy`: an obvious decision
 
-One click of his finishes the item, or leaves only the merge. A PR that needs `address_review` or `take_over`, then an approval, then a merge is `almost`.
+The section follows his effort to decide, not the number of steps after his click. `easy` means the decision is obvious and the expected change is small: a reorder, a missing field, a typo-level fix, one or two `valid` review comments with clear fixes. That holds for `take_over`, `address_review` and `drive` too. `effortMinutes` is 1 or 2.
 
 - A PR with review decision `APPROVED`, CI `passing`, and no open review feedback (see "Open review feedback" below). Recommended route: `merge` as `me`.
 - A clean PR by the bot or a dependency bot, with CI `passing`, that lacks his approval: recommended `merge` as `me`, with a `why` that says he approves on the PR page. Never a bot approval on a bot PR. For a dependency update, say in `state` which package and version range it changes. A major version bump goes to `review` instead.
@@ -53,9 +53,9 @@ One click of his finishes the item, or leaves only the merge. A PR that needs `a
 - A duplicate: `close` with reason `duplicate`, `params.duplicateOf` and a reply that links the original.
 - A report that belongs in a repo from the profile's `relatedRepos`: a `move` route to that repo (`item-doc.md`). A report for a project outside the org: `close` with reason `not_planned` and a reply that links the right place.
 
-### `almost`: small refinement or one decision
+### `almost`: he has to think
 
-A PR whose open threads or small findings we would fix ourselves lands here: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. The rule is "Who may push to a PR" in `item-doc.md`. After the push it still needs an approval and a merge, so it is never `easy`.
+He has to think about whether to act or about the content: a behavior change, several threads with mixed verdicts, a verdict that needs his domain check, a decision on an open question. The route for PRs we would fix ourselves follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. `effortMinutes` is 5 or more.
 
 - A PR whose full review found only `minor` or cosmetic findings. Recommended route: `review` with `event: "comment"`, inline comments and a summary, with an approval as the alternative. At least one `major` or `blocker` finding makes it `event: "request_changes"` (`item-doc.md`, `review`).
 - A PR with failing CI where the failure comes from the PR's own change and the fix is small.
@@ -89,7 +89,7 @@ The item cannot be reproduced without real hardware or an environment the agent 
 - `openThreadCount` above 0: unresolved review threads exist. Name the count and who opened them in `state`, like `Approved, but a review bot left 2 open threads after the approval.`
 - A review that arrived after the latest approval, from a person or a bot, with change requests or recommendations in its body.
 
-A PR with open review feedback is never `easy` and never gets a recommended `merge`. It goes to `almost` when the points look small, otherwise to `review`, and it is a full-review candidate. The full review judges each open thread in `threads`: `valid`, `optional` or `wrong`, with a note. Once every thread has a verdict, the route follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. Outdated threads that are not resolved count as open. The agent behind it can push only when the account setup allows pushes and the PR allows it: a fork PR needs `maintainerCanModify: true`, a branch inside the repo needs nothing extra. When it cannot push and a thread is `valid`, recommend a `review` route that asks the contributor instead.
+A PR with open review feedback never gets a recommended `merge`. It is `easy` when one or two `valid` threads have clear fixes and the rest is obvious, `almost` when he has to check verdicts or content, `review` when the code needs his reading. It is a full-review candidate. The full review judges each open thread in `threads`: `valid`, `optional` or `wrong`, with a note. Once every thread has a verdict, the route follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. Outdated threads that are not resolved count as open. The agent behind it can push only when the account setup allows pushes and the PR allows it: a fork PR needs `maintainerCanModify: true`, a branch inside the repo needs nothing extra. When it cannot push and a thread is `valid`, recommend a `review` route that asks the contributor instead.
 
 Bot reviewers are often right about real bugs and often wrong about project conventions. Never dismiss a thread because a bot wrote it, and never treat it as settled because a bot wrote it.
 

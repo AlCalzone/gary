@@ -1,10 +1,13 @@
 // Resolves where everything lives and loads the two settings files.
-//   core:    this tool's own directory, found from this file
-//   home:    $GARY_HOME, default ~/.config/gary, holds config.json, personal.md and state/
-//   profile: the project directory named by `profile` in config.json, holds profile.json, rules/ and templates/
-import { existsSync, readFileSync } from "node:fs";
+//   core:     this tool's own directory, found from this file
+//   root:     $GARY_HOME, default ~/.config/gary, holds the shared personal.md and instances/
+//   home:     the instance directory root/instances/<name>, holds config.json, an optional personal.md and state/
+//   profile:  the project directory named by `profile` in config.json, holds profile.json, rules/ and templates/
+// The instance comes from --instance, then GARY_INSTANCE, then the working directory, then the only instance.
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -40,21 +43,154 @@ export function expandHome(path) {
 	return path;
 }
 
-export function homeDir() {
+export const INSTANCE_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+export function rootDir() {
 	return resolve(expandHome(process.env.GARY_HOME || "~/.config/gary"));
+}
+
+export const instancesDir = () => join(rootDir(), "instances");
+export const instanceDir = (name) => join(instancesDir(), name);
+/** The root holds a config.json only in the layout from before instances existed. */
+export const hasFlatLayout = () => existsSync(join(rootDir(), "config.json"));
+
+export class SettingsError extends Error {}
+
+let explicitName = null;
+let resolved = null;
+
+/** Sets the instance from --instance. It wins over GARY_INSTANCE and the working directory. */
+export function setInstance(name) {
+	explicitName = name;
+	resolved = null;
+}
+export const explicitInstance = () => explicitName;
+
+/** Names of the instances under the root that have a config.json, sorted. */
+export function listInstances() {
+	let names = [];
+	try {
+		names = readdirSync(instancesDir());
+	} catch {
+		return [];
+	}
+	return names.filter((n) => INSTANCE_NAME.test(n) && existsSync(join(instanceDir(n), "config.json"))).sort();
+}
+
+function readJsonSync(file) {
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return null;
+	}
+}
+
+const realOrNull = (p) => {
+	try {
+		return realpathSync(p);
+	} catch {
+		return null;
+	}
+};
+
+function git(cwd, args) {
+	try {
+		return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10000 }).trim();
+	} catch {
+		return null;
+	}
+}
+
+/** "owner/repo" in lower case from a GitHub remote in https or ssh form, or null. */
+export function remoteRepo(url) {
+	const m = /^(?:https?:\/\/(?:[^@/]+@)?[^/]+\/|ssh:\/\/[^/]+\/|[^@\s]+@[^:]+:)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/.exec((url ?? "").trim());
+	return m ? m[1].toLowerCase() : null;
+}
+
+/** What an instance's config and profile say about the repo it belongs to. Unreadable parts stay null. */
+export function instanceFacts(name) {
+	const dir = instanceDir(name);
+	const config = readJsonSync(join(dir, "config.json"));
+	const at = (p) => (isAbsolute(expandHome(p)) ? expandHome(p) : resolve(dir, expandHome(p)));
+	const profile = typeof config?.profile === "string" ? at(config.profile) : null;
+	const repo = profile ? readJsonSync(join(profile, "profile.json"))?.repo ?? null : null;
+	const checkout = typeof config?.checkout === "string" ? at(config.checkout) : null;
+	return { name, dir, config, repo, checkout, port: config?.port ?? CONFIG_DEFAULTS.port };
+}
+
+/** The instances the directory belongs to: inside a checkout, a worktree of it, or a clone whose origin is the repo. */
+export function matchDirectory(cwd, names = listInstances()) {
+	const here = realOrNull(cwd);
+	if (!here) return [];
+	const common = (dir) => {
+		const out = git(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+		return out ? realOrNull(out) : null;
+	};
+	const hereCommon = common(here);
+	const hereRepo = remoteRepo(git(here, ["remote", "get-url", "origin"]));
+	return names.filter((name) => {
+		const f = instanceFacts(name);
+		const checkout = f.checkout ? realOrNull(f.checkout) : null;
+		if (checkout && (here === checkout || here.startsWith(checkout + sep))) return true;
+		if (checkout && hereCommon && common(checkout) === hereCommon) return true;
+		return !!(hereRepo && f.repo && hereRepo === f.repo.toLowerCase());
+	});
+}
+
+function listing(names) {
+	return names.map((n) => `${n} (${instanceFacts(n).repo ?? "no repo"})`).join(", ");
+}
+
+/**
+ * The instance every command acts on: --instance, then GARY_INSTANCE, then the working directory,
+ * then the only instance. Throws a SettingsError that lists the instances otherwise.
+ */
+export function resolveInstance({ cwd = process.cwd() } = {}) {
+	if (resolved) return resolved;
+	const root = rootDir();
+	const names = listInstances();
+	const pick = (name, via) => {
+		if (!INSTANCE_NAME.test(name ?? "")) throw new SettingsError(`"${name}" is not a valid instance name.`);
+		if (!names.includes(name)) {
+			throw new SettingsError(`There is no instance "${name}" in ${root}.${names.length ? ` Instances: ${listing(names)}.` : " Run `gary setup` first."}`);
+		}
+		resolved = { name, via };
+		return resolved;
+	};
+	if (explicitName) return pick(explicitName, "--instance");
+	if (process.env.GARY_INSTANCE) return pick(process.env.GARY_INSTANCE, "GARY_INSTANCE");
+	if (!names.length) {
+		throw new SettingsError(
+			hasFlatLayout()
+				? `${root} still has the layout from before instances. Run \`gary setup\` once to move it into ${instancesDir()}.`
+				: `There is no Gary instance in ${root}. Run \`gary setup\` first.`,
+		);
+	}
+	const matches = matchDirectory(cwd, names);
+	if (matches.length === 1) return pick(matches[0], "directory");
+	const hint = `Instances: ${listing(names)}. Pass --instance <name> or set GARY_INSTANCE.`;
+	if (matches.length > 1) throw new SettingsError(`The directory ${cwd} matches several instances: ${matches.join(", ")}. ${hint}`);
+	if (names.length === 1) return pick(names[0], "only instance");
+	throw new SettingsError(`The directory ${cwd} belongs to no instance. ${hint}`);
+}
+
+export const instanceName = () => resolveInstance().name;
+export function homeDir() {
+	return instanceDir(instanceName());
 }
 
 export const configFile = () => join(homeDir(), "config.json");
 export const stateDir = () => join(homeDir(), "state");
-export const personalFile = () => join(homeDir(), "personal.md");
+/** The shared personal.md in the root. Accepted personal rule proposals go here. */
+export const personalFile = () => join(rootDir(), "personal.md");
+/** Personal rules in reading order: the shared file first, then the instance's own when it exists. */
+export const personalFiles = () => [personalFile(), ...(existsSync(join(homeDir(), "personal.md")) ? [join(homeDir(), "personal.md")] : [])];
 
-/** Resolves a path from config.json: `~` expands, a relative path is relative to home. */
+/** Resolves a path from config.json: `~` expands, a relative path is relative to the instance directory. */
 export function homePath(path) {
 	const p = expandHome(path);
 	return isAbsolute(p) ? p : resolve(homeDir(), p);
 }
-
-export class SettingsError extends Error {}
 
 function readSettings(file, what) {
 	if (!existsSync(file)) {
@@ -174,8 +310,13 @@ export function botLogins() {
 }
 
 export function paths() {
-	const out = { core: ROOT, home: homeDir(), profile: null, state: stateDir(), checkout: null, config: configFile(), personal: personalFile() };
+	const out = { instance: null, root: rootDir(), home: null, config: null, personal: [personalFile()], profile: null, state: null, checkout: null, core: ROOT };
 	try {
+		out.instance = instanceName();
+		out.home = homeDir();
+		out.config = configFile();
+		out.personal = personalFiles();
+		out.state = stateDir();
 		out.profile = profileDir();
 		const { checkout } = loadConfig();
 		if (checkout) out.checkout = homePath(checkout);

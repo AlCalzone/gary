@@ -14,6 +14,7 @@ export const ROUTE_TYPES = {
 	drive: ["agent"],
 	move: ["bot", "me"],
 	chore: ["bot"],
+	open: ["me"],
 };
 export const DRIVE_AUTHORS = new Set(["maintainer", "bot", "copilot"]);
 // Without a bot these turn into text the maintainer posts himself

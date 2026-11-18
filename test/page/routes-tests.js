@@ -155,7 +155,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await openItem("pr-9474");
   const dec = [...openCard().querySelectorAll(".decisions > li")];
   const pressed = (li) => li.querySelector('.seg[aria-pressed="true"]')?.textContent;
-  ok("address_review lists the threads with verdict labels and prefilled switches", dec.length === 4 && dec.map(pressed).join() === "Fix,Dismiss,Fix,Fix"
+  ok("address_review lists the threads with verdict labels and prefilled switches", dec.length === 4 && dec.map(pressed).join() === "Fix,Dismiss,Dismiss,Fix"
     && dec.map((li) => li.querySelector(".vlabel").textContent).join() === "valid,not needed,optional,valid" && /1440 entries/.test(dec[0].textContent));
   ok("the chosen fix and dismiss sides are colored differently", getComputedStyle(dec[0].querySelector('.seg[data-v="fix"]')).backgroundColor !== getComputedStyle(dec[1].querySelector('.seg[data-v="dismiss"]')).backgroundColor
     && getComputedStyle(dec[0].querySelector('.seg[data-v="dismiss"]')).backgroundColor === "rgba(0, 0, 0, 0)");
@@ -365,17 +365,73 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   window.__subs["proposals"](__mkSnap([["p3", { ...P[1][1], title: "Link the troubleshooting page in every log request" }]])); await wait(10);
   window.__reply = () => ({ ok: false, result: "The proposal is gone." });
   learnBtn.click(); await wait(10);
-  [...pcards()[0].querySelectorAll(".card-actions button")][0].click(); await wait(20);
+  [...pcards()[0].querySelectorAll(".card-actions button")][0].click();
+  for (let i = 0; i < 50 && !/The proposal is gone/.test(pcards()[0]?.textContent ?? ""); i++) await wait(20);
   ok("a refused action shows its reason on the card", /The proposal is gone/.test(pcards()[0].textContent));
   window.__reply = () => ({ ok: true, result: { dryRun: true } });
   pcards()[0].querySelector("details").open = true;
   learn.gone.clear();
   window.__subs["proposals"](__mkSnap(P)); await wait(10);
   pcards()[0].querySelector("details").open = true;
-  pcards()[0].querySelector(".ev-link").click(); await wait(20);
+  // The proposals snapshot may still re-render the list, which replaces a link clicked too early. Click the current one
+  for (let i = 0; i < 20 && !(!ldlg.open && dlgR.open && detail.id === "issue-9471"); i++) {
+    pcards()[0]?.querySelector(".ev-link")?.click();
+    await wait(25);
+  }
   ok("an evidence link opens the item's dialog", !ldlg.open && dlgR.open && detail.id === "issue-9471");
   document.getElementById("d-close").click(); await wait(5);
   window.__subs["proposals"](__mkSnap([])); await wait(5);
+
+  // Only valid threads start on Fix
+  await openItem("pr-9474");
+  ok("optional, not needed and not judged threads start on Dismiss", (() => {
+    const lis = [...openCard().querySelectorAll(".decisions > li")];
+    return lis.every((li) => li.querySelector('.seg[aria-pressed="true"]').textContent === (li.querySelector(".vlabel").textContent === "valid" ? "Fix" : "Dismiss"));
+  })());
+  items(with_("pr-9474", (d) => ({ ...d, threads: [...d.threads, { id: "t5", author: "someone", path: "x.ts", summary: "Unjudged one" }] }))); await wait(10);
+  await openItem("pr-9474");
+  ok("an unjudged thread starts on Dismiss", [...openCard().querySelectorAll(".decisions > li")].at(-1).querySelector('.seg[aria-pressed="true"]').textContent === "Dismiss");
+  items(F); await wait(10);
+
+  // Items the agent could not analyze: one "open" route and a notice
+  await openItem("issue-9481");
+  ok("blocked: a compact Open on GitHub row with his avatar and no dismiss", cards().length === 1 && cards()[0].classList.contains("compact") && cards()[0].classList.contains("intent-away")
+    && avatarOf(cardBtn("Open on GitHub", cards()[0]), "octocat") && !cards()[0].querySelector(".card-x") && /Read it yourself/.test(cards()[0].textContent));
+  ok("blocked: the notice names the safety filter", /triggered the model's safety filter/.test(document.querySelector("#d-routes .blocked-note")?.textContent ?? "")
+    && !!(document.querySelector("#d-routes .blocked-note").compareDocumentPosition(cards()[0]) & Node.DOCUMENT_POSITION_FOLLOWING));
+  calls = __calls.length;
+  const nDecOpen = window.__decisions.length;
+  cardBtn("Open on GitHub", cards()[0]).click(); await wait(20);
+  ok("Open on GitHub opens the plain thread URL and never calls the server", window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9481" && __calls.length === calls && window.__decisions.length === nDecOpen + 1);
+  ok("blocked: Analyze again stays in the footer", !!document.querySelector("#d-foot .foot-analyze") && !document.querySelector("#d-foot .foot-analyze").disabled);
+  await openItem("issue-9482");
+  ok("blocked after three tries says so", /could not analyze this after three tries/.test(document.querySelector("#d-routes .blocked-note")?.textContent ?? ""));
+  document.getElementById("d-close").click(); await wait(5);
+  for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+  await wait(5);
+  ok("the list row shows a quiet not-analyzed icon", !!document.querySelector('.row[data-id="issue-9481"] .r-meta svg[aria-label="Not analyzed by the agent"]') && !document.querySelector('.row[data-id="issue-9471"] .r-meta svg[aria-label="Not analyzed by the agent"]'));
+
+  // Paused: the header says so live, server writes are refused calmly
+  const pausedEl = document.getElementById("paused");
+  ok("not paused: no marker", pausedEl.hidden);
+  window.__board.paused = true; window.dispatchEvent(new Event("board:info")); await wait(10);
+  ok("paused: the header shows a calm marker with the resume hint", !pausedEl.hidden && pausedEl.textContent === "Paused" && /gary resume/.test(pausedEl.title));
+  await openItem("issue-9472");
+  ok("paused: bot buttons carry a small paused hint and stay clickable", /paused/.test(openCard().querySelector(".card-actions .paused-hint")?.textContent ?? "") && !cardBtn("Ask for a debug log").disabled);
+  window.__reply = (b) => (b.tool === "request_logs" ? { ok: false, result: "Gary is paused. Nothing was sent.", paused: true } : { ok: true, result: { dryRun: true } });
+  cardBtn("Ask for a debug log").click(); await wait(5);
+  cardBtn("Confirm: ask for a debug log as widgets-bot").click(); await wait(20);
+  ok("paused: the refusal shows as information, not as an error", /Gary is paused\. Nothing was sent\./.test(openCard().querySelector(".status.info")?.textContent ?? "") && !openCard().querySelector(".status.failed"));
+  await expand(3);
+  ok("paused: prefill buttons have no paused hint", !openCard().querySelector(".paused-hint"));
+  await openItem("issue-9471");
+  await expand(2);
+  ok("paused: agent routes have no paused hint", !openCard().querySelector(".paused-hint") && !!cardBtn("Start fix"));
+  window.__reply = () => ({ ok: true, result: { dryRun: true } });
+  window.__board.paused = false; window.dispatchEvent(new Event("board:info")); await wait(10);
+  await openItem("issue-9472");
+  ok("resumed: the marker and the hints go away without a reload", pausedEl.hidden && !document.querySelector("#d-routes .paused-hint"));
+  document.getElementById("d-close").click(); await wait(5);
 
   // ---------- accounts and projects come from the server ----------
   const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });

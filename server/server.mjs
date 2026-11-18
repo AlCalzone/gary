@@ -12,8 +12,9 @@ import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, boardDir, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
-import { ROOT, loadConfig, loadProfile } from "../scripts/lib/config.mjs";
+import { ROOT, instanceName, loadConfig, loadProfile, setInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
+import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
@@ -211,14 +212,14 @@ export function planRoute(route, item, input, text, mode = "bot") {
 	throw new Refusal(`The route type "${route.type}" cannot run as "${base}".`);
 }
 
-/** Resolves true when `url` answers like the board server. */
-export async function boardAnswers(url) {
+/** The instance whose board server answers on `url`, or null when no board server answers there. */
+export async function boardInstance(url) {
 	try {
 		const res = await fetch(new URL("/api/health", url), { signal: AbortSignal.timeout(2000) });
 		const body = await res.json();
-		return res.status === 200 && body?.name === HEALTH.name;
+		return res.status === 200 && body?.name === HEALTH.name ? body.instance ?? "" : null;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
@@ -308,11 +309,12 @@ function readBody(req) {
 }
 
 /** What the page needs to name the project and the accounts without hard-coding them. */
-export function boardInfo({ dryRun = false } = {}) {
+export function boardInfo({ dryRun = false, stateDir } = {}) {
 	const config = loadConfig();
 	const profile = loadProfile();
 	const account = (login) => (login ? { login, avatarUrl: `https://github.com/${encodeURIComponent(login)}.png?size=80` } : null);
 	return {
+		instance: instanceName(),
 		name: profile.name,
 		repo: profile.repo,
 		repoUrl: `https://github.com/${profile.repo}`,
@@ -322,6 +324,7 @@ export function boardInfo({ dryRun = false } = {}) {
 		relatedRepos: profile.relatedRepos,
 		botCommands: profile.botCommands,
 		reviewBots: profile.reviewBots,
+		paused: isPaused(stateDir),
 		dryRun,
 	};
 }
@@ -374,6 +377,10 @@ function shim(token, info) {
         emit(name);
       });
     }
+    es.addEventListener("board", (e) => {
+      try { Object.assign(board, JSON.parse(e.data)); } catch { return; }
+      window.dispatchEvent(new Event("board:info"));
+    });
     es.addEventListener("open", () => setConnected(true));
     es.addEventListener("error", () => setConnected(false));
     // board.html decides whether it can reload right away
@@ -514,6 +521,8 @@ export async function startBoardServer({
 	if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`Invalid port ${port}`);
 	for (const c of COLLECTIONS) mkdirSync(join(dir, c), { recursive: true });
 	const TOKEN = loadToken(tokenFile(dir));
+	// A board server belongs to one instance. It resolves once, at start
+	const INSTANCE = instanceName();
 	const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
 	const HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
 	const url = `http://127.0.0.1:${port}/`;
@@ -582,8 +591,13 @@ export async function startBoardServer({
 
 	const readOpenProposals = async () => (await readCollection("proposals")).filter((p) => p.data.status === "open");
 	const snapshotOf = (name) =>
-		name === "meta" ? readMeta() : name === "items" ? readItems() : name === "proposals" ? readOpenProposals() : readCollection(name);
-	const decisionsFile = join(dirname(dir), "decisions.jsonl");
+		name === "meta" ? readMeta()
+		: name === "items" ? readItems()
+		: name === "proposals" ? readOpenProposals()
+		: name === "board" ? boardInfo({ dryRun, stateDir: stateDirOf })
+		: readCollection(name);
+	const stateDirOf = dirname(dir);
+	const decisionsFile = join(stateDirOf, "decisions.jsonl");
 	const decide = (type, itemId, item, fields) =>
 		logDecision(type, itemId, item, fields, decisionsFile).catch((e) => log("Writing the decision log failed:", e.message));
 
@@ -631,6 +645,10 @@ export async function startBoardServer({
 		});
 		add(dir, (_type, name) => {
 			if (name === "meta.json") schedulePush("meta");
+		});
+		// gary pause and resume change control.json, and open pages show the switch at once
+		add(stateDirOf, (_type, name) => {
+			if (name === "control.json") schedulePush("board");
 		});
 		// Open pages reload themselves when the board page changes
 		add(dirname(pageFile), (_type, name) => {
@@ -716,6 +734,8 @@ export async function startBoardServer({
 				return [200, { ok: true, result: "Queued for the master session.", queued: true }];
 			}
 
+			if (isPaused(stateDirOf)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
+
 			// The server never merges
 			if (plan.steps.some((s) => s.action === "merge" || !Object.hasOwn(ACTIONS, s.action))) {
 				return [200, { ok: false, result: "Merges happen on GitHub. The board only opens the PR for you." }];
@@ -794,7 +814,8 @@ export async function startBoardServer({
 		const threads = new Map((Array.isArray(item.threads) ? item.threads : []).map((t) => [t?.id, t]));
 		for (const d of chosen.decisions ?? []) {
 			const thread = threads.get(d.threadId) ?? {};
-			const byVerdict = thread.verdict === "wrong" ? "dismiss" : "fix";
+			// Only a thread the agent judged valid starts on fix
+			const byVerdict = thread.verdict === "valid" ? "fix" : "dismiss";
 			if (d.decision !== byVerdict || d.note) {
 				decide("thread_override", itemId, item, {
 					route: { type: route.type },
@@ -962,7 +983,7 @@ export async function startBoardServer({
 	<meta name="referrer" content="no-referrer">
 	${RESET}
 	${board.slice(0, split)}
-	${shim(TOKEN, boardInfo({ dryRun }))}
+	${shim(TOKEN, boardInfo({ dryRun, stateDir: stateDirOf }))}
 	</head>
 	<body>
 	${board.slice(split)}
@@ -994,7 +1015,7 @@ export async function startBoardServer({
 		}
 
 		if (!url.pathname.startsWith("/api/")) return json(res, 404, { error: "Not found." });
-		if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, HEALTH);
+		if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { ...HEALTH, instance: INSTANCE });
 
 		const given = url.pathname === "/api/events" ? url.searchParams.get("token") : req.headers["x-board-token"];
 		if (!tokenOk(given)) return json(res, 401, { error: "Missing or wrong token." });
@@ -1018,7 +1039,7 @@ export async function startBoardServer({
 		}
 		if (req.method === "GET" && url.pathname === "/api/state") {
 			const [items, actions, proposals, meta] = await Promise.all([readItems(), readCollection("actions"), readOpenProposals(), readMeta()]);
-			return json(res, 200, { board: boardInfo({ dryRun }), items, actions, proposals, meta });
+			return json(res, 200, { board: boardInfo({ dryRun, stateDir: stateDirOf }), items, actions, proposals, meta });
 		}
 		if (req.method === "GET" && url.pathname === "/api/tools") {
 			return json(res, 200, { tools: Object.keys(ACTIONS), dryRun });
@@ -1061,7 +1082,7 @@ export async function startBoardServer({
 	server.on("error", (e) => log("Server error:", e.message));
 	if (!keepAlive) server.unref();
 	startWatching();
-	log(`Board on ${url}${dryRun ? " (dry run, no GitHub writes)" : ""}, data in ${dir}`);
+	log(`Board of ${INSTANCE} on ${url}${dryRun ? " (dry run, no GitHub writes)" : ""}, data in ${dir}`);
 
 	return {
 		url,
@@ -1090,9 +1111,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 			port: { type: "string" },
 			"board-dir": { type: "string" },
 			"page-file": { type: "string" },
+			instance: { type: "string" },
 			watch: { type: "boolean", default: false },
 		},
 	});
+	if (args.instance) setInstance(args.instance);
 	if (args.watch && process.env.GARY_WATCH_CHILD !== "1") {
 		supervise(process.argv.slice(2).filter((a) => a !== "--watch"));
 	} else {

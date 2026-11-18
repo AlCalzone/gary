@@ -43,11 +43,19 @@ Gary has three layers, one place for each kind of change.
   skills/                triage-routine, triage-review-pr, triage-issue, triage-setup
   profiles/template/     the skeleton `gary setup` copies for a new project
 
-<home>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
-  config.json            local settings
-  personal.md            the maintainer's own rules, read last
+<root>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
+  personal.md            the maintainer's own rules for every instance
+  instances/<name>/      one instance per repository. The name matches ^[a-z0-9][a-z0-9-]{0,39}$
+<home>/                  one instance directory, <root>/instances/<name>/
+  config.json            the instance's settings
+  personal.md            optional: rules for this instance only, read after the shared one
   state/                 board store, snapshots, runs, worktrees, server token, logs
-    board/               items/<id>.json, actions/<id>.json, meta.json
+    board/               items/<id>.json, actions/<id>.json, proposals/<id>.json, meta.json
+    control.json         the pause switch, see Pause
+    decisions.jsonl      the decision log, see Learning
+    learn.json           the learning cursor
+    failures.json        failed triage count per item, kept by the routine
+    runs/<run>/          one directory per routine run, with would-have.json: the writes a paused run intended
 
 <profile>/               one directory per project, named by `profile` in config.json. A team can share it
   profile.json           facts the code needs
@@ -61,7 +69,7 @@ The core contains no repo name, no account name and no absolute path. It works a
 
 ```jsonc
 {
-  "profile": "~/repositories/gary-profile-widgets",   // directory of the project profile. Relative paths are relative to home
+  "profile": "~/repositories/gary-profile-widgets",   // directory of the project profile. Relative paths are relative to the instance directory
   "me": "octocat",                 // the maintainer's GitHub login
   "checkout": "~/repositories/widgets",   // local clone of the repo. Worktrees for fixes go under state/worktrees/
   "bot": { "login": "widgets-bot", "tokenFile": "~/.config/widgets-bot/gh-token" },   // or null
@@ -95,11 +103,28 @@ The core contains no repo name, no account name and no absolute path. It works a
 
 `name` and `repo` are required. Unknown fields are errors.
 
-Reading order for every rule: the core reference, then the profile's file of the same topic, then `personal.md`. A later file overrides an earlier one. The hard limits in the core skills cannot be overridden.
+Reading order for every rule: the core reference, then the profile's file of the same topic, then the shared `<root>/personal.md`, then the instance's `personal.md` when it exists. A later file overrides an earlier one. The hard limits in the core skills cannot be overridden.
+
+## Instances
+
+Several instances can live on one machine, one per repository, each with its own config, state, port and board server. Every command acts on one instance, resolved in this order:
+
+1. `--instance <name>`, before or after the command, like `gary --instance widgets snapshot`,
+2. the environment variable `GARY_INSTANCE`,
+3. the working directory: it lies inside an instance's `checkout` (compared by real path), it is a git worktree of that checkout (same `git rev-parse --git-common-dir`), or its git `origin` remote is the instance's `repo` (https or ssh form, case does not matter),
+4. the only instance, when exactly one exists.
+
+Otherwise the command fails and lists the instances with the hint to pass `--instance`. It never falls back silently. Two matching instances fail the same way.
+
+Commands that change something name the instance in the first line on stderr: `Instance <name>.` for `snapshot`, `put` and `action`, `Paused <name>.` and `Resumed <name>.`, `Created instance <name>.` or `Updated instance <name>.` for `setup`.
+
+A board server belongs to one instance and resolves it once at start. `/api/health` answers `{ ok: true, name: "gary", instance }`, and the board info carries `instance`. The MCP server resolves the instance once from the session's working directory. `board_start`, `board_status` and every action tool act on that instance, `board_status` names it, and when it cannot resolve every tool returns the resolution error.
+
+The layout from before instances had `config.json` and `state/` directly in the root. Only `gary setup` moves it, into `instances/<name>/` named after the repository. Every other command fails with a one-line hint to run `gary setup`.
 
 ## Launcher
 
-`gary <command>` runs every command the skills and the maintainer need. Skills never use a path into the core.
+`gary [--instance <name>] <command>` runs every command the skills and the maintainer need. Skills never use a path into the core.
 
 - `gary snapshot`, `gary snapshot --commit`: see Snapshot.
 - `gary item <id>`: print the fresh snapshot entry of one item (`pr-<n>`, `issue-<n>`, `disc-<n>`), read from GitHub with the same fields as the snapshot. It writes no state.
@@ -107,14 +132,16 @@ Reading order for every rule: the core reference, then the profile's file of the
 - `gary validate [<id> ...] [--json]`: run the same validation over the stored items, read-only. Without ids it checks all of them and groups the problems.
 - `gary action [--dry-run] [--check-fresh] [--autonomous] [file]`: run one GitHub action from a JSON file or stdin. `--autonomous` marks an action nobody clicked: only `label` within `autoLabels` and `assign` may run.
 - `gary watch-queue [--once]`: print queued agent requests as JSON lines.
+- `gary pause [--all]`, `gary resume [--all]`: set and clear the pause switch of the instance, or of every instance, see Pause.
+- `gary instances [--json]`: list every instance with repo, port, pause and whether its board server answers, and mark the one the working directory resolves to.
 - `gary decisions [--since <ISO>] [--json]`: print the decision log, see Learning. `--since` is exclusive.
 - `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
 - `gary put proposals <id> <file>`: write one rule proposal, validated. `gary put learn <file>`: write the learn cursor.
-- `gary paths`: print JSON with the keys `core`, `home`, `profile`, `state`, `checkout`, `config` and `personal`.
-- `gary setup`: create the home with `config.json`, `personal.md` and `state/`. It asks in a terminal and takes flags in a script: `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. A new project gets a profile copied from `profiles/template/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor`: read-only checks of Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the port, the skill links and the launcher.
+- `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`.
+- `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It refuses a second instance for the same repository, checkout or port, and without `--port` it picks the next free port from 7878. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
+- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the port and whether this instance's board answers there, the skill links and the launcher.
 
-Environment: `GARY_HOME` moves the home. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
+Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
 ## Accounts
 
@@ -130,6 +157,19 @@ Rules:
 - Agent routes that push (`address_review`, `take_over`, `drive`, a fix) need the `bot` or `own` mode. Otherwise the routine does not offer them and the server refuses them.
 - `request_review` with `reviewer: "copilot"` runs under the maintainer's login in every mode, after the check that the login is `me`. With a bot configured, this is the only way any code reaches his login: the helper in `scripts/lib/gh.mjs` sends only that one mutation.
 - No text the bot posts may contain a command from `botCommands`.
+
+## Pause
+
+`gary pause` stops every write to GitHub at once while the board stays up. It sets `paused: true` in `<state>/control.json`, and `gary resume` sets it to `false`. The file lives outside `config.json`, so a change needs no restart, and every check reads it fresh.
+
+While paused:
+
+- the server refuses every click that would write to GitHub with `{ ok: false, result: "Gary is paused. Nothing was sent.", paused: true }`, and writes no action doc,
+- `gary action` refuses every action with the same result, also with `--dry-run` and `--autonomous`,
+- agent routes are still queued, but `gary watch-queue` prints nothing, so the master session starts nothing. The requests appear when the pause ends,
+- board-only actions keep working: dismiss, snooze, `dismiss_route`, `accept_proposal`, `dismiss_proposal` and `/api/decision`.
+
+`board.paused` in `/api/state` and in `use("board")` shows the switch. The event stream sends a `board` event with the full board info when `control.json` changes. `gary doctor` reports the state.
 
 ## Sections
 
@@ -195,12 +235,13 @@ Rules:
 | `take_over` | `agent` | `mode`: `push` (default), `replace` | `push`: the agent finishes the PR in the contributor's PR with our commits, pushed as the bot. `replace`: it opens a replacement PR. `replace` is the exception and needs a `callout` that says why pushing is not possible. On PRs by the bot or a dependency bot only `push` is offered. On a contributor PR that is not taken over, open review threads are handled by a `take_over` with mode `push`, with the same per-thread decisions as `address_review`. After a take-over the item carries `takenOver: true`, and from then on `address_review` and `drive` are allowed |
 | `drive` | `agent` | `maxRounds`: 1 to 3, default 3 | the agent drives the PR on its own: address the open review comments by its own verdicts, push, request a Copilot review, wait for it, repeat. It stops when no valid comment is left, after `maxRounds`, or when it is stuck. Offered only on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true` |
 | `move` | per button | `to`: a name from `relatedRepos`, `discussion`, or `issue` | Repo name, on an issue: two buttons, both bot. "Transfer" moves the issue. "Close, ask to reopen there" posts `text` (template `reopen-elsewhere`) and closes as not planned, for issues that lack the info the other repo needs. `discussion`, on an issue: `me`, opens the issue, he converts it there. GitHub has no API for it and it needs no reply. `issue`, on a discussion: `me`, copies `botCommands.escalate` and opens the discussion. Without that command there is no such route |
+| `open` | `me` | | no text, no params. Opens the thread on GitHub. For items the agent could not analyze, see `blocked` |
 | `chore` | `bot` | `action`: `label`, `assign`, `ready`, `answer_discussion`, `react`, `update_branch`, `rerun_ci`, plus that action's params | run the action |
 
 The click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/action`. The server reads type, actor and params from the item file. `input` carries what the maintainer chose on the card:
 
 - `review`: `{ commentIds: ["c1", "c3"] }`, the checked inline comments. All are checked by default.
-- `address_review`: `{ decisions: [{ threadId, decision: "fix" | "dismiss", note }] }`. The card lists the item's `threads`. Each switch starts from the agent's verdict: `valid` is `fix`, `wrong` is `dismiss`, `optional` and `unjudged` are `fix`. `note` is optional per thread. `text` is an optional note for the whole run.
+- `address_review`: `{ decisions: [{ threadId, decision: "fix" | "dismiss", note }] }`. The card lists the item's `threads`. Each switch starts from the agent's verdict: only `valid` starts on `fix`, `optional`, `wrong` and `unjudged` start on `dismiss`. `note` is optional per thread. `text` is an optional note for the whole run.
 - `take_over`: `{ decisions }`, the same as for `address_review` and validated the same way. Optional: a take-over without open threads sends none.
 - `follow_up`: `{ title }` when the maintainer edited it.
 - `drive`: `{ maxRounds }`, 1 to 3, when the maintainer changed it.
@@ -216,10 +257,10 @@ Routes with `as: "me"` never reach GitHub through the server and get no action d
 
 ## Board page
 
-`GET /api/state` returns `{ board, items, actions, meta }`. `board` holds what the page needs to name the project and the accounts without hard-coding them: `name`, `repo`, `repoUrl`, `me` and `bot` with `login` and `avatarUrl` (`bot` is `null` without one), `accountMode`, `relatedRepos`, `botCommands`, `reviewBots` and `dryRun`. The page talks to the server only through `window.claude`, which the server injects into the page:
+`GET /api/state` returns `{ board, items, actions, proposals, meta }`. `board` holds what the page needs to name the project and the accounts without hard-coding them: `name`, `repo`, `repoUrl`, `me` and `bot` with `login` and `avatarUrl` (`bot` is `null` without one), `accountMode`, `relatedRepos`, `botCommands`, `reviewBots`, `paused` and `dryRun`. The page talks to the server only through `window.claude`, which the server injects into the page:
 
 - `use("board")` returns the `board` object above, plus `maintainer` (his login) and `decision(body)`. `decision` posts `{ itemId, routeId, text }` to `/api/decision` when he uses a route he does on GitHub himself. It resolves quietly, also when the post fails.
-- `use("db")` returns `collection(name).orderBy(field, dir).limit(n).onSnapshot(cb)` for `items`, `actions` and `proposals`, and `doc("meta/status").onSnapshot(cb)`. `proposals` holds the open proposals only. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`. The server pushes every change over its event stream, with one event each for `items`, `actions`, `proposals` and `meta`, and `reload` when `board.html` changed.
+- `use("db")` returns `collection(name).orderBy(field, dir).limit(n).onSnapshot(cb)` for `items`, `actions` and `proposals`, and `doc("meta/status").onSnapshot(cb)`. `proposals` holds the open proposals only. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`. The server pushes every change over its event stream, with one event each for `items`, `actions`, `proposals` and `meta`, `board` with the full board info when the pause switch changes, and `reload` when `board.html` changed. The shim copies a `board` event into the object `use("board")` returned and then dispatches `board:info` on `window`.
 - `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ itemId, routeId, text, draftHash, force, input }`, for example `input.decisions` on `address_review` and `take_over`. The board-only calls are `dismiss_route` with `{ itemId, routeId, text }`, and `accept_proposal` and `dismiss_proposal` with `{ proposalId, text }`.
 
 The page keeps filters, drafts and "opened today" marks in localStorage under keys prefixed `gary:<owner>/<repo>:`, so two boards on one machine keep their own.
@@ -237,6 +278,7 @@ The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`
 - No routes while a thread is `unjudged`.
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
 - `address_review` only when every thread has an id and a verdict, and only where `drive` would be accepted. `drive` and `take_over` only where the server would accept them.
+- An item with `blocked` has exactly one route, of type `open`. An `open` route has no text and no params, and is allowed without `blocked` too.
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
@@ -292,6 +334,8 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   ],
   "routes": [ … ],                // see Routes
   "takenOver": false,              // PRs: true after a take_over ran. Allows `drive` on a contributor PR
+  "analyzedBy": "fallback",        // optional: a safety filter stopped the full model's triage and a smaller model did it. Only value "fallback"
+  "blocked": { "reason": "safety_filter", "at": "ISO" },   // optional: the agent could not analyze the item. reason: safety_filter | failed. A successful triage writes the item without it
   "rounds": [                      // PRs: written when a drive ended
     { "n": 1, "fixed": ["…"], "dismissed": [ { "summary": "…", "reason": "…" } ], "open": ["…"] }
   ],
@@ -439,7 +483,7 @@ The skill writes proposals with `gary put proposals <id> <file>`, which validate
 
 Both go through `/api/action` with `{ proposalId, text }`.
 
-- `accept_proposal` appends `text`, the edited rule, to the target file: under `heading` when the file has that heading, at the end of the file otherwise. The path must resolve inside the profile's `rules/` or `templates/` directory, or be exactly the home's `personal.md`. Symlinks that lead elsewhere are refused, and the write is atomic. When the profile directory is a git repository, the server commits that one file there with the message `Add rule: <title>` and does not push. Then it sets `status: "accepted"` and `decidedAt`.
+- `accept_proposal` appends `text`, the edited rule, to the target file: under `heading` when the file has that heading, at the end of the file otherwise. The path must resolve inside the profile's `rules/` or `templates/` directory, or be exactly the shared `<root>/personal.md`. Symlinks that lead elsewhere are refused, and the write is atomic. When the profile directory is a git repository, the server commits that one file there with the message `Add rule: <title>` and does not push. Then it sets `status: "accepted"` and `decidedAt`.
 - `dismiss_proposal` sets `status: "dismissed"`, `decidedAt` and `reason` from `text`, and logs a `dismissed_proposal` entry.
 
 Both run in dry-run mode too, because they change only local files and never GitHub.

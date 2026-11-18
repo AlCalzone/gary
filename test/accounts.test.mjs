@@ -70,8 +70,8 @@ async function withServer({ home, env }, port, fn) {
 	});
 	let stderr = "";
 	child.stderr.on("data", (d) => (stderr += d));
-	for (let i = 0; i < 50 && !stderr.includes("Board on"); i++) await new Promise((r) => setTimeout(r, 100));
-	if (!stderr.includes("Board on")) console.log(stderr);
+	for (let i = 0; i < 50 && !stderr.includes(" on http://127.0.0.1:"); i++) await new Promise((r) => setTimeout(r, 100));
+	if (!stderr.includes(" on http://127.0.0.1:")) console.log(stderr);
 	const token = readFileSync(join(home, "state", "server-token"), "utf8").trim();
 	const api = async (path, body) => {
 		const res = await fetch(`http://127.0.0.1:${port}${path}`, {
@@ -154,7 +154,7 @@ await withServer(makeHome("bot"), await freePort(), async ({ state, route, click
 	check("drive takes maxRounds from input", r3.data.ok && r3.data.queued, r3);
 });
 
-const driveDocs = readdirSync(join(T, "bot", "home", "state", "board", "actions")).map((n) => JSON.parse(readFileSync(join(T, "bot", "home", "state", "board", "actions", n), "utf8"))).filter((d) => d.action === "drive");
+const driveDocs = readdirSync(join(T, "bot", "root", "instances", "widgets", "state", "board", "actions")).map((n) => JSON.parse(readFileSync(join(T, "bot", "root", "instances", "widgets", "state", "board", "actions", n), "utf8"))).filter((d) => d.action === "drive");
 check("the drive doc carries maxRounds 1 from the input", driveDocs.length === 1 && driveDocs[0].params.maxRounds === 1, driveDocs);
 
 removeDir(T);

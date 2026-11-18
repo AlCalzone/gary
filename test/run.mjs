@@ -10,6 +10,8 @@ const SUITES = [
 	["node", "server.test.mjs"],
 	["node", "accounts.test.mjs"],
 	["node", "learning.test.mjs"],
+	["node", "pause.test.mjs"],
+	["node", "instances.test.mjs"],
 	["zsh", "sharing.test.zsh"],
 	["zsh", "validate.test.zsh"],
 ];

@@ -24,7 +24,7 @@ The caller passes the action file, the item file, the state file path (it does n
 4. Fetch the open threads, as `address-review.md` does. Judge each one against the code at the head, with the same verdicts as a full review: `valid`, `optional`, `wrong`.
    - `valid`: fix it.
    - `wrong`: dismiss it with a short reason.
-   - `optional`: fix it when the change is small and mechanical. Otherwise leave it open, and it goes into `open`.
+   - `optional`: fix it when the change is small and mechanical. That is your own judgement here, because nobody chose per thread. Otherwise leave it open, and it goes into `open`.
 5. If a fix would touch a sensitive path, leave that thread open and stop after this round.
 6. When nothing is left to fix or dismiss, stop without pushing.
 7. Make the fixes in the worktree, one commit per round, like `fix: address review feedback (round 2)` in the project's format. Push as `push-to-pr.md` describes. Reply in every handled thread and resolve it, as `address-review.md` describes, with your verdict's reason as the reply for dismissed ones.

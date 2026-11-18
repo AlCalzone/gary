@@ -22,7 +22,7 @@ expect() { # name, expected exit, pattern, command...
 
 export GARY_HOME=$H/home
 node $B setup --profile $P --me octocat --bot-login widgets-bot --bot-token-file $TOKEN --port $PORT --no-links > /dev/null
-ITEMS=$GARY_HOME/state/board/items
+ITEMS=$GARY_HOME/instances/widgets/state/board/items
 
 # gary item
 expect "item: PR with threads and reviews" 0 '"openThreadCount": 3' node $B item pr-12
@@ -88,6 +88,19 @@ bad_case "take_over replace without callout" "needs a callout" "{$BASE,\"hint\":
 bad_case "finding names no route" 'names no route' "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[$R1],\"findings\":[{\"severity\":\"major\",\"text\":\"x\",\"routeId\":\"r3\"}]}"
 bad_case "bot command in bot text" 'would post the command' "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"@widgets-bot escalate\",\"recommended\":true}]}"
 bad_case "chore with merge" 'a chore cannot run' "{$BASE,\"hint\":\"Chore: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"chore\",\"title\":\"Chore: x\",\"as\":\"bot\",\"params\":{\"action\":\"merge\"},\"recommended\":true}]}"
+OPEN='{"id":"r1","type":"open","title":"Open: on GitHub","as":"me","recommended":true}'
+mk case "{$BASE,\"hint\":\"Open: on GitHub\",\"blocked\":{\"reason\":\"safety_filter\",\"at\":\"2026-11-18T08:00:00Z\"},\"routes\":[$OPEN]}"
+expect "a blocked item with one open route is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+mk case "{$BASE,\"hint\":\"Open: on GitHub\",\"routes\":[$OPEN]}"
+expect "an open route without blocked is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "analyzedBy with another value" "analyzedBy must be" "{$BASE,\"analyzedBy\":\"small\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+mk case "{$BASE,\"analyzedBy\":\"fallback\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+expect "analyzedBy fallback is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "blocked with another route" "exactly one route, of type open" "{$BASE,\"hint\":\"Reply: thanks\",\"blocked\":{\"reason\":\"failed\",\"at\":\"2026-11-18T08:00:00Z\"},\"routes\":[$R1]}"
+bad_case "blocked with a bad reason" "blocked must be" "{$BASE,\"hint\":\"Open: on GitHub\",\"blocked\":{\"reason\":\"tired\",\"at\":\"2026-11-18T08:00:00Z\"},\"routes\":[$OPEN]}"
+bad_case "open with text" "no text and no params" "{$BASE,\"hint\":\"Open: on GitHub\",\"routes\":[{\"id\":\"r1\",\"type\":\"open\",\"title\":\"Open: on GitHub\",\"as\":\"me\",\"text\":\"hi\",\"recommended\":true}]}"
+bad_case "open as bot" "is not allowed for open" "{$BASE,\"hint\":\"Open: on GitHub\",\"routes\":[{\"id\":\"r1\",\"type\":\"open\",\"title\":\"Open: on GitHub\",\"as\":\"bot\",\"recommended\":true}]}"
+node $B put items pr-12 $H/good.json > /dev/null
 mk case "{${BASE/\"kind\":\"pr\",\"number\":12/\"kind\":\"issue\",\"number\":21},\"hint\":\"Move: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"move\",\"title\":\"Move: x\",\"params\":{\"to\":\"other-repo\"},\"recommended\":true}]}"
 expect "put refuses: move target outside relatedRepos" 1 "not in the profile's relatedRepos" node $B put items issue-21 $H/case.json
 expect "put refuses: wrong file name" 1 "does not match kind" node $B put items pr-1 $H/good.json

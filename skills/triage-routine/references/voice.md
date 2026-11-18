@@ -1,6 +1,6 @@
 # Suggested replies
 
-Read this file, then `<profile>/rules/voice.md`, then `<personal>`. Later wins. `personal.md` may name writing rules for prose. Those apply to every text.
+Read this file, then `<profile>/rules/voice.md`, then the `<personal>` files, shared first. Later wins. `personal.md` may name writing rules for prose. Those apply to every text.
 
 Routes with `as: "me"` are prefilled text that the maintainer posts under his own name. Routes with `as: "bot"` go out as the bot after his click. Both should sound like him, so the thread does not change tone. Bot text drops the "I". The profile's voice rules describe how he writes.
 
@@ -35,7 +35,8 @@ A `review` route posts one review: the summary `text` as the body and `params.co
 
 - Suggestions on one PR must not overlap. Merge two changes that touch the same lines into one suggestion.
 - A suggestion that deletes the last property of a JSON object includes the previous line, so it can drop that line's trailing comma.
-- Each suggestion must leave the file valid on its own and together with the others. Apply them all to a scratch copy of the file at `reviewedSha` and parse or format it before you return. The profile may name the formatter.
+- A requested change whose lines lie outside the PR's diff hunks cannot be an inline comment. It goes into the summary.
+- Each suggestion must leave the file valid on its own and together with the others. Apply them all to a scratch copy of the file at `reviewedSha` and check it before you return. When the profile names a formatter for the file type, run it on the copy. Without one, parse the file, or read the result carefully when no parser fits.
 
 Keep `question` findings as questions to the contributor only when the contributor can answer them. Specification questions for the maintainer stay in `findings` and out of the review text.
 

@@ -18,6 +18,9 @@ This mode builds on the `address-review-comments` skill when it is installed. Re
 4. Reply in every handled thread under the writing identity (`accounts.md`): `gh api repos/<owner>/<repo>/pulls/<n>/comments/<databaseId>/replies -f body='…'`. Keep replies to one or two sentences, in the style of `voice.md`, without "I":
    - fixed: `Fixed in <short sha>: <what changed>.`
    - dismissed: the short reason. Use the maintainer's `note` when he gave one, otherwise the thread's `note` from the item doc. Example: `Not needed: the value is already validated by the parser.`
+   - dismissed `optional` thread without a note: one sentence that says it is optional and was left as is, like `Optional, left as is for this PR.` Resolve it like the others.
+
+The board starts every thread on dismiss except the `valid` ones. A dismissed thread is the maintainer's decision, also when he only kept the default.
 5. Resolve each replied thread under the writing identity: `gh api graphql -f query='mutation($id: ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' -f id=<threadId>`.
 6. Remove the worktree and return as described in `push-to-pr.md`. Handled threads leave `threads`. `result` is the commit URL, or the number of threads handled when nothing was pushed.
 

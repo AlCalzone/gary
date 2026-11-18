@@ -19,16 +19,16 @@ git("commit", "-q", "-am", "headings");
 
 // The server's own port, so gary put writes through it
 const port = await freePort();
-const { home, env: baseEnv } = makeHome(T, { profile, port });
+const { home, root, env: baseEnv } = makeHome(T, { profile, port });
 const env = { ...baseEnv, GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "test@example.com", GIT_COMMITTER_NAME: "Test", GIT_COMMITTER_EMAIL: "test@example.com" };
-writeFileSync(join(home, "personal.md"), "# Personal rules\n");
+writeFileSync(join(root, "personal.md"), "# Personal rules\n");
 const BOARD = join(home, "state", "board");
 const reviewedAt = "2026-11-17T14:00:00Z";
 const base = (kind, number, extra) => ({ kind, number, title: `Item ${number}`, url: `https://github.com/acme/widgets/${kind === "pr" ? "pull" : "issues"}/${number}`, author: "hubot", authorType: "contributor", section: "easy", priority: 1, effortMinutes: 5, reviewDepth: "full", state: "Decide.", reviewedAt, labels: ["bug"], ...extra });
 const items = {
 	"pr-12": base("pr", 12, {
 		authorType: "maintainer", reviewedSha: "944d5aca1b70af1d87ca805b08639f3e17b83dcd", hint: "Reply: thanks",
-		threads: [{ id: "PRRT_1", verdict: "valid", summary: "Restart the watchdog" }, { id: "PRRT_2", verdict: "wrong", summary: "Rename it" }],
+		threads: [{ id: "PRRT_1", verdict: "valid", summary: "Restart the watchdog" }, { id: "PRRT_2", verdict: "wrong", summary: "Rename it" }, { id: "PRRT_3", verdict: "optional", summary: "Add a test" }, { id: "PRRT_4", verdict: "optional", summary: "Shorter name" }],
 		routes: [
 			{ id: "r1", type: "reply", as: "bot", title: "Reply: thanks", text: "Thanks", recommended: true },
 			{ id: "r2", type: "review", as: "bot", title: "Comment: two notes", text: "Notes", params: { event: "comment", comments: [{ id: "c1", path: "src/a.ts", line: 3, text: "Use const" }, { id: "c2", path: "src/b.ts", line: 9, text: "Rename" }] } },
@@ -91,7 +91,7 @@ writeFileSync(stub, JSON.stringify({ "*": { state: "OPEN" } }));
 const server = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-run", "--port", String(port)], { env: { ...env, GARY_GUARD_STUB: stub }, stdio: ["ignore", "inherit", "pipe"] });
 let stderr = "";
 server.stderr.on("data", (d) => (stderr += d));
-for (let i = 0; i < 50 && !stderr.includes("Board on"); i++) await sleep(100);
+for (let i = 0; i < 50 && !stderr.includes(" on http://127.0.0.1:"); i++) await sleep(100);
 const token = readFileSync(join(home, "state", "server-token"), "utf8").trim();
 const api = async (path, body) => {
 	const res = await fetch(`http://127.0.0.1:${port}${path}`, { method: body ? "POST" : "GET", headers: { "X-Board-Token": token, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -132,11 +132,12 @@ try {
 	t.check("edited_text is logged with draft and final", logOf("edited_text").some((e) => e.itemId === "pr-12" && e.draft === "Notes" && e.final === "Edited notes"), log());
 	t.check("unchecked_comment is logged for the unchecked comment only", logOf("unchecked_comment").length === 1 && logOf("unchecked_comment")[0].comment.path === "src/a.ts", logOf("unchecked_comment"));
 	t.check("every entry carries the item facts", log().every((e) => e.at && e.item && e.item.kind && Array.isArray(e.item.labels)), log());
-	r = await click("pr-12", "r3", { text: "Keep it small", input: { decisions: [{ threadId: "PRRT_1", decision: "fix" }, { threadId: "PRRT_2", decision: "dismiss" }] } });
+	r = await click("pr-12", "r3", { text: "Keep it small", input: { decisions: [{ threadId: "PRRT_1", decision: "fix" }, { threadId: "PRRT_2", decision: "dismiss" }, { threadId: "PRRT_3", decision: "fix" }, { threadId: "PRRT_4", decision: "dismiss" }] } });
 	t.check("address_review on a maintainer PR is queued", r.data.ok && r.data.queued, r);
 	await sleep(100);
 	t.check("an agent route's instruction is an agent_note", logOf("agent_note").some((e) => e.text === "Keep it small"), log());
-	t.check("decisions that follow the verdicts are not logged", !logOf("thread_override").some((e) => e.itemId === "pr-12"), logOf("thread_override"));
+	const overrides = logOf("thread_override").filter((e) => e.itemId === "pr-12");
+	t.check("only valid defaults to fix: fixing an optional thread is an override, dismissing one is not", overrides.length === 1 && overrides[0].thread.verdict === "optional" && overrides[0].decision === "fix", overrides);
 
 	// Routes he does himself report to /api/decision
 	const before = actionDocs().length;
@@ -196,7 +197,7 @@ try {
 	r = await api("/api/action", { action: "accept_proposal", proposalId: "learn-2026-11-18-stale" });
 	t.check("a decided proposal cannot be decided again", r.status === 409, r);
 	r = await api("/api/action", { action: "accept_proposal", proposalId: "learn-2026-11-18-personal" });
-	t.check("a personal proposal appends to personal.md", r.data.ok && r.data.committed === false && readFileSync(join(home, "personal.md"), "utf8") === "# Personal rules\n\nKeep replies short.\n", r);
+	t.check("a personal proposal appends to personal.md", r.data.ok && r.data.committed === false && readFileSync(join(root, "personal.md"), "utf8") === "# Personal rules\n\nKeep replies short.\n", r);
 	r = await api("/api/action", { action: "dismiss_proposal", proposalId: "learn-2026-11-18-drop", text: "We review those by hand" });
 	const dropped = JSON.parse(readFileSync(join(BOARD, "proposals", "learn-2026-11-18-drop.json"), "utf8"));
 	t.check("dismiss_proposal stores the reason", r.data.ok && dropped.status === "dismissed" && dropped.reason === "We review those by hand", dropped);
@@ -220,7 +221,7 @@ const port2 = await freePort();
 const server2 = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-run", "--port", String(port2)], { env: evilHome.env, stdio: ["ignore", "inherit", "pipe"] });
 let err2 = "";
 server2.stderr.on("data", (d) => (err2 += d));
-for (let i = 0; i < 50 && !err2.includes("Board on"); i++) await sleep(100);
+for (let i = 0; i < 50 && !err2.includes(" on http://127.0.0.1:"); i++) await sleep(100);
 try {
 	const token2 = readFileSync(join(evilHome.home, "state", "server-token"), "utf8").trim();
 	const res = await fetch(`http://127.0.0.1:${port2}/api/action`, { method: "POST", headers: { "X-Board-Token": token2, "Content-Type": "application/json" }, body: JSON.stringify({ action: "accept_proposal", proposalId: "learn-evil" }) });

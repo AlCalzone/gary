@@ -5,7 +5,8 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, homePath, loadConfig, loadProfile, paths, profileDir } from "./lib/config.mjs";
+import { ROOT, homePath, instanceName, listInstances, loadConfig, loadProfile, paths, profileDir, resolveInstance, rootDir, setInstance } from "./lib/config.mjs";
+import { isPaused } from "./lib/control.mjs";
 import { readLogin } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
 
@@ -20,16 +21,18 @@ function portFree(port) {
 	});
 }
 
+/** The instance whose board server answers on the port, or null. */
 async function boardOnPort(port) {
 	try {
 		const res = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) });
-		return (await res.json())?.name === "gary";
+		const body = await res.json();
+		return body?.name === "gary" ? body.instance ?? "" : null;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
-export async function main(argv) {
+async function checkInstance() {
 	const checks = [];
 	const add = (name, status, detail) => checks.push({ name, status, detail });
 	const attempt = async (name, fn) => {
@@ -41,6 +44,10 @@ export async function main(argv) {
 		}
 	};
 
+	await attempt("instance", async () => {
+		const { name, via } = resolveInstance();
+		return ["ok", `${name}, from ${via === "directory" ? "the working directory" : via}`];
+	});
 	const major = Number(process.versions.node.split(".")[0]);
 	add("node", major >= 24 ? "ok" : "fail", `Node ${process.versions.node}${major >= 24 ? "" : ", needs 24 or later"}`);
 	await attempt("gh", async () => ["ok", (await run("gh", ["--version"])).stdout.split("\n")[0]]);
@@ -73,6 +80,7 @@ export async function main(argv) {
 		} else {
 			add("bot", "ok", `no bot, ${config.allowOwnTokenPushes ? "bot routes run under your own gh login" : "bot routes become text you post yourself"}`);
 		}
+		add("pause", isPaused() ? "warn" : "ok", isPaused() ? "paused: nothing goes to GitHub and queued agent requests wait. `gary resume` ends it" : "not paused");
 		await attempt("checkout", async () => {
 			if (!config.checkout) return ["warn", "no checkout in config.json, fixes need a local clone"];
 			const dir = homePath(config.checkout);
@@ -80,7 +88,9 @@ export async function main(argv) {
 		});
 		await attempt("port", async () => {
 			if (await portFree(config.port)) return ["ok", `${config.port} is free`];
-			if (await boardOnPort(config.port)) return ["ok", `${config.port} runs the board server`];
+			const owner = await boardOnPort(config.port);
+			if (owner === instanceName()) return ["ok", `${config.port} runs this instance's board server`];
+			if (owner !== null) return ["fail", `port ${config.port} runs the board server of instance ${owner || "(unnamed)"}`];
 			return ["fail", `another program uses port ${config.port}`];
 		});
 	}
@@ -108,7 +118,33 @@ export async function main(argv) {
 		}
 	});
 
-	if (argv.includes("--json")) console.log(JSON.stringify(checks, null, 2));
-	else for (const c of checks) console.log(`${c.status.padEnd(4)}  ${c.name.padEnd(14)} ${c.detail}`);
-	process.exitCode = checks.some((c) => c.status === "fail") ? 1 : 0;
+	return checks;
+}
+
+const print = (checks) => {
+	for (const c of checks) console.log(`${c.status.padEnd(4)}  ${c.name.padEnd(14)} ${c.detail}`);
+};
+
+export async function main(argv) {
+	const json = argv.includes("--json");
+	if (!argv.includes("--all")) {
+		const checks = await checkInstance();
+		if (json) console.log(JSON.stringify(checks, null, 2));
+		else print(checks);
+		process.exitCode = checks.some((c) => c.status === "fail") ? 1 : 0;
+		return;
+	}
+	const names = listInstances();
+	if (!names.length) throw new Error(`There is no instance in ${rootDir()}. Run \`gary setup\` first.`);
+	const all = {};
+	for (const name of names) {
+		setInstance(name);
+		all[name] = await checkInstance();
+		if (!json) {
+			console.log(`== ${name}`);
+			print(all[name]);
+		}
+	}
+	if (json) console.log(JSON.stringify(all, null, 2));
+	process.exitCode = Object.values(all).some((checks) => checks.some((c) => c.status === "fail")) ? 1 : 0;
 }
