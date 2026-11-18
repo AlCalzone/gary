@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { TEST_DIR } from "./lib.mjs";
 
 const SUITES = [
+	["node", "config.test.mjs"],
 	["node", "actions.test.mjs"],
 	["node", "server.test.mjs"],
 	["node", "accounts.test.mjs"],

@@ -6,7 +6,7 @@
 // The instance comes from --instance, then GARY_INSTANCE, then the working directory, then the only instance.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -293,19 +293,34 @@ export function validateProfile(data) {
 	return errors;
 }
 
+// The caches check the file's mtime, so an edited config or profile applies on the next call, also in the server
 const configCache = new Map();
 const profileCache = new Map();
+
+function cached(cache, file, load) {
+	let mtime = null;
+	try {
+		const st = statSync(file);
+		mtime = `${st.mtimeMs}:${st.size}`;
+	} catch {
+		// A missing file goes to load(), which names it in its error
+	}
+	const hit = cache.get(file);
+	if (hit && mtime !== null && hit.mtime === mtime) return hit.value;
+	const value = load();
+	cache.set(file, { mtime, value });
+	return value;
+}
 
 /** Loads and validates one instance's config.json. Throws a SettingsError that names the file and every problem. */
 export function loadConfigFor(name) {
 	const file = join(instanceDir(name), "config.json");
-	if (configCache.has(file)) return configCache.get(file);
-	const data = readSettings(file, "Config");
-	const errors = validateConfig(data);
-	if (errors.length) throw new SettingsError(`Config ${file} is invalid:\n- ${errors.join("\n- ")}`);
-	const value = { ...CONFIG_DEFAULTS, ...data, bot: data.bot ?? null };
-	configCache.set(file, value);
-	return value;
+	return cached(configCache, file, () => {
+		const data = readSettings(file, "Config");
+		const errors = validateConfig(data);
+		if (errors.length) throw new SettingsError(`Config ${file} is invalid:\n- ${errors.join("\n- ")}`);
+		return { ...CONFIG_DEFAULTS, ...data, bot: data.bot ?? null };
+	});
 }
 
 /** Resolves a path from an instance's config.json: `~` expands, a relative path is relative to the instance directory. */
@@ -319,13 +334,12 @@ export const profileDirFor = (name) => instancePath(name, loadConfigFor(name).pr
 /** Loads and validates the profile.json of one instance. */
 export function loadProfileFor(name) {
 	const file = join(profileDirFor(name), "profile.json");
-	if (profileCache.has(file)) return profileCache.get(file);
-	const data = readSettings(file, "Profile");
-	const errors = validateProfile(data);
-	if (errors.length) throw new SettingsError(`Profile ${file} is invalid:\n- ${errors.join("\n- ")}`);
-	const value = { ...PROFILE_DEFAULTS, ...data };
-	profileCache.set(file, value);
-	return value;
+	return cached(profileCache, file, () => {
+		const data = readSettings(file, "Profile");
+		const errors = validateProfile(data);
+		if (errors.length) throw new SettingsError(`Profile ${file} is invalid:\n- ${errors.join("\n- ")}`);
+		return { ...PROFILE_DEFAULTS, ...data };
+	});
 }
 
 /** The resolved instance's config. */
@@ -365,6 +379,20 @@ export function loadInstance(name) {
 		personal: [personalFile(), ...(existsSync(own) ? [own] : [])],
 		paused: pausedIn(state),
 	};
+}
+
+/**
+ * The files whose change alters what loadInstance returns: the instance's config.json and its profile.json.
+ * A server that watches them can push a fresh board event. The profile may live outside the root.
+ */
+export function instanceSettingsFiles(name) {
+	const files = [join(instanceDir(name), "config.json")];
+	try {
+		files.push(join(profileDirFor(name), "profile.json"));
+	} catch {
+		// Without a readable config there is no profile to watch yet
+	}
+	return files;
 }
 
 /** Every instance under the root with its name, kind, repos, title, checkout and pause. Broken ones are skipped. */
