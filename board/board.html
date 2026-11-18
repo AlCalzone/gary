@@ -227,6 +227,19 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .opened-mark { display: inline-flex; align-items: center; }
 .part-btn .avatar, .part-btn .actor-icon { width: 16px; height: 16px; }
 .status.soft-warn { color: var(--warn); flex-basis: 100%; }
+.d-handled { margin: 0; padding: 8px 14px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 8%, var(--surface)); font-size: 13.5px; color: var(--fg); }
+.d-handled[hidden] { display: none; }
+.handled-sec { margin-top: 18px; }
+.handled-sec[hidden] { display: none; }
+.handled summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.handled-list { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.handled-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px; border-radius: 8px; background: var(--surface); font-size: 13.5px; }
+.handled-row .h-num { color: var(--muted); font-variant-numeric: tabular-nums; }
+.handled-row .h-title { flex: 1; min-width: 12em; }
+.handled-row .h-what .r-hint { font-size: 12.5px; }
+.handled-row .h-check { font-size: 12px; }
+.handled-row .h-check.tone-ok { color: var(--ok); }
+.handled-row .h-check.tone-warn { color: var(--warn); }
 .r-ref { display: block; font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .p-instance { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Paused is a state he chose, so it reads calm: muted ink, a soft pill */
@@ -905,6 +918,7 @@ textarea {
   </div>
   <div class="d-body" id="d-body" tabindex="-1">
     <div class="d-updated" id="d-updated" role="status" hidden></div>
+    <p class="d-handled" id="d-handled" hidden></p>
     <div class="d-head">
       <h2 class="d-title" id="detail-title"></h2>
       <div class="meta" id="d-meta"></div>
@@ -1279,12 +1293,22 @@ function recentlyDone(a) {
   return a.status === "done" && Number.isFinite(t) && Date.now() - t < DAY_MS;
 }
 
-// An item counts as handled today when he opened one of its steps on GitHub today, or its latest action was created today and is queued or done
-function handledToday(id) {
-  return itemOpenedToday(id) || handledAction(latestOf(id));
+// Handled: the server marks an item when he used a prefill or a bot or agent route ran. It leaves the plan until the next run.
+// A prefill click marks it here at once, before the server's push arrives.
+const localHandled = new Map();
+
+function handledOf(key, d = state.items.get(key)) {
+  const h = d && d.handled && typeof d.handled === "object" && d.handled.at ? d.handled : null;
+  return h || localHandled.get(key) || null;
 }
 
-// A finished re-analysis hands the item back to him with new cards, so it does not count as handled
+function handledToday(key) {
+  const hd = handledOf(key);
+  const t = hd ? parseTime(hd.at) : NaN;
+  return Number.isFinite(t) && dayKey(t) === dayKey(Date.now());
+}
+
+// Work on items that already left the board still counts, from today's action log. A finished re-analysis is not his work.
 function handledAction(a) {
   if (!a || (a.status !== "done" && a.status !== "queued")) return false;
   if (a.action === "reanalyze" && a.status === "done") return false;
@@ -1304,10 +1328,10 @@ function spentMinutes() {
   // Handled items can have left the board, so the action log is the source and the item only adds its effort
   const keyOf = new Map([...state.items].map(([k, d]) => [actionRef(refOf(k).instance, refOf(k).id), k]));
   for (const [ref, a] of state.latestAction) {
-    const key = keyOf.get(ref);
-    if (key ? !handledToday(key) : !handledAction(a)) continue;
-    sum += key ? planEffort(state.items.get(key)) : DEFAULT_EFFORT_MIN;
+    if (keyOf.has(ref) || !handledAction(a)) continue;
+    sum += DEFAULT_EFFORT_MIN;
   }
+  for (const key of state.items.keys()) if (handledToday(key)) sum += planEffort(state.items.get(key));
   return sum;
 }
 
@@ -1492,6 +1516,88 @@ function buildFilters() {
 const groupEls = new Map();
 const planEls = {};
 
+const handledEls = {};
+
+const HANDLED_DONE = {
+  reply: "Replied", request_logs: "Asked for a log", close: "Closed", reopen: "Reopened", merge: "Merged", review: "Reviewed",
+  address_review: "Asked the agent to address the review", follow_up: "Followed up", take_over: "Took over", drive: "Asked the agent to drive",
+  move: "Moved", chore: "Ran a chore", open: "Opened on GitHub", format: "Asked the agent to format",
+};
+
+// What GitHub shows after his click, from the server's check
+function handledCheck(d, hd) {
+  const live = d.live && typeof d.live === "object" ? str(d.live.state) : "";
+  if (hd.verified === "merged" || live === "merged") return ["merged on GitHub", "ok"];
+  if (hd.verified === "closed" || live === "closed") return ["closed on GitHub", "ok"];
+  if (hd.verified === "commented") return ["comment seen on GitHub", "ok"];
+  if (hd.verified === "labeled") return ["label seen on GitHub", "ok"];
+  // He may have copied the text and not posted it
+  if (hd.verified === "unchanged" && Date.now() - parseTime(hd.at) >= 10 * 60000) return ["nothing changed on GitHub yet", "warn"];
+  return null;
+}
+
+function renderHandled(rows) {
+  if (!handledEls.el) return;
+  handledEls.el.hidden = rows.length === 0;
+  handledEls.count.textContent = "Handled, waiting for the next run: " + rows.length;
+  handledEls.list.replaceChildren(...rows.map(([key, d]) => {
+    const hd = handledOf(key, d);
+    const route = routesOf(d).find((r) => r.id === hd.routeId);
+    const what = str(route && route.title) || HANDLED_DONE[hd.routeType] || "Handled";
+    const check = handledCheck(d, hd);
+    const back = h("button", { class: "btn quiet small", type: "button", text: "Bring back", "data-focus-key": "handled:" + key });
+    back.addEventListener("click", () => bringBack(key));
+    return h("li", { class: "handled-row", "data-id": key },
+      h("span", { class: "h-kind" }, iconEntry(kindStatus(key, d))),
+      h("span", { class: "h-num", text: combinedView() ? itemRef(d) : "#" + str(d.number) }),
+      h("span", { class: "h-title", text: str(d.title) || "(no title)" }),
+      h("span", { class: "h-what" }, hintEl(what)),
+      check ? h("span", { class: "h-check tone-" + check[1], text: check[0] }) : null,
+      back);
+  }));
+}
+
+// The undo for a click on the wrong button: the server's mark goes, the item returns to the plan
+async function bringBack(key) {
+  localHandled.delete(key);
+  const d = state.items.get(key);
+  if (d && d.handled && state.db) {
+    try {
+      await state.db.doc("items/" + refOf(key).instance + "/" + refOf(key).id).update({ handled: null });
+    } catch (e) {
+      state.notes.set(key, { kind: "failed", text: "Bringing it back failed: " + errorText(e) });
+    }
+  }
+  render();
+}
+
+// Asks the server to read GitHub again for items he handled in the last 15 minutes, once per item per focus
+const refreshedThisFocus = new Set();
+function refreshHandled(keys) {
+  const send = boardApi && boardApi.refresh;
+  if (typeof send !== "function") return;
+  for (const key of keys) {
+    const hd = handledOf(key);
+    if (!hd || refreshedThisFocus.has(key)) continue;
+    if (Date.now() - parseTime(hd.at) > 15 * 60000) continue;
+    if (hd.verified && hd.verified !== "unchanged") continue;
+    refreshedThisFocus.add(key);
+    // The server rate-limits as well, so a refusal is no news
+    try {
+      Promise.resolve(send.call(boardApi, refOf(key))).catch(() => {});
+    } catch {
+      // Nothing to show
+    }
+  }
+}
+
+function onFocusBack() {
+  refreshedThisFocus.clear();
+  refreshHandled([...state.items.keys()]);
+}
+window.addEventListener("focus", onFocusBack);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onFocusBack(); });
+
 function buildSections() {
   planEls.fill = h("span", { class: "bar-fill" });
   planEls.bar = h("span", { class: "bar", role: "progressbar", "aria-label": "Time spent today", "aria-valuemin": "0" }, planEls.fill);
@@ -1507,6 +1613,11 @@ function buildSections() {
   });
   planEls.done = h("span", { class: "plan-done" }, planEls.doneText, planEls.add);
   planEls.el = h("div", { class: "plan", id: "plan" }, planEls.bar, planEls.spent, planEls.done);
+
+  handledEls.count = h("span");
+  handledEls.list = h("ul", { class: "handled-list" });
+  handledEls.details = h("details", { class: "handled" }, h("summary", null, handledEls.count), handledEls.list);
+  handledEls.el = h("section", { class: "handled-sec", id: "handled", hidden: true }, handledEls.details);
 
   for (const g of GROUPS) {
     const list = h("div", { class: "list" });
@@ -1771,6 +1882,10 @@ function threadState(id, d) {
     const reason = a.params && typeof a.params === "object" && a.params.reason === "not_planned" ? "NOT_PLANNED" : "COMPLETED";
     return { state: "CLOSED", reason };
   }
+  const checked = d.live && typeof d.live === "object" ? str(d.live.state) : "";
+  const verified = d.handled && typeof d.handled === "object" ? str(d.handled.verified) : "";
+  if (checked === "merged" || verified === "merged") return { state: "MERGED", reason: null };
+  if (checked === "closed" || verified === "closed") return { state: "CLOSED", reason: null };
   const live = d.liveState && typeof d.liveState === "object" ? d.liveState : null;
   if (live && (live.state === "CLOSED" || live.state === "MERGED")) return { state: live.state, reason: str(live.reason) || null };
   return { state: "OPEN", reason: null };
@@ -2002,10 +2117,15 @@ function renderListNow() {
   const sorter = state.filters.sort === "quickest" ? compareQuickest : compareItems;
 
   const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
+  const handledRows = [];
   for (const [id, d] of state.items) {
     if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
     if (d.hidden === true && !state.filters.showHidden) continue;
     if (!matchesFilters(d)) continue;
+    if (handledOf(id, d)) {
+      handledRows.push([id, d]);
+      continue;
+    }
     const dim = isHiddenItem(d);
     const order = isSnoozed(d) ? SECTIONS.length : SECTION_ORDER.get(sectionOf(d));
     byGroup.get(groupOf(d)).push({ id, data: d, dim, order, planned: false });
@@ -2020,7 +2140,7 @@ function renderListNow() {
   let planned = 0;
   for (const g of GROUPS) {
     for (const r of byGroup.get(g.id)) {
-      if (r.dim || handledToday(r.id) || finishedBy(r.id)) continue;
+      if (r.dim || finishedBy(r.id)) continue;
       const e = planEffort(r.data);
       if (e > left) {
         skipped = true;
@@ -2053,6 +2173,7 @@ function renderListNow() {
   }
 
   els.board.classList.toggle("combined", combinedView());
+  renderHandled(handledRows);
 
   // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
   for (const m of els.board.querySelectorAll(".r-meta")) {
@@ -2510,45 +2631,6 @@ function routeTarget(d, r, title, body, b) {
   return url;
 }
 
-// ---------- opened today ----------
-
-// Routes he opened on GitHub today, kept in this browser. The routine sees his real comment or merge on its next run.
-
-function openedKey(id, r) {
-  return [refOf(id).id, r.id, str(r.draftHash), dayKey(Date.now())].join("|");
-}
-
-function readOpened(id) {
-  try {
-    const v = JSON.parse(localStorage.getItem(instanceKey(refOf(id).instance, "opened")) || "{}");
-    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
-  } catch {
-    return {};
-  }
-}
-
-function openedToday(id, r) {
-  return readOpened(id)[openedKey(id, r)] === true;
-}
-
-function itemOpenedToday(id) {
-  const today = "|" + dayKey(Date.now());
-  return Object.keys(readOpened(id)).some((k) => k.startsWith(refOf(id).id + "|") && k.endsWith(today));
-}
-
-function markOpened(id, r) {
-  const store = readOpened(id);
-  const today = "|" + dayKey(Date.now());
-  // Keep only today's marks
-  for (const k of Object.keys(store)) if (!k.endsWith(today)) delete store[k];
-  store[openedKey(id, r)] = true;
-  try {
-    localStorage.setItem(instanceKey(refOf(id).instance, "opened"), JSON.stringify(store));
-  } catch {
-    // Without storage the mark lasts until the next reload
-  }
-}
-
 // The board server serves every instance. Accounts, repos, bot commands and the pause switch belong to each instance.
 let boardInfo = { me: null, dryRun: false, instances: [] };
 const EMPTY_INSTANCE = { name: "", title: "", kind: "maintainer", repos: [], repoUrl: "", bot: null, accountMode: "bot", paused: false, relatedRepos: [], botCommands: {}, reviewBots: [] };
@@ -2603,7 +2685,7 @@ function applyBoardInfo(b) {
         if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) continue;
         // The tool's previous name is assembled, so it appears nowhere else in the page
         for (const oldPrefix of ["gary:" + repo + ":", ["triage", "board"].join("-") + ":" + repo + ":"]) {
-          for (const name of ["drafts", "opened", "filters"]) {
+          for (const name of ["drafts", "filters"]) {
             const old = oldPrefix + name;
             const v = localStorage.getItem(old);
             if (v === null) continue;
@@ -3199,7 +3281,7 @@ function meButton(id, d, r, rec, b, intent, locked) {
       window.open(routeTarget(d, r, rec.titleInput ? rec.titleInput.value : str(paramsOf(r).title), rec.ta ? rec.ta.value : str(r.text), b), "_blank", "noopener,noreferrer");
       if (fallback) detail.meNotes.set(r.id, b.copy === "escalate" ? "Copy failed. Post " + escalateCommand(instOf(d)) + " on GitHub" : "Press Ctrl+C, then paste on GitHub");
       else detail.meNotes.delete(r.id);
-      markOpened(id, r);
+      if (!handledOf(id)) localHandled.set(id, { at: new Date().toISOString(), routeId: r.id, routeType: r.type, verified: null });
       render();
     },
   }, actorMark("me", instOf(d)), b.label, icon("external", null, "ext"));
@@ -3229,7 +3311,7 @@ function buildCardActions(id, d, r, rec, locked) {
 
   if (buttons.every((b) => b.actor === "me")) {
     return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)), ...partButtons(id, d, r, rec, locked),
-      openedToday(id, r) ? h("span", { class: "opened-mark", role: "img", title: "You opened this on GitHub today", "aria-label": "You opened this on GitHub today" }, icon("check")) : null,
+      handledOf(id)?.routeId === r.id ? h("span", { class: "opened-mark", role: "img", title: "You opened this on GitHub today", "aria-label": "You opened this on GitHub today" }, icon("check")) : null,
       detail.meNotes.has(r.id) ? h("span", { class: "me-note", text: detail.meNotes.get(r.id) }) : null].filter(Boolean);
   }
 
@@ -3473,7 +3555,7 @@ function renderRoutes(id, d, locked) {
       if (rec.headActor) rec.headActor.style.display = open ? "none" : "";
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
-    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), openedToday(id, r),
+    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d),
       detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, meLogin(), instOf(d).paused === true, combinedView()]);
     if (sig !== rec.sig) {
       rec.sig = sig;
@@ -3711,6 +3793,13 @@ function renderDetail() {
   detail.reviewedAt = reviewedAt;
   detail.lastHint = str(d.hint).trim() || str(recommendedRoute(d)?.title).trim();
   detail.updatedEl.hidden = !detail.updated;
+  const hd = handledOf(id, d);
+  const hEl = document.getElementById("d-handled");
+  hEl.hidden = !hd;
+  if (hd) {
+    const at = new Date(parseTime(hd.at)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    hEl.textContent = "You handled this at " + at + ". It returns after the next run if something is left to do.";
+  }
   if (detail.updated && detail.updatedEl.dataset.before !== detail.updated.before) {
     detail.updatedEl.dataset.before = detail.updated.before;
     detail.updatedEl.replaceChildren(
@@ -3996,6 +4085,7 @@ function finishDetail() {
   detail.zoneCtl = null;
   detail.foot.replaceChildren();
   detail.pendingFocus = null;
+  if (handledOf(id)) refreshHandled([id]);
   detail.updated = null;
   detail.staleDrafts.clear();
   if (listFreeze.pending) renderList();
@@ -4213,6 +4303,8 @@ function subscribe(db) {
       const d = doc.data();
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
       if (d && typeof d === "object" && routesOf(d).length) next.set(doc.id, d);
+      // Once the server carries the mark, it decides, including clearing it after the next run
+      if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
     state.items = next;
     for (const id of state.confirming.keys()) if (!next.has(id)) state.confirming.delete(id);
@@ -4301,7 +4393,7 @@ async function boot() {
   setupDetail();
   setupRowKeys();
   buildSections();
-  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el));
+  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el);
   renderConnection();
   render();
 

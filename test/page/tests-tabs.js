@@ -50,7 +50,9 @@
   const nD = window.__decisions.length;
   [...document.querySelectorAll("#d-routes .card.open .card-actions button")].find((b) => b.textContent === "Copy reply, open GitHub").click(); await wait(20);
   ok("the decision post names the instance", window.__decisions.length === nD + 1 && window.__decisions.at(-1).instance === "gadgets" && window.__decisions.at(-1).itemId === "issue-41");
-  ok("drafts and opened marks go to the instance's own keys", /debug log/.test(localStorage.getItem("gary:gadgets:drafts") || "") && /issue-41/.test(localStorage.getItem("gary:gadgets:opened") || "") && !/issue-41/.test(localStorage.getItem("gary:widgets:opened") || ""));
+  ok("drafts go to the instance's own keys", /debug log/.test(localStorage.getItem("gary:gadgets:drafts") || "") && !/debug log/.test(localStorage.getItem("gary:widgets:drafts") || ""));
+  ok("the prefill marks the item handled at once", handledOf("gadgets/issue-41")?.routeId === "r1");
+  localHandled.delete("gadgets/issue-41");
   const wB = __writes.length;
   document.querySelector('#d-foot [aria-label="Snooze 1 day"]').click(); await wait(20);
   ok("a snooze writes to the item's instance", __writes.slice(wB).some((w) => w[1] === "items/gadgets/issue-41" && w[2].snoozedUntil) && __writes.slice(wB).some((w) => /^actions\/gadgets\//.test(w[1]) && w[2].instance === "gadgets" && w[2].itemId === "issue-41"));
@@ -92,7 +94,7 @@
   window.__subs["proposals"](__mkSnap([])); await wait(5);
   // Action docs may name the item by its key
   window.__subs["actions"](__mkSnap([["gadgets/a1", { instance: "gadgets", itemId: "gadgets/issue-42", action: "comment", status: "done", via: "server", createdAt: new Date().toISOString() }]])); await wait(10);
-  ok("an action doc that names its item by key counts for that item", handledToday("gadgets/issue-42") && !handledToday("widgets/issue-31"));
+  ok("an action doc that names its item by key belongs to that item", latestOf("gadgets/issue-42")?.action === "comment" && !latestOf("widgets/issue-31"));
   window.__subs["actions"](__mkSnap([])); await wait(5);
 
   // Hover and focus audit: every button variant keeps a readable label in both themes

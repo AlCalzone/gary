@@ -6,8 +6,9 @@
     items(eight); await wait(10);
     window.__subs["actions"](__mkSnap([["widgets/a-1", { instance: "widgets", itemId: "r4-2", action: "reanalyze", status: "done", via: "queue", createdAt: new Date().toISOString() }]])); await wait(10);
     ok("a finished re-analysis keeps the item at its place by priority", rows("quick").join() === "r4-1,r4-2,r4-3,r4-4,r4-5");
-    window.__subs["actions"](__mkSnap([["widgets/a-1", { instance: "widgets", itemId: "r4-2", action: "comment", status: "done", via: "server", createdAt: new Date().toISOString() }]])); await wait(10);
+    items(eight.map(([k, d]) => [k, k === "r4-2" ? { ...d, handled: { at: new Date().toISOString(), routeId: "r0", routeType: "chore", verified: null } } : d])); await wait(10);
     ok("a handled item still makes room", !rows("quick").includes("r4-2") && rows("quick").length === 5);
+    items(eight); await wait(10);
     window.__subs["actions"](__mkSnap([])); await wait(10);
 
     // The list stays still while a dialog is open and marks what moved when it closes
