@@ -41,6 +41,7 @@ const items = {
 			{ id: "r11", type: "drive", title: "Drive: 2 rounds", as: "agent", params: { maxRounds: 2 } },
 			{ id: "r12", type: "take_over", title: "Take over: default mode", as: "agent" },
 			{ id: "r13", type: "chore", title: "Chore: Copilot review", as: "bot", params: { action: "request_review", reviewer: "copilot" } },
+			{ id: "r14", type: "format", title: "Format: no autofix check", as: "agent" },
 		],
 	},
 	"issue-21": {
@@ -76,7 +77,17 @@ const items = {
 	},
 	"pr-14": {
 		kind: "pr", repo: REPO, number: 14, title: "contributor", authorType: "contributor", reviewedAt, hint: "Drive: x",
-		routes: [{ id: "r1", type: "drive", title: "Drive: x", as: "agent", params: { maxRounds: 4 } }, { id: "r2", type: "drive", title: "Drive: y", as: "agent" }],
+		reviewedSha: "c".repeat(40), autofix: { changes: true, files: 2, lines: 14, tools: ["eslint", "prettier"] },
+		routes: [
+			{ id: "r1", type: "drive", title: "Drive: x", as: "agent", params: { maxRounds: 4 } },
+			{ id: "r2", type: "drive", title: "Drive: y", as: "agent" },
+			{ id: "r3", type: "format", title: "Format: run the autofix", as: "agent" },
+		],
+	},
+	"pr-15": {
+		kind: "pr", repo: REPO, number: 15, title: "clean contributor PR", authorType: "contributor", reviewedAt, reviewedSha: "d".repeat(40), hint: "Format: x",
+		autofix: { changes: false, files: 0, lines: 0, tools: ["prettier"] },
+		routes: [{ id: "r1", type: "format", title: "Format: x", as: "agent" }],
 	},
 	"pr-13": {
 		kind: "pr", repo: REPO, number: 13, title: "taken over", authorType: "contributor", takenOver: true, reviewedAt, hint: "Drive: x",
@@ -226,6 +237,10 @@ await expect("drive on a contributor PR is refused", "pr-14", "r2", {}, refused(
 await expect("drive with maxRounds 4 is refused", "pr-14", "r1", {}, refused(/taken-over PRs|maxRounds/));
 await expect("drive on a taken-over PR is queued with 3 rounds", "pr-13", "r1", {}, (r) => r.data.ok && r.data.queued);
 await expect("drive on a maintainer PR is queued", "pr-12", "r11", {}, (r) => r.data.ok && r.data.queued);
+await expect("format without an autofix check is refused", "pr-12", "r14", {}, refused(/autofix check to have found changes/));
+await expect("format when the autofix changes nothing is refused", "pr-15", "r1", {}, refused(/autofix check to have found changes/));
+await expect("format takes no input", "pr-14", "r3", { input: { files: ["a"] } }, refused(/unknown field/));
+await expect("format on a contributor PR that is not taken over is queued", "pr-14", "r3", {}, (r) => r.data.ok && r.data.queued);
 await expect("take_over defaults to push", "pr-12", "r12", {}, (r) => r.data.ok && r.data.queued);
 check("route comments keep diffHunk in the served route", served["pr-12"].routes.find((r) => r.id === "r1").params.comments[1].diffHunk.includes("DIFFHUNK_MARKER"));
 
@@ -251,6 +266,9 @@ const sf = byRoute("issue-21", "r8")[0];
 check("start_fix doc carries text and finding only", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2"}', sf);
 check("drive doc", byRoute("pr-13", "r1")[0]?.params?.maxRounds === 3 && byRoute("pr-12", "r11")[0]?.params?.maxRounds === 2, docs.filter((d) => d.action === "drive"));
 check("take_over default doc", byRoute("pr-12", "r12")[0]?.params?.mode === "push", byRoute("pr-12", "r12"));
+const fmt = byRoute("pr-14", "r3")[0];
+check("format doc is queued with the reviewed head", fmt?.status === "queued" && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
+check("format does not take the PR over", JSON.parse(readFileSync(join(BOARD, "items", "pr-14.json"), "utf8")).takenOver === undefined);
 check("take_over doc carries the text", byRoute("pr-12", "r8")[0]?.text === "Finish it", byRoute("pr-12", "r8"));
 check("take_over doc", byRoute("pr-12", "r8")[0]?.params?.mode === "push", byRoute("pr-12", "r8"));
 check("bot route doc is done via server", byRoute("issue-21", "r2")[0]?.status === "done" && byRoute("issue-21", "r2")[0]?.via === "server", byRoute("issue-21", "r2"));
@@ -277,6 +295,23 @@ const suggested = planRoute(
 	"Body",
 );
 const sent = suggested.steps[0].params.comments[0];
+const formatItem = { kind: "pr", number: 9, authorType: "contributor", reviewedSha: "a".repeat(40), autofix: { changes: true, files: 1, lines: 2, tools: ["prettier"] } };
+const formatRoute = { id: "r1", type: "format", as: "agent" };
+let formatError = "";
+try {
+	planRoute(formatRoute, formatItem, {}, "", "none");
+} catch (e) {
+	formatError = e.message;
+}
+check("format needs a bot or own-token pushes", /needs a bot account, or allowOwnTokenPushes/.test(formatError), formatError);
+check("format runs in own mode on a contributor PR", planRoute(formatRoute, formatItem, {}, "", "own").action === "format");
+formatError = "";
+try {
+	planRoute(formatRoute, { ...formatItem, reviewedSha: undefined }, {}, "", "bot");
+} catch (e) {
+	formatError = e.message;
+}
+check("format needs the reviewed head", /needs the item's reviewedSha/.test(formatError), formatError);
 check("original, suggestion and diffHunk are never sent", JSON.stringify(Object.keys(sent).sort()) === '["line","path","text"]' && sent.text === "Rename\n\n```suggestion\nconst a = 1;\n```", sent);
 
 // Two instances in one server

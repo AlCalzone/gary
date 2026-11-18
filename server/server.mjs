@@ -16,7 +16,7 @@ import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceS
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
-import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
+import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
 const MAX_BODY = 256 * 1024;
@@ -186,6 +186,11 @@ export function planRoute(route, item, input, text, mode = "bot") {
 				const refusal = driveRefusal(item, maxRounds);
 				if (refusal) throw new Refusal(refusal);
 				return { agent: true, action: "drive", params: { maxRounds }, text };
+			}
+			case "format": {
+				const refusal = formatRefusal(item);
+				if (refusal) throw new Refusal(refusal);
+				return { agent: true, action: "format", params: { reviewedSha: item.reviewedSha }, text };
 			}
 		}
 	}

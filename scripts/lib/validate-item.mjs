@@ -1,6 +1,6 @@
 // Checks a board item against the rules of SPEC.md before it is written.
 import { ID_PATTERN } from "./board-store.mjs";
-import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, isObject, pushRefusal, takeOverRefusal } from "./routes.mjs";
+import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
 const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
@@ -60,6 +60,7 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		err("labels", "labels must be a list of strings");
 	}
 	checkWants(item, profile, err);
+	checkAutofix(item, err);
 
 	const threads = item.threads === undefined ? [] : item.threads;
 	if (!Array.isArray(threads)) err("threads", "threads must be a list");
@@ -165,6 +166,14 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 				if (refusal) err("drive", `${where}: ${refusal}`);
 				break;
 			}
+			case "format": {
+				const refusal = formatRefusal(item);
+				if (refusal) err("format", `${where}: ${refusal}`);
+				if ((typeof route.text === "string" && route.text.trim()) || Object.keys(params).length) {
+					err("format-route", `${where}: a format route has no text and no params`);
+				}
+				break;
+			}
 			case "take_over": {
 				const refusal = takeOverRefusal(route);
 				if (refusal) err("take-over", `${where}: ${refusal}`);
@@ -234,6 +243,18 @@ function checkSuggestion(c, where, err, warn) {
 	if (c.diffHunk !== undefined && !(typeof c.diffHunk === "string" && c.diffHunk.startsWith("@@"))) {
 		err("suggestion-hunk", `${where}: diffHunk must start with an @@ header`);
 	}
+}
+
+// What the project's autofix would change in a PR, from the mechanical check before the review
+function checkAutofix(item, err) {
+	if (item.autofix === undefined) return;
+	const a = item.autofix;
+	const count = (v) => Number.isInteger(v) && v >= 0;
+	if (item.kind !== "pr") return err("autofix", "autofix is only for PRs");
+	if (!isObject(a) || Object.keys(a).some((k) => !["changes", "files", "lines", "tools"].includes(k)) || typeof a.changes !== "boolean" || !count(a.files) || !count(a.lines) || !(Array.isArray(a.tools) && a.tools.every(isString))) {
+		return err("autofix", "autofix must be { changes: boolean, files: number, lines: number, tools: [name] }");
+	}
+	if (a.changes !== a.files > 0) err("autofix", "autofix.changes must be true exactly when files is above 0");
 }
 
 // `wants` is the label and assignee state the agent would set. Only the profile's autoLabels are allowed in it

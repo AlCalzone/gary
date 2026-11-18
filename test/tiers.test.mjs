@@ -63,6 +63,33 @@ t.check("gary wants falls back to the baseline", w.snapshot === "baseline" && w.
 r = gary("wants");
 t.check("gary wants prints one line per item", /pr-12\s+\+needs-info @octocat\s+The log is missing\./.test(r.stdout) && /pr-17\s+\+needs-info -dependencies/.test(r.stdout) && /2 items want changes, compared to the baseline snapshot/.test(r.stdout), r.stdout);
 
+// autofix and the format route
+const fmt = (over = {}) => ({ ...BASE, number: 14, reviewedSha: "c".repeat(40), autofix: { changes: true, files: 2, lines: 9, tools: ["prettier"] }, hint: "Format: run the autofix", routes: [{ id: "r1", type: "format", title: "Format: run the autofix", as: "agent", recommended: true }], ...over });
+r = gary("put", "items", "pr-14", file(fmt()));
+t.check("a format route on a contributor PR with autofix changes is written", r.status === 0, r.stdout + r.stderr);
+r = gary("put", "items", "pr-14", file(fmt({ autofix: { changes: false, files: 0, lines: 0, tools: ["prettier"] } })));
+t.check("a format route needs autofix changes", r.status === 1 && /autofix check to have found changes/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-14", file(fmt({ autofix: undefined })));
+t.check("a format route needs autofix", r.status === 1 && /autofix check to have found changes/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-14", file(fmt({ routes: [{ id: "r1", type: "format", title: "Format: run the autofix", as: "agent", recommended: true, text: "x", params: { a: 1 } }] })));
+t.check("a format route has no text and no params", r.status === 1 && /a format route has no text and no params/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-14", file(fmt({ routes: [{ id: "r1", type: "format", title: "Format: run the autofix", as: "bot", recommended: true }] })));
+t.check("a format route runs only as the agent", r.status === 1 && /is not allowed for format/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-14", file(fmt({ autofix: { changes: true, files: "2", lines: 9, tools: [] } })));
+t.check("autofix is checked", r.status === 1 && /autofix must be/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-14", file(fmt({ autofix: { changes: true, files: 0, lines: 0, tools: ["prettier"] } })));
+t.check("autofix changes must match its files", r.status === 1 && /changes must be true exactly when files is above 0/.test(r.stdout), r.stdout);
+r = gary("put", "items", "issue-22", file({ ...BASE, kind: "issue", number: 22, autofix: { changes: false, files: 0, lines: 0, tools: [] } }));
+t.check("autofix is only for PRs", r.status === 1 && /autofix is only for PRs/.test(r.stdout), r.stdout);
+const nobot = makeHome(join(T, "nobot"), { bot: null });
+r = spawnSync(process.execPath, [GARY, "put", "items", "pr-14", file(fmt())], { env: nobot.env, encoding: "utf8" });
+t.check("a format route needs a bot or own-token pushes", r.status === 1 && /format needs a bot account or allowOwnTokenPushes/.test(r.stdout), r.stdout);
+r = spawnSync(process.execPath, [GARY, "put", "items", "pr-14", file(fmt())], { env: makeHome(join(T, "own"), { bot: null, allowOwnTokenPushes: true }).env, encoding: "utf8" });
+t.check("a format route works with own-token pushes", r.status === 0, r.stdout + r.stderr);
+writeFileSync(join(home, "state", "board", "actions", "a-format.json"), JSON.stringify({ itemId: "pr-14", routeId: "r1", route: "format", action: "format", params: { reviewedSha: "c".repeat(40) }, text: "", status: "queued", via: "queue", createdAt: "2026-11-18T10:00:00Z" }));
+r = gary("watch-queue", "--once");
+t.check("watch-queue prints a format request like any agent request", r.stdout.trim() === JSON.stringify({ instance: "widgets", id: "a-format", itemId: "pr-14", action: "format" }), r.stdout + r.stderr);
+
 // meta.json
 const metaFile = join(home, "state", "board", "meta.json");
 r = gary("put", "meta", file({ lastRunAt: "2026-11-18T10:00:00Z", rulesHash: "sha256:abc", rulesPending: ["pr-12", "disc-31"] }));

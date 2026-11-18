@@ -256,6 +256,7 @@ Rules:
 | `follow_up` | `agent`, `bot`, `me` | `title` for an issue | `agent`: queued as `start_fix` with the route's `text` as instructions and `params.finding`. `bot`: file an issue with `title` and `text`, then link it in the thread. `me`: open GitHub's new-issue form with `title` and `text` filled in |
 | `take_over` | `agent` | `mode`: `push` (default), `replace` | `push`: the agent finishes the PR in the contributor's PR with our commits, pushed as the bot. `replace`: it opens a replacement PR. `replace` is the exception and needs a `callout` that says why pushing is not possible. On PRs by the bot or a dependency bot only `push` is offered. On a contributor PR that is not taken over, open review threads are handled by a `take_over` with mode `push`, with the same per-thread decisions as `address_review`. After a take-over the item carries `takenOver: true`, and from then on `address_review` and `drive` are allowed |
 | `drive` | `agent` | `maxRounds`: 1 to 3, default 3 | the agent drives the PR on its own: address the open review comments by its own verdicts, push, request a Copilot review, wait for it, repeat. It stops when no valid comment is left, after `maxRounds`, or when it is stuck. Offered only on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true` |
+| `format` | `agent` | | no text, no params, no input. Applies the project's autofix to the PR branch and pushes the result, as the bot or, with `allowOwnTokenPushes`, under the maintainer's login. Offered on any open PR whose `autofix` has `changes: true`, also on a contributor PR that is not taken over: running the project's own formatter is not a take-over, so neither `takenOver` nor the push rule of `address_review` and `drive` applies, and it never sets `takenOver`. Without a bot and without `allowOwnTokenPushes` it is unavailable |
 | `move` | per button | `to`: a name from `relatedRepos`, `discussion`, or `issue` | Repo name, on an issue: two buttons, both bot. "Transfer" moves the issue. "Close, ask to reopen there" posts `text` (template `reopen-elsewhere`) and closes as not planned, for issues that lack the info the other repo needs. `discussion`, on an issue: `me`, opens the issue, he converts it there. GitHub has no API for it and it needs no reply. `issue`, on a discussion: `me`, copies `botCommands.escalate` and opens the discussion. Without that command there is no such route |
 | `open` | `me` | | no text, no params. Opens the thread on GitHub. For items the agent could not analyze, see `blocked` |
 | `chore` | `bot` | `action`: `label`, `assign`, `ready`, `answer_discussion`, `react`, `update_branch`, `rerun_ci`, plus that action's params | run the action |
@@ -310,6 +311,7 @@ The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
+- `autofix`, only on PRs, is `{ changes, files, lines, tools }` with `changes` true exactly when `files` is above 0. A `format` route needs `autofix.changes: true` and a `reviewedSha`, and has no text and no params.
 - `wants` is `{ labels?: { add?, remove? }, assignees? }`. Every label in it is one of the profile's `autoLabels`, no label is both added and removed, and `wantsReason` is required with `wants` and refused without it.
 - A review comment with `suggestion` has `original` with exactly `line - startLine + 1` lines (1 without `startLine`), no ```` ```suggestion ```` fence in `text`, and a `diffHunk`, when present, that starts with `@@`.
 
@@ -350,6 +352,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "hint": "Reply: PR welcome",     // suggested action, at most 60 characters, shown in the list
   "mergeable": "mergeable",        // PRs, from the snapshot: mergeable | conflicting | unknown
   "openThreads": 2,                // PRs: unresolved review threads, from the snapshot
+  "autofix": { "changes": true, "files": 2, "lines": 14, "tools": ["eslint", "prettier"] },   // PRs, optional: what the project's autofix would change at reviewedSha. Formatting and lint are not findings
   "reviews": [                     // PRs: one per reviewer, copied from the snapshot's reviewSummary, plus one "pending" entry per requested reviewer
     { "author": "octocat", "isBot": false, "state": "approved", "submittedAt": "ISO", "url": "…", "openThreadCount": 0 }
   ],
@@ -461,6 +464,7 @@ Agent requests. The server writes them as queued action docs when their route is
 | `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from |
 | `address_review` | `params.decisions` as sent by the card. The agent fixes or dismisses each thread and pushes to the PR branch as the bot |
 | `take_over` | `params.mode` `push` or `replace`, optional `params.decisions` as for `address_review`, optional `text` with instructions |
+| `format` | `params.reviewedSha`, the head the autofix check ran on. The worker refuses when the PR head moved since, runs the profile's autofix and pushes only its changes. It never sets `takenOver` |
 | `drive` | `params.maxRounds`. When it ends the agent writes `rounds: [{ n, fixed: ["…"], dismissed: [{ summary, reason }], open: ["…"] }]` into the item and the fitting routes: merge when nothing is open, otherwise a review or address_review card. The dialog shows the rounds as a short summary |
 
 Every action returns `{ ok, result }` and never throws past the entry point. `--dry-run` applies the account rules and the read-only lookups and returns the writes it would send instead.
