@@ -21,7 +21,7 @@ gary put items <id> --delete
 gary put meta <json file>
 ```
 
-`gary put items` takes the complete item doc and replaces the stored one. A field the new doc leaves out is gone afterwards, so write every field the item should keep. The maintainer's `hidden`, `snoozedUntil` and `dismissedRoutes` always stay as they are, and `priority` stays when the doc has none. The write goes through the board server, which runs one write per doc at a time, so a run cannot erase a maintainer click. When the server is down, it writes the file itself and says so on stderr.
+`gary put items` takes the complete item doc and replaces the stored one. A field the new doc leaves out is gone afterwards, so write every field the item should keep. The maintainer's `hidden`, `snoozedUntil`, `dismissedRoutes` and `handled` always stay as they are, and `priority` stays when the doc has none. The write goes through the board server, which runs one write per doc at a time, so a run cannot erase a maintainer click. When the server is down, it writes the file itself and says so on stderr.
 
 `gary put --merge items` changes only the fields in the file. A field set to `null` is removed. Use it for partial updates, and to clear `hidden` on an item that changed on GitHub: after the full write, send `{ "hidden": false }` with `--merge`.
 

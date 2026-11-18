@@ -252,6 +252,10 @@ A `close` route on a discussion with `facts.answerable` and no `facts.answerChos
 
 `facts.aiAuthored`, `facts.aiSignals`, `facts.changedLines` and `facts.changedFiles` describe AI-written PRs. The fast tier never decides them, and his reading time comes from the changed lines by the table in `item-doc.md`. Issues and discussions by the bot or an agent that describe doable work get one `Implement:` card in `deferred`, sorted last. Autonomous fixes take only `Start fix:` cards.
 
+## Handled items
+
+The server sets the maintainer field `handled: { at, routeId, routeType, verified }` when he used a prefill button or a bot or agent route ran, and the board hides the item until the next run. `gary handled --json` lists such items. Early in every hourly run, after the snapshot, the routine clears `handled` with `gary put --merge items <id>` and `{ "handled": null }` when the thread changed on GitHub after `handled.at`, and classifies the item again. When nothing changed and `handled.at` is more than 30 minutes old, it clears `handled`, keeps the routes and prepends a `question` finding that he opened the thread but nothing changed there. A younger mark, or an agent job still queued or claimed, keeps `handled`.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):

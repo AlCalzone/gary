@@ -115,6 +115,18 @@ The item files in `<state>/board/items/` hold the previous review results and th
 
 Delete the item for every id in `closed` with `gary put items <id> --delete`.
 
+### 4c. Handled items
+
+`handled: { at, routeId, routeType, verified }` is a maintainer field. The server sets it when he used a prefill button or a bot or agent route ran, and the board hides the item until the next run. Run `gary handled --json` and decide for each item:
+
+- The thread is closed or merged: step 4 removed it already.
+- The snapshot lists it as changed after `handled.at`, like his comment, a label, a push or a review: clear `handled` with `gary put --merge items <id>` and `{ "handled": null }`, and classify it in step 5 like any changed item. Usually it then has no routes, because we spoke last.
+- Nothing changed on GitHub and `handled.at` is more than 30 minutes old: clear `handled`, keep the routes, and prepend one `findings` entry of severity `question`: `You opened this on GitHub at <time>, but nothing changed there.` Write both with one `gary put --merge`. The item returns to the board as it was. Do not re-analyze it.
+- Nothing changed and `handled.at` is younger than 30 minutes: leave it for the next run.
+- An agent route of the item is still queued or claimed: leave `handled` until that job finishes.
+
+A subagent never writes `handled`. The routine only clears it under these rules.
+
 ### 4a. Wanted labels and assignees
 
 Every hourly run, independent of what changed, run `gary wants --json`. It lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the item's `wantsReason`, and marks items without a snapshot entry as `unknown`. Skip the `unknown` ones. Attempt each listed change with `gary action --autonomous`, one input file per label or assignee, with the reason. Assignees are only added, never removed. Do not compare labels yourself.
