@@ -471,7 +471,8 @@ a.rv:hover { border-color: var(--muted); text-decoration: none; }
   text-align: left;
 }
 button.card-head { cursor: pointer; }
-button.card-head:hover { background: color-mix(in srgb, var(--int) calc(var(--tint) + 5%), var(--surface)); }
+.card-top:has(> button.card-head:hover) { background: color-mix(in srgb, var(--int) calc(var(--tint) + 5%), var(--surface)); border-radius: 12px; }
+.card.open .card-top:has(> button.card-head:hover) { border-radius: 12px 12px 0 0; }
 .card.open button.card-head { padding-bottom: 6px; border-radius: 12px 12px 0 0; }
 .card-head .r-hint { flex: 1; font-size: 14px; line-height: 20px; }
 .card.open .card-head .r-hint { font-size: 15px; }
@@ -564,7 +565,8 @@ button.card-head:hover .chev { color: var(--fg); }
 .intent-away { --int: var(--muted); }
 .intent-other { --int: var(--accent); }
 .btn[class*="intent-"] { border-color: var(--int); color: var(--int); background: var(--surface); font-weight: 600; }
-.btn[class*="intent-"]:hover:not(:disabled) { border-color: var(--int); background: var(--surface-2); }
+.btn[class*="intent-"]:hover:not(:disabled) { border-color: var(--int); background: color-mix(in srgb, var(--int) 14%, var(--surface)); }
+.btn[class*="intent-"].primary:hover:not(:disabled), .btn[class*="intent-"].confirm:hover:not(:disabled) { background: color-mix(in srgb, var(--int) 86%, var(--fg)); border-color: var(--int); color: var(--surface); }
 .btn[class*="intent-"].primary, .btn[class*="intent-"].confirm { background: var(--int); border-color: var(--int); color: var(--surface); }
 /* The second confirm keeps the intent color and adds a ring, so it reads as "are you sure" */
 .btn.confirm { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--int, var(--accent)); }
