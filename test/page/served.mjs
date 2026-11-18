@@ -383,6 +383,31 @@ try {
 	await closeItem();
 	ok("the instance is named like the project, so the title has no tooltip", await ev(`return document.getElementById("board-title").title === "";`));
 
+	// Format: a compact agent row that queues
+	writeFileSync(itemFile("pr-13"), JSON.stringify(probe("pr", 13, "https://github.com/acme/widgets/pull/13", {
+		hint: "Format: fix formatting and lint", reviewedSha: "b".repeat(40), autofix: { changes: true, files: 2, lines: 9, tools: ["prettier"] },
+		routes: [{ id: "r1", type: "format", as: "agent", title: "Format: fix formatting and lint", recommended: true }],
+	})));
+	await until(`!!state.items.get("widgets/pr-13")`);
+	await openItem("pr-13");
+	ok("format: the served row has its button and its note", await ev(`return !!${rowButton(0, "Format & fix lint")} && /Does not take over the PR/.test(document.querySelector("#d-routes .compact-note")?.textContent ?? "");`));
+	ok("autofix: the served badge", await ev(`return [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Autofix: 2 files");`));
+	await ev(`${rowButton(0, "Format & fix lint")}.click();`);
+	ok("format: the server queues it", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-13" && a.action === "format" && a.status === "queued")));
+	ok("format: the row reads as requested", await until(`/Requested/.test(document.querySelectorAll("#d-routes .card")[0]?.textContent ?? "")`, 8000));
+	await closeItem();
+
+	// Broken settings: the server keeps the last valid ones, the page shows a banner until they are fixed
+	const profileFile = join(PROFILE_COPY, "profile.json");
+	const goodProfile = readFileSync(profileFile, "utf8");
+	writeFileSync(profileFile, "{ not json");
+	ok("invalid settings show a banner without a reload", await until(`/The settings of widgets are invalid/.test(document.getElementById("settings-notes").textContent) && !!document.querySelector("#settings-notes pre.settings-error")`, 10000));
+	await openItem("issue-24");
+	ok("the board keeps working on the last valid settings", await ev(`return document.querySelectorAll("#d-routes .card").length > 0;`));
+	await closeItem();
+	writeFileSync(profileFile, goodProfile);
+	ok("fixed settings remove the banner", await until(`!document.querySelector("#settings-notes .settings-banner")`, 10000));
+
 	// Paused: gary pause and gary resume change the header live, server writes are refused calmly
 	const gary = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: ENV, encoding: "utf8" });
 	writeFileSync(itemFile("issue-29"), JSON.stringify(probe("issue", 29, "https://github.com/acme/widgets/issues/29", {
