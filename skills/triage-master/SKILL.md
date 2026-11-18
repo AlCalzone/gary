@@ -60,11 +60,15 @@ When a request worker's summary says the drive waits for a review, go to step 4 
 
 ## Start a worker
 
+A worker must run with the instance's `checkout` as its working directory. The project's tools, its approved MCP servers, its skills and its build exist there. They do not exist in a fresh git worktree of the same repo, and a path named in the prompt does not change where a session runs. The profile's `requiredTools` are only present in that directory.
+
 Use the first way that works in this session:
 
-1. **Child sessions.** The session has a tool that starts a child or detached session, like Claude Desktop's session tools or T3 Code's delegate tool, or any tool whose description says it starts a child or detached session. Start one per job, with the instance's `checkout` as its working directory and a self-contained prompt: the job line above, plus "Report only by writing the summary file. Do not message me."
-2. **Headless run.** Otherwise run `claude -p "<job line>"` from the shell, with the instance's `checkout` as working directory, in the background, with a timeout of 60 minutes for an hourly job and 30 for a request.
+1. **Child sessions.** The session has a tool that starts a child or detached session, like Claude Desktop's session tools or T3 Code's delegate tool, or any tool whose description says it starts a child or detached session. Use it only when the tool can set the child's working directory to the `checkout`, or when this session already runs in the `checkout` itself and the child inherits that. Compare `pwd -P` with the `checkout` to know. A worktree of the checkout does not count. Start one per job, with a self-contained prompt: the job line above, plus "Report only by writing the summary file. Do not message me."
+2. **Headless run.** Otherwise run `claude -p "<job line>"` from the shell, with the instance's `checkout` as working directory, in the background, with a timeout of 60 minutes for an hourly job and 30 for a request. Pass the models the job line names. If the run exits at once without a summary file, read its output: a permission or sign-in problem is reported to the maintainer, and this job falls back to the third way.
 3. **In this session.** Otherwise do the job here, with subagents, one instance after another. This is the only case where your context grows.
+
+The worker only reads in the `checkout`. It never switches branches or edits files there. Writes and a PR's files go into throwaway worktrees, as the worker's own skills describe.
 
 A worker may or may not be able to start its own subagents, depending on the harness. `triage-routine` works in both cases, so do not adapt the job line.
 
