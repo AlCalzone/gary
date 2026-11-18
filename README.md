@@ -8,7 +8,7 @@ Gary triages one GitHub repository for its maintainer. Every hour, a Claude sess
 
 | You | The agent |
 | --- | --- |
-| Install Gary once and run `gary setup` | Runs the hourly triage in one Claude session |
+| Install Gary once and run `gary setup` | Runs one master Claude session per machine, which starts a worker per project every hour |
 | Create your project profile with the `triage-setup` skill | Fetches the repo's state, reviews PRs, triages issues and discussions |
 | Open the board and read the briefings | Writes the briefings and suggested actions to the board |
 | Click the suggestions you agree with, or dismiss them | Carries out what you clicked: reviews, fixes, replies by the bot |
@@ -53,11 +53,11 @@ Start a Claude session and ask it to set up Gary. The `triage-setup` skill reads
 - `rules/*.md`: how items are classified, how you write, how PRs and issues are reviewed in this project.
 - `templates/*.md`: canned texts, like a request for logs.
 
-It asks only what it cannot read: your login, whether a bot posts for you, your writing preferences for `personal.md`. Then it runs `gary doctor` and creates the hourly scheduled task. It never writes to GitHub.
+It asks only what it cannot read: your login, whether a bot posts for you, your writing preferences for `personal.md`. Then it runs `gary doctor` and creates the one hourly scheduled task for the machine, if it does not exist yet. It never writes to GitHub.
 
 ## Daily use
 
-Open the board at `http://127.0.0.1:<port>/`. Items are grouped by how much attention they need, from "Quick & Easy" to "When you have time". An item with nothing to do right now is not shown. It comes back when it changes on GitHub.
+Open the board at `http://127.0.0.1:<port>/`, with the port from `~/.config/gary/config.json`. One board serves all your projects: the tab "All" combines them, and each project has its own tab. In "All", items show their full ref, like `acme/widgets#412`. Items are grouped by how much attention they need, from "Quick & Easy" to "When you have time". An item with nothing to do right now is not shown. It comes back when it changes on GitHub.
 
 Each item has a short verdict, a story of what happened so far, and cards with suggested actions. One card is recommended. A card shows who acts after your click:
 
@@ -94,7 +94,11 @@ While paused, every click that would post, review, label or transfer is refused 
 
 ## Several projects
 
-One machine can run Gary for several repos. Each repo gets its own instance with its own board and port, settings, pause switch, decision log and hourly scheduled task. Ask Claude to set up Gary for the next repo, and the `triage-setup` skill creates a new instance next to the existing ones. Your shared `personal.md` applies to all of them. Each instance can add its own `personal.md` on top. Instances of the same project on different machines can share one profile.
+One machine can run Gary for several repos. Each repo gets its own instance with its own settings, pause switch and decision log, and its own tab on the one board. Ask Claude to set up Gary for the next repo, and the `triage-setup` skill creates a new instance next to the existing ones. The board picks it up without a restart, and the next hourly run includes it. Your shared `personal.md` applies to all instances. Each instance can add its own `personal.md` on top. Instances of the same project on different machines can share one profile.
+
+One master Claude session runs everything, started every hour by one scheduled task. It starts the board server, starts one worker per instance for the triage, and watches the queue of all instances to start a worker for each request you click. A worker is a child session where the harness supports it, otherwise a headless `claude -p` run, otherwise the master does the job itself. Workers report only by writing files into their instance's state, so nothing depends on messages between sessions.
+
+`gary serve` starts the board server without a Claude session. `gary migrate` moves an installation from the older one-board-per-instance layout to this one.
 
 ## Adapting Gary
 
@@ -102,7 +106,7 @@ Gary has three layers. Each kind of change has one place:
 
 - **Core**: this repository. It holds no repo name, no account name and no path of one machine, so nobody edits it to adapt the tool. `profiles/template/` is the skeleton for a new profile.
 - **Profile**: one directory per project, named by `profile` in `config.json`. It can live in its own repo or inside your project, so a team can share it. Project facts go into `profile.json`, project rules into `rules/classification.md`, `rules/voice.md`, `rules/review.md` and `rules/issues.md`, canned texts into `templates/`.
-- **Home**: `~/.config/gary/` or `$GARY_HOME`. `personal.md` holds your own rules and writing style for all projects. Each instance lives in `instances/<name>/` with its `config.json`, an optional `personal.md` for that project, and `state/` with the board's data.
+- **Home**: `~/.config/gary/` or `$GARY_HOME`. `personal.md` holds your own rules and writing style for all projects. `config.json` holds the board's port. Each instance lives in `instances/<name>/` with its `config.json`, an optional `personal.md` for that project, and `state/` with the board's data.
 
 The agents read a rule in this order: the core, then the profile file of the same topic, then the shared `personal.md`, then the instance's `personal.md`. A later file wins. The safety limits below cannot be changed by a profile or by `personal.md`.
 
