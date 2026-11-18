@@ -532,3 +532,62 @@ The `triage-routine` skill has the full sequence. In short:
 8. Write each item as a complete doc with `gary put`, which keeps the maintainer's fields. Clear `hidden` on changed items with `gary put --merge`. Apply the autonomous label and assignment changes with `gary action --autonomous`.
 9. Write `meta.json`. Run `gary snapshot --commit`.
 10. Between runs, follow `gary watch-queue` and handle each agent request as it arrives.
+
+## One server, one master (target design, supersedes conflicting text above)
+
+This section is the contract for the single-server change. Where an older section disagrees, this one wins, and the older section gets rewritten to match.
+
+### Processes
+
+- One board server per machine serves every instance. One port, in `<root>/config.json` as `{ "port": 7878 }`. Instance configs have no port.
+- One master Claude session owns the server and the one queue watcher. It starts one worker per instance for the hourly triage and one worker per agent request. A worker is a child session when the harness has tools for that, otherwise a headless run, otherwise the master does the job itself with subagents.
+- Workers report through the instance's state directory only. Nothing depends on messages between sessions.
+- Server-wide files live in `<root>/state/`: `server-token`, `server.log`. Everything else stays in `<root>/instances/<name>/state/`.
+- The server watches `<root>/instances/` and picks up a new instance without a restart.
+
+### Instances and kinds
+
+- Instance config gets `kind`. Today the only value is `"maintainer"`. A later kind `"contributions"` covers the user's own work across repos.
+- Every instance has a list of allowed repos. For `maintainer` it is the profile's one `repo`. An action is refused when the item's repo is not in that list.
+- Rules that differ by kind live in files named for the kind: `skills/triage-routine/references/classification.maintainer.md`. Shared rules keep their names.
+- Checkout and rules are looked up per repo through one function each (`checkoutFor(instance, repo)`, `rulesFor(instance, repo, topic)`). For `maintainer` they return the configured checkout and the profile's file.
+
+### Item identity
+
+- Every item doc carries `repo` (`owner/name`), next to `kind` and `number`. Stored docs are migrated once.
+- An item id is opaque: `^[a-z0-9][a-z0-9._-]{0,99}$`. No code derives the repo, kind or number from an id. Maintainer instances keep ids like `pr-12`.
+- Outside one instance an item is addressed as `{ instance, id }`. The server adds `instance` and `ref` (`owner/name#number`) to every item it serves.
+- Decision log entries carry `instance`, `instanceKind` and `repo`.
+
+### Server API
+
+All existing endpoints stay, with the instance added:
+
+- `GET /api/health` → `{ ok, name: "gary", instances: ["…"] }`.
+- `GET /api/state` → `{ board, items, proposals }`.
+  - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos: ["owner/name"], repoUrl, bot: { login, avatarUrl } | null, accountMode, paused, relatedRepos, botCommands, reviewBots } ] }`. `title` is the profile's `name`.
+  - `items[]`: each with `instance`, `id`, `ref`, `repo` and the stored fields. Routes carry `actor`, `draftHash`, `done`, `refused` as today.
+  - `proposals[]`: each with `instance`.
+- `POST /api/action`: the body gains `instance`. Route clicks: `{ instance, itemId, routeId, text, draftHash, force, input }`. Board actions likewise (`dismiss_route`, `accept_proposal`, `dismiss_proposal` with `{ instance, proposalId, … }`).
+- `POST /api/decision`: `{ instance, itemId, routeId, text }`.
+- `/api/db` reads and writes: the collection path gains the instance.
+- `GET /api/events`: every event names its instance. A `board` event carries the full `board` object.
+- Page shim: `use("board")` returns the `board` object above plus `decision(body)`. `db.collection("items" | "actions" | "proposals")` holds the docs of all instances, each doc with `instance`, keyed `<instance>/<id>`. `callTool` sends `{ instance, action, …input }`.
+- Pause is per instance (`board.instances[].paused`). A refused click answers as today.
+
+### CLI and MCP
+
+- `gary serve` starts the one server (also `--watch`, `--dry-run`). `board_start` starts or finds it, `board_status` lists the instances it serves. `board_start` works from any directory.
+- `gary watch-queue --all` prints one line per queued agent request of any instance: `{ "instance", "id", "itemId", "action" }`.
+- `gary instances --json` lists name, kind, repos, checkout, paused.
+- `gary setup` no longer takes or assigns a port per instance. `--port` sets the root port.
+- Everything else resolves its instance as described under Instances.
+
+### Board page
+
+- Tabs: one combined tab "All" first, then one tab per instance, titled by the instance's `title`. The tab choice is remembered in the browser.
+- Every tab follows the same rules: the three groups, the time budget, at most 5 rows in "Quick & Easy", "Show more", hidden controls, no backlog counts. The budget setting is one value for the whole board.
+- The combined tab shows `owner/name#number` where a project tab shows `#number`. The dialog's top bar shows the full ref in the combined tab.
+- Links, avatars, bot names, bot commands and new-issue URLs come from the item's own instance entry in `board.instances`. Nothing is taken from a single global repo.
+- Header markers: "dry run" for the board, "Paused" per instance (on its tab, and in the combined tab when all are paused: "Paused", when some: "Paused: <titles>"). The lightbulb counts proposals of all instances, and each proposal card names its instance.
+- Browser storage keys are per instance: `gary:<instance>:…`, with a one-time move of the per-repo keys.
