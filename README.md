@@ -1,4 +1,10 @@
-# Gary
+<p align="center">
+  <img src="gary.svg" alt="Gary" width="360">
+</p>
+
+<h1 align="center">GARY</h1>
+
+<p align="center"><em>Get Anything Ready for You</em></p>
 
 Gary triages one GitHub repository for its maintainer. Every hour, a Claude session reviews the open PRs, issues and discussions and writes a short briefing for each. A local board shows the briefings, each with one or more suggested actions. You read the board and click. A click is your approval, and nothing else reaches GitHub without one, apart from a few labels you allow.
 
