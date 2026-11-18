@@ -24,8 +24,8 @@ A thread that is closed on GitHub never reaches the board. The snapshot only fet
 
 An open thread whose problem is solved is done. That covers a reporter who fixed it themselves, a workaround that worked, and a merged fix. Classify it as `easy` with `solved: true` and effort 1 or 2. Write `state` as the outcome, like `Reporter fixed it by clearing the cache.` The recommended route is `close` as `me` with reason `completed`:
 
-- The reporter's last comment only reports success or says thanks: no `text`, hint `Close: solved`. A written reply to "thanks, it works now" is noise.
-- There is something worth saying, like the release that contains the fix: a one-line `text`.
+- The route carries a brief closing message (`item-doc.md`, `close`), like `Good to hear that clearing the cache fixed it. Closing this.` Name the release that contains the fix when there is one, and what to do if the problem returns when that helps. Hint `Close: solved`.
+- Leave the text out only when our side's last comment already closes the thread in words.
 - A discussion with a correct answer that is not marked: a `chore` route with `answer_discussion` and that comment's `commentId` instead, because a discussion is done once the answer is marked.
 
 A follow-up idea is welcome when it is useful. It passes when all three hold:
