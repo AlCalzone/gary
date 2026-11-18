@@ -4,7 +4,12 @@
 
 <p align="center"><em>Get Anything Ready for You</em></p>
 
-Gary triages your GitHub repositories for you, their maintainer. Every hour, a Claude session reviews the open PRs, issues and discussions of each project and writes a short briefing for each. A local board shows the briefings as a plan for your day, each with one or more suggested actions. You read the board and click. A click is your approval. Without one, Gary only does what [Safety](#safety) lists: it sets a few labels you allow and opens fix PRs under the bot's name. It never merges, approves or closes.
+Gary turns the open PRs, issues and discussions of your projects into a plan for your day.
+
+- **Know what matters in a minute.** Every item comes with a short briefing: what happened, who is waiting, and how long it will take you.
+- **The next step is already prepared.** A review with inline suggestions, a reply in your voice, a fix with a test. You read it and click.
+- **You keep the last word.** Gary never merges, approves or closes. Those stay with you.
+- **It learns how you work.** Dismiss a suggestion or rewrite a draft, and Gary proposes a rule for next time.
 
 <!-- Screenshot of the board goes here. -->
 
