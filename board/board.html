@@ -3395,7 +3395,8 @@ function buildCardInputs(id, d, r, rec) {
       p.askReporter === true && str(p.askReporterWhy) ? h("p", { class: "quiet-line ask-reporter-why" }, richText(p.askReporterWhy)) : null);
   }
   // GitHub refuses an approval or a change request on one's own PR, so the bot's own PR keeps its event
-  if (r.type === "review" && Object.hasOwn(REVIEW_EVENT_LABELS, str(p.event)) && !(instOf(d).bot && str(d.author) === botLogin(instOf(d)))) {
+  const cleanApproval = str(p.event) === "approve" && !(Array.isArray(p.comments) && p.comments.length);
+  if (r.type === "review" && !cleanApproval && Object.hasOwn(REVIEW_EVENT_LABELS, str(p.event)) && !(instOf(d).bot && str(d.author) === botLogin(instOf(d)))) {
     out.push(h("span", { class: "seg-row review-event" }, h("span", { class: "card-label" }, "Submit as"),
       segControl("Review event", Object.entries(REVIEW_EVENT_LABELS), reviewEvent(r), (v) => {
         if (v === str(p.event)) detail.events.delete(r.id);
