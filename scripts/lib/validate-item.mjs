@@ -7,6 +7,7 @@ const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
 const SECTIONS = ["active", "easy", "almost", "review", "deferred", "hardware"];
 const EFFORTS = [1, 2, 5, 10, 15, 30, 60];
 const DEPTHS = ["quick", "full", "pending"];
+export const CLASSIFIERS = ["fast", "standard", "full"];
 const CI = ["passing", "failing", "pending", "none"];
 const MERGEABLE = ["mergeable", "conflicting", "unknown"];
 const DECISIONS = ["approved", "changes_requested", "pending"];
@@ -56,6 +57,7 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);
 	}
 	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
+	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
 		err("labels", "labels must be a list of strings");
 	}
