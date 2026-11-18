@@ -2470,7 +2470,7 @@ function repoBase(d) {
 // and an issue without comments is short anyway. Checked against GitHub's logged-out markup only.
 function bottomUrl(d) {
   const base = str(d.url).split("#")[0];
-  const last = str(d.facts && d.facts.lastEventUrl);
+  const last = str(d.lastEventUrl || (d.facts && d.facts.lastEventUrl));
   if (isGithubUrl(last) && last.split("#")[0] === base) return last;
   return d.kind === "pr" || d.kind === "discussion" ? base + "#issue-comment-box" : base;
 }

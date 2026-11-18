@@ -5,7 +5,7 @@ import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, f
 const KINDS = ["pr", "issue", "discussion"];
 const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
 const SECTIONS = ["active", "easy", "almost", "review", "deferred", "hardware"];
-const EFFORTS = [1, 2, 5, 10, 15, 30, 60];
+const EFFORTS = [1, 2, 5, 10, 15, 30, 60, 120];
 const DEPTHS = ["quick", "full", "pending"];
 export const CLASSIFIERS = ["fast", "standard", "full"];
 const CI = ["passing", "failing", "pending", "none"];

@@ -348,7 +348,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "ci": "passing",                 // passing | failing | pending | none   (PRs)
   "section": "easy",
   "priority": 2,                   // 1 = top of its section
-  "effortMinutes": 5,              // estimated maintainer time to read up and decide: 1, 2, 5, 10, 15, 30 or 60
+  "effortMinutes": 5,              // estimated maintainer time to read up and decide: 1, 2, 5, 10, 15, 30, 60 or 120
   "waitingDays": 12,               // optional: days an outside question or request has gone unanswered
   "updatedAt": "ISO",              // GitHub updatedAt
   "reviewedAt": "ISO",             // when the agent last looked

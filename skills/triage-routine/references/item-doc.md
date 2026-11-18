@@ -81,14 +81,15 @@ A suggestion to close is not a solution. A feature request you would decline, a 
 
 ## `effortMinutes`
 
-Your estimate of how long the maintainer needs to read up and decide, in minutes. Use one of 1, 2, 5, 10, 15, 30, 60. It covers his reading and thinking, and excludes any implementation work.
+Your estimate of how long the maintainer needs to read up and decide, in minutes. Use one of 1, 2, 5, 10, 15, 30, 60, 120. It covers his reading and thinking, and excludes any implementation work.
 
 - 1: click merge on an approved PR with passing CI, close a clear duplicate.
 - 2: send a suggested reply that needs no checking.
 - 5: skim a small diff, confirm a short review, answer a yes or no question.
 - 10 to 15: read a code change of up to about 200 lines, or decide an API question with one tradeoff.
 - 30: a larger code change, a log-based diagnosis he will want to verify.
-- 60: a new subsystem, a design discussion, anything above about 800 changed lines.
+- 60: a new subsystem, a design discussion, a change of about 800 to 1500 lines.
+- 120: a change above about 1500 lines that he has to read himself.
 
 A full review lowers the estimate when it leaves him only a confirmation. Open specification questions raise it. The estimate decides the section between `easy` and `almost` (the classification file): 1 or 2 minutes fit `easy`, 5 or more mean he has to think, which is `almost` or `review`.
 
