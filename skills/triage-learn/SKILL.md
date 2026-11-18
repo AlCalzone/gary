@@ -95,12 +95,17 @@ Write each proposal to `<state>/runs/learn-<timestamp>/<id>.json` and store it w
 
 Only after all proposals are written, write `{ "reviewedUntil": "<at of the newest entry you read>" }` with `gary put learn <file>`. A failed proposal write keeps the cursor where it was, so the next run sees the same entries.
 
+## 5a. Fast tier evidence
+
+When the instance config has `fastTier: "shadow"`, run `gary shadow report`. With at least 40 recorded pairs, put one line into the report with its agreement numbers, like `Shadow: 52 pairs, 31 not handed up, section agreement 97 %.` When section agreement on the items the fast tier did not hand up is at least 95 percent, write one proposal titled `Let the fast model classify the obvious items`. Its `why` states the numbers. Its `text` says that the maintainer sets `fastTier` to `"on"` in the instance's `config.json`, with the file path. The proposal only states the evidence and the change. He edits the config himself. Skip it while such a proposal is open, and after a dismissal until 40 new pairs meet the bar again.
+
 ## 6. Report
 
 Reply with one line per result, nothing else:
 
 ```
 Proposal: Ask for the UI debug package in log requests (templates/request-logs.md).
+Shadow: 52 pairs, 31 not handed up, section agreement 97 %.
 Not followed: rules/voice.md "Reviews" says the summary never counts inline comments, 2 edits removed such counts.
 No pattern: 7 entries, none met the bar.
 ```

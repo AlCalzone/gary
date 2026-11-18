@@ -477,6 +477,37 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   }
   document.getElementById("d-close").click(); await wait(5);
 
+  // Format: a compact agent row that does not take over the PR
+  await openItem("pr-9484");
+  const fmt = cards()[0];
+  ok("format: a compact teal row titled by the route with Format & fix lint", fmt.classList.contains("compact") && fmt.classList.contains("intent-agent") && /Format: fix formatting and lint/.test(fmt.querySelector(".card-head").textContent)
+    && !!cardBtn("Format & fix lint", fmt)?.querySelector(".actor-icon") && cardBtn("Format & fix lint", fmt).classList.contains("intent-agent"));
+  ok("format: the quiet line names the bot and keeps the PR with the contributor", fmt.querySelector(".compact-note")?.textContent === "Commits as widgets-bot. Does not take over the PR.");
+  calls = __calls.length;
+  cardBtn("Format & fix lint", fmt).click(); await wait(20);
+  ok("format: queues without a confirm", __calls.length === calls + 1 && __calls.at(-1).tool === "format" && __calls.at(-1).itemId === "pr-9484");
+  items(routeMap("pr-9484", "r1", (r) => ({ ...r, done: { status: "queued", result: "" } }))); await wait(10);
+  ok("format: reads as requested afterwards", /Requested\. The agent has it on its list\./.test(cards()[0].textContent));
+  items(F); await wait(10);
+  // Autofix badge
+  await openItem("pr-9484");
+  const af = [...document.querySelectorAll("#d-meta .sbadge")].find((b) => /^Autofix/.test(b.textContent));
+  ok("autofix: a quiet badge with files and the tooltip with files and lines", af?.textContent === "Autofix: 3 files" && af.title === "The formatter and lint autofix would change 3 files, 41 lines." && af.classList.contains("tone-muted"));
+  await openItem("pr-9485");
+  ok("autofix: nothing when it would change nothing", ![...document.querySelectorAll("#d-meta .sbadge")].some((b) => /Autofix/.test(b.textContent)));
+  await openItem("pr-9473");
+  ok("autofix: nothing when absent", ![...document.querySelectorAll("#d-meta .sbadge")].some((b) => /Autofix/.test(b.textContent)));
+  document.getElementById("d-close").click(); await wait(5);
+  for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+  await wait(5);
+  ok("autofix: no list row icon", !!document.querySelector('.row[data-id="pr-9484"]') && ![...document.querySelectorAll('.row[data-id="pr-9484"] .r-meta svg')].some((s) => /autofix/i.test(s.getAttribute("aria-label") || "")));
+  state.reveal.clear(); render();
+  // A posted analysis gets a tall editor
+  await openItem("issue-9486");
+  const pa = openCard().querySelector("textarea");
+  ok("post analysis: a tall, resizable editor of about 12 rows", pa.rows === 12 && pa.getBoundingClientRect().height >= 280 && getComputedStyle(pa).resize === "vertical" && /What we change/.test(pa.value));
+  document.getElementById("d-close").click(); await wait(5);
+
   // ---------- accounts and projects come from the server ----------
   const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
   const ZW = window.__board;

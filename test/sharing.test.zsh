@@ -65,13 +65,20 @@ expect "doctor --json" 0 '"name": "gh login"' env GARY_HOME=$H/bot node $B docto
 # profile and config validation
 mkdir -p $H/badprofile-p; print '{"name":"x","repo":"not a repo","maintainers":["a b"],"reviewBots":["coderabbit"],"relatedRepos":["a/b"],"botCommands":{"x":""},"extra":1}' > $H/badprofile-p/profile.json
 cp -r $H/nobot $H/badprofile; sed -i "s|\"profile\": \"[^\"]*\"|\"profile\": \"$H/badprofile-p\"|" $H/badprofile/instances/widgets/config.json
-for pat in '"repo" must look like' '"maintainers" must be' '"reviewBots" may only contain' '"relatedRepos" must be' '"botCommands" must map' 'unknown field "extra"'; do
+for pat in '"repo" must look like' '"maintainers" must be' '"reviewBots" may only contain' '"relatedRepos" must be' '"botCommands" must map'; do
 	expect "profile validation: $pat" 2 "$pat" env GARY_HOME=$H/badprofile node $B snapshot
 done
 mkdir -p $H/badconfig/instances/widgets; print '{"profile":"x","me":"octocat","bot":{"login":"octocat"},"port":0,"typo":1}' > $H/badconfig/instances/widgets/config.json
-for pat in 'must be null or' 'belongs in the root config' 'unknown field' 'typo'; do
+for pat in 'must be null or' 'belongs in the root config'; do
 	expect "config validation: $pat" 2 "$pat" env GARY_HOME=$H/badconfig node $B paths
 done
+# Unknown fields only warn at run time, so a newer profile or config does not stop an older Gary. Doctor refuses them
+mkdir -p $H/newer-p; cp -r $P/* $H/newer-p/; sed -i 's|^{|{"extra": 1,|' $H/newer-p/profile.json
+cp -r $H/nobot $H/newer; sed -i "s|\"profile\": \"[^\"]*\"|\"profile\": \"$H/newer-p\"|; s|^{|{\"typo\": 1,|" $H/newer/instances/widgets/config.json
+expect "unknown fields do not stop the run time" 0 '"instance": "widgets"' env GARY_HOME=$H/newer node $B paths
+expect "doctor refuses an unknown profile field" 1 'unknown field "extra"' env GARY_HOME=$H/newer node $B doctor
+expect "doctor refuses an unknown config field" 1 'unknown field "typo"' env GARY_HOME=$H/newer node $B doctor
+expect "setup refuses a profile with an unknown field" 1 'profile: unknown field "extra"' env GARY_HOME=$H/newer-setup node $B setup --profile $H/newer-p --me octocat --no-bot --checkout $CHECKOUT --no-links
 mkdir -p $H/notjson/instances/widgets; print '{' > $H/notjson/instances/widgets/config.json
 expect "config that is not JSON" 2 "is not valid JSON" env GARY_HOME=$H/notjson node $B paths
 

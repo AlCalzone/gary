@@ -1,7 +1,7 @@
 // /api/action and /api/state of server/server.mjs on a temp root in dry-run mode, with the fake gh.
 // The second half runs two instances in the one server and adds a third while it runs.
 import { spawn } from "node:child_process";
-import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { get } from "node:http";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -41,6 +41,7 @@ const items = {
 			{ id: "r11", type: "drive", title: "Drive: 2 rounds", as: "agent", params: { maxRounds: 2 } },
 			{ id: "r12", type: "take_over", title: "Take over: default mode", as: "agent" },
 			{ id: "r13", type: "chore", title: "Chore: Copilot review", as: "bot", params: { action: "request_review", reviewer: "copilot" } },
+			{ id: "r14", type: "format", title: "Format: no autofix check", as: "agent" },
 		],
 	},
 	"issue-21": {
@@ -76,7 +77,17 @@ const items = {
 	},
 	"pr-14": {
 		kind: "pr", repo: REPO, number: 14, title: "contributor", authorType: "contributor", reviewedAt, hint: "Drive: x",
-		routes: [{ id: "r1", type: "drive", title: "Drive: x", as: "agent", params: { maxRounds: 4 } }, { id: "r2", type: "drive", title: "Drive: y", as: "agent" }],
+		reviewedSha: "c".repeat(40), autofix: { changes: true, files: 2, lines: 14, tools: ["eslint", "prettier"] },
+		routes: [
+			{ id: "r1", type: "drive", title: "Drive: x", as: "agent", params: { maxRounds: 4 } },
+			{ id: "r2", type: "drive", title: "Drive: y", as: "agent" },
+			{ id: "r3", type: "format", title: "Format: run the autofix", as: "agent" },
+		],
+	},
+	"pr-15": {
+		kind: "pr", repo: REPO, number: 15, title: "clean contributor PR", authorType: "contributor", reviewedAt, reviewedSha: "d".repeat(40), hint: "Format: x",
+		autofix: { changes: false, files: 0, lines: 0, tools: ["prettier"] },
+		routes: [{ id: "r1", type: "format", title: "Format: x", as: "agent" }],
 	},
 	"pr-13": {
 		kind: "pr", repo: REPO, number: 13, title: "taken over", authorType: "contributor", takenOver: true, reviewedAt, hint: "Drive: x",
@@ -226,6 +237,10 @@ await expect("drive on a contributor PR is refused", "pr-14", "r2", {}, refused(
 await expect("drive with maxRounds 4 is refused", "pr-14", "r1", {}, refused(/taken-over PRs|maxRounds/));
 await expect("drive on a taken-over PR is queued with 3 rounds", "pr-13", "r1", {}, (r) => r.data.ok && r.data.queued);
 await expect("drive on a maintainer PR is queued", "pr-12", "r11", {}, (r) => r.data.ok && r.data.queued);
+await expect("format without an autofix check is refused", "pr-12", "r14", {}, refused(/autofix check to have found changes/));
+await expect("format when the autofix changes nothing is refused", "pr-15", "r1", {}, refused(/autofix check to have found changes/));
+await expect("format takes no input", "pr-14", "r3", { input: { files: ["a"] } }, refused(/unknown field/));
+await expect("format on a contributor PR that is not taken over is queued", "pr-14", "r3", {}, (r) => r.data.ok && r.data.queued);
 await expect("take_over defaults to push", "pr-12", "r12", {}, (r) => r.data.ok && r.data.queued);
 check("route comments keep diffHunk in the served route", served["pr-12"].routes.find((r) => r.id === "r1").params.comments[1].diffHunk.includes("DIFFHUNK_MARKER"));
 
@@ -251,6 +266,9 @@ const sf = byRoute("issue-21", "r8")[0];
 check("start_fix doc carries text and finding only", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2"}', sf);
 check("drive doc", byRoute("pr-13", "r1")[0]?.params?.maxRounds === 3 && byRoute("pr-12", "r11")[0]?.params?.maxRounds === 2, docs.filter((d) => d.action === "drive"));
 check("take_over default doc", byRoute("pr-12", "r12")[0]?.params?.mode === "push", byRoute("pr-12", "r12"));
+const fmt = byRoute("pr-14", "r3")[0];
+check("format doc is queued with the reviewed head", fmt?.status === "queued" && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
+check("format does not take the PR over", JSON.parse(readFileSync(join(BOARD, "items", "pr-14.json"), "utf8")).takenOver === undefined);
 check("take_over doc carries the text", byRoute("pr-12", "r8")[0]?.text === "Finish it", byRoute("pr-12", "r8"));
 check("take_over doc", byRoute("pr-12", "r8")[0]?.params?.mode === "push", byRoute("pr-12", "r8"));
 check("bot route doc is done via server", byRoute("issue-21", "r2")[0]?.status === "done" && byRoute("issue-21", "r2")[0]?.via === "server", byRoute("issue-21", "r2"));
@@ -277,6 +295,23 @@ const suggested = planRoute(
 	"Body",
 );
 const sent = suggested.steps[0].params.comments[0];
+const formatItem = { kind: "pr", number: 9, authorType: "contributor", reviewedSha: "a".repeat(40), autofix: { changes: true, files: 1, lines: 2, tools: ["prettier"] } };
+const formatRoute = { id: "r1", type: "format", as: "agent" };
+let formatError = "";
+try {
+	planRoute(formatRoute, formatItem, {}, "", "none");
+} catch (e) {
+	formatError = e.message;
+}
+check("format needs a bot or own-token pushes", /needs a bot account, or allowOwnTokenPushes/.test(formatError), formatError);
+check("format runs in own mode on a contributor PR", planRoute(formatRoute, formatItem, {}, "", "own").action === "format");
+formatError = "";
+try {
+	planRoute(formatRoute, { ...formatItem, reviewedSha: undefined }, {}, "", "bot");
+} catch (e) {
+	formatError = e.message;
+}
+check("format needs the reviewed head", /needs the item's reviewedSha/.test(formatError), formatError);
 check("original, suggestion and diffHunk are never sent", JSON.stringify(Object.keys(sent).sort()) === '["line","path","text"]' && sent.text === "Rename\n\n```suggestion\nconst a = 1;\n```", sent);
 
 // Two instances in one server
@@ -436,6 +471,64 @@ sse.events.length = 0;
 editJson(join(T, "profile-gadgets", "profile.json"), (p) => ({ ...p, relatedRepos: ["stale"] }));
 await sleep(600);
 check("the old profile is no longer watched", !sse.events.some((e) => e.event === "board" && e.data.instance === "gadgets"), sse.events.map((e) => [e.event, e.data.instance]));
+
+
+// Invalid settings keep the instance served with its last valid settings
+const gadgetsOf = (e) => e?.data.board.instances.find((i) => i.name === "gadgets");
+const servedNow = async () => (await api("/api/state")).data;
+const brokenProfile = join(otherProfile, "profile.json");
+const goodProfile = readFileSync(brokenProfile, "utf8");
+const configStat = statSync(join(gadgets.home, "config.json")).mtimeMs;
+writeFileSync(brokenProfile, JSON.stringify({ ...JSON.parse(goodProfile), colour: "red" }));
+await sleep(600);
+multi = await servedNow();
+check("with an unknown profile field gadgets is still listed with its items", !!entry("gadgets") && !!itemOf("gadgets", "issue-90"), multi.board.instances.map((i) => [i.name, i.settingsError]));
+check("an unknown field is a warning, not an error", entry("gadgets").settingsError === undefined && entry("gadgets").settingsWarnings?.some((w) => /unknown field "colour"/.test(w)), entry("gadgets"));
+sse.events.length = 0;
+editJson(brokenProfile, (p) => ({ ...p, colour: undefined, repo: "not a repo" }));
+let broken = await sse.waitFor((e) => e.event === "board" && /"repo" must look like/.test(gadgetsOf(e)?.settingsError ?? ""));
+check("an invalid profile value sends a board event with the error", !!broken, sse.events.filter((e) => e.event === "board").map((e) => gadgetsOf(e)?.settingsError));
+multi = await servedNow();
+check("the instance keeps its last valid settings and items", entry("gadgets")?.repos[0] === "acme/gadgets" && itemOf("gadgets", "issue-90")?.ref === "acme/gadgets#90", entry("gadgets"));
+check("health still lists it", (await (await fetch(base + "/api/health")).json()).instances.includes("gadgets"));
+r = await api("/api/action", { instance: "gadgets", itemId: "issue-90", routeId: "r1", draftHash: gHash("issue-90", "r1") });
+check("a bot click is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result) && /"repo" must look like/.test(r.data.settingsError), r);
+r = await api("/api/db", { instance: "gadgets", op: "update", path: "items/issue-90", data: { priority: 2 } });
+check("board-only writes keep working", r.status === 200, r);
+r = await api("/api/action", { instance: "gadgets", action: "dismiss_proposal", proposalId: "learn-none" });
+check("board-only actions keep working", r.status === 200 && !/settings/.test(r.data.result), r);
+sse.events.length = 0;
+writeFileSync(brokenProfile, "{ broken");
+broken = await sse.waitFor((e) => e.event === "board" && /not valid JSON/.test(gadgetsOf(e)?.settingsError ?? ""));
+check("invalid JSON in place changes the error", !!broken, sse.events.filter((e) => e.event === "board").map((e) => gadgetsOf(e)?.settingsError));
+multi = await servedNow();
+check("items stay served with invalid JSON", !!itemOf("gadgets", "issue-90") && entry("gadgets").title === "gadgets-two", entry("gadgets"));
+sse.events.length = 0;
+const tmpProfile = brokenProfile + ".tmp";
+writeFileSync(tmpProfile, goodProfile);
+renameSync(tmpProfile, brokenProfile);
+const cleared = await sse.waitFor((e) => e.event === "board" && gadgetsOf(e) && gadgetsOf(e).settingsError === undefined);
+check("repairing the profile clears the error", !!cleared, sse.events.filter((e) => e.event === "board").map((e) => gadgetsOf(e)?.settingsError));
+check("without touching config.json", statSync(join(gadgets.home, "config.json")).mtimeMs === configStat);
+r = await api("/api/action", { instance: "gadgets", itemId: "issue-90", routeId: "r1", draftHash: (await servedNow()).items.find((i) => i.instance === "gadgets" && i.id === "issue-90").routes[0].draftHash });
+check("clicks are no longer refused for the settings", r.data.settingsError === undefined && !/settings/.test(r.data.result ?? ""), r);
+check("the log names the error and its end", /settings of gadgets are invalid/.test(readFileSync(join(root, "state", "server.log"), "utf8")) && /settings of gadgets are valid again/.test(readFileSync(join(root, "state", "server.log"), "utf8")));
+
+// An instance that was never valid is listed with its error and no items
+sse.events.length = 0;
+const neverHome = join(root, "instances", "never");
+mkdirSync(join(neverHome, "state", "board", "items"), { recursive: true });
+writeFileSync(join(neverHome, "state", "board", "items", "issue-1.json"), JSON.stringify({ kind: "issue", repo: "acme/never", number: 1, title: "x", routes: [{ id: "r1", type: "reply", as: "bot", text: "x" }] }));
+writeFileSync(join(neverHome, "config.json"), "{ not json");
+const never = await sse.waitFor((e) => e.event === "board" && e.data.board.instances.some((i) => i.name === "never"));
+const neverEntry = never?.data.board.instances.find((i) => i.name === "never");
+check("a never valid instance is listed with its error", /not valid JSON/.test(neverEntry?.settingsError ?? "") && neverEntry.repos.length === 0, neverEntry);
+multi = await servedNow();
+check("and serves no items", !multi.items.some((i) => i.instance === "never"));
+r = await api("/api/action", { instance: "never", itemId: "issue-1", routeId: "r1" });
+check("a click on it is refused with the error", r.data.ok === false && /not valid JSON/.test(r.data.settingsError ?? ""), r);
+rmSync(neverHome, { recursive: true, force: true });
+await sleep(400);
 
 // A new instance appears while the server runs
 sse.events.length = 0;

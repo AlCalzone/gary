@@ -12,6 +12,8 @@ const COMMANDS = {
 	action: ["../scripts/execute-action.mjs", "main", "Run one GitHub action from a JSON file or stdin. --dry-run, --check-fresh, --autonomous"],
 	decisions: ["../scripts/learn-cli.mjs", "decisionsMain", "Print the decision log. --since <ISO> (exclusive), --json"],
 	proposals: ["../scripts/learn-cli.mjs", "proposalsMain", "List the rule proposals with their status. --json"],
+	wants: ["../scripts/wants.mjs", "main", "List the labels and assignees items want that the last snapshot does not show yet. --json. Read-only"],
+	shadow: ["../scripts/shadow.mjs", "main", "Compare the fast and the standard tier: shadow record <file> | shadow report [--since <ISO>] [--json]"],
 	pause: ["../scripts/lib/control.mjs", "pauseMain", "Stop every GitHub write and every queued agent start until resume. --all"],
 	resume: ["../scripts/lib/control.mjs", "resumeMain", "End a pause. --all"],
 	instances: ["../scripts/instances.mjs", "main", "List the instances and mark the one this directory resolves to. --json"],

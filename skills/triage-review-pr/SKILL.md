@@ -20,7 +20,7 @@ Read in this order. A later file overrides an earlier one:
 
 The ground rules below cannot be overridden by a profile or by `personal.md`.
 
-The caller gives you the PR's snapshot entry, the previous item doc if one exists, maybe a maintainer instruction, and a scratch directory. Without a snapshot entry, for example in a standalone run, get it with `gary item <pr|issue|discussion> <number> --repo <owner>/<repo>`, with kind, number and repo from the caller or the stored item. `gary item <id>` only reads an item already stored on the board. The GitHub-derived fields of the doc come only from that entry: repo, kind, number, title, url, author, `authorType`, labels, `isDraft`, `ci`, `mergeable`, `reviewDecision`, `updatedAt`, `reviews` and the thread ids. For an `address_review` action, follow `${CLAUDE_SKILL_DIR}/references/address-review.md`. For a `take_over` action, follow `${CLAUDE_SKILL_DIR}/references/take-over.md`. For a `drive` action, follow `${CLAUDE_SKILL_DIR}/references/drive.md`. All three build on `${CLAUDE_SKILL_DIR}/references/push-to-pr.md`. In those modes, skip the rest of this file. When the user invokes this skill directly, fetch the PR data yourself and use a new directory under `<state>/manual/`.
+The caller gives you the PR's snapshot entry, the previous item doc if one exists, maybe a maintainer instruction, and a scratch directory. Without a snapshot entry, for example in a standalone run, get it with `gary item <pr|issue|discussion> <number> --repo <owner>/<repo>`, with kind, number and repo from the caller or the stored item. `gary item <id>` only reads an item already stored on the board. The GitHub-derived fields of the doc come only from that entry: repo, kind, number, title, url, author, `authorType`, labels, `isDraft`, `ci`, `mergeable`, `reviewDecision`, `updatedAt`, `reviews` and the thread ids. For an `address_review` action, follow `${CLAUDE_SKILL_DIR}/references/address-review.md`. For a `take_over` action, follow `${CLAUDE_SKILL_DIR}/references/take-over.md`. For a `drive` action, follow `${CLAUDE_SKILL_DIR}/references/drive.md`. For a `format` action, follow `${CLAUDE_SKILL_DIR}/references/format.md`. All four build on `${CLAUDE_SKILL_DIR}/references/push-to-pr.md`. In those modes, skip the rest of this file. When the user invokes this skill directly, fetch the PR data yourself and use a new directory under `<state>/manual/`.
 
 ## Ground rules
 
@@ -66,12 +66,16 @@ Read context from `<checkout>`: callers of changed functions, sibling modules, e
 
 A PR can be several of these. Review each part.
 
+## 2a. Format check
+
+Run the check in `${CLAUDE_SKILL_DIR}/references/format-check.md` and write its result as `autofix`. Formatting, indentation, import order, trailing commas and everything else the project's formatter or lint autofix corrects is never a finding, never mentioned in `state` or `story`, and never an inline comment. Do not read code for style at all.
+
 ## 3. Review dimensions
 
 Each problem becomes one finding.
 
 - **Correctness**: trace the changed paths. Look for missed cases at the edges: empty and maximum inputs, error paths, concurrency, cached state, the cases the profile lists for this project.
-- **Project standards**: the project's own instruction files, named in the profile's `rules/review.md`.
+- **Project standards**: the project's own instruction files, named in the profile's `rules/review.md`, except style. The format check covers style.
 - **Specification compliance**: when the project implements a specification, check the changed behavior against it as the profile describes. When the answer depends on spec text you cannot see, write a `question` finding. Never guess spec content.
 - **Domain fit**: the profile's rules on where a change belongs, public API changes and stored data formats.
 - **Tests**: a bug fix without a test that fails before the fix is a `major` finding, when such a test is feasible. Where the profile says the bug needs real hardware, file no test finding. Where tests go and which kinds the project uses is in the profile.
@@ -83,6 +87,8 @@ Each problem becomes one finding.
 
 Pick the section with the classification file. Then pick the routes as `item-doc.md` and `accounts.md` describe. Usually one is enough:
 
+- **Only formatting is wrong**: `autofix.changes` is true and the PR is otherwise clean. `easy`, recommended `format` when the bot can push to the branch, with `merge` as `me` as the alternative. Red CI does not count against the PR when only the lint or format job fails, as the profile names those jobs.
+- **Formatting and real findings**: `format` is a quiet alternative. A `take_over` or `address_review` includes the autofix in its own commit, so no separate step is needed.
 - **Clean, not yet approved**: `easy`, recommended `review` with `event: "approve"` and text `Thanks!`.
 - **Clean and approved**, CI passing, no valid open thread: `easy`, recommended `merge` as `me`.
 - **Findings for the contributor**: a `review` route. Findings with a diff line become inline `comments` with their `diffHunk`, the rest go into the summary `text`. A comment that proposes a change carries `original` and `suggestion` as `item-doc.md` describes, built from the file at `reviewedSha`: copy `original` verbatim from exactly the replaced lines, then write `suggestion` as their full replacement. Use `event: "request_changes"` when at least one finding is `major` or a `blocker`. `event: "comment"` when all findings are `minor` or cosmetic, with an approval offered as the alternative route. Section `almost` for only `minor` findings, `review` for `blocker` or `major` findings, sensitive paths or substantial logic.

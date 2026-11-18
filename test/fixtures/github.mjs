@@ -41,6 +41,15 @@ export const nodes = {
 	DC_c3: { __typename: "DiscussionComment", url: `${URL}/discussions/32#c3`, replyTo: null, discussion: { id: "D_32" } },
 	DC_r1: { __typename: "DiscussionComment", url: `${URL}/discussions/33#r1`, replyTo: { id: "DC_x" }, discussion: { id: "D_33" } },
 	IC_1: { __typename: "IssueComment", url: `${URL}/issues/21#ic1`, issue: { id: "I_21" }, pullRequest: null },
+	// All replies of a discussion comment whose inline page holds only the last one
+	DC_c5: {
+		__typename: "DiscussionComment",
+		replies: { totalCount: 3, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
+			{ author: user("hubot"), createdAt: iso(5), body: "Did not help" },
+			{ author: user(ME), createdAt: iso(6), body: "Try the reset pin" },
+			{ author: user("hubot"), createdAt: iso(7), body: "That worked, but now the LED blinks" },
+		] },
+	},
 };
 
 // Workflow runs per head SHA
@@ -84,6 +93,21 @@ export const prNodes = {
 			thread("PRRT_4", "src/done.ts", 9, user(ME), { resolved: true }),
 		] },
 	},
+	// A dependency update from Renovate, clean and green
+	17: {
+		number: 17, title: "chore(deps): update dependency typescript to v6", url: `${URL}/pull/17`, body: "This PR contains the following updates", createdAt: iso(2), updatedAt: iso(3), isDraft: false,
+		author: bot("renovate"), authorAssociation: "CONTRIBUTOR",
+		labels: { nodes: [{ name: "dependencies" }] }, assignees: { nodes: [{ login: ME }] },
+		headRefOid: "f".repeat(40), baseRefName: "main", reviewDecision: null, mergeable: "MERGEABLE", additions: 4, deletions: 4,
+		commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
+		files: { totalCount: 2, nodes: [{ path: "package.json" }, { path: "yarn.lock" }] },
+		comments: { totalCount: 0, nodes: [] },
+		timelineComments: { totalCount: 0, nodes: [] },
+		reviews: { nodes: [] },
+		allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+		reviewRequests: { nodes: [] },
+		reviewThreads: { totalCount: 0, pageInfo: { hasPreviousPage: false, startCursor: null }, nodes: [] },
+	},
 };
 
 export const issueNodes = {
@@ -93,6 +117,22 @@ export const issueNodes = {
 		comments: { totalCount: 0, nodes: [] },
 		closedByPullRequestsReferences: { nodes: [{ number: 12, url: `${URL}/pull/12`, state: "OPEN", isDraft: false }] },
 	},
+	// We asked, they answered, then the bot posted its log feedback
+	23: {
+		number: 23, title: "The LED stays red", url: `${URL}/issues/23`, body: "It is red", createdAt: iso(0), updatedAt: iso(4),
+		author: user("hubot"), authorAssociation: "NONE", labels: { nodes: [{ name: "bug" }] }, assignees: { nodes: [] },
+		comments: { totalCount: 3, nodes: [
+			{ id: "IC_31", author: user(ME), authorAssociation: "OWNER", createdAt: iso(1), body: "Please attach a log" },
+			{ id: "IC_32", author: user("hubot"), authorAssociation: "NONE", createdAt: iso(2), body: "Here it is" },
+			{ id: "IC_33", author: user(BOT), authorAssociation: "NONE", createdAt: iso(3), body: "<!-- LOGFILE_COMMENT_TAG -->\nThanks for the log" },
+		] },
+		timelineComments: { totalCount: 3, nodes: [
+			{ author: user(ME), createdAt: iso(1), body: "Please attach a log" },
+			{ author: user("hubot"), createdAt: iso(2), body: "Here it is" },
+			{ author: user(BOT), createdAt: iso(3), body: "<!-- LOGFILE_COMMENT_TAG -->\nThanks for the log" },
+		] },
+		closedByPullRequestsReferences: { nodes: [] },
+	},
 };
 
 export const discussionNodes = {
@@ -100,6 +140,15 @@ export const discussionNodes = {
 		number: 31, title: "How do I reset the device?", url: `${URL}/discussions/31`, body: "Question", createdAt: iso(0), updatedAt: iso(8),
 		author: user("hubot"), authorAssociation: "NONE", labels: { nodes: [] }, category: { name: "Q&A", isAnswerable: true }, isAnswered: false,
 		comments: { totalCount: 1, nodes: [{ id: "DC_c1", author: user(ME), authorAssociation: "OWNER", createdAt: iso(8), body: "Hold the button.", replies: { totalCount: 0, nodes: [] } }] },
+	},
+	// More replies than the inline page holds: the snapshot fetches the rest through the node query
+	35: {
+		number: 35, title: "The reset does not work", url: `${URL}/discussions/35`, body: "How?", createdAt: iso(0), updatedAt: iso(7),
+		author: user("hubot"), authorAssociation: "NONE", labels: { nodes: [] }, category: { name: "Q&A", isAnswerable: true }, isAnswered: false,
+		comments: { totalCount: 1, nodes: [{ id: "DC_c5", author: user(ME), authorAssociation: "OWNER", createdAt: iso(4), body: "Hold the button.", replies: { totalCount: 3, nodes: [{ id: "DC_r7", author: user("hubot"), authorAssociation: "NONE", createdAt: iso(7), body: "That worked, but now the LED blinks" }] } }] },
+		timelineComments: { totalCount: 1, nodes: [
+			{ id: "DC_c5", author: user(ME), createdAt: iso(4), body: "Hold the button.", replies: { totalCount: 3, nodes: [{ author: user("hubot"), createdAt: iso(7), body: "That worked, but now the LED blinks" }] } },
+		] },
 	},
 };
 

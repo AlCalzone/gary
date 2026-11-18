@@ -8,5 +8,6 @@
 	"sensitivePaths": [".github/**", "**/package.json"],
 	"autoLabels": [],
 	"botCommands": {},
-	"requiredTools": []
+	"requiredTools": [],
+	"automatedComments": []
 }

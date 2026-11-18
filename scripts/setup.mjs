@@ -219,6 +219,8 @@ export async function main(argv) {
 			if (bot) data.botLogins = [...new Set([...(data.botLogins ?? []), bot.login])];
 			errors.push(...validateProfile(data).map((e) => `profile: ${e}`));
 		}
+		// An existing profile is checked strictly too, so a typo in it gets caught before the first run
+		if (!created.length) errors.push(...validateProfile(JSON.parse(readFileSync(join(profile, "profile.json"), "utf8"))).map((e) => `profile: ${e}`));
 		if (errors.length) throw new Error(`The settings are invalid:\n- ${errors.join("\n- ")}`);
 
 		for (const [, dir, data] of created) {

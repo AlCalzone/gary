@@ -65,6 +65,8 @@ Each item has a short verdict, a story of what happened so far, and cards with s
 - **The bot**: reviews with inline comments, requests for logs, labels, transfers. They are sent after your click. Anything that posts text asks for a second confirm first.
 - **The agent**: work that takes a session, like taking over a PR, addressing review comments, or writing a fix with a test as a draft PR. The request starts within seconds.
 
+Gary never comments on formatting. When the project's formatter or lint autofix would change a PR, the item shows a badge and a "Format" card that commits exactly those fixes to the PR, without taking it over.
+
 On review cards you can uncheck inline comments and switch each open review thread between Fix and Dismiss. Only comments the agent judged valid start on Fix.
 
 When a suggestion is wrong, dismiss its card and say why. The agent never offers that kind of action on the item again and takes your reason into account. "Analyze again" sends the item back to the agent, optionally with a note.
@@ -107,6 +109,8 @@ Gary has three layers. Each kind of change has one place:
 - **Core**: this repository. It holds no repo name, no account name and no path of one machine, so nobody edits it to adapt the tool. `profiles/template/` is the skeleton for a new profile.
 - **Profile**: one directory per project, named by `profile` in `config.json`. It can live in its own repo or inside your project, so a team can share it. Project facts go into `profile.json`, project rules into `rules/classification.md`, `rules/voice.md`, `rules/review.md` and `rules/issues.md`, canned texts into `templates/`.
 - **Home**: `~/.config/gary/` or `$GARY_HOME`. `personal.md` holds your own rules and writing style for all projects. `config.json` holds the board's port. Each instance lives in `instances/<name>/` with its `config.json`, an optional `personal.md` for that project, and `state/` with the board's data.
+
+Quick classification of obvious items, like a green dependency update or an item waiting on its reporter, can run on a smaller, faster model. `fastTier` in the instance's `config.json` controls it: `off` by default, `shadow` to let it run next to the standard model without effect, `on` to use it. In shadow mode Gary compares both and proposes switching to `on` once they agree on at least 95 percent of 40 or more items.
 
 The agents read a rule in this order: the core, then the profile file of the same topic, then the shared `personal.md`, then the instance's `personal.md`. A later file wins. The safety limits below cannot be changed by a profile or by `personal.md`.
 

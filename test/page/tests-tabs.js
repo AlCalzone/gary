@@ -209,6 +209,43 @@
   for (const b of document.querySelectorAll("#reload, .bar-reload")) b.hidden = true;
   document.getElementById("d-close").click(); await wait(5);
 
+  // Invalid settings: a banner on the instance's tab and on All, writes refused as information
+  {
+    const sn = document.getElementById("settings-notes");
+    const ERR = "profile.json: \"repo\" must be owner/name, got \"contoso\"";
+    window.__board.instances[1].settingsError = ERR;
+    window.__board.instances[1].settingsWarnings = ["Unknown field \"autolabels\" in profile.json, did you mean \"autoLabels\"?"];
+    window.__board.instances.push({ name: "broken", title: "", kind: null, repos: [], repoUrl: null, me: null, bot: null, accountMode: "none", paused: false, relatedRepos: [], botCommands: {}, reviewBots: [], settingsError: "config.json: invalid JSON at line 3" });
+    window.dispatchEvent(new Event("board:info")); await wait(10);
+    tabBtns()[0].click(); await wait(5);
+    const banners = () => [...sn.querySelectorAll(".settings-banner")];
+    ok("All: one banner per instance with invalid settings, naming it", banners().length === 2 && /The settings of contoso-gadgets are invalid\. Gary keeps the last valid ones and sends nothing to GitHub until this is fixed\./.test(banners()[0].textContent) && /The settings of broken are invalid/.test(banners()[1].textContent));
+    ok("the error text sits below in monospace", banners()[0].querySelector("pre.settings-error")?.textContent === ERR && /mono/i.test(getComputedStyle(banners()[0].querySelector("pre")).fontFamily));
+    ok("All: warnings stay on the instance's own tab", !sn.querySelector(".settings-warnings"));
+    ok("a never-valid instance is an empty tab titled by its name", tabBtns().map((b) => b.textContent).join() === "All,widgets,contoso-gadgets,broken");
+    tabBtns()[3].click(); await wait(5);
+    ok("its tab shows the banner and no rows, nothing breaks", banners().length === 1 && /broken/.test(banners()[0].textContent) && document.querySelectorAll("#board .row").length === 0);
+    tabBtns()[1].click(); await wait(5);
+    ok("a healthy instance's tab shows no banner", banners().length === 0);
+    tabBtns()[2].click(); await wait(5);
+    const warn = sn.querySelector(".settings-warnings");
+    ok("its own tab: the banner plus warnings as one quiet collapsed line", banners().length === 1 && !!warn && !warn.open && warn.querySelector("summary").textContent === "1 note about the settings" && /autolabels/.test(warn.textContent));
+    tabBtns()[0].click(); await wait(5);
+    openDetail("gadgets/pr-12"); await wait(10);
+    window.__reply = (b) => (b.instance === "gadgets" ? { ok: false, result: "The settings of gadgets are invalid: " + ERR, settingsError: ERR } : { ok: true, result: { dryRun: true } });
+    [...document.querySelectorAll("#d-routes .card.open .card-actions button")].find((b) => b.textContent === "Request changes").click(); await wait(5);
+    [...document.querySelectorAll("#d-routes .card.open .card-actions button")].find((b) => /^Confirm/.test(b.textContent)).click(); await wait(20);
+    const info = document.querySelector("#d-routes .card.open .status.info");
+    ok("a refused click shows as information without the whole error", !!info && /settings of contoso-gadgets are invalid/.test(info.textContent) && !info.textContent.includes(ERR) && !document.querySelector("#d-routes .card.open .status.failed"));
+    window.__reply = () => ({ ok: true, result: { dryRun: true } });
+    document.getElementById("d-close").click(); await wait(5);
+    delete window.__board.instances[1].settingsError;
+    delete window.__board.instances[1].settingsWarnings;
+    window.__board.instances.pop();
+    window.dispatchEvent(new Event("board:info")); await wait(10);
+    ok("fixed settings: the banner goes away", !sn.children.length);
+  }
+
   // Back to one instance for the remaining suites
   tabBtns()[0].click(); await wait(5);
   window.__board.instances = [window.__instanceInfo("widgets", "widgets")];

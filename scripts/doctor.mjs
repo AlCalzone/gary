@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, homePath, instanceName, instanceNames, loadConfig, loadProfile, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance } from "./lib/config.mjs";
+import { ROOT, homePath, instanceName, instanceNames, loadConfig, loadProfile, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { readLogin } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
@@ -59,6 +59,9 @@ async function checkInstance() {
 	});
 	await attempt("profile", async () => {
 		const profile = loadProfile();
+		// The run time only warns about unknown fields. Here they fail, so typos get caught
+		const unknown = settingsWarningsFor(instanceName());
+		if (unknown.length) return ["fail", `unknown fields: ${unknown.join("; ")}`];
 		const missing = RULES.filter((f) => !existsSync(join(profileDir(), "rules", f)));
 		return [missing.length ? "warn" : "ok", `${profile.name} (${profile.repo}) in ${profileDir()}${missing.length ? `, no rules/${missing.join(", rules/")}` : ""}`];
 	});
@@ -80,6 +83,7 @@ async function checkInstance() {
 		} else {
 			add("bot", "ok", `no bot, ${config.allowOwnTokenPushes ? "bot routes run under your own gh login" : "bot routes become text you post yourself"}`);
 		}
+		add("fast tier", "ok", { off: "off, every item gets the standard tier", shadow: "shadow, both tiers run and `gary shadow report` compares them", on: "on, simple items get the fast tier" }[config.fastTier]);
 		add("pause", isPaused() ? "warn" : "ok", isPaused() ? "paused: nothing goes to GitHub and queued agent requests wait. `gary resume` ends it" : "not paused");
 		await attempt("checkout", async () => {
 			if (!config.checkout) return ["warn", "no checkout in config.json, fixes need a local clone"];

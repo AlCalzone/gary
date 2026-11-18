@@ -205,6 +205,35 @@ Pause is per instance: `board.instances[].paused` is in `/api/state` and in `use
 
 When a safety filter stopped the agent, or its analysis failed three times, the item carries `blocked: { reason: "safety_filter" | "failed", at }` and exactly one route of type `open`: `as: "me"`, no text, no params. The click opens the thread on GitHub. The next full triage drops `blocked`, which happens only after "Analyze again".
 
+## Intent that outlives a run
+
+An item doc may carry `wants: { labels: { add: [], remove: [] }, assignees: [] }` with a one-sentence `wantsReason`. The classification writes it. Every hourly run compares it with the item's current labels and assignees in the snapshot and attempts what is missing with `gary action --autonomous`, whether or not the item changed. Every hourly run also considers all stored items with a `follow_up` route as agent and no `Draft fix` link, up to `maxAutoFixesPerRun`. While paused, both go into `runs/<run>/would-have.json` as `[{ itemId, action, params, reason }]`, and after `gary resume` the next run attempts them again from the current state.
+
+`meta.json` carries `rulesHash`, a hash over the rule files the routine read. When it changes, the routine re-classifies every quick item and queues the full ones for review within the normal budget, tracked in `rulesPending`.
+
+## Facts and tiers
+
+Every snapshot entry carries `facts`, computed in code:
+
+- `timeline: [{ at, author, side, kind }]`, oldest first, the newest 200 events kept. `side` is `us`, `them`, `automated` or `bot`. `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `timelineTruncated` is set only when events are missing.
+- `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), `waitingDays`.
+- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
+- Issues and discussions: `hasClosingPr` (an open or merged PR), `isAnswered`, `authorIsUs`.
+
+The classification rules take these as given. The profile's `automatedComments` decides which bot comments are `automated`. Its entries are `{ name, pattern, origin? }`, where `pattern` is a regex without flags, tested against the start of the comment body.
+
+Quick classification has two tiers, set by `fastTier` (`off`, `shadow` or `on`, default `off`) in the instance config. The fast tier (Haiku) settles only cases the facts decide and hands up everything else. The standard tier (Sonnet) does the rest. With `shadow`, both run, only the standard result is stored, and `gary shadow record <file>` keeps both tiers' entries per item. A file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be `null` only when the fast tier handed up. `gary shadow report [--since <ISO>] [--json]` compares them. `triage-learn` proposes `on` once 40 pairs show at least 95 percent section agreement.
+
+`gary wants --json` lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the reason, and `unknown` for items without a snapshot entry. The routine attempts those changes every run. Assignees are only added.
+
+Unknown fields in an instance config or a profile are warnings at run time. `gary doctor` and `gary setup` refuse them. `gary instances --json` reports `valid`, `settingsError` and `settingsWarnings` per instance, and the master skips an instance with `valid: false`.
+
+`autofix.changes` is true exactly when `autofix.files` is above 0. The server does not check that a PR is still open when `format` is clicked. The format mode refuses a closed PR and a moved head itself.
+
+## Format check and the format route
+
+Gary never reviews style. A full PR review runs the project's formatter and lint autofix on the PR's changed files in a throwaway worktree of the base branch, with the tools and configs of the instance's checkout, and stores the result as `autofix: { changes, files, lines, tools }`. The board shows it as a badge. The agent route `format` (title `Format: fix formatting and lint`) applies exactly that result to the PR's branch as one bot commit, on files the PR already changed. It is no take-over: it sets no `takenOver` and unlocks neither `drive` nor `address_review`. It refuses when the head moved since `reviewedSha` or the result would touch other files, and it never resolves conflicts. The profile's `rules/review.md` names the commands, the CI jobs that fail on formatting, and the commit message.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):

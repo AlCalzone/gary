@@ -12,6 +12,7 @@ export const ROUTE_TYPES = {
 	follow_up: ["agent", "bot", "me"],
 	take_over: ["agent"],
 	drive: ["agent"],
+	format: ["agent"],
 	move: ["bot", "me"],
 	chore: ["bot"],
 	open: ["me"],
@@ -19,7 +20,7 @@ export const ROUTE_TYPES = {
 export const DRIVE_AUTHORS = new Set(["maintainer", "bot", "copilot"]);
 // Without a bot these turn into text the maintainer posts himself
 export const PREFILL_TYPES = new Set(["reply", "request_logs", "reopen", "follow_up"]);
-export const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "drive", "follow_up"]);
+export const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "drive", "follow_up", "format"]);
 export const MOVE_MODES = ["transfer", "close"];
 export const CHORE_ACTIONS = new Set(["label", "assign", "ready", "answer_discussion", "react", "update_branch", "rerun_ci"]);
 
@@ -70,6 +71,18 @@ export function pushRefusal(item, what = "This route") {
 	if (!DRIVE_AUTHORS.has(item.authorType) && item.takenOver !== true) {
 		return `${what} is only for PRs by the maintainer, a bot or Copilot, or taken-over PRs. Use take_over on a contributor PR.`;
 	}
+	return null;
+}
+
+/**
+ * Why the server refuses a format route on this item, or null when it accepts it. Applying the project's own
+ * autofix to a contributor's PR does not take it over, so neither pushRefusal nor `takenOver` applies here.
+ */
+export function formatRefusal(item) {
+	if (item?.kind !== "pr") return "format works only on PRs.";
+	if (item.autofix?.changes !== true) return "format needs the snapshot's autofix check to have found changes.";
+	// The worker compares it with the PR head and refuses when the head moved since the check
+	if (typeof item.reviewedSha !== "string" || !/^[0-9a-f]{7,64}$/.test(item.reviewedSha)) return "format needs the item's reviewedSha.";
 	return null;
 }
 

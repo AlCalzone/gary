@@ -28,7 +28,10 @@ export const CONFIG_DEFAULTS = {
 	activeMaxWaitDays: 14,
 	maxFullReviewsPerRun: 10,
 	maxAutoFixesPerRun: 2,
+	fastTier: "off",
 };
+
+export const FAST_TIERS = ["off", "shadow", "on"];
 
 export const PROFILE_DEFAULTS = {
 	maintainers: [],
@@ -39,7 +42,12 @@ export const PROFILE_DEFAULTS = {
 	autoLabels: [],
 	botCommands: {},
 	requiredTools: [],
+	automatedComments: [],
 };
+
+// The longest comment text an automatedComments pattern runs against. It bounds the cost of a slow pattern
+export const AUTOMATED_TEXT_LIMIT = 20000;
+const MAX_PATTERN = 500;
 
 export function expandHome(path) {
 	if (path === "~") return homedir();
@@ -241,13 +249,18 @@ function check(errors, cond, message) {
 const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const isStringList = (v, pattern) => Array.isArray(v) && v.every((s) => typeof s === "string" && s.length > 0 && (!pattern || pattern.test(s)));
 
-/** Returns the list of problems in a config.json object. An empty list means it is valid. */
-export function validateConfig(data) {
+/**
+ * The problems in a config.json object, split in two: `errors` make it invalid, `unknown` names fields this
+ * version of Gary does not know. Setup and doctor refuse both, so typos get caught. At run time unknown fields
+ * are only warnings, so a config written for a newer Gary does not take the board down.
+ */
+export function checkConfig(data) {
 	const errors = [];
+	const unknown = [];
 	const known = ["profile", "me", "checkout", ...Object.keys(CONFIG_DEFAULTS)];
 	for (const key of Object.keys(data)) {
 		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
-		else check(errors, known.includes(key), `unknown field "${key}"`);
+		else check(unknown, known.includes(key), `unknown field "${key}"`);
 	}
 	check(errors, data.kind === undefined || INSTANCE_KINDS.includes(data.kind), `"kind" must be one of ${INSTANCE_KINDS.join(", ")}`);
 	check(errors, typeof data.profile === "string" && data.profile.length > 0, `"profile" must name the project profile directory`);
@@ -258,7 +271,7 @@ export function validateConfig(data) {
 		const ok = typeof bot === "object" && !Array.isArray(bot) && typeof bot.login === "string" && LOGIN.test(bot.login) && typeof bot.tokenFile === "string" && bot.tokenFile.length > 0;
 		check(errors, ok, `"bot" must be null or { "login": "<bot login>", "tokenFile": "<path to its token>" }`);
 		if (ok) {
-			for (const key of Object.keys(bot)) check(errors, ["login", "tokenFile"].includes(key), `unknown field "bot.${key}"`);
+			for (const key of Object.keys(bot)) check(unknown, ["login", "tokenFile"].includes(key), `unknown field "bot.${key}"`);
 			check(errors, bot.login.toLowerCase() !== String(data.me).toLowerCase(), `"bot.login" must differ from "me"`);
 		}
 	}
@@ -266,14 +279,46 @@ export function validateConfig(data) {
 	for (const key of ["activeWindowDays", "activeMaxWaitDays", "maxFullReviewsPerRun", "maxAutoFixesPerRun"]) {
 		check(errors, data[key] === undefined || isInt(data[key], 0, 3650), `"${key}" must be a whole number`);
 	}
-	return errors;
+	check(errors, data.fastTier === undefined || FAST_TIERS.includes(data.fastTier), `"fastTier" must be one of ${FAST_TIERS.join(", ")}`);
+	return { errors, unknown };
 }
 
-/** Returns the list of problems in a profile.json object. An empty list means it is valid. */
-export function validateProfile(data) {
+/** Every problem in a config.json object, unknown fields included. An empty list means it is valid. */
+export function validateConfig(data) {
+	const { errors, unknown } = checkConfig(data);
+	return [...unknown, ...errors];
+}
+
+// Nested quantifiers like (a+)+ can backtrack for a very long time
+const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)[+*{]/;
+
+function checkAutomatedComments(list, errors, unknown) {
+	if (list === undefined) return;
+	if (!Array.isArray(list)) return errors.push(`"automatedComments" must be a list of { "name", "pattern", "origin" }`);
+	list.forEach((entry, i) => {
+		const at = `automatedComments[${i}]`;
+		if (!entry || typeof entry !== "object" || Array.isArray(entry)) return errors.push(`"${at}" must be an object`);
+		for (const key of Object.keys(entry)) check(unknown, ["name", "pattern", "origin"].includes(key), `unknown field "automatedComments[${i}].${key}"`);
+		check(errors, typeof entry.name === "string" && entry.name.trim().length > 0, `"${at}.name" must name the pattern`);
+		check(errors, entry.origin === undefined || typeof entry.origin === "string", `"${at}.origin" must be a string`);
+		if (typeof entry.pattern !== "string" || !entry.pattern.length || entry.pattern.length > MAX_PATTERN) {
+			return errors.push(`"${at}.pattern" must be a regular expression of at most ${MAX_PATTERN} characters`);
+		}
+		try {
+			new RegExp(entry.pattern);
+		} catch (e) {
+			return errors.push(`"${at}.pattern" is not a valid regular expression: ${e.message}`);
+		}
+		check(errors, !NESTED_QUANTIFIER.test(entry.pattern), `"${at}.pattern" nests quantifiers, which can make matching very slow`);
+	});
+}
+
+/** The problems in a profile.json object, split like checkConfig. */
+export function checkProfile(data) {
 	const errors = [];
+	const unknown = [];
 	const known = ["name", "repo", ...Object.keys(PROFILE_DEFAULTS)];
-	for (const key of Object.keys(data)) check(errors, known.includes(key), `unknown field "${key}"`);
+	for (const key of Object.keys(data)) check(unknown, known.includes(key), `unknown field "${key}"`);
 	check(errors, typeof data.name === "string" && data.name.trim().length > 0 && data.name.length <= 60, `"name" must be the board title, at most 60 characters`);
 	check(errors, typeof data.repo === "string" && REPO.test(data.repo), `"repo" must look like "owner/name"`);
 	for (const key of ["maintainers", "botLogins"]) {
@@ -290,12 +335,24 @@ export function validateProfile(data) {
 		cmds === undefined || (cmds && typeof cmds === "object" && !Array.isArray(cmds) && Object.values(cmds).every((v) => typeof v === "string" && v.trim())),
 		`"botCommands" must map command names to the text to post`,
 	);
-	return errors;
+	checkAutomatedComments(data.automatedComments, errors, unknown);
+	return { errors, unknown };
 }
 
-// The caches check the file's mtime, so an edited config or profile applies on the next call, also in the server
+/** Every problem in a profile.json object, unknown fields included. An empty list means it is valid. */
+export function validateProfile(data) {
+	const { errors, unknown } = checkProfile(data);
+	return [...unknown, ...errors];
+}
+
+// The caches check the file's mtime, so an edited config or profile applies on the next call, also in the server.
+// They hold failures too, so a broken file is not parsed again on every call
 const configCache = new Map();
 const profileCache = new Map();
+// The last valid settings per file. A long-running process keeps using them while the file is broken
+const lastGood = new Map();
+// Unknown fields per file, from the last load
+const unknownFields = new Map();
 
 function cached(cache, file, load) {
 	let mtime = null;
@@ -306,21 +363,50 @@ function cached(cache, file, load) {
 		// A missing file goes to load(), which names it in its error
 	}
 	const hit = cache.get(file);
-	if (hit && mtime !== null && hit.mtime === mtime) return hit.value;
-	const value = load();
-	cache.set(file, { mtime, value });
-	return value;
+	if (hit && mtime !== null && hit.mtime === mtime) {
+		if (hit.error) throw hit.error;
+		return hit.value;
+	}
+	try {
+		const value = load();
+		cache.set(file, { mtime, value });
+		lastGood.set(file, value);
+		return value;
+	} catch (error) {
+		cache.set(file, { mtime, error });
+		throw error;
+	}
 }
 
-/** Loads and validates one instance's config.json. Throws a SettingsError that names the file and every problem. */
-export function loadConfigFor(name) {
-	const file = join(instanceDir(name), "config.json");
+/** The current settings of a file, or its last valid ones when it broke since. Only a file never valid throws. */
+function withFallback(file, load) {
+	try {
+		return load();
+	} catch (e) {
+		if (e instanceof SettingsError && lastGood.has(file)) return lastGood.get(file);
+		throw e;
+	}
+}
+
+const configPath = (name) => join(instanceDir(name), "config.json");
+
+function readConfig(name) {
+	const file = configPath(name);
 	return cached(configCache, file, () => {
 		const data = readSettings(file, "Config");
-		const errors = validateConfig(data);
+		const { errors, unknown } = checkConfig(data);
+		unknownFields.set(file, unknown);
 		if (errors.length) throw new SettingsError(`Config ${file} is invalid:\n- ${errors.join("\n- ")}`);
 		return { ...CONFIG_DEFAULTS, ...data, bot: data.bot ?? null };
 	});
+}
+
+/**
+ * Loads and validates one instance's config.json. Throws a SettingsError that names the file and every problem,
+ * unless this process loaded a valid version before: then that one is returned and loadInstance names the error.
+ */
+export function loadConfigFor(name) {
+	return withFallback(configPath(name), () => readConfig(name));
 }
 
 /** Resolves a path from an instance's config.json: `~` expands, a relative path is relative to the instance directory. */
@@ -331,15 +417,50 @@ export function instancePath(name, path) {
 
 export const profileDirFor = (name) => instancePath(name, loadConfigFor(name).profile);
 
-/** Loads and validates the profile.json of one instance. */
-export function loadProfileFor(name) {
-	const file = join(profileDirFor(name), "profile.json");
+const profilePath = (name) => join(profileDirFor(name), "profile.json");
+
+function readProfile(name) {
+	const file = profilePath(name);
 	return cached(profileCache, file, () => {
 		const data = readSettings(file, "Profile");
-		const errors = validateProfile(data);
+		const { errors, unknown } = checkProfile(data);
+		unknownFields.set(file, unknown);
 		if (errors.length) throw new SettingsError(`Profile ${file} is invalid:\n- ${errors.join("\n- ")}`);
 		return { ...PROFILE_DEFAULTS, ...data };
 	});
+}
+
+/** Loads and validates the profile.json of one instance, with the same fallback as loadConfigFor. */
+export function loadProfileFor(name) {
+	return withFallback(profilePath(name), () => readProfile(name));
+}
+
+/**
+ * Why the instance's settings on disk are not valid right now, or null. Unknown fields do not count.
+ * While this is set, loadInstance serves the last valid settings.
+ */
+export function settingsErrorFor(name) {
+	try {
+		readConfig(name);
+		readProfile(name);
+		return null;
+	} catch (e) {
+		if (e instanceof SettingsError) return e.message;
+		throw e;
+	}
+}
+
+/** The unknown fields of the instance's config and profile, with the file each is in. */
+export function settingsWarningsFor(name) {
+	const out = [];
+	const files = [configPath(name)];
+	try {
+		files.push(profilePath(name));
+	} catch {
+		// Without a config there is no profile to name
+	}
+	for (const file of files) for (const w of unknownFields.get(file) ?? []) out.push(`${file}: ${w}`);
+	return out;
 }
 
 /** The resolved instance's config. */
@@ -354,10 +475,14 @@ function pausedIn(state) {
 
 /**
  * Everything about one instance: settings, profile and paths. It does not depend on the resolved instance.
- * `{ name, kind, dir, state, board, config, profile, profileDir, repos, title, checkout, personal, paused }`
+ * `{ name, kind, dir, state, board, config, profile, profileDir, repos, title, checkout, personal, paused }`,
+ * plus `settingsError` when the files on disk broke after this process last loaded them, and `settingsWarnings`
+ * for unknown fields. Settings that were never valid in this process throw.
  */
 export function loadInstance(name) {
 	if (!INSTANCE_NAME.test(name ?? "")) throw new SettingsError(`"${name}" is not a valid instance name.`);
+	const settingsError = settingsErrorFor(name);
+	const settingsWarnings = settingsWarningsFor(name);
 	const config = loadConfigFor(name);
 	const profile = loadProfileFor(name);
 	const dir = instanceDir(name);
@@ -378,6 +503,8 @@ export function loadInstance(name) {
 		checkout: config.checkout ? instancePath(name, config.checkout) : null,
 		personal: [personalFile(), ...(existsSync(own) ? [own] : [])],
 		paused: pausedIn(state),
+		...(settingsError && { settingsError }),
+		...(settingsWarnings.length && { settingsWarnings }),
 	};
 }
 
@@ -395,14 +522,22 @@ export function instanceSettingsFiles(name) {
 	return files;
 }
 
-/** Every instance under the root with its name, kind, repos, title, checkout and pause. Broken ones are skipped. */
+/**
+ * Every instance under the root with its name, kind, repos, title, checkout and pause, and `settingsError` and
+ * `settingsWarnings` when there are any. An instance never valid in this process has `valid: false`, no repos
+ * and its error, so nothing serves items for it.
+ */
 export function listInstances() {
-	return instanceNames().flatMap((name) => {
+	return instanceNames().map((name) => {
 		try {
 			const i = loadInstance(name);
-			return [{ name, kind: i.kind, repos: i.repos, title: i.title, checkout: i.checkout, paused: i.paused }];
-		} catch {
-			return [];
+			return {
+				name, kind: i.kind, repos: i.repos, title: i.title, checkout: i.checkout, paused: i.paused, valid: true,
+				...(i.settingsError && { settingsError: i.settingsError }),
+				...(i.settingsWarnings && { settingsWarnings: i.settingsWarnings }),
+			};
+		} catch (e) {
+			return { name, kind: null, repos: [], title: name, checkout: null, paused: false, valid: false, settingsError: e.message };
 		}
 	});
 }
