@@ -27,7 +27,7 @@ A `review` route posts one review: the summary `text` as the body and `params.co
 - Every finding that asks for a concrete change on a line of the diff is an inline comment with a replacement. The comment carries `original`, the exact text of lines `startLine` to `line` at `reviewedSha`, and `suggestion`, the full replacement text without a fence. The board turns them into a suggestion the contributor accepts with one click. `text` is prose only: one sentence on why, never a suggestion fence.
 - A change request never goes into the summary when its line is part of the diff. Only findings without a diff line go there: a missing file, a line the PR did not touch, a question about the approach.
 - The summary opens with one line, like "Thanks, a few small suggestions inline." It never counts, lists or repeats the inline comments, because the maintainer can uncheck any of them. When he unchecks all of them, the board sends the summary as is, and it must still make sense. Findings without a diff line follow as a numbered list, each starting with the file or setting it concerns.
-- The event: `request_changes` when at least one finding is `major` or a `blocker`, `comment` when all are `minor` or cosmetic, with an approval offered as the alternative.
+- The event: `request_changes` whenever the review has something for the contributor, whatever its severity. `approve` when the PR is clean. Never preset `comment`: the maintainer picks it on the card when he wants it. A PR by the bot itself is the one exception, because GitHub lets the bot only comment there.
 - A problem that appears in several places is one finding with one inline comment per place.
 - A clean PR's approval is a short "Thanks!".
 

@@ -92,10 +92,12 @@ export function validateInput(route, item, input) {
 	const params = isObject(route.params) ? route.params : {};
 
 	if (route.type === "review") {
-		checkKeys(input, ["commentIds"], "input");
+		checkKeys(input, ["commentIds", "event"], "input");
+		if (input.event !== undefined && !Object.hasOwn(REVIEW_EVENTS, input.event)) throw new Refusal(`input.event must be one of ${Object.keys(REVIEW_EVENTS).join(", ")}.`);
+		const event = input.event === undefined ? {} : { event: input.event };
 		const comments = Array.isArray(params.comments) ? params.comments : [];
 		const known = new Set(comments.map((c) => c?.id).filter((id) => typeof id === "string"));
-		if (input.commentIds === undefined) return { commentIds: [...known] };
+		if (input.commentIds === undefined) return { commentIds: [...known], ...event };
 		if (!Array.isArray(input.commentIds)) throw new Refusal("input.commentIds must be an array.");
 		const ids = new Set();
 		for (const id of input.commentIds) {
@@ -103,7 +105,7 @@ export function validateInput(route, item, input) {
 			if (ids.has(id)) throw new Refusal("input.commentIds lists a comment twice.");
 			ids.add(id);
 		}
-		return { commentIds: [...ids] };
+		return { commentIds: [...ids], ...event };
 	}
 
 	if (route.type === "address_review" || route.type === "take_over") {
@@ -147,12 +149,15 @@ export function validateInput(route, item, input) {
 	}
 
 	if (route.type === "follow_up") {
-		checkKeys(input, ["title"], "input");
-		if (input.title === undefined) return {};
+		// Only the card that hands the fix to the agent has the switch
+		checkKeys(input, route.as === "agent" ? ["title", "askReporter"] : ["title"], "input");
+		if (input.askReporter !== undefined && typeof input.askReporter !== "boolean") throw new Refusal("input.askReporter must be true or false.");
+		const ask = input.askReporter === undefined ? {} : { askReporter: input.askReporter };
+		if (input.title === undefined) return ask;
 		if (typeof input.title !== "string" || !input.title.trim() || input.title.length > MAX_TITLE) {
 			throw new Refusal(`input.title must be a non-empty string of at most ${MAX_TITLE} characters.`);
 		}
-		return { title: input.title.trim() };
+		return { title: input.title.trim(), ...ask };
 	}
 
 	if (route.type === "close" && answerParams(route)) {
@@ -259,7 +264,8 @@ export function planRoute(route, item, input, text, mode = "bot") {
 				return { agent: true, action: "address_review", params: { decisions: chosen.decisions }, text };
 			}
 			case "follow_up":
-				return { agent: true, action: "start_fix", params: params.finding === undefined ? {} : { finding: params.finding }, text };
+				// The switch on the card decides. Without it nobody asks the reporter
+				return { agent: true, action: "start_fix", params: { ...(params.finding !== undefined && { finding: params.finding }), askReporter: chosen.askReporter === true }, text };
 			case "take_over": {
 				const refusal = takeOverRefusal(route, item);
 				if (refusal) throw new Refusal(refusal);
@@ -294,8 +300,11 @@ export function planRoute(route, item, input, text, mode = "bot") {
 			const comments = (Array.isArray(params.comments) ? params.comments : [])
 				.filter((c) => chosen.commentIds.includes(c.id))
 				.map((c) => ({ path: c.path, line: c.line, ...(c.startLine !== undefined && { startLine: c.startLine }), text: commentBody(c) }));
-			const reviewParams = { event: params.event, ...(comments.length && { comments }) };
-			if (!Object.hasOwn(REVIEW_EVENTS, params.event ?? "")) throw new Refusal("The review route has no valid event.");
+			const event = chosen.event ?? params.event;
+			const reviewParams = { event, ...(comments.length && { comments }) };
+			if (!Object.hasOwn(REVIEW_EVENTS, event ?? "")) throw new Refusal("The review route has no valid event.");
+			const suggests = (Array.isArray(params.comments) ? params.comments : []).some((c) => chosen.commentIds.includes(c.id) && typeof c.suggestion === "string");
+			if (event === "approve" && suggests) throw new Refusal("An approval cannot carry suggestions. Uncheck them, or submit the review as a change request or a comment.");
 			if (typeof item.reviewedSha === "string") reviewParams.sha = item.reviewedSha;
 			return { steps: [{ action: "review", params: reviewParams, text }], guard: { action: "review", params: reviewParams } };
 		}
@@ -1506,6 +1515,9 @@ export async function startBoardServer({
 			chosen = validateInput(route, item, input);
 		} catch {
 			// planRoute validated the same input already
+		}
+		if (route.type === "review" && chosen.event !== undefined && chosen.event !== route.params?.event) {
+			decide(name, "changed_event", itemId, item, { route: brief(route), from: route.params?.event ?? null, to: chosen.event });
 		}
 		if (!agent && chosen.alsoLabel === false) decide(name, "skipped_label", itemId, item, { route: brief(route), labels: labelParams(route) });
 		const threads = new Map((Array.isArray(item.threads) ? item.threads : []).map((t) => [t?.id, t]));

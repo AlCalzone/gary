@@ -69,7 +69,7 @@ The section follows his effort to decide, not the number of steps after his clic
 
 He has to think about whether to act or about the content: a behavior change, several threads with mixed verdicts, a verdict that needs his domain check, a decision on an open question. The route for PRs we would fix ourselves follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over. On the others, `drive` or `address_review` for open threads and `revise` for any other change. `effortMinutes` is 5 or more.
 
-- A PR whose full review found only `minor` or cosmetic findings. Recommended route: `review` with `event: "comment"`, inline comments and a summary, with an approval as the alternative. At least one `major` or `blocker` finding makes it `event: "request_changes"` (`item-doc.md`, `review`).
+- A PR whose full review found only `minor` or cosmetic findings. Recommended route: `review` with `event: "request_changes"`, inline comments and a summary (`item-doc.md`, `review`).
 - A PR with failing CI where the failure comes from the PR's own change and the fix is small.
 - An issue or feature request that only needs the maintainer's yes or no, like "accept this API?". Put the open question in `state`.
 - A PR by the bot or a dependency bot whose CI fails because of its own change, when the fix is small: `revise` with the fix as its `text`. These PRs are ours already, so never `take_over`.

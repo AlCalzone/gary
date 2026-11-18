@@ -134,6 +134,14 @@ const items = {
 		kind: "discussion", repo: REPO, number: 31, title: "answered", url: "https://github.com/acme/widgets/discussions/31", reviewedAt, hint: "Close: answered",
 		routes: [{ id: "r1", type: "close", title: "Close: answered", recommended: true, text: "Thanks, closing.", params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/31#c1", gist: "Hold the button" } } }],
 	},
+	"pr-18": {
+		kind: "pr", repo: REPO, number: 14, title: "review with a suggestion", authorType: "contributor", reviewedAt, hint: "Request changes: 2 fixes",
+		routes: [{ id: "r1", type: "review", title: "Request changes: 2 fixes", as: "bot", recommended: true, text: "Two things.",
+			params: { event: "request_changes", comments: [
+				{ id: "c1", path: "src/a.ts", line: 4, text: "Check the length", original: "old", suggestion: "new" },
+				{ id: "c2", path: "src/a.ts", line: 9, text: "Why this value?" },
+			] } }],
+	},
 	"issue-64": {
 		kind: "issue", repo: REPO, number: 64, title: "two prefills and a fix", reviewedAt, hint: "Reply: x",
 		routes: [
@@ -271,6 +279,11 @@ await expect("a mapped take_over without text is refused as a revise", "pr-12", 
 
 // Input validation
 await expect("review rejects unknown comment id", "pr-12", "r1", { input: { commentIds: ["c9"] } }, refused(/unknown comment/));
+await expect("review rejects an unknown event", "pr-18", "r1", { input: { event: "dismiss" } }, refused(/input.event must be one of approve, request_changes, comment/));
+await expect("an approval with a checked suggestion is refused", "pr-18", "r1", { input: { event: "approve" } }, refused(/An approval cannot carry suggestions/));
+await expect("a review goes out as a comment when he picks that", "pr-18", "r1", { input: { event: "comment", commentIds: ["c1"] } }, (r) => r.data.ok === true);
+await expect("follow_up rejects an askReporter that is no boolean", "issue-21", "r8", { input: { askReporter: "yes" } }, refused(/input.askReporter must be true or false/));
+await expect("only the agent's fix card takes askReporter", "issue-21", "r1", { input: { askReporter: true } }, refused(/unknown field "askReporter"/));
 await expect("review rejects a repeated comment id", "pr-12", "r1", { input: { commentIds: ["c1", "c1"] } }, refused(/twice/));
 await expect("review rejects unknown input keys", "pr-12", "r1", { input: { commentIds: [], extra: 1 } }, refused(/unknown field/));
 await expect("review rejects non-array commentIds", "pr-12", "r1", { input: { commentIds: "c1" } }, refused(/must be an array/));
@@ -381,7 +394,7 @@ st = (await api("/api/state")).data.items.filter((i) => i.instance === "widgets"
 check("an issue with a running fix is served with item.fix", st.find((i) => i.id === "issue-21").fix?.state === "working" && st.find((i) => i.id === "issue-21").fix.startedBy === "routine" && st.find((i) => i.id === "issue-21").fix.parked === true && JSON.stringify(st.find((i) => i.id === "issue-21").fix.limit) === '{"pending":1,"max":10}' && st.find((i) => i.id === "issue-22").fix === undefined, st.find((i) => i.id === "issue-21").fix);
 check("a claim is served as working with its kind and start", st.find((i) => i.id === "issue-21").working?.kind === "fix" && st.find((i) => i.id === "disc-34").working === undefined, st.find((i) => i.id === "issue-21").working);
 rmSync(join(home, "state", "claims", "issue-21.fix.json"));
-await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", {}, (r) => r.data.ok && r.data.queued);
+await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", { input: { askReporter: true } }, (r) => r.data.ok && r.data.queued);
 await expect("a repeated agent click gets 409", "issue-21", "r8", {}, (r) => r.status === 409);
 
 // alsoLabel: the label button next to a prefill reply, and labels right after a bot post
@@ -438,7 +451,10 @@ const byRoute = (itemId, routeId) => docs.filter((d) => d.itemId === itemId && d
 const ar = byRoute("pr-12", "r2")[0];
 check("address_review doc is queued with decisions", ar?.status === "queued" && ar.action === "address_review" && ar.params.decisions.length === 2 && ar.params.decisions[0].note === "fix it" && ar.text === "Run note", ar);
 const sf = byRoute("issue-21", "r8")[0];
-check("start_fix doc carries text and finding only", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2"}', sf);
+check("start_fix doc carries text, finding and the switch he set", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2","askReporter":true}', sf);
+const ev18 = byRoute("pr-18", "r1")[0];
+check("the review goes out with the event he picked", ev18?.status === "done" && ev18.params.event === "comment" && ev18.params.comments.length === 1, ev18);
+check("a changed review event is logged for learning", readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).some((e) => e.type === "changed_event" && e.itemId === "pr-18" && e.from === "request_changes" && e.to === "comment" && e.route.type === "review"));
 check("drive doc", byRoute("pr-13", "r1")[0]?.params?.maxRounds === 3 && byRoute("pr-12", "r11")[0]?.params?.maxRounds === 2, docs.filter((d) => d.action === "drive"));
 check("take_over default doc", byRoute("pr-16", "r3")[0]?.action === "take_over" && byRoute("pr-16", "r3")[0]?.params?.mode === "push", byRoute("pr-16", "r3"));
 const rv = byRoute("pr-12", "r18")[0];
@@ -484,6 +500,7 @@ const h60 = itemNow("issue-60").handled;
 check("a reported prefill sets handled with verified null", h60?.routeId === "r1" && h60.routeType === "reply" && h60.verified === null && Date.parse(h60.at) > Date.now() - 10000, h60);
 
 // Every prefill button he used is kept per route and served on the route
+const docsNow = () => readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8")));
 const route64 = async (rid) => (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "issue-64").routes.find((x) => x.id === rid);
 const openedStore = () => JSON.parse(readFileSync(join(home, "state", "opened.json"), "utf8"));
 check("a route he did not use carries no opened mark", (await route64("r1")).opened === undefined);
@@ -496,6 +513,7 @@ await sleep(20);
 await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r2", text: "Closing." });
 check("a second prefill on the item keeps the first mark", (await route64("r1")).opened?.at === firstAt && !!(await route64("r2")).opened, await route64("r1"));
 await api("/api/action", { instance: "widgets", itemId: "issue-64", routeId: "r3", draftHash: (await route64("r3")).draftHash });
+check("a fix started without the switch asks nobody", docsNow().find((a) => a.itemId === "issue-64" && a.action === "start_fix")?.params.askReporter === false);
 check("an agent click on the item replaces handled and keeps the opened mark", itemNow("issue-64").handled?.routeId === "r3" && (await route64("r1")).opened?.at === firstAt && (await route64("r3")).opened === undefined, itemNow("issue-64").handled);
 await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r1", text: "Edited again" });
 check("copying again moves the time", (await route64("r1")).opened.at > firstAt && openedStore()["issue-64"].r1.text === "Edited again");

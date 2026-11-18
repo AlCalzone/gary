@@ -64,6 +64,8 @@ Write the body to `<scratch>/pr-body.md`, with no forced line breaks inside para
 
 The body describes the change and its evidence. It never @-mentions the reporter or anyone else, and it never asks anyone to test, check or confirm something. `Fixes #<n>` is the only link to the reporter. This holds also when the route's `text` or the request's instructions ask for such a question: leave that part out and say so in the returned `state`.
 
+One switch changes this. When the `start_fix` action has `params.askReporter: true`, the maintainer switched on "Ask the reporter to test" on the card. Then, and only then, the body ends with one request to the reporter: mention them once, say exactly what to test, and say how to install the PR's build when the profile's `rules/issues.md` describes that. Keep it to a few sentences. An autonomous fix has no click and no such param, so it always asks nobody.
+
 Before you call something unverified, look for a second source. The profile's `rules/issues.md` names the sources of the project, like a product database or a manual. Something a second source confirms is verified, and the body names the source.
 
 Open it under the writing identity:

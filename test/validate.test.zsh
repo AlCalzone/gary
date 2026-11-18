@@ -143,6 +143,30 @@ mk case "{$BASE,\"hint\":\"Approve: x\",\"threads\":[{\"id\":\"PRRT_1\",\"verdic
 expect "approve while a thread is valid is a warning" 0 "warning: pr-12: routes[0] (r1): approves while a thread is judged valid" node $B put items pr-12 $H/case.json
 expect "merge while a thread is valid is a warning" 0 "merges while a thread is judged valid" node $B put items pr-12 $H/case.json
 
+# A review with something for the contributor is a change request
+RVW='"id":"r1","type":"review","title":"Review: x","as":"bot","recommended":true,"text":"One thing."'
+mk case "{$CONTRIB,\"hint\":\"Review: x\",\"routes\":[{$RVW,\"params\":{\"event\":\"comment\"}}]}"
+expect "a preset comment review is a warning" 0 'warning: pr-12: routes[0] (r1): a review with something for the contributor is a change request' node $B put items pr-12 $H/case.json
+mk case "{$CONTRIB,\"hint\":\"Review: x\",\"routes\":[{$RVW,\"params\":{\"event\":\"request_changes\"}}]}"
+expect "a change request has no such warning" 0 '"ok":true' zsh -c "node $B put items pr-12 $H/case.json 2>&1 | grep -v 'change request'"
+expect "a change request has no such warning (stderr)" 1 '' zsh -c "node $B put items pr-12 $H/case.json 2>&1 | grep 'is a change request'"
+mk case "{$BOTPR,\"hint\":\"Review: x\",\"routes\":[{$RVW,\"params\":{\"event\":\"comment\"}}]}"
+expect "a comment review on a bot's PR is fine" 1 '' zsh -c "node $B put items pr-12 $H/case.json 2>&1 | grep 'is a change request'"
+
+# The switch that lets a fix ask the reporter
+FU='"id":"r1","type":"follow_up","title":"Start fix: x","as":"agent","recommended":true,"text":"Fix it"'
+ISSUE=${${BASE/\"kind\":\"pr\"/\"kind\":\"issue\"}/pull\/12/issues\/21}
+mk case "{$ISSUE,\"hint\":\"Start fix: x\",\"routes\":[{$FU,\"params\":{\"askReporter\":true,\"askReporterWhy\":\"Only the reporter has this device revision.\"}}]}"
+expect "a fix route may preset askReporter with a reason" 0 '"ok":true' node $B put items issue-90 $H/case.json
+mk case "{$ISSUE,\"hint\":\"Start fix: x\",\"routes\":[{$FU,\"params\":{\"askReporter\":\"yes\"}}]}"
+expect "askReporter must be a boolean" 1 "params.askReporter must be true or false" node $B put items issue-90 $H/case.json
+mk case "{$ISSUE,\"hint\":\"Start fix: x\",\"routes\":[{$FU,\"params\":{\"askReporter\":false,\"askReporterWhy\":\"x\"}}]}"
+expect "askReporterWhy needs askReporter true" 1 "needs askReporter true" node $B put items issue-90 $H/case.json
+mk case "{$ISSUE,\"hint\":\"Reply: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: x\",\"as\":\"bot\",\"text\":\"x\",\"recommended\":true,\"params\":{\"askReporter\":true}}]}"
+expect "askReporter is only for the agent's fix route" 1 'askReporter is only for follow_up routes' node $B put items issue-90 $H/case.json
+node $B put items issue-90 --delete > /dev/null 2>&1
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
+
 # gary validate over stored items
 mk case "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"s1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"x\",\"recommended\":true}]}"
 node $B put --no-validate items pr-12 $H/case.json > /dev/null

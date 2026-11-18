@@ -79,6 +79,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const fixCall = __calls.at(-1);
   ok("follow_up agent: teal Start fix, no confirm, sends routeId and draftHash", __calls.length === calls + 1 && fixCall.itemId === "issue-9471" && fixCall.routeId === "r3" && fixCall.draftHash === "h3" && fixCall.force === false);
   ok("success shows on the card", /The agent is on it/.test(openCard().querySelector(".card-actions").textContent));
+  ok("Start fix sends the reporter switch, off by default", fixCall.input.askReporter === false);
   ok("a queued agent route collapses with Requested in its header", !expandedCard() && /^Requested$/.test(cards()[2].querySelector(".card-top > .head-done").textContent) && !cards()[2].querySelector(".card-top > .head-done").hidden);
   ok("a click on another card leaves the used prefill marked", !hd0().hidden && /Copied and opened on GitHub/.test(cards()[0].querySelector(".card-actions").textContent));
   ok("a route click writes no action doc from the page", !__writes.some((w) => w[1].startsWith("actions/")));
@@ -160,11 +161,31 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("review: each comment shows its diff hunk with added and removed lines", hunks.length === 2 && !!hunks[0].querySelector(".h-add") && !!hunks[0].querySelector(".h-del") && hunks.every((x) => x.querySelectorAll("span").length <= 12)
     && !!(hunks[0].compareDocumentPosition(hunks[0].parentElement.querySelector(".c-text")) & Node.DOCUMENT_POSITION_FOLLOWING));
   ok("review button label and color from the event", cardBtn("Request changes")?.classList.contains("intent-push"));
+  const evSeg = () => [...openCard().querySelectorAll(".review-event .seg")];
+  ok("review: a switch for the event, preset from the route", evSeg().map((b) => b.textContent).join() === "Request changes,Comment,Approve" && evSeg().find((b) => b.getAttribute("aria-pressed") === "true").textContent === "Request changes");
+  evSeg()[1].click(); await wait(5);
+  ok("review: the button follows the picked event", !cardBtn("Request changes") && cardBtn("Comment")?.classList.contains("intent-talk"));
+  cardBtn("Comment").click(); await wait(5);
+  ok("review: the confirm names the picked event", !!cardBtn("Confirm: comment as widgets-bot"));
+  evSeg()[0].click(); await wait(5);
+  ok("review: switching back drops the open confirm", !!cardBtn("Request changes") && !cardBtn("Confirm: comment as widgets-bot"));
   checks[1].click();
   cardBtn("Request changes").click(); await wait(5);
   calls = __calls.length;
   cardBtn("Confirm: request changes as widgets-bot").click(); await wait(20);
   ok("review sends the checked comment ids", JSON.stringify(__calls.at(-1).input.commentIds) === '["c1"]' && /Two small things/.test(__calls.at(-1).text));
+  ok("review: an unchanged event is not sent", __calls.at(-1).input.event === undefined);
+  items(F); await wait(10);
+  await openItem("pr-9473");
+  evSeg()[2].click(); await wait(5);
+  cardBtn("Approve").click(); await wait(5);
+  cardBtn("Confirm: approve as widgets-bot").click(); await wait(20);
+  ok("review: a picked event goes to the server as input.event", __calls.at(-1).input.event === "approve" && __calls.at(-1).routeId === "r1");
+  items(with_("pr-9473", (d) => ({ ...d, author: "widgets-bot", authorType: "bot" }))); await wait(10);
+  await openItem("pr-9473");
+  ok("review: the bot's own PR has no event switch", !expandedCard().querySelector(".review-event"));
+  items(F); await wait(10);
+  await openItem("pr-9473");
   ok("with a take_over covering every judged thread the list moves onto that card", document.getElementById("d-threads").hidden && cards()[3].querySelectorAll(".decisions > li").length === 2);
   calls = __calls.length;
   ok("merge in his name is a compact green row", cards()[1].classList.contains("compact") && cardBtn("Open GitHub to merge", cards()[1])?.classList.contains("intent-finish"));
@@ -310,6 +331,27 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("take_over without threads has no thread list", !openCard().querySelector(".decisions") && /Continues in the contributor's PR/.test(openCard().textContent));
   cardBtn("Take over").click(); await wait(20);
   ok("take_over without threads sends no decisions", __calls.at(-1).input.decisions === undefined);
+  items(F); await wait(10);
+
+  // The switch that lets a fix ask the reporter to test
+  items(routeMap("issue-9472", "r3", (r) => ({ ...r, type: "follow_up", as: "agent", actor: "agent", title: "Start fix: the dimmer file", text: "Add the config file.", params: {} }))); await wait(10);
+  await openItem("issue-9472");
+  await expand(2);
+  const ask = () => expandedCard().querySelector(".ask-reporter input");
+  ok("fix card: a switch to ask the reporter to test, off by default and without a reason", !!ask() && !ask().checked && expandedCard().querySelector(".ask-reporter").textContent === "Ask the reporter to test" && !expandedCard().querySelector(".ask-reporter-why"));
+  ask().click();
+  calls = __calls.length;
+  cardBtn("Start fix").click(); await wait(20);
+  ok("fix card: the switch goes to the server as input.askReporter", __calls.length === calls + 1 && __calls.at(-1).input.askReporter === true);
+  document.getElementById("d-close").click(); await wait(5);
+  items(routeMap("issue-9472", "r3", (r) => ({ ...r, type: "follow_up", as: "agent", actor: "agent", title: "Start fix: the dimmer file", text: "Add the config file.", draftHash: "hx", params: { askReporter: true, askReporterWhy: "Only the reporter has this device revision." } }))); await wait(10);
+  await openItem("issue-9472");
+  await expand(2);
+  ok("fix card: the agent's preset turns the switch on and shows why", ask().checked && expandedCard().querySelector(".ask-reporter-why")?.textContent === "Only the reporter has this device revision.");
+  ask().click();
+  cardBtn("Start fix").click(); await wait(20);
+  ok("fix card: he can turn a preset off", __calls.at(-1).input.askReporter === false);
+  document.getElementById("d-close").click(); await wait(5);
   items(F); await wait(10);
 
   // revise on a PR we already control: instructions and a button, no threads on the card

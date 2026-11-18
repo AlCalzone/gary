@@ -155,6 +155,14 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 		if (params.alsoLabel !== undefined) checkAlsoLabel(route, params.alsoLabel, profile, where, err);
 		if (params.alsoAnswer !== undefined) checkAlsoAnswer(item, route, params.alsoAnswer, where, err);
 
+		if (params.askReporter !== undefined || params.askReporterWhy !== undefined) {
+			if (route.type !== "follow_up" || route.as !== "agent") err("ask-reporter", `${where}: askReporter is only for follow_up routes with as "agent"`);
+			else if (typeof params.askReporter !== "boolean") err("ask-reporter", `${where}: params.askReporter must be true or false`);
+			else if (params.askReporterWhy !== undefined && !(params.askReporter && isString(params.askReporterWhy) && params.askReporterWhy.length <= 200)) {
+				err("ask-reporter", `${where}: params.askReporterWhy says in at most 200 characters why only the reporter can test it, and needs askReporter true`);
+			}
+		}
+
 		// No second fix while one runs or its PR is a draft or open
 		if (route.type === "follow_up" && route.as === "agent" && fixBlock(fix)) err("fix-running", `${where}: ${fixBlock(fix)}`);
 
@@ -174,6 +182,10 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 					});
 				}
 				if (params.event === "approve" && hasValidThread) warn("approve-valid-thread", `${where}: approves while a thread is judged valid`);
+				// GitHub refuses a change request on one's own PR, so a bot's PR keeps a comment review
+				if (params.event === "comment" && item.authorType !== "bot") {
+					warn("review-comment-event", `${where}: a review with something for the contributor is a change request. Use event "request_changes", or "approve" for a clean PR. He can still pick Comment on the card`);
+				}
 				break;
 			}
 			case "merge":

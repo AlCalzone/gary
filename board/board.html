@@ -2381,6 +2381,8 @@ const detail = {
   reviews: document.getElementById("d-reviews"),
   threads: document.getElementById("d-threads"),
   meNotes: new Map(),
+  // The review event he picked per route, when it differs from the agent's proposal
+  events: new Map(),
   rounds: document.getElementById("d-rounds"),
   analyze: document.getElementById("d-analyze"),
   foot: document.getElementById("d-foot"),
@@ -2639,12 +2641,19 @@ function moveToRepo(r) {
   return to !== "" && to !== "discussion" && to !== "issue";
 }
 
+const REVIEW_EVENT_LABELS = { request_changes: "Request changes", comment: "Comment", approve: "Approve" };
+
+// The event a review goes out with: his pick on the card, else the agent's proposal
+function reviewEvent(r) {
+  return detail.events.get(r.id) || str(paramsOf(r).event);
+}
+
 function routeIntent(r) {
   const p = paramsOf(r);
   switch (r.type) {
     case "merge": return "finish";
     case "close": return "close";
-    case "review": return p.event === "approve" ? "finish" : p.event === "request_changes" ? "push" : "talk";
+    case "review": return reviewEvent(r) === "approve" ? "finish" : reviewEvent(r) === "request_changes" ? "push" : "talk";
     case "reply":
     case "request_logs": return "talk";
     case "address_review":
@@ -2717,7 +2726,7 @@ function routeButtons(d, r) {
   const text = hasText(r);
   const me = (label, extra = {}) => ({ id: "main", actor: "me", label, copy: "draft", ...extra });
   const run = (label, extra = {}) => ({ id: "main", actor: as, label, ...extra });
-  const event = { approve: "Approve", request_changes: "Request changes", comment: "Comment" }[p.event] || "Submit review";
+  const event = REVIEW_EVENT_LABELS[reviewEvent(r)] || "Submit review";
   switch (r.type) {
     case "reply": return [as === "me" ? me("Copy reply, open GitHub") : run("Post reply", { confirm: true, needsText: true })];
     case "request_logs": return [as === "me" ? me("Copy request, open GitHub") : run("Ask for a debug log", { confirm: true, needsText: true })];
@@ -3287,6 +3296,24 @@ function buildCardInputs(id, d, r, rec) {
   } else if (r.type !== "address_review") {
     out.push(...editor);
   }
+  if (r.type === "follow_up" && as === "agent") {
+    // The agent may preset the switch when only the reporter's hardware can show that the fix works
+    if (rec.askReporter === undefined) rec.askReporter = p.askReporter === true;
+    const box = h("input", { type: "checkbox", id: "ar-" + id.replace(/[^A-Za-z0-9_-]/g, "_") + "-" + r.id, checked: rec.askReporter });
+    box.addEventListener("change", () => { rec.askReporter = box.checked; });
+    out.push(h("label", { class: "also-label ask-reporter", for: box.id }, box, "Ask the reporter to test"),
+      p.askReporter === true && str(p.askReporterWhy) ? h("p", { class: "quiet-line ask-reporter-why" }, richText(p.askReporterWhy)) : null);
+  }
+  // GitHub refuses an approval or a change request on one's own PR, so the bot's own PR keeps its event
+  if (r.type === "review" && Object.hasOwn(REVIEW_EVENT_LABELS, str(p.event)) && !(instOf(d).bot && str(d.author) === botLogin(instOf(d)))) {
+    out.push(h("span", { class: "seg-row review-event" }, h("span", { class: "card-label" }, "Submit as"),
+      segControl("Review event", Object.entries(REVIEW_EVENT_LABELS), reviewEvent(r), (v) => {
+        if (v === str(p.event)) detail.events.delete(r.id);
+        else detail.events.set(r.id, v);
+        state.confirming.delete(id);
+        render();
+      })));
+  }
   if (r.type === "review") {
     const comments = (Array.isArray(p.comments) ? p.comments : []).filter((c) => c && typeof c === "object" && typeof c.id === "string");
     if (comments.length) {
@@ -3406,6 +3433,8 @@ function partButtons(id, d, r, rec, locked) {
 function routePayload(d, r, rec, b) {
   const input = { ...(b && b.input ? b.input : {}) };
   if (r.type === "review") input.commentIds = [...rec.checks].filter(([, on]) => on).map(([cid]) => cid);
+  if (r.type === "review" && detail.events.has(r.id)) input.event = detail.events.get(r.id);
+  if (r.type === "follow_up" && actorOf(r) === "agent") input.askReporter = rec.askReporter === true;
   if (r.type === "address_review" || (r.type === "take_over" && takeOverThreads(d).length)) {
     input.decisions = [...rec.decisions].map(([threadId, st]) => ({ threadId, decision: st.decision, ...(st.note.trim() ? { note: st.note.trim() } : {}) }));
   }
@@ -3776,7 +3805,7 @@ function renderRoutes(id, d, locked) {
       if (r.done) for (const el of rec.body.querySelectorAll("input, textarea, button.seg, button.lane-switch")) el.disabled = true;
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
-    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d), openedOf(id, r),
+    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d), openedOf(id, r), detail.events.get(r.id),
       detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, meLogin(), instOf(d).paused === true, combinedView()]);
     if (sig !== rec.sig) {
       rec.sig = sig;
@@ -4061,6 +4090,7 @@ function openDetail(id, row) {
   detail.lastRoute = null;
   detail.threadsOpen = false;
   detail.meNotes.clear();
+  detail.events.clear();
   detail.lastZone = null;
   detail.findingsOpen = null;
   detail.pendingFocus = null;

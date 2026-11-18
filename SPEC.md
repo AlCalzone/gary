@@ -277,11 +277,11 @@ Rules:
 
 The click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/action`. The server reads type, actor and params from the item file. `input` carries what the maintainer chose on the card:
 
-- `review`: `{ commentIds: ["c1", "c3"] }`, the checked inline comments. All are checked by default.
+- `review`: `{ commentIds: ["c1", "c3"], event }`. `commentIds` are the checked inline comments. All are checked by default. `event` is optional: the card has a switch "Request changes | Comment | Approve", preset from `params.event`, and sends his pick when it differs. The server uses it in place of `params.event`, refuses an `approve` that carries a checked comment with a `suggestion`, and logs a `changed_event` decision. The card of a PR by the bot itself has no switch, because GitHub lets the bot only comment there.
 - `address_review`: `{ decisions: [{ threadId, decision: "fix" | "dismiss", note }] }`. The card lists the item's `threads`. Each switch starts from the agent's verdict: only `valid` starts on `fix`, `optional`, `wrong` and `unjudged` start on `dismiss`. `note` is optional per thread. `text` is an optional note for the whole run.
 - `take_over`: `{ decisions }`, the same as for `address_review` and validated the same way. Optional: a take-over without open threads sends none.
 - `revise`: no input. The click's `text` holds the instructions, and the server refuses a click whose `text` is empty.
-- `follow_up`: `{ title }` when the maintainer edited it.
+- `follow_up`: `{ title }` when the maintainer edited it. With `as: "agent"`: `{ askReporter: true | false }` from the card's switch "Ask the reporter to test". It is off by default. The route may preset it with `params.askReporter: true` and a `params.askReporterWhy` of at most 200 characters, shown next to the switch. The server stores the boolean as `params.askReporter` on the `start_fix` action doc, false when the input has none. Both params are valid on this route only.
 - `drive`: `{ maxRounds }`, 1 to 3, when the maintainer changed it.
 - `move` to a repo: `{ mode: "transfer" | "close" }`. Required. `close` needs a non-empty `text`. The two buttons share one route, so after one ran the other is refused.
 - `reply` and `request_logs` with `alsoLabel`, run as the bot: `{ alsoLabel: true | false }`, default true. True sets the labels right after the post succeeded, in the same click.
@@ -339,6 +339,7 @@ An issue or discussion whose served `fix` has `parked: true` is in no plan group
 - 0 to 4 routes with the ids `r1` to `r4`, each id once. With routes, exactly one is `recommended`, and `hint` equals its title and has at most 60 characters. An item without routes needs no hint.
 - No routes while a thread is `unjudged`.
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
+- A `review` route with a preset `event: "comment"` is a warning, except on a PR by a bot: a review with something for the contributor is a change request.
 - `address_review` only when every thread has an id and a verdict, and only where `drive` would be accepted. `drive`, `take_over` and `revise` only where the server would accept them: `take_over` only on a contributor PR that is not taken over, `revise` only where `drive` is allowed, with a non-empty `text` and no params.
 - An item with `blocked` has exactly one route, of type `open`. An `open` route has no text and no params, and is allowed without `blocked` too.
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
@@ -542,7 +543,7 @@ Agent requests. The server writes them as queued action docs when their route is
 | --- | --- |
 | `full_review` | run the full review for this item, outside the budget. After the review rounds of a fix PR it carries `params: { repo, number, by: "fix", fixFor, outcome, ready, rounds, lastPushedSha }` and the reason the rounds ended as `text`. The PR has no board item yet then, so the worker reads repo and number from the params |
 | `reanalyze` | `text` holds an optional maintainer instruction for the agent |
-| `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from |
+| `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from. `params.askReporter` is true when he switched on "Ask the reporter to test": only then the PR body ends with one request to the reporter. A fix nobody clicked asks nobody |
 | `address_review` | `params.decisions` as sent by the card. The agent fixes or dismisses each thread and pushes to the PR branch as the bot |
 | `take_over` | `params.mode` `push` or `replace`, optional `params.decisions` as for `address_review`, optional `text` with instructions |
 | `revise` | no params. `text` holds the instructions. The agent makes that change and pushes to the PR branch as the bot. It leaves the open review threads alone, never opens a replacement PR and never sets `takenOver` |
@@ -577,6 +578,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `agent_note` | `text` | the note of "Analyze again", or the instruction text of an agent route |
 | `snoozed` | `days`, or `untilActivity: true` | the maintainer snoozed or hid the item |
 | `dismissed_proposal` | `proposal: { id, title, target, file }`, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
+| `changed_event` | `route: { type, title }`, `from`, `to` | a `review` ran with another event than the route's `params.event` |
 | `skipped_label` | `route: { type, title }`, `labels: { add, remove }` | a bot `reply` or `request_logs` with `alsoLabel` ran with `input.alsoLabel: false` |
 
 The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", snooze and hide. Routes with `as: "me"` never reach `/api/action`. The page reports their use to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
