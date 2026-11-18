@@ -1417,7 +1417,7 @@ function renderHeader() {
 
 const CONNECTION = {
   connected: ["plug", "Action server connected"],
-  queued: ["unplug", "Action server offline. Clicks are queued for the next run."],
+  queued: ["unplug", "The board server is not reachable. Nothing was sent."],
   checking: ["dashed", "Checking the action server"],
 };
 
@@ -1787,7 +1787,7 @@ function statusLine(id) {
   if (a.status === "queued") {
     const forAgent = AGENT_ACTIONS.has(a.action);
     const analyzing = a.action === "full_review" || a.action === "reanalyze";
-    const text = forAgent ? (analyzing ? "The agent is analyzing it again" : "The agent is on it") : "Queued for next run: " + name;
+    const text = forAgent ? (analyzing ? "The agent is analyzing it again" : "The agent is on it") : "Requested: " + name + ". The agent picks it up in a moment.";
     return h("div", { class: "status queued" }, icon("queued"), h("span", { text }), when);
   }
   if (a.status === "done") {
@@ -1918,7 +1918,7 @@ function stateIcons(id, d, dim, withPassing) {
   else {
     const a = latestOf(id);
     const name = a ? ACTION_NAMES[a.action] || str(a.action) : "";
-    if (a && a.status === "queued") out.push(["queued", "warn", "Queued for next run: " + name, null, "Queued"]);
+    if (a && a.status === "queued") out.push(["queued", "warn", "Requested: " + name + ". The agent picks it up in a moment.", null, "Requested"]);
     else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
     else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", "Done: " + name, null, "Done: " + name]);
   }
