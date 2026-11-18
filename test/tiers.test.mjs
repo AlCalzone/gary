@@ -140,6 +140,15 @@ for (const bad of ["https://github.com/acme/widgets/pull/120#issuecomment-9", "h
 	t.check(`lastEventUrl ${JSON.stringify(bad)} is refused`, r.status === 1 && /lastEventUrl must be a URL of the item's own thread/.test(r.stdout), r.stdout);
 }
 
+// effortMinutes
+const { effortMinutes: _drop, ...noEffort } = BASE;
+r = gary("put", "items", "pr-12", file(noEffort));
+t.check("a missing effortMinutes names the allowed values", r.status === 1 && /effortMinutes is required: the minutes the maintainer needs, one of 1, 2, 5, 10, 15, 30, 60, 120/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-12", file({ ...BASE, effortMinutes: 45 }));
+t.check("a wrong effortMinutes names the allowed values and the value", r.status === 1 && /one of 1, 2, 5, 10, 15, 30, 60, 120, not 45/.test(r.stdout), r.stdout);
+r = gary("put", "items", "pr-12", file({ ...BASE, effortMinutes: 120 }));
+t.check("120 minutes is allowed", r.status === 0, r.stdout);
+
 // classifiedBy on items
 r = gary("put", "items", "pr-12", file({ ...BASE, classifiedBy: "fast" }));
 t.check("an item takes classifiedBy", r.status === 0, r.stdout + r.stderr);

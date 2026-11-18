@@ -49,7 +49,8 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 	if (!AUTHOR_TYPES.includes(item.authorType)) err("authorType", `authorType must be one of ${AUTHOR_TYPES.join(", ")}`);
 	if (!SECTIONS.includes(item.section)) err("section", `section must be one of ${SECTIONS.join(", ")}`);
 	if (!Number.isInteger(item.priority) || item.priority < 0) err("priority", "priority must be a whole number");
-	if (!EFFORTS.includes(item.effortMinutes)) err("effortMinutes", `effortMinutes must be one of ${EFFORTS.join(", ")}`);
+	if (item.effortMinutes === undefined) err("effortMinutes", `effortMinutes is required: the minutes the maintainer needs, one of ${EFFORTS.join(", ")}`);
+	else if (!EFFORTS.includes(item.effortMinutes)) err("effortMinutes", `effortMinutes must be one of ${EFFORTS.join(", ")}, not ${JSON.stringify(item.effortMinutes)}`);
 	if (!DEPTHS.includes(item.reviewDepth)) err("reviewDepth", `reviewDepth must be one of ${DEPTHS.join(", ")}`);
 	if (item.kind === "pr" && item.ci !== undefined && !CI.includes(item.ci)) err("ci", `ci must be one of ${CI.join(", ")}`);
 	if (item.mergeable !== undefined && !MERGEABLE.includes(item.mergeable)) err("mergeable", `mergeable must be one of ${MERGEABLE.join(", ")}`);

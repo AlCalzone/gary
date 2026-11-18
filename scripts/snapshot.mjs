@@ -5,7 +5,7 @@ import { join, matchesGlob } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
-import { buildTimeline, issueFacts, prFacts, speakerFacts } from "./lib/facts.mjs";
+import { aiFacts, buildTimeline, issueFacts, prFacts, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { graphql } from "./lib/gh.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
@@ -16,6 +16,7 @@ const MAX_THREAD_TEXT = 600;
 const MAX_OPEN_THREADS = 20;
 const THREAD_PAGE = 100;
 const TIMELINE_PAGE = 50;
+const MAX_COMMITS = 100;
 const TIMELINE_REPLIES = 20;
 const TIMELINE_THREAD_COMMENTS = 20;
 const MAX_REPLIES = 300;
@@ -50,10 +51,11 @@ const PR_FIELDS = `
 				author { login __typename } authorAssociation
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
-				headRefOid baseRefName reviewDecision mergeable
+				headRefOid headRefName baseRefName reviewDecision mergeable
 				additions deletions
 				commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-				files(first: ${MAX_FILES}) { totalCount nodes { path } }
+				allCommits: commits(first: ${MAX_COMMITS}) { totalCount nodes { commit { message author { name email user { login } } committer { name email user { login } } } } }
+				files(first: ${MAX_FILES}) { totalCount nodes { path additions deletions } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
 				reviews(last: 10) { nodes { author { login __typename } state submittedAt url body } }
@@ -307,7 +309,13 @@ function baselineEntry(item) {
 
 /** Who counts as us, and the profile's patterns for automated comments. */
 function factsContext() {
-	return { us: [...new Set([...maintainerLogins(), ...botLogins()])], patterns: loadProfile().automatedComments ?? [] };
+	const profile = loadProfile();
+	const bot = loadConfig().bot?.login;
+	return {
+		us: [...new Set([...maintainerLogins(), ...botLogins()])],
+		patterns: profile.automatedComments ?? [],
+		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [] },
+	};
 }
 
 /** Adds the computed `facts` to a snapshot entry, from the raw GraphQL node. */
@@ -333,7 +341,14 @@ function withFacts(kind, node, entry, ctx) {
 		}
 	}
 	const { timeline, timelineTruncated, lastEventUrl } = buildTimeline(events, ctx, { truncated });
-	const facts = { timeline, ...(timelineTruncated && { timelineTruncated }), ...(lastEventUrl && { lastEventUrl }), ...speakerFacts(timeline), ...(kind === "pr" ? prFacts(entry) : issueFacts(entry, timeline)) };
+	const facts = {
+		timeline,
+		...(timelineTruncated && { timelineTruncated }),
+		...(lastEventUrl && { lastEventUrl }),
+		...speakerFacts(timeline),
+		...(kind === "pr" ? { ...prFacts(entry), ...sizeFacts(node), ...aiFacts(node, ctx.ai) } : issueFacts(entry, timeline)),
+		...(kind === "discussion" && { answerable: node.category?.isAnswerable === true, answerChosen: node.isAnswered === true }),
+	};
 	return { ...entry, facts };
 }
 

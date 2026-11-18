@@ -93,6 +93,24 @@ export const prNodes = {
 			thread("PRRT_4", "src/done.ts", 9, user(ME), { resolved: true }),
 		] },
 	},
+	// Written with an AI agent: a claude/ branch and a co-author trailer, plus a lock file that does not count as size
+	18: {
+		number: 18, title: "Add the restore timeout", url: `${URL}/pull/18`, body: "Adds a timeout", createdAt: iso(2), updatedAt: iso(3), isDraft: false,
+		author: user("hubot"), authorAssociation: "CONTRIBUTOR", labels: { nodes: [] }, assignees: { nodes: [] },
+		headRefOid: "a".repeat(40), headRefName: "claude/restore-timeout", baseRefName: "main", reviewDecision: null, mergeable: "MERGEABLE", additions: 130, deletions: 20,
+		commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
+		allCommits: { totalCount: 2, nodes: [
+			{ commit: { message: "Add the timeout\n\nCo-Authored-By: Claude <noreply@anthropic.com>", author: { name: "Hu Bot", email: "hubot@example.com", user: { login: "hubot" } }, committer: { name: "Hu Bot", email: "hubot@example.com", user: { login: "hubot" } } } },
+			{ commit: { message: "Fix the test", author: { name: "Hu Bot", email: "hubot@example.com", user: { login: "hubot" } }, committer: { name: "Hu Bot", email: "hubot@example.com", user: { login: "hubot" } } } },
+		] },
+		files: { totalCount: 3, nodes: [{ path: "src/restore.ts", additions: 90, deletions: 10 }, { path: "src/restore.test.ts", additions: 20, deletions: 0 }, { path: "package-lock.json", additions: 20, deletions: 10 }] },
+		comments: { totalCount: 0, nodes: [] },
+		timelineComments: { totalCount: 0, nodes: [] },
+		reviews: { nodes: [] },
+		allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+		reviewRequests: { nodes: [] },
+		reviewThreads: { totalCount: 0, pageInfo: { hasPreviousPage: false, startCursor: null }, nodes: [] },
+	},
 	// A dependency update from Renovate, clean and green
 	17: {
 		number: 17, title: "chore(deps): update dependency typescript to v6", url: `${URL}/pull/17`, body: "This PR contains the following updates", createdAt: iso(2), updatedAt: iso(3), isDraft: false,
@@ -100,7 +118,8 @@ export const prNodes = {
 		labels: { nodes: [{ name: "dependencies" }] }, assignees: { nodes: [{ login: ME }] },
 		headRefOid: "f".repeat(40), baseRefName: "main", reviewDecision: null, mergeable: "MERGEABLE", additions: 4, deletions: 4,
 		commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
-		files: { totalCount: 2, nodes: [{ path: "package.json" }, { path: "yarn.lock" }] },
+		files: { totalCount: 2, nodes: [{ path: "package.json", additions: 1, deletions: 1 }, { path: "yarn.lock", additions: 3, deletions: 3 }] },
+		allCommits: { totalCount: 1, nodes: [{ commit: { message: "chore(deps): update typescript", author: { name: "renovate[bot]", email: "29139614+renovate[bot]@users.noreply.github.com", user: { login: "renovate[bot]" } }, committer: { name: "GitHub", email: "noreply@github.com", user: null } } }] },
 		comments: { totalCount: 0, nodes: [] },
 		timelineComments: { totalCount: 0, nodes: [] },
 		reviews: { nodes: [] },

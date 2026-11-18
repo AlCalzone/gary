@@ -9,5 +9,6 @@
 	"autoLabels": [],
 	"botCommands": {},
 	"requiredTools": [],
-	"automatedComments": []
+	"automatedComments": [],
+	"aiAuthors": []
 }

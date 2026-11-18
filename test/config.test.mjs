@@ -93,6 +93,7 @@ t.check("automatedComments refuses nested quantifiers", ac([{ name: "x", pattern
 t.check("automatedComments refuses a very long pattern", ac([{ name: "x", pattern: "a".repeat(501) }]).some((e) => /at most 500/.test(e)));
 t.check("automatedComments needs a name and a list", ac([{ pattern: "x" }]).some((e) => /\.name" must name/.test(e)) && ac({}).length === 1);
 t.check("automatedComments entries refuse unknown fields", ac([{ name: "x", pattern: "x", startsWith: "y" }]).includes('unknown field "automatedComments[0].startsWith"'));
+t.check("aiAuthors is a list of strings", c.validateProfile({ ...gprofile, aiAuthors: ["devin"] }).length === 0 && c.validateProfile({ ...gprofile, aiAuthors: [1] }).some((e) => /"aiAuthors" must be a list of strings/.test(e)));
 t.check("fastTier defaults to off", c.loadInstance("widgets").config.fastTier === "off");
 t.check("fastTier takes off, shadow or on", c.validateConfig({ profile: "p", me: "me", fastTier: "shadow" }).length === 0 && c.validateConfig({ profile: "p", me: "me", fastTier: "fast" }).some((e) => /"fastTier" must be one of/.test(e)));
 let error = "";

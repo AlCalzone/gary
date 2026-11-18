@@ -43,6 +43,7 @@ export const PROFILE_DEFAULTS = {
 	botCommands: {},
 	requiredTools: [],
 	automatedComments: [],
+	aiAuthors: [],
 };
 
 // The longest comment text an automatedComments pattern runs against. It bounds the cost of a slow pattern
@@ -326,7 +327,7 @@ export function checkProfile(data) {
 	}
 	check(errors, data.reviewBots === undefined || isStringList(data.reviewBots, /^copilot$/), `"reviewBots" may only contain "copilot"`);
 	check(errors, data.relatedRepos === undefined || isStringList(data.relatedRepos, REPO_NAME), `"relatedRepos" must be a list of repository names of the same owner`);
-	for (const key of ["sensitivePaths", "autoLabels", "requiredTools"]) {
+	for (const key of ["sensitivePaths", "autoLabels", "requiredTools", "aiAuthors"]) {
 		check(errors, data[key] === undefined || isStringList(data[key]), `"${key}" must be a list of strings`);
 	}
 	const cmds = data.botCommands;
