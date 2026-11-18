@@ -163,3 +163,86 @@
     document.getElementById("d-close").click(); await wait(5);
     items(F); await wait(5);
   }
+
+  // ---------- round 5 ----------
+  // Answer button next to the copy button of a discussion's close
+  {
+    items(F); await wait(5);
+    await openItem("disc-9492");
+    const ab = () => [...cards()[0].querySelectorAll(".card-actions .answer-btn")][0];
+    ok("answer: a quieter Mark answer button with the bot's avatar next to Copy", !!cardBtn("Copy reply, open GitHub to close", cards()[0]) && ab()?.textContent === "Mark answer" && avatarOf(ab(), "widgets-bot") && !ab().classList.contains("primary"));
+    const view = cards()[0].querySelector(".card-actions a.part-view");
+    ok("answer: a small view link to the proposed answer in a new tab", view?.textContent === "view" && view.href === "https://github.com/acme/widgets/discussions/9492#discussioncomment-77" && view.target === "_blank");
+    ok("answer: the gist as a quiet line under the buttons", /^Proposed answer: Run widgets backup before every update\.$/.test(cards()[0].querySelector(".part-gist")?.textContent ?? ""));
+    let c = __calls.length;
+    ab().click(); await wait(20);
+    ok("answer: one call with part answer, no confirm", __calls.length === c + 1 && JSON.stringify(__calls.at(-1)) === JSON.stringify({ tool: "close", instance: "widgets", itemId: "disc-9492", routeId: "r1", input: { part: "answer" } }));
+    ok("answer: done reads Answer marked with the check mark", ab().textContent === "Answer marked" && ab().disabled && !!ab().querySelector(".part-check"));
+    items(F); await wait(5);
+    await openItem("disc-9492");
+    window.__reply = () => ({ ok: false, result: "Already marked.", duplicate: true });
+    ab().click(); await wait(20);
+    ok("answer: a 409 reads as done", ab().textContent === "Answer marked");
+    window.__reply = () => ({ ok: true, result: { dryRun: true } });
+    items(routeMap("disc-9492", "r1", (r) => ({ ...r, answerDone: { status: "done", result: "" } }))); await wait(10);
+    await openItem("disc-9492");
+    ok("answer: the server's answerDone shows as done", ab().textContent === "Answer marked");
+    items(routeMap("disc-9492", "r1", (r) => ({ ...r, params: { ...r.params, alsoLabel: { add: ["answered"], remove: [] } } }))); await wait(10);
+    await openItem("disc-9492");
+    ok("a close does not grow a label button, the answer stays", !cards()[0].querySelector(".label-btn") && !!ab());
+    items(F); await wait(5);
+    const W = window.__board.instances[0];
+    window.__board.instances[0].paused = true; window.dispatchEvent(new Event("board:info")); await wait(10);
+    await openItem("disc-9492");
+    ok("answer: paused hint", !!cards()[0].querySelector(".card-actions .paused-hint"));
+    window.__board.instances[0].paused = false;
+    window.__board.instances = [{ ...W, bot: null, accountMode: "own" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
+    await openItem("disc-9492");
+    ok("answer: own mode carries his avatar", avatarOf(ab(), "octocat"));
+    window.__board.instances = [{ ...W, bot: null, accountMode: "none" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
+    await openItem("disc-9492");
+    ok("answer: hidden without bot and own mode", !ab());
+    window.__board.instances = [W]; window.dispatchEvent(new Event("board:info")); await wait(10);
+    document.getElementById("d-close").click(); await wait(5);
+  }
+
+  // The agent is working on an item
+  {
+    items(F); await wait(5);
+    await openItem("pr-9493");
+    const wl = document.getElementById("d-working");
+    ok("working: a calm line above the cards with the time", !wl.hidden && /^The agent is pushing to this PR/.test(wl.textContent) && /12m|12 min/.test(wl.textContent) && !!(wl.compareDocumentPosition(document.getElementById("d-routes")) & Node.DOCUMENT_POSITION_FOLLOWING));
+    const db = cardBtn("Drive this PR");
+    ok("working: the matching agent button is disabled with already running", db?.disabled === true && /already running/.test(openCard().querySelector(".card-actions").textContent));
+    await openItem("issue-9494");
+    ok("working on a fix: its Start fix is disabled", /working on a fix/.test(document.getElementById("d-working").textContent) && cardBtn("Start fix")?.disabled === true);
+    items(routeMap("issue-9494", "r1", (r) => r)); await wait(5);
+    items(F.map(([k, d]) => [k, k === "issue-9494" ? { ...d, working: undefined } : d])); await wait(10);
+    await openItem("issue-9494");
+    window.__reply = () => ({ ok: false, result: "The agent is already working on this.", duplicate: true });
+    cardBtn("Start fix").click(); await wait(20);
+    ok("a 409 already working shows as information", /The agent is already working on this\./.test(openCard().querySelector(".status.info")?.textContent ?? "") && !openCard().querySelector(".status.failed"));
+    window.__reply = () => ({ ok: true, result: { dryRun: true } });
+    await openItem("issue-9471");
+    ok("no working line without working", document.getElementById("d-working").hidden);
+    items(F.map(([k, d]) => [k, k === "issue-9471" ? { ...d, working: { kind: "review", since: iso(60000) } } : d])); await wait(10);
+    ok("working on a review: Analyze again reads Analyzing…", document.querySelector("#d-foot .foot-analyze").textContent === "Analyzing…" && /reviewing this/.test(document.getElementById("d-working").textContent));
+    document.getElementById("d-close").click(); await wait(5);
+    items(F); await wait(5);
+    for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+    await wait(5);
+    const icon = document.querySelector('.row[data-id="pr-9493"] .r-meta svg[aria-label="The agent is pushing to this PR"]');
+    ok("working: a quiet icon on the row with the same tooltip, no animation", !!icon && getComputedStyle(icon).animationName === "none" && !document.querySelector('.row[data-id="issue-9471"] .r-meta svg[aria-label^="The agent is"]'));
+    state.reveal.clear(); render();
+  }
+
+  // Order comes from the stored priority only, never from the author
+  {
+    const mk = (n, authorType, priority) => ["o-" + n, simple(n, "easy", 5, priority, { authorType, author: authorType === "bot" ? "widgets-bot" : authorType === "maintainer" ? "octocat" : "someone" })];
+    items([mk(1, "maintainer", 1), mk(2, "bot", 2), mk(3, "contributor", 3)]); await wait(10);
+    const order = () => [...document.querySelectorAll("#group-quick .row")].map((r) => r.dataset.id).join();
+    ok("guard: with lower priorities the maintainer's and the bot's rows come first", order() === "o-1,o-2,o-3");
+    items([mk(1, "maintainer", 3), mk(2, "bot", 2), mk(3, "contributor", 1)]); await wait(10);
+    ok("guard: the contributor comes first only through its priority", order() === "o-3,o-2,o-1");
+    items(F); await wait(5);
+  }

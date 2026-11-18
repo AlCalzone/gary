@@ -146,6 +146,29 @@ window.makeRouteFixtures = (iso) => {
       routes: [{ id: "r1", type: "request_logs", as: "bot", title: "Ask: driver log on debug", recommended: true, draftHash: "h1",
         text: "Please make a driver log on loglevel `debug` and attach it here.", params: { alsoLabel: { add: ["waiting for info ⏳"], remove: [] } } }],
     }),
+    disc(9492, {
+      title: "How do I back up the hub before an update?",
+      author: "someone",
+      state: "A reply already answers it with the backup command.",
+      routes: [{ id: "r1", type: "close", as: "me", actor: "me", title: "Close: answered", recommended: true, draftHash: "h1",
+        text: "Thanks, the reply below answers this.", params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/9492#discussioncomment-77", gist: "Run `widgets backup` before every update." } } }],
+    }),
+    pr(9493, {
+      title: "Fix the retry loop in the uploader",
+      author: "octocat",
+      authorType: "maintainer",
+      working: { kind: "push", since: iso(12 * 60000) },
+      routes: [
+        { id: "r1", type: "drive", as: "agent", title: "Drive: finish the review rounds", params: { maxRounds: 3 }, recommended: true, draftHash: "h1" },
+        { id: "r2", type: "merge", as: "me", title: "Merge: after the rounds", draftHash: "h2" },
+      ],
+    }),
+    issue(9494, {
+      title: "Sensor reports 0 °C after a battery change",
+      author: "someone",
+      working: { kind: "fix", since: iso(3 * 60000) },
+      routes: [{ id: "r1", type: "follow_up", as: "agent", title: "Start fix: keep the last value", text: "", recommended: true, draftHash: "h1" }],
+    }),
     issue(9481, {
       title: "Hub crashes when a sensor reports a negative temperature",
       author: "someone",

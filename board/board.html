@@ -215,10 +215,17 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .prev-draft summary { cursor: pointer; }
 .prev-draft pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 13.5px/1.5 var(--font-read); color: var(--fg); }
 .also-label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--fg); }
-.label-btn { gap: 6px; }
-.label-btn .label-check, .opened-mark .i { width: 15px; height: 15px; color: var(--ok); }
+.part-btn { gap: 6px; }
+.part-btn .part-check, .opened-mark .i { width: 15px; height: 15px; color: var(--ok); }
+.part-view { font-size: 12.5px; color: var(--muted); }
+.part-view:hover { color: var(--fg); }
+.part-gist { flex-basis: 100%; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.working-line { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 13.5px; color: var(--muted); }
+.working-line[hidden] { display: none; }
+.working-line .i { width: 15px; height: 15px; color: var(--act-agent); }
+.running-hint { font-size: 11.5px; color: var(--muted); }
 .opened-mark { display: inline-flex; align-items: center; }
-.label-btn .avatar, .label-btn .actor-icon { width: 16px; height: 16px; }
+.part-btn .avatar, .part-btn .actor-icon { width: 16px; height: 16px; }
 .status.soft-warn { color: var(--warn); flex-basis: 100%; }
 .r-ref { display: block; font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .p-instance { margin-left: auto; font-size: 12px; color: var(--muted); }
@@ -907,6 +914,7 @@ textarea {
       <div class="d-sec rounds" id="d-rounds" hidden></div>
     </div>
     <section class="ways" aria-label="Ways forward">
+      <p class="working-line" id="d-working" role="status" hidden></p>
       <p class="state" id="d-verdict"></p>
       <div class="routes" id="d-routes"></div>
     </section>
@@ -1066,6 +1074,7 @@ const ICONS = {
   alert: [p("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), p("M12 9v4"), p("M12 17h.01")],
   shield: [p("M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z")],
   sparkleSmall: [p("M12 6.5l1.4 4.1 4.1 1.4-4.1 1.4-1.4 4.1-1.4-4.1-4.1-1.4 4.1-1.4z")],
+  wrench: [p("M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z")],
   wand: [p("M15 4V2"), p("M15 16v-2"), p("M8 9h2"), p("M20 9h2"), p("M17.8 11.8 19 13"), p("M17.8 6.2 19 5"), p("m3 21 9-9"), p("M12.2 6.2 11 5")],
   pause: [["rect", { x: 6, y: 4, width: 4, height: 16, rx: 1 }], ["rect", { x: 14, y: 4, width: 4, height: 16, rx: 1 }]],
   sparklesOff: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"), p("M3 3l18 18")],
@@ -1672,6 +1681,15 @@ function statusLine(id) {
 // Icons that describe an item's state, most important first. Each entry is [icon, class, label, text]
 const FALLBACK_NOTE = "The full analysis was stopped by the safety filter. Code-level conclusions need your check.";
 
+const WORKING_TEXT = { fix: "The agent is working on a fix", review: "The agent is reviewing this", push: "The agent is pushing to this PR" };
+// Agent routes that would start the same kind of work the agent is already doing
+const WORKING_ROUTES = { fix: ["follow_up"], push: ["address_review", "take_over", "drive", "format"], review: [] };
+
+function workingOf(d) {
+  const w = d && d.working && typeof d.working === "object" ? d.working : null;
+  return w && Object.hasOwn(WORKING_TEXT, w.kind) ? w : null;
+}
+
 function stateIcons(id, d, dim, withPassing) {
   const out = [];
   // Entries are [icon, class, tooltip, inline text, badge text]. The dialog shows the badge text, list rows only the icon.
@@ -1691,6 +1709,8 @@ function stateIcons(id, d, dim, withPassing) {
   if (withPassing && d.kind === "pr" && d.ci === "passing") out.push(["ciPass", "ok", "CI passing"]);
   if (open && d.solved === true && !(d.kind === "discussion" && d.isAnswered === true)) out.push(["solved", "muted", "Looks solved, still open", null, "Looks solved"]);
   if (d.reviewDepth === "pending") out.push(["eye", "muted", "Not analyzed yet", null, "Not analyzed yet"]);
+  const w = workingOf(d);
+  if (w) out.push(["wrench", "muted", WORKING_TEXT[w.kind], null, "Agent working"]);
   if (d.analyzedBy === "fallback") out.push(["sparkleSmall", "muted", FALLBACK_NOTE, null, "Smaller model"]);
   if (d.blocked && typeof d.blocked === "object") out.push(["sparklesOff", "muted", "Not analyzed by the agent", null, "Not analyzed"]);
   if (d.hidden === true) out.push(["archive", "muted", "Dismissed"]);
@@ -2064,6 +2084,7 @@ const detail = {
   links: document.getElementById("d-links"),
   routes: document.getElementById("d-routes"),
   dismissed: new Set(),
+  workingEl: document.getElementById("d-working"),
   farewell: false,
   updatedEl: document.getElementById("d-updated"),
   updated: null,
@@ -2726,6 +2747,7 @@ function refusalNote(e, key) {
   const p = refusalPayload(e);
   if (!p) return null;
   if (p.paused === true) return { kind: "info", text: str(p.result) || "Nothing was sent." };
+  if (/already working on this/i.test(str(p.result))) return { kind: "info", text: str(p.result) };
   if (p.settingsError) {
     const inst = instOf(state.items.get(key));
     return { kind: "info", text: "Nothing was sent. The settings of " + (inst.title || inst.name || "this project") + " are invalid, see the note at the top." };
@@ -3062,47 +3084,74 @@ function labelPart(r) {
   return { add, remove, text, doneText };
 }
 
-// Who sets the label next to a prefill: the bot, or he himself in own mode. Null when nobody may.
-function labelActor(d) {
+// A discussion's close can also mark the reply that answered it. Returns null when the route proposes none.
+function answerPart(d, r) {
+  if (r.type !== "close" || d.kind !== "discussion") return null;
+  const a = paramsOf(r).alsoAnswer;
+  if (!a || typeof a !== "object" || !str(a.commentId)) return null;
+  return { url: str(a.url), gist: str(a.gist) };
+}
+
+// The extra steps a prefill card can run on the server next to its copy button, like setting a label or marking an answer
+function extraParts(d, r) {
+  const out = [];
+  const label = labelPart(r);
+  if (label) out.push({ name: "label", text: label.text, doneText: label.doneText, done: r.labelDone });
+  const answer = answerPart(d, r);
+  if (answer) out.push({ name: "answer", text: "Mark answer", doneText: "Answer marked", done: r.answerDone, url: answer.url, gist: answer.gist });
+  return out;
+}
+
+// Who runs such a step: the bot, or he himself in own mode. Null when nobody may.
+const b0IsAgent = (buttons) => buttons.some((b) => b.actor === "agent");
+
+function partActor(d) {
   const inst = instOf(d);
   if (inst.bot) return "bot";
   return inst.accountMode === "own" ? "own" : null;
 }
 
-async function runLabelPart(id, r, rec) {
-  if (rec.labelState === "busy") return;
-  rec.labelState = "busy";
-  rec.labelError = "";
+async function runPart(id, r, rec, name) {
+  const st = (rec.parts[name] = rec.parts[name] || { state: "", error: "" });
+  if (st.state === "busy") return;
+  st.state = "busy";
+  st.error = "";
   render();
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
-    await state.mcp.callTool(SERVER, r.type, { instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, input: { part: "label" } });
-    rec.labelState = "done";
+    await state.mcp.callTool(SERVER, r.type, { instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, input: { part: name } });
+    st.state = "done";
   } catch (e) {
     const p = refusalPayload(e);
-    // A second click finds the label already set: that is done, not a failure
-    if (p && p.duplicate === true) rec.labelState = "done";
+    // A second click finds the step already done: that is done, not a failure
+    if (p && p.duplicate === true) st.state = "done";
     else {
-      rec.labelState = "";
-      rec.labelError = refusalNote(e, id)?.text || routeFailure(e, r);
+      st.state = "";
+      st.error = refusalNote(e, id)?.text || routeFailure(e, r);
     }
   } finally {
     render();
   }
 }
 
-function labelButton(id, d, r, rec, locked) {
-  const part = labelPart(r);
-  const actor = part ? labelActor(d) : null;
+function partButtons(id, d, r, rec, locked) {
+  const actor = partActor(d);
   if (!actor) return [];
-  const done = rec.labelState === "done" || (r.labelDone && typeof r.labelDone === "object" && r.labelDone.status === "done");
-  const out = [h("button", {
-    class: "btn quiet label-btn", type: "button", disabled: locked || done || rec.labelState === "busy",
-    "data-focus-key": "r:" + r.id + ":label", title: done ? part.doneText : buttonTip({ actor }, instOf(d)),
-  }, done ? icon("check", null, "label-check") : actorMark(actor, instOf(d)), done ? part.doneText : part.text)];
-  out[0].addEventListener("click", () => runLabelPart(id, r, rec));
-  if (!done && instOf(d).paused === true) out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
-  if (rec.labelError) out.push(h("span", { class: "status failed" }, icon("alert"), h("span", { text: rec.labelError })));
+  const out = [];
+  for (const part of extraParts(d, r)) {
+    const st = rec.parts[part.name] || { state: "", error: "" };
+    const done = st.state === "done" || (part.done && typeof part.done === "object" && part.done.status === "done");
+    const btn = h("button", {
+      class: "btn quiet part-btn " + part.name + "-btn", type: "button", disabled: locked || done || st.state === "busy",
+      "data-focus-key": "r:" + r.id + ":" + part.name, title: done ? part.doneText : buttonTip({ actor }, instOf(d)),
+    }, done ? icon("check", null, "part-check") : actorMark(actor, instOf(d)), done ? part.doneText : part.text);
+    btn.addEventListener("click", () => runPart(id, r, rec, part.name));
+    out.push(btn);
+    if (part.url && isGithubUrl(part.url)) out.push(h("a", { class: "part-view", href: part.url, target: "_blank", rel: "noopener noreferrer", text: "view", title: "Open the proposed answer on GitHub" }));
+    if (!done && instOf(d).paused === true) out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
+    if (st.error) out.push(h("span", { class: "status failed" }, icon("alert"), h("span", { text: st.error })));
+    if (part.gist) out.push(h("span", { class: "part-gist" }, "Proposed answer: ", richText(part.gist)));
+  }
   return out;
 }
 
@@ -3179,7 +3228,7 @@ function buildCardActions(id, d, r, rec, locked) {
   }
 
   if (buttons.every((b) => b.actor === "me")) {
-    return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)), ...labelButton(id, d, r, rec, locked),
+    return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)), ...partButtons(id, d, r, rec, locked),
       openedToday(id, r) ? h("span", { class: "opened-mark", role: "img", title: "You opened this on GitHub today", "aria-label": "You opened this on GitHub today" }, icon("check")) : null,
       detail.meNotes.has(r.id) ? h("span", { class: "me-note", text: detail.meNotes.get(r.id) }) : null].filter(Boolean);
   }
@@ -3204,9 +3253,14 @@ function buildCardActions(id, d, r, rec, locked) {
     ];
   }
   const refused = r.refused && typeof r.refused === "object" ? r.refused : null;
+  const w = workingOf(d);
+  const running = w && b0IsAgent(buttons) && WORKING_ROUTES[w.kind].includes(r.type);
   const out = buttons.map((b, i) => {
     const key = "r:" + r.id + ":" + b.id;
     if (b.actor === "me") return meButton(id, d, r, rec, b, intent, locked);
+    if (running && b.actor === "agent") {
+      return h("button", { class: "btn intent-" + intent, type: "button", disabled: true, "data-focus-key": key, title: WORKING_TEXT[w.kind] }, actorMark(b.actor, instOf(d)), b.label);
+    }
     return h("button", {
       class: "btn intent-" + intent + (r.recommended === true && i === 0 ? " primary" : ""), type: "button", disabled: locked,
       "data-focus-key": key, "data-focus-alt": key + ":confirm", title: buttonTip(b, instOf(d)),
@@ -3241,6 +3295,7 @@ function buildCardActions(id, d, r, rec, locked) {
   if (instOf(d).paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
     out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
   }
+  if (running) out.push(h("span", { class: "running-hint", title: WORKING_TEXT[w.kind], text: "already running" }));
   if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   const ownButtons = buttons.filter((b) => b.actor === "own");
@@ -3392,12 +3447,12 @@ function renderRoutes(id, d, locked) {
   const nodes = routes.map((r) => {
     let rec = detail.cards.get(r.id);
     if (!rec) {
-      rec = { card: h("section", { class: "card" }), checks: new Map(), decisions: new Map(), core: null, sig: null, revealed: false, rounds: null };
+      rec = { card: h("section", { class: "card" }), parts: {}, checks: new Map(), decisions: new Map(), core: null, sig: null, revealed: false, rounds: null };
       detail.cards.set(r.id, rec);
     }
     // Rebuild the card only when the route itself changed. A new draft text alone updates the editor in place,
     // and never while he is typing in it, so focus, cursor and typed text stay.
-    const { done, refused, text, draftHash, labelDone, ...core } = r;
+    const { done, refused, text, draftHash, labelDone, answerDone, ...core } = r;
     // The agent rewrote a draft he had edited: rebuild, so the editor shows the new text and keeps his as "previous"
     const dkR = draftKey(id, "r:" + r.id);
     if (state.drafts.has(dkR) && draftHashes.has(dkR) && draftHashes.get(dkR) !== str(r.draftHash)) rec.core = null;
@@ -3418,7 +3473,7 @@ function renderRoutes(id, d, locked) {
       if (rec.headActor) rec.headActor.style.display = open ? "none" : "";
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
-    const sig = JSON.stringify([r.done, r.refused, r.labelDone, rec.labelState, rec.labelError, state.confirming.get(id), locked, isClosedThread(id, d), openedToday(id, r),
+    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), openedToday(id, r),
       detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, meLogin(), instOf(d).paused === true, combinedView()]);
     if (sig !== rec.sig) {
       rec.sig = sig;
@@ -3483,7 +3538,18 @@ function renderRounds(d) {
     details);
 }
 
+function renderWorking(d) {
+  const w = workingOf(d);
+  detail.workingEl.hidden = !w;
+  if (!w) return;
+  const sig = w.kind + "|" + str(w.since);
+  if (detail.workingEl.dataset.sig === sig) return;
+  detail.workingEl.dataset.sig = sig;
+  detail.workingEl.replaceChildren(icon("wrench"), h("span", { text: WORKING_TEXT[w.kind] }), parseTime(w.since) ? timeEl(w.since, "since ") : null);
+}
+
 function renderZones(id, d, locked) {
+  renderWorking(d);
   renderRoutes(id, d, locked);
   updateFooter(d, locked);
 }
@@ -3554,6 +3620,7 @@ function buildZoneControls(id) {
 
 // An analysis of this item is queued or running, so "Analyze again" would only start a second one
 function analyzing(id) {
+  if (workingOf(state.items.get(id))?.kind === "review") return true;
   const a = latestOf(id);
   return !!a && (a.action === "reanalyze" || a.action === "full_review") && ["queued", "running", "claimed"].includes(a.status);
 }
