@@ -1020,7 +1020,7 @@ const SORTS = [
 const WAITING_CHIP_DAYS = 3;
 const DAY_MS = 86400000;
 
-const AGENT_ACTIONS = new Set(["full_review", "start_fix", "reanalyze", "address_review", "take_over", "drive", "format"]);
+const AGENT_ACTIONS = new Set(["full_review", "start_fix", "reanalyze", "address_review", "take_over", "revise", "drive", "format"]);
 const BOARD_ACTIONS = new Set(["dismiss", "snooze"]);
 
 const ACTION_NAMES = {
@@ -1536,7 +1536,7 @@ const handledEls = {};
 
 const HANDLED_DONE = {
   reply: "Replied", request_logs: "Asked for a log", close: "Closed", reopen: "Reopened", merge: "Merged", review: "Reviewed",
-  address_review: "Asked the agent to address the review", follow_up: "Followed up", take_over: "Took over", drive: "Asked the agent to drive",
+  address_review: "Asked the agent to address the review", follow_up: "Followed up", take_over: "Took over", revise: "Asked the agent to change the PR", drive: "Asked the agent to drive",
   move: "Moved", chore: "Ran a chore", open: "Opened on GitHub", format: "Asked the agent to format",
 };
 
@@ -1819,7 +1819,7 @@ const fixActive = (d) => ["working", "draft", "open"].includes(fixOf(d)?.state);
 const pushActive = (d) => workingOf(d)?.kind === "push";
 
 // Routes that would start a second fix, or decide a PR the agent is still changing, are not offered at all
-const PUSH_HIDDEN = new Set(["review", "merge", "close", "take_over", "address_review", "drive", "format"]);
+const PUSH_HIDDEN = new Set(["review", "merge", "close", "take_over", "revise", "address_review", "drive", "format"]);
 function blockedRoute(d, r) {
   if (fixActive(d) && r.type === "follow_up" && actorOf(r) === "agent") return true;
   if (pushActive(d) && (PUSH_HIDDEN.has(r.type) || (r.type === "chore" && paramsOf(r).action === "ready"))) return true;
@@ -1859,7 +1859,7 @@ function switchDialog(key) {
   openDetail(key);
 }
 
-const PUSH_JOBS = { take_over: "take over", address_review: "addressing the review", drive: "driving the review rounds", format: "formatting" };
+const PUSH_JOBS = { take_over: "take over", revise: "your requested change", address_review: "addressing the review", drive: "driving the review rounds", format: "formatting" };
 
 // The banner under the meta row: what the agent is doing, so nothing here starts it twice
 function renderAgentBanner(d) {
@@ -2102,7 +2102,7 @@ function buildRow(id, d, dim, slot) {
 }
 
 const HINT_ACTIONS = [
-  "Request changes", "Start fix", "Take over", "Apply fixes",
+  "Request changes", "Start fix", "Take over", "Change", "Apply fixes",
   "Merge", "Reply", "Approve", "Close", "Decide", "Review", "Ask", "React", "Snooze", "Dismiss",
 ];
 
@@ -2123,7 +2123,7 @@ const INTENTS = [
   ["talk", ["comment", "review_comment", "react", "answer_discussion"], ["Reply", "Ask", "React"]],
   ["push", ["request_changes"], ["Request changes"]],
   ["think", [], ["Decide", "Review"]],
-  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Address review", "Apply fixes", "Start fix", "Drive", "Format", "Analyze"]],
+  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Change", "Address review", "Apply fixes", "Start fix", "Drive", "Format", "Analyze"]],
   ["away", ["snooze", "dismiss"], ["Snooze", "Dismiss"]],
 ];
 
@@ -2521,6 +2521,7 @@ const ROUTE_ACTORS = {
   address_review: ["agent"],
   follow_up: ["agent", "bot", "me"],
   take_over: ["agent"],
+  revise: ["agent"],
   drive: ["agent"],
   move: ["bot", "me"],
   chore: ["bot"],
@@ -2599,6 +2600,7 @@ function routeIntent(r) {
     case "request_logs": return "talk";
     case "address_review":
     case "take_over":
+    case "revise":
     case "drive":
     case "format": return "agent";
     case "follow_up": return actorOf(r) === "agent" ? "agent" : "talk";
@@ -2629,6 +2631,7 @@ function routeHasEditor(r) {
     case "review":
     case "address_review":
     case "take_over":
+    case "revise":
     case "follow_up": return true;
     case "close":
     case "reopen":
@@ -2642,6 +2645,7 @@ function editorLabel(r) {
   const as = actorOf(r);
   if (r.type === "address_review") return "Note for the whole run (optional)";
   if (r.type === "take_over" || (r.type === "follow_up" && as === "agent")) return "Instructions for the agent (optional)";
+  if (r.type === "revise") return "Instructions for the agent";
   if (r.type === "follow_up") return "Issue text";
   if (r.type === "review") return "Review summary";
   if (r.type === "move") return "Comment before closing";
@@ -2679,6 +2683,7 @@ function routeButtons(d, r) {
       if (as === "me") return [me("Open GitHub to file the issue", { copy: null })];
       return [run("File issue", { confirm: true })];
     case "take_over": return [{ id: "main", actor: "agent", label: p.mode === "replace" ? "Open a replacement PR" : "Take over" }];
+    case "revise": return [{ id: "main", actor: "agent", label: "Change", needsText: true }];
     case "drive": return [{ id: "main", actor: "agent", label: "Drive this PR" }];
     case "move": {
       if (str(p.to) === "discussion") return [me("Open GitHub to convert", { copy: null })];
@@ -3467,7 +3472,7 @@ function buildCardActions(id, d, r, rec, locked) {
         if (b.needsText && !payload.text.trim()) {
           detail.lastZone = "route";
           detail.lastRoute = r.id;
-          state.notes.set(id, { kind: "failed", text: "Write the text first. This route posts it." });
+          state.notes.set(id, { kind: "failed", text: b.actor === "agent" ? "Write the instructions first. The agent follows them." : "Write the text first. This route posts it." });
           render();
           return;
         }
@@ -3484,7 +3489,7 @@ function buildCardActions(id, d, r, rec, locked) {
   if (instOf(d).paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
     out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
   }
-  if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
+  if (r.type === "take_over" || r.type === "revise") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   const ownButtons = buttons.filter((b) => b.actor === "own");
   if (ownButtons.length) {

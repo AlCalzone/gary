@@ -9,6 +9,7 @@ const CASES = [
 	[false, '{"action":"apply_fixes","kind":"pr","number":12}', 'Unknown action'],
 	[false, '{"action":"address_review","kind":"pr","number":12}', 'agent request'],
 	[false, '{"action":"take_over","kind":"pr","number":12}', 'agent request'],
+	[false, '{"action":"revise","kind":"pr","number":12}', 'agent request'],
 	[false, '{"action":"start_fix","kind":"issue","number":21}', 'agent request'],
 	[false, '{"action":"move","kind":"issue","number":21}', 'Unknown action'],
 	[false, '{"action":"snooze","kind":"issue","number":21}', 'board-only'],

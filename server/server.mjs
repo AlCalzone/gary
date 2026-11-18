@@ -19,7 +19,7 @@ import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
-import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
+import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
 const MAX_BODY = 256 * 1024;
@@ -42,7 +42,7 @@ export const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "un
 // What a bot action that ran says about the thread, for `handled.verified`
 const VERIFIED_BY_ACTION = { comment: "commented", review: "commented", create_issue: "commented", close: "closed", label: "labeled" };
 // The routes a pushing agent job blocks on its PR
-export const PUSH_BLOCKED_TYPES = ["review", "merge", "close", "address_review", "take_over", "drive", "format"];
+export const PUSH_BLOCKED_TYPES = ["review", "merge", "close", "address_review", "take_over", "revise", "drive", "format"];
 const PUSH_BLOCKED = (route) => PUSH_BLOCKED_TYPES.includes(route.type) || (route.type === "chore" && route.params?.action === "ready");
 const MERGEABLE_STATES = { MERGEABLE: "mergeable", CONFLICTING: "conflicting", UNKNOWN: "unknown" };
 
@@ -55,7 +55,15 @@ export function draftHash(route, item) {
 }
 
 function routesOf(item) {
-	return Array.isArray(item?.routes) ? item.routes.filter((r) => r && typeof r === "object" && typeof r.id === "string" && r.id) : [];
+	const stored = Array.isArray(item?.routes) ? item.routes.filter((r) => r && typeof r === "object" && typeof r.id === "string" && r.id) : [];
+	return stored.map((r) => servedRoute(r, item));
+}
+
+/** The item's hint as served. It follows the title of a recommended route that is served under another type. */
+function servedHint(item) {
+	const stored = Array.isArray(item?.routes) ? item.routes.find((r) => r?.recommended === true) : undefined;
+	if (!stored || stored.title !== item.hint) return item.hint;
+	return servedRoute(stored, item).title;
 }
 
 /** The actor per route as the page shows it. A move to a repository gets one actor per button. */
@@ -253,9 +261,14 @@ export function planRoute(route, item, input, text, mode = "bot") {
 			case "follow_up":
 				return { agent: true, action: "start_fix", params: params.finding === undefined ? {} : { finding: params.finding }, text };
 			case "take_over": {
-				const refusal = takeOverRefusal(route);
+				const refusal = takeOverRefusal(route, item);
 				if (refusal) throw new Refusal(refusal);
 				return { agent: true, action: "take_over", params: { mode: params.mode ?? "push", ...(chosen.decisions && { decisions: chosen.decisions }) }, text };
+			}
+			case "revise": {
+				const refusal = reviseRefusal(item, text);
+				if (refusal) throw new Refusal(refusal);
+				return { agent: true, action: "revise", params: {}, text };
 			}
 			case "drive": {
 				const maxRounds = chosen.maxRounds ?? params.maxRounds ?? 3;
@@ -894,6 +907,7 @@ export async function startBoardServer({
 			liveState: liveStates.get(`${name}/${id}`),
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),
+			...(typeof data.hint === "string" && { hint: servedHint(data) }),
 			routes: routesOf(data).map((route) => {
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
@@ -1519,7 +1533,7 @@ export async function startBoardServer({
 				const route = item && routesOf(item).find((r) => r.id === routeId);
 				if (!route) return null;
 				const at = new Date().toISOString();
-				const remaining = item.routes.filter((r) => r !== route);
+				const remaining = item.routes.filter((r) => r?.id !== route.id);
 				const next = {
 					...item,
 					routes: remaining,

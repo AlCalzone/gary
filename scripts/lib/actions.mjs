@@ -4,7 +4,7 @@ import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopi
 
 export const KINDS = ["pr", "issue", "discussion"];
 const BOARD_ACTIONS = ["dismiss", "snooze"];
-export const AGENT_ACTIONS = ["full_review", "reanalyze", "start_fix", "address_review", "take_over", "drive", "format"];
+export const AGENT_ACTIONS = ["full_review", "reanalyze", "start_fix", "address_review", "take_over", "revise", "drive", "format"];
 const MERGE_METHODS = { squash: "SQUASH", merge: "MERGE", rebase: "REBASE" };
 const ISSUE_CLOSE_REASONS = { completed: "COMPLETED", not_planned: "NOT_PLANNED", duplicate: "DUPLICATE" };
 const DISCUSSION_CLOSE_REASONS = { completed: "RESOLVED", not_planned: "OUTDATED", duplicate: "DUPLICATE" };

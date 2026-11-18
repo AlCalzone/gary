@@ -270,6 +270,31 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   cardBtn("Take over").click(); await wait(20);
   ok("take_over without threads sends no decisions", __calls.at(-1).input.decisions === undefined);
   items(F); await wait(10);
+
+  // revise on a PR we already control: instructions and a button, no threads on the card
+  const reviseItem = (text) => with_("pr-9475", (d) => ({
+    ...d, hint: "Change: drop the 0x00c8 file",
+    threads: [{ id: "t1", author: "copilot-pull-request-reviewer", path: "src/restore.ts", line: 12, summary: "Guard the empty list.", verdict: "valid" }],
+    routes: [{ id: "r1", type: "revise", as: "agent", title: "Change: drop the 0x00c8 file", text, recommended: true, draftHash: "hr" }, d.routes[1]],
+  }));
+  document.getElementById("d-close").click(); await wait(5);
+  items(reviseItem("Drop the 0x00c8 file, the 0x00c9 file covers both.")); await wait(10);
+  ok("revise: the row says Change with the agent's proposal", (() => { const hint = document.querySelector('.row[data-id="pr-9475"] .r-hint'); return hint?.querySelector(".h-act").textContent === "Change" && hint.classList.contains("act-agent") && /: drop the 0x00c8 file$/.test(hint.textContent); })());
+  await openItem("pr-9475");
+  ok("revise: an agent card with the proposal in the instructions field", openCard().classList.contains("intent-agent") && openCard().querySelector("textarea").value === "Drop the 0x00c8 file, the 0x00c9 file covers both."
+    && openCard().querySelector(".card-label").textContent === "Instructions for the agent");
+  ok("revise: the button says Change and the quiet line names who commits", !!cardBtn("Change") && cardBtn("Change").classList.contains("intent-agent") && /Commits as widgets-bot/.test(openCard().querySelector(".card-actions").textContent));
+  ok("revise: no take-over wording and no thread list on the card", !/Continues in the contributor's PR/.test(openCard().textContent) && !/Take over/.test(openCard().textContent) && !openCard().querySelector(".decisions"));
+  ok("revise: the open threads keep their own list", !document.getElementById("d-threads").hidden && /Guard the empty list/.test(document.getElementById("d-threads").textContent));
+  openCard().querySelector("textarea").value = "  "; openCard().querySelector("textarea").dispatchEvent(new Event("input"));
+  calls = __calls.length;
+  cardBtn("Change").click(); await wait(20);
+  ok("revise: empty instructions are not sent", __calls.length === calls && /Write the instructions first/.test(openCard().textContent));
+  openCard().querySelector("textarea").value = "Drop the 0x00c8 file only."; openCard().querySelector("textarea").dispatchEvent(new Event("input"));
+  cardBtn("Change").click(); await wait(20);
+  ok("revise sends the edited instructions without decisions and without a confirm", __calls.length === calls + 1 && __calls.at(-1).routeId === "r1" && __calls.at(-1).text === "Drop the 0x00c8 file only." && __calls.at(-1).input.decisions === undefined);
+  document.getElementById("d-close").click(); await wait(5);
+  items(F); await wait(10);
   document.getElementById("d-close").click(); await wait(5);
 
   // "Not this": dismissing a suggestion
@@ -518,7 +543,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const ZW = window.__board;
   ok("title and storage come from the board info", document.getElementById("board-title").textContent === "widgets triage" && document.title === "widgets triage" && document.getElementById("dry-run").hidden);
   // What the server sends per route for an account mode: "none" has no bot, "own" runs bot routes under his login
-  const PUSHING = new Set(["address_review", "take_over", "drive", "follow_up"]);
+  const PUSHING = new Set(["address_review", "take_over", "revise", "drive", "follow_up"]);
   const PREFILL = new Set(["reply", "request_logs", "reopen", "follow_up"]);
   const served = (mode) => F.map(([id, d]) => [id, { ...d, routes: d.routes.map((r) => {
     const as = r.as;

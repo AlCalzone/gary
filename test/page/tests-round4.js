@@ -254,11 +254,15 @@
     await openItem("pr-9493");
     ok("push: the banner says what runs and to decide after", /^The agent is changing this PR \(take over, started \d\d:\d\d\)\. Decide after it is done\.$/.test(ban.textContent));
     const titles = cards().map((c) => c.querySelector(".card-head .r-hint").textContent);
-    for (const hidden of ["Approve", "Merge", "Close", "Mark ready", "Take over", "Address review", "Drive", "Format"]) {
+    for (const hidden of ["Approve", "Merge", "Close", "Mark ready", "Take over", "Change", "Address review", "Drive", "Format"]) {
       ok("push: hides " + hidden, !titles.some((t) => t.startsWith(hidden)));
     }
     ok("push: reply and label stay", titles.some((t) => t.startsWith("Reply")) && titles.some((t) => t.startsWith("Label")));
     ok("push: Snooze and Analyze again stay", !document.querySelector('#d-foot [aria-label="Snooze 1 day"]').disabled && !!document.querySelector("#d-foot .foot-analyze"));
+    items(F.map(([k, d]) => [k, k === "pr-9493" ? { ...d, working: { kind: "push", action: "revise", since: iso(60000) } } : d])); await wait(10);
+    await openItem("pr-9493");
+    ok("push: a running revise names itself in the banner and hides the pushing routes", /^The agent is changing this PR \(your requested change, started \d\d:\d\d\)\./.test(ban.textContent)
+      && !cards().some((c) => /^(Change|Take over|Drive|Approve)/.test(c.querySelector(".card-head .r-hint").textContent)));
     items(F.map(([k, d]) => [k, k === "pr-9493" ? { ...d, working: undefined } : d])); await wait(10);
     await openItem("pr-9493");
     window.__reply = () => ({ ok: false, result: "The agent is changing this PR. Decide after it is done.", duplicate: true });

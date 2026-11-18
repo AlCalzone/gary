@@ -86,7 +86,29 @@ mk case "{${BASE/maintainer/contributor},\"takenOver\":true,\"hint\":\"Fix: x\",
 expect "address_review on a taken-over contributor PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
 node $B put items pr-12 $H/good.json > /dev/null 2>&1
 bad_case "drive on a contributor PR" "taken-over PRs" "{${BASE/maintainer/contributor},\"hint\":\"Drive: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"drive\",\"title\":\"Drive: x\",\"as\":\"agent\",\"recommended\":true}]}"
-bad_case "take_over replace without callout" "needs a callout" "{$BASE,\"hint\":\"Take over: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"take_over\",\"title\":\"Take over: x\",\"as\":\"agent\",\"params\":{\"mode\":\"replace\"},\"recommended\":true}]}"
+CONTRIB=${BASE/maintainer/contributor}
+BOTPR=${BASE/maintainer/bot}
+TO='"id":"r1","type":"take_over","title":"Take over: x","as":"agent","recommended":true'
+RV='"id":"r1","type":"revise","title":"Change: x","as":"agent","recommended":true'
+bad_case "take_over replace without callout" "needs a callout" "{$CONTRIB,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"replace\"}}]}"
+mk case "{$CONTRIB,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"push\"}}]}"
+expect "take_over on a contributor PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "take_over on a bot PR" "Use revise on this PR" "{$BOTPR,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"push\"}}]}"
+bad_case "take_over on a maintainer PR" "Use revise on this PR" "{$BASE,\"hint\":\"Take over: x\",\"routes\":[{$TO}]}"
+bad_case "take_over on a taken-over PR" "Use revise on this PR" "{$CONTRIB,\"takenOver\":true,\"hint\":\"Take over: x\",\"routes\":[{$TO}]}"
+bad_case "take_over replace on a bot PR" "Use revise on this PR" "{$BOTPR,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"replace\"},\"callout\":\"No push access\"}]}"
+mk case "{$BOTPR,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Drop the 0x00c8 file\"}]}"
+expect "revise on a bot PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+expect "validate accepts revise on a bot PR" 0 "1 items checked" node $B validate pr-12
+mk case "{$BOTPR,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"push\"}}]}"
+node $B put --no-validate items pr-12 $H/case.json > /dev/null 2>&1
+expect "validate rejects a stored take_over on a bot PR" 1 "Use revise on this PR" node $B validate pr-12
+mk case "{$CONTRIB,\"takenOver\":true,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Rename it\"}]}"
+expect "revise on a taken-over contributor PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "revise on a contributor PR" "Use take_over on a contributor PR" "{$CONTRIB,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Rename it\"}]}"
+bad_case "revise without text" "revise needs a text" "{$BOTPR,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\" \"}]}"
+bad_case "revise with params" "a revise route has no params" "{$BOTPR,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Rename it\",\"params\":{\"mode\":\"push\"}}]}"
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 bad_case "finding names no route" 'names no route' "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[$R1],\"findings\":[{\"severity\":\"major\",\"text\":\"x\",\"routeId\":\"r3\"}]}"
 bad_case "bot command in bot text" 'would post the command' "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"@widgets-bot escalate\",\"recommended\":true}]}"
 bad_case "chore with merge" 'a chore cannot run' "{$BASE,\"hint\":\"Chore: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"chore\",\"title\":\"Chore: x\",\"as\":\"bot\",\"params\":{\"action\":\"merge\"},\"recommended\":true}]}"

@@ -318,6 +318,25 @@ try {
 	ok("after the take-over is queued the PR shows the push banner and no second take-over", await until(`/The agent is changing this PR/.test(document.getElementById("d-fix").textContent) && !document.querySelector("#d-routes .card")`, 8000));
 	await closeItem();
 
+	// A stored take_over on the bot's own PR is shown and run as revise
+	writeFileSync(itemFile("pr-17"), JSON.stringify(probe("pr", 17, "https://github.com/acme/widgets/pull/17", {
+		author: "widgets-bot", authorType: "bot", hint: "Take over: drop the 0x00c8 file",
+		threads: [{ id: "t1", author: "copilot-pull-request-reviewer", path: "config/a.json", line: 3, summary: "Use the manual's name", verdict: "valid" }],
+		routes: [{ id: "r1", type: "take_over", as: "agent", title: "Take over: drop the 0x00c8 file", params: { mode: "push" }, text: "Drop the 0x00c8 file", recommended: true }],
+	})));
+	await until(`!!state.items.get("widgets/pr-17")`);
+	await revealAll();
+	ok("revise: the row of a stored take_over on a bot PR says Change", await until(`document.querySelector('.row[data-id="widgets/pr-17"] .r-hint')?.textContent === "Change: drop the 0x00c8 file"`));
+	await openItem("pr-17");
+	ok("revise: the card has the proposal as instructions, the Change button and who commits", await ev(`const c = document.querySelector("#d-routes .card.open"); return c.querySelector("textarea")?.value === "Drop the 0x00c8 file" && !!${cardButton("Change")} && /Commits as widgets-bot/.test(c.textContent);`));
+	ok("revise: no take-over wording and no thread list on the card", await ev(`const c = document.querySelector("#d-routes .card.open"); return !/Take over|Continues in the contributor's PR/.test(c.textContent) && !c.querySelector(".decisions");`));
+	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.value = "Drop the 0x00c8 file only"; ta.dispatchEvent(new Event("input"));`);
+	await press("Change");
+	ok("the server queues revise with the edited instructions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-17" && a.action === "revise" && a.route === "revise" && a.status === "queued" && a.text === "Drop the 0x00c8 file only" && JSON.stringify(a.params) === "{}")));
+	ok("the stored item keeps its route type", json(itemFile("pr-17")).routes[0].type === "take_over");
+	ok("after the revise is queued the PR shows the push banner and no second change", await until(`/The agent is changing this PR \\(your requested change/.test(document.getElementById("d-fix").textContent) && !document.querySelector("#d-routes .card")`, 8000));
+	await closeItem();
+
 	// "Not this": dismissing suggested routes
 	writeFileSync(itemFile("issue-26"), JSON.stringify(probe("issue", 26, "https://github.com/acme/widgets/issues/26", {
 		hint: "Close: feature request out of scope",

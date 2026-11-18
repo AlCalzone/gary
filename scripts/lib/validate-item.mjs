@@ -1,7 +1,7 @@
 // Checks a board item against the rules of SPEC.md before it is written.
 import { ID_PATTERN } from "./board-store.mjs";
 import { fixBlock } from "./fixes.mjs";
-import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "./routes.mjs";
+import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
 const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
@@ -200,9 +200,14 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 				break;
 			}
 			case "take_over": {
-				const refusal = takeOverRefusal(route);
+				const refusal = takeOverRefusal(route, item);
 				if (refusal) err("take-over", `${where}: ${refusal}`);
-				if (item.kind !== "pr") err("take-over", `${where}: take_over works only on PRs`);
+				break;
+			}
+			case "revise": {
+				const refusal = reviseRefusal(item, route.text);
+				if (refusal) err("revise", `${where}: ${refusal}`);
+				if (Object.keys(params).length) err("revise-route", `${where}: a revise route has no params`);
 				break;
 			}
 			case "move":
