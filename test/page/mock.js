@@ -44,7 +44,8 @@ window.__mkSnap = mkSnap;
 const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
 const instanceInfo = (name, title, extra) => ({ name, title, kind: "maintainer", repos: [REPOS[name]], repoUrl: "https://github.com/" + REPOS[name], bot: acct(name + "-bot"), accountMode: "bot", paused: false, relatedRepos: [name + "-desktop"], botCommands: { escalate: "@" + name + "-bot escalate" }, reviewBots: ["copilot"], ...extra });
 window.__instanceInfo = instanceInfo;
-window.__board = window.__board || { me: acct("octocat"), dryRun: false, instances: [instanceInfo("widgets", "widgets")], decision: async (body) => { window.__decisions.push(body); if (window.__decisionFails) throw new Error("down"); } };
+window.__board = window.__board || { me: acct("octocat"), dryRun: false, instances: [instanceInfo("widgets", "widgets")], refresh: async (body) => { window.__refreshes.push(body); if (window.__refreshFails) throw Object.assign(new Error("Too many"), { status: 429 }); }, decision: async (body) => { window.__decisions.push(body); if (window.__decisionFails) throw new Error("down"); } };
 window.__decisions = [];
+window.__refreshes = [];
 window.claude = { use: async (n) => (n === "db" ? db : n === "mcp" ? mcp : n === "board" ? window.__board : null) };
 </script>

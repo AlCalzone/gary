@@ -3797,7 +3797,7 @@ function renderDetail() {
   const hEl = document.getElementById("d-handled");
   hEl.hidden = !hd;
   if (hd) {
-    const at = new Date(parseTime(hd.at)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const at = new Date(parseTime(hd.at)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
     hEl.textContent = "You handled this at " + at + ". It returns after the next run if something is left to do.";
   }
   if (detail.updated && detail.updatedEl.dataset.before !== detail.updated.before) {

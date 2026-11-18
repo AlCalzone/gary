@@ -247,3 +247,63 @@
     ok("guard: the contributor comes first only through its priority", order() === "o-3,o-2,o-1");
     items(F); await wait(5);
   }
+
+  // Handled items leave the plan until the next run
+  {
+    const H = (minAgo, extra = {}) => ({ at: new Date(Date.now() - minAgo * 60000).toISOString(), routeId: "r1", routeType: "reply", verified: null, ...extra });
+    const hset = (map) => items(F.map(([k, d]) => [k, Object.hasOwn(map, k) ? { ...d, handled: map[k] } : d]));
+    localHandled.clear();
+    hset({}); await wait(10);
+    const sec = document.getElementById("handled");
+    ok("no handled items: no line at the bottom", sec.hidden);
+    const spentBefore = document.querySelector("#plan .sum").textContent;
+    hset({ "issue-9471": H(2), "pr-9473": H(30, { routeId: "r2", routeType: "merge", verified: "merged" }), "issue-9472": H(12, { verified: "unchanged" }) }); await wait(10);
+    ok("handled items are not in the three groups", !document.querySelector('#board .group .row[data-id="issue-9471"]') && !document.querySelector('#board .group .row[data-id="pr-9473"]'));
+    ok("a quiet disclosure at the bottom counts them", !sec.hidden && !sec.querySelector("details").open && sec.querySelector("summary").textContent === "Handled, waiting for the next run: 3");
+    ok("their effort counts as spent", document.querySelector("#plan .sum").textContent !== spentBefore);
+    const hrow = (k) => sec.querySelector('.handled-row[data-id="' + k + '"]');
+    ok("a handled row: number, title, what was done", /#9471/.test(hrow("issue-9471").textContent) && /Node 52 shows/.test(hrow("issue-9471").textContent) && /Reply: a PR is welcome/.test(hrow("issue-9471").textContent));
+    ok("verified merged: the row says so and shows GitHub's merged icon", /merged on GitHub/.test(hrow("pr-9473").textContent) && hrow("pr-9473").querySelector(".h-kind svg").getAttribute("aria-label") === "Pull request, merged");
+    ok("unchanged after 10 minutes: a quiet warning", hrow("issue-9472").querySelector(".h-check.tone-warn")?.textContent === "nothing changed on GitHub yet");
+    ok("unchanged just now: no warning yet", (hset({ "issue-9472": H(2, { verified: "unchanged" }) }), await wait(10), !hrow("issue-9472").querySelector(".h-check")));
+    hset({ "issue-9471": H(2), "pr-9474": { ...H(3), routeType: "close" } }); await wait(10);
+    items(F.map(([k, d]) => [k, k === "pr-9474" ? { ...d, handled: H(3), live: { state: "closed", checkedAt: new Date().toISOString() } } : k === "issue-9471" ? { ...d, handled: H(2) } : d])); await wait(10);
+    ok("item.live closed: closed icon and closed on GitHub", /closed on GitHub/.test(hrow("pr-9474").textContent) && hrow("pr-9474").querySelector(".h-kind svg").getAttribute("aria-label") === "Pull request, closed");
+    // Bring back
+    const wB = __writes.length;
+    [...hrow("issue-9471").querySelectorAll("button")].find((b) => b.textContent === "Bring back").click(); await wait(10);
+    ok("Bring back clears the mark with a merge write, no confirm", __writes.slice(wB).some((w) => w[0] === "update" && w[1] === "items/widgets/issue-9471" && w[2].handled === null));
+    // The dialog of a handled item
+    openDetail("pr-9474"); await wait(10);
+    const hl = document.getElementById("d-handled");
+    ok("dialog: one calm line on top, the cards stay usable", !hl.hidden && /^You handled this at \d\d:\d\d\. It returns after the next run if something is left to do\.$/.test(hl.textContent) && cards().length > 0 && !cards()[0].querySelector("button:disabled.card-head"));
+    window.__refreshes.length = 0;
+    document.getElementById("d-close").click(); await wait(10);
+    ok("closing a handled item's dialog asks the server to check GitHub", window.__refreshes.some((b) => b.instance === "widgets" && b.id === "pr-9474"));
+    // A prefill click: the item stays while the dialog is open, leaves when it closes
+    hset({}); await wait(10);
+    localHandled.clear();
+    await openItem("issue-9477");
+    ok("not handled yet: not in the handled line", !document.querySelector('#handled .handled-row[data-id="issue-9477"]'));
+    cardBtn("Open GitHub to convert", cards()[0]).click(); await wait(20);
+    ok("after the click nothing moves while the dialog is open", !document.querySelector('#handled .handled-row[data-id="issue-9477"]') && !!cards()[0].querySelector(".opened-mark"));
+    document.getElementById("d-close").click(); await wait(10);
+    ok("closing the dialog moves it to the handled line", !document.querySelector('#board .group .row[data-id="issue-9477"]') && !!document.querySelector('#handled .handled-row[data-id="issue-9477"]'));
+    // Focus: refresh recent, unverified items once per focus, quietly on 429
+    window.__refreshes.length = 0;
+    hset({ "issue-9471": H(5), "issue-9472": H(5, { verified: "unchanged" }), "pr-9473": H(5, { verified: "merged" }), "pr-9474": H(40) }); await wait(10);
+    localHandled.clear();
+    window.dispatchEvent(new Event("focus")); await wait(10);
+    const ids = window.__refreshes.map((b) => b.id).sort().join();
+    ok("focus: refresh items handled in the last 15 minutes that are not verified yet", ids === "issue-9471,issue-9472");
+    window.__refreshFails = true;
+    document.dispatchEvent(new Event("visibilitychange")); await wait(10);
+    ok("a rate-limited refresh is quiet", !document.querySelector(".status.failed") && document.getElementById("notice").textContent === "");
+    window.__refreshFails = false;
+    // The check mark comes from the server's field
+    hset({ "issue-9471": H(5) }); await wait(10);
+    openDetail("issue-9471"); await wait(10);
+    ok("the check next to the used button comes from the server's mark", !!cards()[0].querySelector('.opened-mark[aria-label="You opened this on GitHub today"]'));
+    document.getElementById("d-close").click(); await wait(5);
+    items(F); await wait(5);
+  }
