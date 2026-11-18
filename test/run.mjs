@@ -23,6 +23,7 @@ const PAGE_SUITES = [
 	["node", "page/served.mjs"],
 	["node", "page/served-nobot.mjs"],
 	["node", "page/served-nobot.mjs", "own"],
+	["node", "page/served-tabs.mjs"],
 ];
 
 const list = process.argv.includes("--page") ? PAGE_SUITES : SUITES;
