@@ -1033,8 +1033,44 @@ const ACTION_NAMES = {
   review_comment: "review comment", merge: "merge", ready: "mark ready",
   close: "close", label: "labels", assign: "assign", answer_discussion: "mark answer", react: "react",
   full_review: "analyze again", start_fix: "auto-fix", reanalyze: "analyze again", apply_fixes: "apply fixes",
+  take_over: "take-over", revise: "change", address_review: "address the review", drive: "drive", format: "format",
+  review: "review", reopen: "reopen", create_issue: "file issue", transfer: "transfer", update_branch: "update branch",
+  rerun_ci: "re-run CI", request_review: "request review", dismiss_route: "dismiss suggestion",
   dismiss: "dismiss", snooze: "snooze",
 };
+// What a finished agent job on a PR is called
+const DONE_NAMES = { take_over: "Take-over done", revise: "Change done", address_review: "Review addressed", drive: "Drive done", format: "Formatted" };
+const doneName = (a) => DONE_NAMES[a.action] || "Done: " + (ACTION_NAMES[a.action] || str(a.action).replace(/_/g, " "));
+const actionName = (a) => ACTION_NAMES[a.action] || str(a.action).replace(/_/g, " ");
+
+// GraphQL node ids like PRRT_kwDO… mean nothing to him
+const NODE_ID = /\s*\b[A-Z]{1,6}_kw[A-Za-z0-9_-]{6,}/g;
+
+// The result of a finished action: a link, the parts a worker reported, or its text without node ids
+function resultNodes(a) {
+  const p = a.resultParts && typeof a.resultParts === "object" && !Array.isArray(a.resultParts) ? a.resultParts : null;
+  const commits = p && Array.isArray(p.commits) ? p.commits.filter((u) => isGithubUrl(str(u))) : [];
+  const threads = p && Array.isArray(p.threads) ? p.threads.filter((t) => t && typeof t === "object") : [];
+  if (commits.length || threads.length) {
+    const out = [];
+    const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+    if (commits.length) out.push(h("span", { class: "result-part" }, "Pushed ", ghLink(commits.at(-1), plural(commits.length, "commit"))));
+    if (threads.length) {
+      const linked = threads.filter((t) => isGithubUrl(str(t.url)));
+      const words = plural(threads.length, "thread");
+      out.push(h("span", { class: "result-part" }, (out.length ? "· " : "") + (out.length ? "replied in " : "Replied in "),
+        threads.length === 1 && linked.length === 1 ? ghLink(str(linked[0].url), words) : words,
+        threads.length > 1 && linked.length ? " (" : null,
+        ...(threads.length > 1 ? linked.flatMap((t, i) => [i ? ", " : null, ghLink(str(t.url), String(i + 1))]) : []),
+        threads.length > 1 && linked.length ? ")" : null,
+        threads.every((t) => t.resolved === true) ? ", resolved" : null));
+    }
+    return out;
+  }
+  const r = str(a.result);
+  if (isGithubUrl(r)) return [ghLink(r, "view on GitHub")];
+  return r ? [h("span", { text: r.replace(NODE_ID, "") })] : [];
+}
 
 // Keys include the repo, so two boards on one machine keep their own filters, drafts and marks
 // Board-wide settings, like the tab and the budget, share one prefix. Drafts and marks live per instance.
@@ -1814,7 +1850,7 @@ function statusLine(id) {
   }
   const a = latestOf(id);
   if (!a) return null;
-  const name = ACTION_NAMES[a.action] || str(a.action);
+  const name = actionName(a);
   const when = timeEl(a.finishedAt || a.createdAt);
   if (a.status === "queued") {
     const forAgent = AGENT_ACTIONS.has(a.action);
@@ -1823,16 +1859,15 @@ function statusLine(id) {
     return h("div", { class: "status queued" }, icon("queued"), h("span", { text }), when);
   }
   if (a.status === "done") {
-    const r = str(a.result);
     return h("div", { class: "status done" },
       icon("check"),
-      h("span", { text: "Done: " + name }),
-      isGithubUrl(r) ? ghLink(r, "view on GitHub") : r ? h("span", { text: r }) : null,
+      h("span", { text: doneName(a) }),
+      ...resultNodes(a),
       when);
   }
   if (a.status === "failed") {
     return h("div", { class: "status failed" },
-      icon("alert"), h("span", { text: "Failed: " + name + (a.result ? ". " + str(a.result) : "") }), when);
+      icon("alert"), h("span", { text: "Failed: " + name + (a.result ? ". " + str(a.result).replace(NODE_ID, "") : "") }), when);
   }
   return null;
 }
@@ -1960,10 +1995,10 @@ function stateIcons(id, d, dim, withPassing) {
   if (state.busy.has(id)) out.push(["send", "muted", "Sending to the action server", null, "Sending"]);
   else {
     const a = latestOf(id);
-    const name = a ? ACTION_NAMES[a.action] || str(a.action) : "";
+    const name = a ? actionName(a) : "";
     if (a && a.status === "queued") out.push(["queued", "warn", "Requested: " + name + ". The agent picks it up in a moment.", null, "Requested"]);
     else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
-    else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", "Done: " + name, null, "Done: " + name]);
+    else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", doneName(a), null, doneName(a)]);
   }
   const open = !isClosedThread(id, d);
   if (d.kind === "pr" && d.ci === "failing") out.push(["ciFail", "bad", "CI failing"]);

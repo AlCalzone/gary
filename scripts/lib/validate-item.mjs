@@ -20,6 +20,9 @@ const REVIEW_EVENTS = ["approve", "request_changes", "comment"];
 const ROUTE_IDS = ["r1", "r2", "r3", "r4"];
 const MAX_TITLE = 60;
 // Route types whose text goes out on GitHub when the bot runs them
+// The agent actions that push to a PR, and the routes that decide a PR after such a push
+const PUSH_ACTIONS = ["take_over", "revise", "address_review", "drive", "format"];
+const DECIDING_TYPES = ["merge", "review", "revise", "address_review", "close"];
 const POSTING_TYPES = new Set(["reply", "request_logs", "reopen", "review", "follow_up", "move"]);
 
 const isString = (v) => typeof v === "string" && v.trim().length > 0;
@@ -77,6 +80,15 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
 		err("labels", "labels must be a list of strings");
+	}
+	if (item.pushed !== undefined && item.pushed !== null) {
+		const p = item.pushed;
+		const ok = item.kind === "pr" && isObject(p) && Object.keys(p).every((k) => ["action", "sha", "at"].includes(k)) && PUSH_ACTIONS.includes(p.action) && typeof p.sha === "string" && /^[0-9a-f]{7,64}$/.test(p.sha) && Number.isFinite(Date.parse(p.at ?? ""));
+		if (!ok) err("pushed", `pushed is only for PRs, as { action: ${PUSH_ACTIONS.join(" | ")}, sha, at }`);
+		// After our push the item offers the decision, also while CI still runs on the new head
+		else if (p.sha === item.reviewedSha && !(Array.isArray(item.routes) ? item.routes : []).some((r) => DECIDING_TYPES.includes(r?.type))) {
+			err("pushed-decision", `the agent's ${p.action} pushed the current head, so the item needs a route that decides the PR: ${DECIDING_TYPES.join(", ")}. A reply that reports the push is not one`);
+		}
 	}
 	checkWants(item, profile, err);
 	checkAutofix(item, err);
@@ -355,4 +367,4 @@ function checkWants(item, profile, err) {
 }
 
 /** Item fields whose change needs a validation of the merged item. */
-export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason", "handled"];
+export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason", "handled", "pushed", "reviewedSha"];

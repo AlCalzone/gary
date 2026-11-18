@@ -119,6 +119,8 @@ const AI_BRANCH = /^(claude|copilot)\//i;
 /**
  * Whether an AI agent or a bot wrote the PR, from its commits and head branch. `ai.logins` are the configured bot
  * and the profile's botLogins, `ai.names` the profile's aiAuthors, matched as case-insensitive parts of a name or login.
+ * `ai.own` is the configured bot. Its commits on a PR someone else opened are ours, from a take-over or a format run.
+ * They do not make the PR AI-written, and `ourCommits` counts them.
  */
 export function aiFacts(node, ai = { logins: [], names: [] }) {
 	const logins = new Set((ai.logins ?? []).map((l) => l.toLowerCase()));
@@ -131,7 +133,14 @@ export function aiFacts(node, ai = { logins: [], names: [] }) {
 	};
 	const signals = new Set();
 	if (AI_BRANCH.test(node.headRefName ?? "")) signals.add(`branch ${node.headRefName}`);
+	const own = (ai.own ?? "").toLowerCase();
+	const foreign = !!own && (node.author?.login ?? "").toLowerCase() !== own;
+	let ourCommits = 0;
 	for (const { commit } of node.allCommits?.nodes ?? []) {
+		if (foreign && (commit?.author?.user?.login ?? "").toLowerCase() === own) {
+			ourCommits++;
+			continue;
+		}
 		for (const [role, person] of [["author", commit?.author], ["committer", commit?.committer]]) {
 			const who = person?.user?.login ?? person?.name;
 			if (isAgent(person?.user?.login) || isAgent(person?.name)) signals.add(`commit ${role} ${who}`);
@@ -140,7 +149,7 @@ export function aiFacts(node, ai = { logins: [], names: [] }) {
 			if (isAgent(m[1]) || isAgent(m[2]?.split("@")[0])) signals.add(`co-author ${m[1] || m[2]}`);
 		}
 	}
-	return { aiAuthored: signals.size > 0, aiSignals: [...signals].slice(0, 10) };
+	return { aiAuthored: signals.size > 0, aiSignals: [...signals].slice(0, 10), ...(ourCommits && { ourCommits }) };
 }
 
 /** The facts of an issue or discussion entry from the snapshot. */

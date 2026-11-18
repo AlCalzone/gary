@@ -98,7 +98,7 @@ The item cannot be reproduced without real hardware or an environment the agent 
 
 ## AI-written PRs
 
-`facts.aiAuthored` says whether an AI agent wrote the PR, with the evidence in `facts.aiSignals`. The profile's rules say what follows. The fast tier never decides such a PR. Estimate his reading time from `facts.changedLines` (`item-doc.md`, `effortMinutes`).
+`facts.aiAuthored` says whether an AI agent wrote the PR, with the evidence in `facts.aiSignals`. The bot's own commits on a PR someone else opened do not count: they are ours, from a take-over, a change or a format run, and `facts.ourCommits` counts them. The profile's rules say what follows. The fast tier never decides such a PR. Estimate his reading time from `facts.changedLines` (`item-doc.md`, `effortMinutes`).
 
 ## Fixes in progress
 
@@ -162,7 +162,7 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 `priority` is 1 for the top of a section. The maintainer works a section from the top, so cheap decisions come first. Order within a section:
 
-Work the maintainer asked the agent for comes back first. An item whose agent job finished since he last handled it (a take-over, a change he asked for with `revise`, an address-review, a drive, a format, a fix he started) and that now only needs his decision goes to `easy`, at the very top, before everything else, newest result first. He asked for it and is waiting to finish it. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
+Work the maintainer asked the agent for comes back first. An item whose agent job finished since he last handled it (a take-over, a change he asked for with `revise`, an address-review, a drive, a format, a fix he started) and that now only needs his decision goes to `easy`, at the very top, before everything else, newest result first. He asked for it and is waiting to finish it. Such an item always offers the decision, as "Routes after a push" in `push-to-pr.md` describes: a `merge`, a `review`, or another pass by the agent. A `reply` that only reports the push is no route. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
 
 After those, in every section, other people come before our own work: first items by outside contributors and reporters, then items by the maintainer himself, then items by bots and agents. Someone outside is waiting on the first group, and nobody waits on the others. Within each of these groups:
 

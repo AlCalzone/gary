@@ -113,6 +113,33 @@
     document.getElementById("d-close").click(); await wait(5);
   }
 
+  // A finished agent job: its name in words, its result as short text with links
+  {
+    items(F); await wait(5);
+    const doneAction = (extra) => window.__subs["actions"](__mkSnap([["widgets/t1", { instance: "widgets", itemId: "pr-9474", action: "take_over", status: "done", via: "queue", createdAt: new Date().toISOString(), finishedAt: new Date().toISOString(), ...extra }]]));
+    const commit = "https://github.com/acme/widgets/pull/9474/commits/cb97aa0";
+    const thread = "https://github.com/acme/widgets/pull/9474#discussion_r1";
+    doneAction({ result: commit, resultParts: { commits: [commit], threads: [{ url: thread, resolved: true }] } }); await wait(10);
+    state.notes.delete("pr-9474");
+    await openItem("pr-9474");
+    const line = () => document.querySelector("#detail .status.done");
+    const text = () => line().textContent.replace(/\s+/g, " ");
+    ok("a finished take-over is named in words", /^Take-over done/.test(text()) && !/take_over/.test(document.getElementById("detail").textContent));
+    ok("its result is short text with the commit and the thread as links", /Pushed 1 commit ?· replied in 1 thread, resolved/.test(text())
+      && [...line().querySelectorAll("a")].map((a) => a.textContent + "=" + a.href).join() === "1 commit=" + commit + ",1 thread=" + thread);
+    ok("the badge uses the same words", [...document.querySelectorAll("#d-meta *")].some((e) => e.textContent === "Take-over done") && !/Done: take/.test(document.getElementById("d-meta").textContent));
+    doneAction({ action: "revise", result: commit, resultParts: { commits: [commit, commit + "1"], threads: [{ url: thread, resolved: true }, { url: thread + "2", resolved: false }] } }); await wait(10);
+    ok("several commits and threads are counted, the threads numbered", /^Change done ?Pushed 2 commits ?· replied in 2 threads \(1, 2\)/.test(text()) && !/resolved/.test(text()) && line().querySelectorAll("a").length === 3);
+    doneAction({ action: "address_review", result: "Pushed " + commit + " and replied in thread PRRT_kwDOB40DsM6rwtan (" + thread + "), resolved" }); await wait(10);
+    ok("an old result string loses its node id", /^Review addressed/.test(text()) && !/PRRT_/.test(text()) && /replied in thread \(/.test(text()));
+    doneAction({ action: "format", result: commit }); await wait(10);
+    ok("a format run reads Formatted with its link", /^Formatted ?view on GitHub/.test(text()));
+    doneAction({ action: "drive", status: "failed", result: "The push was refused for thread PRRT_kwDOB40DsM6rwtan." }); await wait(10);
+    ok("a failed job is named in words too", /^Failed: drive\. The push was refused for thread\./.test(document.querySelector("#detail .status.failed").textContent));
+    window.__subs["actions"](__mkSnap([])); await wait(10);
+    document.getElementById("d-close").click(); await wait(5);
+  }
+
   // The agent rewrites the open item
   {
     items(F); await wait(5);

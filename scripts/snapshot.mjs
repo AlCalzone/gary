@@ -363,7 +363,7 @@ function factsContext() {
 	return {
 		us: [...new Set([...maintainerLogins(), ...botLogins()])],
 		patterns: profile.automatedComments ?? [],
-		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [] },
+		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [], own: bot ?? null },
 	};
 }
 

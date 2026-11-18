@@ -153,6 +153,22 @@ expect "a change request has no such warning (stderr)" 1 '' zsh -c "node $B put 
 mk case "{$BOTPR,\"hint\":\"Review: x\",\"routes\":[{$RVW,\"params\":{\"event\":\"comment\"}}]}"
 expect "a comment review on a bot's PR is fine" 1 '' zsh -c "node $B put items pr-12 $H/case.json 2>&1 | grep 'is a change request'"
 
+# After the agent pushed, the item offers the decision
+SHA1=1111111111111111111111111111111111111111
+PUSHED="\"reviewedSha\":\"$SHA1\",\"pushed\":{\"action\":\"take_over\",\"sha\":\"$SHA1\",\"at\":\"2026-11-18T10:00:00Z\"}"
+RPLY='{"id":"r1","type":"reply","title":"Reply: block moved","as":"me","text":"I moved the block.","recommended":true}'
+MRG='{"id":"r1","type":"merge","title":"Merge","as":"me","text":"Thanks!","recommended":true,"callout":"CI is still running on the new head"}'
+bad_case "only a reply after a finished push" "needs a route that decides the PR" "{$CONTRIB,\"takenOver\":true,$PUSHED,\"hint\":\"Reply: block moved\",\"routes\":[$RPLY]}"
+bad_case "no route after a finished push" "needs a route that decides the PR" "{$CONTRIB,\"takenOver\":true,$PUSHED,\"routes\":[]}"
+mk case "{$CONTRIB,\"takenOver\":true,\"ci\":\"pending\",$PUSHED,\"hint\":\"Merge\",\"routes\":[$MRG]}"
+expect "a merge with a CI callout after a push is fine while CI runs" 0 '"ok":true' node $B put items pr-12 $H/case.json
+mk case "{$CONTRIB,\"takenOver\":true,${PUSHED/\"reviewedSha\":\"$SHA1\"/\"reviewedSha\":\"2222222222222222222222222222222222222222\"},\"hint\":\"Reply: block moved\",\"routes\":[$RPLY]}"
+expect "a push on an older head asks for nothing" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "pushed with an unknown action" "pushed is only for PRs" "{$CONTRIB,${PUSHED/take_over/merge},\"hint\":\"Merge\",\"routes\":[$MRG]}"
+mk case "{$BOTPR,${PUSHED/take_over/revise},\"ci\":\"failing\",\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"The lint job fails on the new file. Fix the import order.\"}]}"
+expect "a revise for red CI after our push is a deciding route" 0 '"ok":true' node $B put items pr-12 $H/case.json
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
+
 # The switch that lets a fix ask the reporter
 FU='"id":"r1","type":"follow_up","title":"Start fix: x","as":"agent","recommended":true,"text":"Fix it"'
 ISSUE=${${BASE/\"kind\":\"pr\"/\"kind\":\"issue\"}/pull\/12/issues\/21}

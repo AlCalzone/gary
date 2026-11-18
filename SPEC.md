@@ -341,6 +341,7 @@ An issue or discussion whose served `fix` has `parked: true` is in no plan group
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
 - A `review` route with a preset `event: "comment"` is a warning, except on a PR by a bot: a review with something for the contributor is a change request.
 - `address_review` only when every thread has an id and a verdict, and only where `drive` would be accepted. `drive`, `take_over` and `revise` only where the server would accept them: `take_over` only on a contributor PR that is not taken over, `revise` only where `drive` is allowed, with a non-empty `text` and no params.
+- `pushed` is `{ action, sha, at }` on a PR. While `pushed.sha` equals `reviewedSha`, the agent's push made the current head, and the item needs at least one route that decides the PR: `merge`, `review`, `revise`, `address_review` or `close`. A `reply` that reports the push is not one. This holds while CI still runs on the new head: the route then carries a callout that says so.
 - An item with `blocked` has exactly one route, of type `open`. An `open` route has no text and no params, and is allowed without `blocked` too.
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
@@ -407,6 +408,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
     { "severity": "blocker", "text": "…", "ref": "src/…:123", "routeId": "r2" }   // blocker | major | minor | idea | question. routeId is optional
   ],
   "routes": [ … ],                // see Routes
+  "pushed": { "action": "take_over", "sha": "…", "at": "ISO" },   // PRs: the agent's last push and the head it made. action is take_over, revise, address_review, drive or format
   "takenOver": false,              // PRs: true after a take_over ran. Allows `drive`, `address_review` and `revise` on a contributor PR
   "lastEventUrl": "https://github.com/…/issues/12#issuecomment-123",   // optional, copied from the snapshot's facts.lastEventUrl. The board opens the thread there, at its bottom
   "classifiedBy": "fast",          // optional, the agent's: fast | standard | full, the tier that wrote this item
@@ -550,6 +552,8 @@ Agent requests. The server writes them as queued action docs when their route is
 | `format` | `params.reviewedSha`, the head the autofix check ran on. The worker refuses when the PR head moved since, runs the profile's autofix and pushes only its changes. It never sets `takenOver` |
 | `drive` | `params.maxRounds`. `params.by: "fix"` with `params.fixFor` marks the review rounds of a fix PR, which `gary fix-review start` writes and no click starts. When it ends the agent writes `rounds: [{ n, fixed: ["…"], dismissed: [{ summary, reason }], open: ["…"] }]` into the item and the fitting routes: merge when nothing is open, otherwise a review or address_review card. The dialog shows the rounds as a short summary |
 
+A worker that pushed writes `result`, the URL of its last commit, and `resultParts: { commits: [url], threads: [{ url, resolved }] }` into the action doc. The page shows a finished agent job by name, "Take-over done", "Change done", "Review addressed", "Drive done" or "Formatted", and its result as short text with links, like "Pushed 1 commit · replied in 1 thread, resolved". A doc without `resultParts` shows its `result` string, with GraphQL node ids removed. No text for the maintainer carries a node id.
+
 Every action returns `{ ok, result }` and never throws past the entry point. `--dry-run` applies the account rules and the read-only lookups and returns the writes it would send instead.
 
 ## Learning
@@ -661,7 +665,7 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
 }
 ```
 
-`aiAuthored` is true when a commit of the PR (the first 100) has an author or committer whose name or login is `claude`, `copilot`, ends in `[bot]`, is the configured bot, one of the profile's `botLogins`, or contains one of its `aiAuthors`, when a `Co-Authored-By` trailer names one, or when the head branch starts with `claude/` or `copilot/`. `aiSignals` lists the reasons, at most 10. `changedLines` leaves out lock files only, because GitHub's API does not say which files are generated. Lock files beyond the first 50 files still count. `answerable` says the discussion's category allows an answer, `answerChosen` that one is marked.
+Commits by the configured bot on a PR someone else opened are ours and are left out of `aiAuthored`. `ourCommits` counts them when there are any. `aiAuthored` is true when another commit of the PR (the first 100) has an author or committer whose name or login is `claude`, `copilot`, ends in `[bot]`, is the configured bot, one of the profile's `botLogins`, or contains one of its `aiAuthors`, when a `Co-Authored-By` trailer names one, or when the head branch starts with `claude/` or `copilot/`. `aiSignals` lists the reasons, at most 10. `changedLines` leaves out lock files only, because GitHub's API does not say which files are generated. Lock files beyond the first 50 files still count. `answerable` says the discussion's category allows an answer, `answerChosen` that one is marked.
 
 Draft PRs stay out of the snapshot, except the ones in `fixes.json`, which carry `garyFix: { itemId }`. A discussion entry carries `referencingPrs` with the PRs that name it: the snapshot reads the 100 most recently updated PRs of the repo in one search, because discussions have no cross-reference events in the API. The staged and committed entries keep `lastEventAt` and `lastThemAt`, and for the fix state `title`, `author`, `isDraft`, `ci` and `garyFix` of PRs, `closingPrs` of issues and `referencingPrs` of discussions.
 
