@@ -1256,8 +1256,10 @@ function handledToday(id) {
   return itemOpenedToday(id) || handledAction(latestOf(id));
 }
 
+// A finished re-analysis hands the item back to him with new cards, so it does not count as handled
 function handledAction(a) {
   if (!a || (a.status !== "done" && a.status !== "queued")) return false;
+  if (a.action === "reanalyze" && a.status === "done") return false;
   const t = parseTime(a.createdAt);
   return Number.isFinite(t) && dayKey(t) === dayKey(Date.now());
 }
