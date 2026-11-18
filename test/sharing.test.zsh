@@ -109,9 +109,9 @@ expect "watch-queue --once" 0 "" env GARY_HOME=$H/nobot node $B watch-queue --on
 expect "unknown command" 2 "Unknown command" node $B frobnicate
 
 # Only request_review reaches the stored login while a bot is configured
-callers=$(grep -rln "requestCopilotReviewAsMaintainer" $W/scripts $W/server $W/mcp-server/index.mjs $W/bin | sort | tr '\n' ' ')
+callers=$(grep -rln "requestCopilotReview" $W/scripts $W/server $W/mcp-server/index.mjs $W/bin | sort | tr '\n' ' ')
 [[ $callers == "$W/scripts/lib/actions.mjs $W/scripts/lib/gh.mjs " ]] && ok || bad "helper callers" "$callers"
-[[ $(grep -c "requestCopilotReviewAsMaintainer(" $W/scripts/lib/actions.mjs) == 1 ]] && ok || bad "one call site" ""
+[[ $(grep -c "requestCopilotReview(" $W/scripts/lib/actions.mjs) == 1 ]] && ok || bad "one call site" ""
 expect "gh() in bot mode uses the bot token" 0 "widgets-bot" env GARY_HOME=$H/bot node -e "import('$W/scripts/lib/gh.mjs').then(async (m) => console.log((await m.gh(['api','user','--jq','.login'])).trim()))"
 
 rm -rf $H

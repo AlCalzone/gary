@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // A stand-in for the gh binary in tests. It answers the reads Gary makes from test/fixtures/github.mjs
 // and refuses every write, so no test can reach GitHub.
+//   FAKE_GH_WRITES         a file. With it the fake accepts the two mutations of the fix review rounds, a Copilot
+//                          review request and marking a PR ready, and appends one line per accepted write
 //   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
 //   FAKE_GH_LOGIN          the stored login without GH_TOKEN, default octocat. Empty means not logged in
 //   FAKE_GH_LOG            a file that gets one line per call, for tests that check what ran
@@ -51,7 +53,15 @@ if (args[1] !== "graphql") {
 }
 
 const { query, variables: v = {} } = JSON.parse(stdin || "{}");
-if (/^\s*mutation\b/.test(query)) fail("fake gh refuses every write", undefined);
+if (/^\s*mutation\b/.test(query)) {
+	const accepted = [
+		["requestCopilotCodeReview", { requestCopilotCodeReview: { success: true, failureReason: null } }],
+		["markPullRequestReadyForReview", { markPullRequestReadyForReview: { pullRequest: { url: `${gh.URL}/pull/0` } } }],
+	].find(([name]) => query.includes(name));
+	if (!process.env.FAKE_GH_WRITES || !accepted) fail("fake gh refuses every write", undefined);
+	appendFileSync(process.env.FAKE_GH_WRITES, JSON.stringify({ mutation: accepted[0], variables: v, as: process.env.GH_TOKEN ? (process.env.GH_TOKEN === gh.BOT_TOKEN ? gh.BOT : "someone-else") : (process.env.FAKE_GH_LOGIN ?? gh.ME) }) + "\n");
+	out({ data: accepted[1] });
+}
 const repository = (data) => out({ data: { repository: data } });
 const overrides = (() => {
 	try {

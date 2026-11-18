@@ -13,7 +13,7 @@ import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
-import { fixBlock, fixStateOf, loadFixSources } from "../scripts/lib/fixes.mjs";
+import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
@@ -902,7 +902,12 @@ export async function startBoardServer({
 		const working = await workingByItem(name, actions);
 		const opened = await readOpened(name);
 		const fixSources = await withInstance(name, () => loadFixSources(name));
-		const fixOf = (id, data) => (data.kind === "issue" || data.kind === "discussion" ? fixStateOf(id, fixSources) : null);
+		const autoFixes = { pending: pendingAutoFixes(fixSources), max: instance.config.maxPendingAutoFixes };
+		const fixOf = (id, data) => {
+			const fix = data.kind === "issue" || data.kind === "discussion" ? fixStateOf(id, fixSources) : null;
+			// A pending fix of the routine counts toward its limit, so the page can show "N of 10"
+			return fix && fix.startedBy === "routine" && BLOCKING_FIX_STATES.includes(fix.state) ? { ...fix, limit: autoFixes } : fix;
+		};
 		return items.map(({ id, data }) => ({
 			...data,
 			liveState: liveStates.get(`${name}/${id}`),
@@ -1019,7 +1024,12 @@ export async function startBoardServer({
 		// gary pause and resume change control.json, and open pages show the switch at once
 		addWatch(w, i.state, (_type, file) => {
 			if (file === "control.json") schedulePush(name, "board");
+			// A recorded fix PR, its ready mark and a new snapshot change item.fix
+			if (file === "fixes.json" || file === "snapshot.json" || file === "snapshot.pending.json") schedulePush(name, "items");
 		});
+		// A round of a drive changes item.working and the stage of item.fix
+		mkdirSync(driveDir(name), { recursive: true });
+		addWatch(w, driveDir(name), () => schedulePush(name, "items"));
 		// A claim taken or released changes item.working
 		mkdirSync(claimsDir(name), { recursive: true });
 		addWatch(w, claimsDir(name), () => schedulePush(name, "items"));

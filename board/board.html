@@ -1594,7 +1594,9 @@ const fixParkedEls = {};
 function renderFixParked(rows) {
   if (!fixParkedEls.el) return;
   fixParkedEls.el.hidden = rows.length === 0;
-  fixParkedEls.count.textContent = "Has a fix in progress: " + rows.length;
+  // The routine's own fixes count toward a limit, also the ones whose item is not listed here
+  const limit = rows.map(([, d]) => fixOf(d).limit).find((l) => l && Number.isInteger(l.pending) && Number.isInteger(l.max));
+  fixParkedEls.count.textContent = "Has a fix in progress: " + rows.length + (limit ? " · automatic: " + limit.pending + " of " + limit.max : "");
   fixParkedEls.list.replaceChildren(...rows.map(([key, d]) => {
     const open = h("button", { class: "btn quiet small", type: "button", text: "Open", "data-focus-key": "fixparked:" + key });
     open.addEventListener("click", () => openDetail(key));
@@ -1865,12 +1867,21 @@ function ciDot(ci) {
   return ["passing", "failing", "pending"].includes(ci) ? h("span", { class: "ci-dot ci-" + ci, role: "img", "aria-label": "CI " + ci, title: "CI " + ci }) : null;
 }
 
+// The review rounds a fix PR gets on its own, like "Copilot round 2 of 3"
+function fixStage(f) {
+  const v = f && f.review && typeof f.review === "object" ? f.review : null;
+  if (!v || !Number.isInteger(v.round) || !Number.isInteger(v.maxRounds)) return "";
+  const who = str(v.reviewer) || "review";
+  return who.charAt(0).toUpperCase() + who.slice(1) + " round " + v.round + " of " + v.maxRounds;
+}
+
 // The chip on the title line of a row
 function agentChip(d) {
   const f = fixOf(d);
   if (f && f.state === "working") return h("span", { class: "agent-chip", title: "The agent is working on a fix" }, "Fix running");
   if (f && (f.state === "draft" || f.state === "open") && f.pr) {
-    return h("span", { class: "agent-chip", title: (f.state === "draft" ? "Draft fix" : "Fix") + " #" + f.pr.number + " is open on GitHub" }, "Fix: #" + f.pr.number + " " + f.state, ciDot(str(f.pr.ci)));
+    const stage = fixStage(f);
+    return h("span", { class: "agent-chip", title: (f.state === "draft" ? "Draft fix" : "Fix") + " #" + f.pr.number + " is open on GitHub" }, "Fix: #" + f.pr.number + " " + f.state + (stage ? ", " + stage : ""), ciDot(str(f.pr.ci)));
   }
   if (f && f.state === "merged" && f.pr) return h("span", { class: "agent-chip quiet", text: "Fixed by #" + f.pr.number });
   if (pushActive(d)) return h("span", { class: "agent-chip", title: "The agent is changing this PR" }, "Agent working");
@@ -1905,7 +1916,7 @@ function renderAgentBanner(d) {
     const ci = str(f.pr.ci);
     const ciText = { pending: "running", passing: "passing", failing: "failing" }[ci];
     const board = prKeyOf(d, f.pr.number);
-    parts = [icon("wrench"), h("span", { class: "ab-text" }, (f.state === "draft" ? "Draft fix #" : "Fix #") + f.pr.number + " is open: ", richText(str(f.pr.title)), "." + (ciText ? " CI " + ciText + "." : "")),
+    parts = [icon("wrench"), h("span", { class: "ab-text" }, (f.state === "draft" ? "Draft fix #" : "Fix #") + f.pr.number + " is open: ", richText(str(f.pr.title)), "." + (ciText ? " CI " + ciText + "." : "") + (fixStage(f) ? " " + fixStage(f) + "." : "")),
       isGithubUrl(str(f.pr.url)) ? h("a", { class: "btn small", href: str(f.pr.url), target: "_blank", rel: "noopener noreferrer", text: "Open PR", "data-focus-key": "fix:pr" }) : null,
       board ? h("button", { class: "btn small", type: "button", text: "Open on board", "data-focus-key": "fix:board", onclick: () => switchDialog(board) }) : null];
   } else if (f && f.state === "merged" && f.pr) {

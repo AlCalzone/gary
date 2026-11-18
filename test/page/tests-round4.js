@@ -255,6 +255,13 @@
       document.getElementById("d-close").click(); await wait(5);
       items(F.map(([k, d]) => [k, k === "issue-9495" ? { ...d, handled: { at: new Date().toISOString(), routeId: "r2", routeType: "reply", verified: null }, fix: { ...d.fix, parked: true } } : d])); await wait(10);
       ok("a handled item with a parked fix is listed once, as handled", !!document.querySelector('#handled .handled-row[data-id="issue-9495"]') && !parkedRow("issue-9495"));
+      // The review rounds of the fix PR and the limit on automatic fixes
+      items(F.map(([k, d]) => [k, k === "issue-9495" ? { ...d, fix: { ...d.fix, startedBy: "routine", parked: true, review: { reviewer: "copilot", round: 2, maxRounds: 3 }, limit: { pending: 3, max: 10 } } } : d])); await wait(10);
+      ok("fix rounds: the chip names the stage", parkedRow("issue-9495")?.querySelector(".agent-chip")?.textContent === "Fix: #9496 draft, Copilot round 2 of 3");
+      ok("fix limit: the line shows the automatic fixes against the limit", line.querySelector("summary").textContent === "Has a fix in progress: 1 · automatic: 3 of 10");
+      await openItem("issue-9495");
+      ok("fix rounds: the banner names the stage", /^Draft fix #9496 is open: fix: stop retrying on a 413\. CI running\. Copilot round 2 of 3\./.test(document.getElementById("d-fix").textContent));
+      document.getElementById("d-close").click(); await wait(5);
       items(F); await wait(10);
       for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
       await wait(5);

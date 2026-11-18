@@ -28,8 +28,27 @@ export const CONFIG_DEFAULTS = {
 	activeMaxWaitDays: 14,
 	maxFullReviewsPerRun: 10,
 	maxAutoFixesPerRun: 2,
+	maxPendingAutoFixes: 10,
 	fastTier: "off",
 };
+
+export const FIX_REVIEWERS = ["copilot", "off"];
+export const FIX_REVIEW_REQUESTERS = ["me", "bot"];
+export const FIX_REVIEW_DEFAULTS = { reviewer: "copilot", requestAs: "me", maxRounds: 3, markReady: true };
+
+/**
+ * The review rounds a fix PR of Gary gets on its own: `{ reviewer, requestAs, maxRounds, markReady, reason }`.
+ * `reviewer` is "off" when the config says so or when the rounds cannot run, and `reason` then says why.
+ */
+export function fixReviewOf(config, profile) {
+	const set = { ...FIX_REVIEW_DEFAULTS, ...(config.fixReview ?? {}) };
+	const off = (reason) => ({ ...set, reviewer: "off", reason });
+	if (set.reviewer === "off") return off(config.fixReview ? "fixReview.reviewer is off in config.json" : null);
+	if (!config.bot && config.allowOwnTokenPushes !== true) return off("no account may push: there is no bot and allowOwnTokenPushes is false");
+	if (!(profile.reviewBots ?? []).includes(set.reviewer)) return off(`the profile does not list ${set.reviewer} in reviewBots`);
+	if (set.requestAs === "bot" && !config.bot) return off('fixReview.requestAs is "bot", but no bot is configured');
+	return { ...set, reason: null };
+}
 
 export const FAST_TIERS = ["off", "shadow", "on"];
 
@@ -258,7 +277,7 @@ const isStringList = (v, pattern) => Array.isArray(v) && v.every((s) => typeof s
 export function checkConfig(data) {
 	const errors = [];
 	const unknown = [];
-	const known = ["profile", "me", "checkout", ...Object.keys(CONFIG_DEFAULTS)];
+	const known = ["profile", "me", "checkout", "fixReview", ...Object.keys(CONFIG_DEFAULTS)];
 	for (const key of Object.keys(data)) {
 		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
 		else check(unknown, known.includes(key), `unknown field "${key}"`);
@@ -277,10 +296,22 @@ export function checkConfig(data) {
 		}
 	}
 	check(errors, data.allowOwnTokenPushes === undefined || typeof data.allowOwnTokenPushes === "boolean", `"allowOwnTokenPushes" must be true or false`);
-	for (const key of ["activeWindowDays", "activeMaxWaitDays", "maxFullReviewsPerRun", "maxAutoFixesPerRun"]) {
+	for (const key of ["activeWindowDays", "activeMaxWaitDays", "maxFullReviewsPerRun", "maxAutoFixesPerRun", "maxPendingAutoFixes"]) {
 		check(errors, data[key] === undefined || isInt(data[key], 0, 3650), `"${key}" must be a whole number`);
 	}
 	check(errors, data.fastTier === undefined || FAST_TIERS.includes(data.fastTier), `"fastTier" must be one of ${FAST_TIERS.join(", ")}`);
+	const fr = data.fixReview;
+	if (fr !== undefined) {
+		if (!fr || typeof fr !== "object" || Array.isArray(fr)) {
+			errors.push(`"fixReview" must be { "reviewer", "requestAs", "maxRounds", "markReady" }`);
+		} else {
+			for (const key of Object.keys(fr)) check(unknown, Object.keys(FIX_REVIEW_DEFAULTS).includes(key), `unknown field "fixReview.${key}"`);
+			check(errors, fr.reviewer === undefined || FIX_REVIEWERS.includes(fr.reviewer), `"fixReview.reviewer" must be one of ${FIX_REVIEWERS.join(", ")}`);
+			check(errors, fr.requestAs === undefined || FIX_REVIEW_REQUESTERS.includes(fr.requestAs), `"fixReview.requestAs" must be one of ${FIX_REVIEW_REQUESTERS.join(", ")}`);
+			check(errors, fr.maxRounds === undefined || isInt(fr.maxRounds, 1, 3), `"fixReview.maxRounds" must be 1, 2 or 3`);
+			check(errors, fr.markReady === undefined || typeof fr.markReady === "boolean", `"fixReview.markReady" must be true or false`);
+		}
+	}
 	return { errors, unknown };
 }
 

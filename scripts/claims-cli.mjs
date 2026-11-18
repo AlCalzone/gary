@@ -1,9 +1,11 @@
 // gary claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>] [--request <action id>]: claims work on an item.
 // Exit 3 when another run holds it, and for a fix also when a fix PR is a draft or open, or another request is queued.
+// A fix claim without --request is the routine's own fix. It also exits 3 at the limit `maxPendingAutoFixes`.
 // gary release <itemId> <kind> --run <run>: removes the claim of that run.
 // gary claims [--json]: lists the claims of the instance.
 import { listClaims, releaseClaim, takeClaim } from "./lib/claims.mjs";
-import { fixStateOf, loadFixSources } from "./lib/fixes.mjs";
+import { loadConfig } from "./lib/config.mjs";
+import { fixStateOf, loadFixSources, pendingAutoFixes } from "./lib/fixes.mjs";
 
 function option(argv, name) {
 	const i = argv.indexOf(name);
@@ -35,6 +37,20 @@ export async function claimMain(argv) {
 		}
 	}
 	const r = await takeClaim({ itemId, kind, run: run.value, ...(ttlMinutes !== undefined && { ttlMinutes }) });
+	// Count after the claim is taken, so two runs that claim at once never pass the limit together
+	if (r.ok && kind === "fix" && request.value === undefined) {
+		const limit = loadConfig().maxPendingAutoFixes;
+		const pending = pendingAutoFixes(await loadFixSources());
+		if (pending > limit) {
+			await releaseClaim({ itemId, kind, run: run.value });
+			const error = limit === 0
+				? "Automatic fixes are off: maxPendingAutoFixes is 0."
+				: `The limit of pending automatic fixes is reached: ${pending - 1} of ${limit} are a draft, open or running. A merged or closed fix PR frees a slot.`;
+			console.log(JSON.stringify({ ok: false, error, limit: { pending: pending - 1, max: limit } }));
+			process.exitCode = 3;
+			return;
+		}
+	}
 	console.log(JSON.stringify(r.ok ? { ok: true, ...r.claim } : { ok: false, error: `${itemId} ${kind} is claimed by run ${r.holder?.run} until ${r.holder?.expiresAt}`, holder: r.holder }));
 	if (!r.ok) process.exitCode = 3;
 }
