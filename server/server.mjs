@@ -900,6 +900,7 @@ export async function startBoardServer({
 		const clicked = clickedByKey(name, actions);
 		const partDone = Object.fromEntries(Object.keys(PARTS).map((p) => [p, partsByKey(name, actions, p)]));
 		const working = await workingByItem(name, actions);
+		const opened = await readOpened(name);
 		const fixSources = await withInstance(name, () => loadFixSources(name));
 		const fixOf = (id, data) => (data.kind === "issue" || data.kind === "discussion" ? fixStateOf(id, fixSources) : null);
 		return items.map(({ id, data }) => ({
@@ -917,7 +918,10 @@ export async function startBoardServer({
 					const done = def.params(route) ? partDone[p].get(`${name}|${id}|${route.id}|${partHash(p, route, data)}`) : undefined;
 					if (done) parts[def.doneField] = done;
 				}
-				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...parts };
+				// Serve the mark only for the draft he used
+				const mark = opened[id]?.[route.id];
+				const used = mark?.draftHash === hash && typeof mark.at === "string" ? { opened: { at: mark.at } } : {};
+				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...used, ...parts };
 			}),
 			instance: name,
 			id,
@@ -1148,6 +1152,25 @@ export async function startBoardServer({
 	}
 
 	const itemFile = (name, itemId) => join(served.get(name).board, "items", itemId + ".json");
+
+	// The `as: "me"` buttons he used: `{ <itemId>: { <routeId>: { at, draftHash, text } } }`
+	const openedFile = (name) => join(served.get(name).state, "opened.json");
+	const readOpened = async (name) => {
+		const data = await readJson(openedFile(name));
+		return isObject(data) ? data : {};
+	};
+
+	/** Records that he used the prefill button of `route` with `text`. Drops the item's marks for drafts that are gone. */
+	async function markOpened(name, itemId, item, route, text) {
+		const file = openedFile(name);
+		await withLock(docLocks, file, async () => {
+			const all = await readOpened(name);
+			const hashes = new Map(routesOf(item).map((r) => [r.id, draftHash(r, item)]));
+			const kept = Object.entries(isObject(all[itemId]) ? all[itemId] : {}).filter(([id, o]) => hashes.get(id) === o?.draftHash);
+			await writeAtomic(file, { ...all, [itemId]: { ...Object.fromEntries(kept), [route.id]: { at: new Date().toISOString(), draftHash: hashes.get(route.id), text } } });
+		});
+		schedulePush(name, "items");
+	}
 
 	// Run only what the agent drafted: type, actor, params and the target come from the item file
 	async function handleAction(body) {
@@ -1513,6 +1536,7 @@ export async function startBoardServer({
 		if (recommended && recommended !== route) await decide(name, "chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
 		const drafted = typeof route.text === "string" ? route.text : "";
 		if (typeof text === "string" && text !== drafted) await decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
+		await markOpened(name, itemId, item, route, typeof text === "string" ? text : "");
 		await setHandled(name, itemId, route, null);
 		return [200, { ok: true, result: "Logged." }];
 	}

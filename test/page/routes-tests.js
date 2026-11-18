@@ -44,10 +44,19 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   let calls = __calls.length;
   replyBtn.click(); await wait(20);
   ok("reply in his name copies, opens the anchor and never calls the server", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls);
-  const om = openCard().querySelector(".card-actions .opened-mark");
-  ok("opened today: a check mark with its label, not a word", !!om && !!om.querySelector("svg") && om.textContent === "" && om.getAttribute("aria-label") === "You opened this on GitHub today" && om.title === "You opened this on GitHub today" && handledToday("issue-9471"));
+  const om = openCard().querySelector(".card-actions .status.opened");
+  ok("a used prefill says so in words with the time, and never Done", !!om && !!om.querySelector("svg") && /^Copied and opened on GitHub, \d\d:\d\d$/.test(om.textContent) && !om.classList.contains("done") && !/Done/.test(openCard().querySelector(".card-actions").textContent) && handledToday("issue-9471"));
+  ok("the used button turns into a secondary Copy again", !cardBtn("Copy reply, open GitHub") && cardBtn("Copy again")?.classList.contains("quiet") && !cardBtn("Copy again").classList.contains("primary") && !cardBtn("Copy again").disabled);
+  window.__clip = null;
+  cardBtn("Copy again").click(); await wait(20);
+  ok("Copy again still copies and opens", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls && ta201.isConnected);
+  ok("a prefill without text says Opened and offers Open again", (() => {
+    const c = cards()[1]; cardBtn("Open GitHub to close", c).click();
+    return /^Opened on GitHub, \d\d:\d\d$/.test(c.querySelector(".card-actions .status.opened")?.textContent ?? "") && !!cardBtn("Open again", c);
+  })());
   await expand(2);
   ok("clicking a collapsed card opens it and closes the other", openCard() === cards()[2] && cards()[0].querySelector(".card-body").hidden);
+  ok("the collapsed header of a used prefill carries the check", !cards()[0].querySelector(".card-head .head-opened").hidden && !!cards()[0].querySelector(".card-head .head-opened svg") && cards()[2].querySelector(".card-head .head-opened").hidden);
   await expand(2);
   ok("clicking the open card's head collapses it", !openCard());
   await expand(2);
@@ -57,6 +66,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const fixCall = __calls.at(-1);
   ok("follow_up agent: teal Start fix, no confirm, sends routeId and draftHash", __calls.length === calls + 1 && fixCall.itemId === "issue-9471" && fixCall.routeId === "r3" && fixCall.draftHash === "h3" && fixCall.force === false);
   ok("success shows on the card", /The agent is on it/.test(openCard().querySelector(".card-actions").textContent));
+  ok("a click on another card leaves the used prefill marked", !cards()[0].querySelector(".card-head .head-opened").hidden && /Copied and opened on GitHub/.test(cards()[0].querySelector(".card-actions").textContent));
   ok("a route click writes no action doc from the page", !__writes.some((w) => w[1].startsWith("actions/")));
 
   // move to another repo: two bot buttons, the close one reveals its text first
@@ -204,7 +214,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   calls = __calls.length;
   cardBtn("Copy escalate command, open GitHub", cards()[0]).click(); await wait(20);
   ok("escalate copies exactly the command and opens the discussion", window.__clip === "@widgets-bot escalate" && window.__opened.at(-1) === "https://github.com/acme/widgets/discussions/9476#issue-comment-box" && __calls.length === calls);
-  ok("escalate shows his avatar", avatarOf(cardBtn("Copy escalate command, open GitHub", cards()[0]), "octocat"));
+  ok("escalate shows his avatar", avatarOf(cardBtn("Copy again", cards()[0]), "octocat") && /^Copied and opened on GitHub/.test(cards()[0].querySelector(".status.opened").textContent));
 
   // issue to a discussion
   await openItem("issue-9477");
@@ -212,6 +222,14 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   cardBtn("Open GitHub to convert", cards()[0]).click(); await wait(20);
   ok("move to a discussion opens the issue page, copies nothing", window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9477" && __calls.length === calls && window.__clip === "@widgets-bot escalate");
   ok("react chore shows its emoji", !!cardBtn("👍 React", cards()[2]));
+
+  // The opened mark from the server's route field
+  localOpened.clear();
+  items(routeMap("issue-9471", "r1", (r) => ({ ...r, opened: { at: new Date().toISOString() } }))); await wait(10);
+  await openItem("issue-9471");
+  ok("the opened mark comes from the server's route field", /^Copied and opened on GitHub, \d\d:\d\d$/.test(openCard().querySelector(".status.opened")?.textContent ?? "") && !!cardBtn("Copy again"));
+  items(F); await wait(10);
+  ok("a route the server no longer marks is plain again", !openCard().querySelector(".status.opened") && !!cardBtn("Copy reply, open GitHub") && openCard().querySelector(".card-head .head-opened").hidden);
 
   // done state from the server and draft persistence
   items(routeMap("issue-9471", "r3", (r) => ({ ...r, done: { status: "done", result: "https://github.com/acme/widgets/pull/999" } }))); await wait(10);

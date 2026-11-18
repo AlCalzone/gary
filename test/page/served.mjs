@@ -269,7 +269,9 @@ try {
 	ok("me route: no /api/action request", await ev(`return window.__apiCalls === 0;`));
 	await sleep(500);
 	ok("me route: no action doc", !actionFiles().some((a) => a.itemId === "issue-21" && a.routeId === "r1"));
-	ok("me route: opened mark shown", await until(`!!document.querySelector('#d-routes .card.open .opened-mark[aria-label="You opened this on GitHub today"] svg')`));
+	ok("me route: the card says copied and opened, with Copy again", await until(`/Copied and opened on GitHub, \\d\\d:\\d\\d/.test(document.querySelector("#d-routes .card.open .status.opened")?.textContent ?? "") && !!${cardButton("Copy again")}`));
+	ok("me route: the server serves the mark on the route", await until(`!!state.items.get("widgets/issue-21").routes.find((r) => r.id === "r1").opened?.at`, 8000));
+	ok("me route: the server keeps the copied text", await fileUntil(() => / \(edited\)$/.test(json(join(HOME, "state", "opened.json"))["issue-21"].r1.text)));
 	await clickCard(3);
 	await press("Open GitHub to file the issue");
 	ok("me follow_up opens the new-issue form", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/new?title=A%20%26%20B&body=Line%201")`));

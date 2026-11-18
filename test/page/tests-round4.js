@@ -43,7 +43,7 @@
     ok("label first, copy after: the copy still works", /loglevel/.test(window.__clip) && __calls.length === c);
     items(F); await wait(5);
     await openItem("issue-9490");
-    cardBtn("Copy request, open GitHub").click(); await wait(20);
+    cardBtn("Copy again").click(); await wait(20);
     window.__reply = () => ({ ok: false, result: "This route already ran.", duplicate: true });
     lb().click(); await wait(20);
     ok("copy first, label after; a 409 reads as already done", lb().textContent === "Label added" && lb().disabled && !openCard().querySelector(".status.failed"));
@@ -62,7 +62,7 @@
     ok("own mode: the label button carries his avatar", avatarOf(lb(), "octocat"));
     window.__board.instances = [{ ...W, bot: null, accountMode: "none" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("issue-9490");
-    ok("no bot and no own mode: no label button", !lb() && !!cardBtn("Copy request, open GitHub"));
+    ok("no bot and no own mode: no label button", !lb() && !!cardBtn("Copy again"));
     window.__board.instances = [W]; window.dispatchEvent(new Event("board:info")); await wait(10);
 
     // As the bot: a checkbox under the editor
@@ -368,7 +368,7 @@
     await openItem("issue-9477");
     ok("not handled yet: not in the handled line", !document.querySelector('#handled .handled-row[data-id="issue-9477"]'));
     cardBtn("Open GitHub to convert", cards()[0]).click(); await wait(20);
-    ok("after the click nothing moves while the dialog is open", !document.querySelector('#handled .handled-row[data-id="issue-9477"]') && !!cards()[0].querySelector(".opened-mark"));
+    ok("after the click nothing moves while the dialog is open", !document.querySelector('#handled .handled-row[data-id="issue-9477"]') && !!cards()[0].querySelector(".status.opened") && !!cardBtn("Open again", cards()[0]));
     document.getElementById("d-close").click(); await wait(10);
     ok("closing the dialog moves it to the handled line", !document.querySelector('#board .group .row[data-id="issue-9477"]') && !!document.querySelector('#handled .handled-row[data-id="issue-9477"]'));
     // Focus: refresh recent, unverified items once per focus, quietly on 429
@@ -382,10 +382,11 @@
     document.dispatchEvent(new Event("visibilitychange")); await wait(10);
     ok("a rate-limited refresh is quiet", !document.querySelector(".status.failed") && document.getElementById("notice").textContent === "");
     window.__refreshFails = false;
-    // The check mark comes from the server's field
+    // The item's handled mark names one route. It marks no card
     hset({ "issue-9471": H(5) }); await wait(10);
+    localOpened.clear();
     openDetail("issue-9471"); await wait(10);
-    ok("the check next to the used button comes from the server's mark", !!cards()[0].querySelector('.opened-mark[aria-label="You opened this on GitHub today"]'));
+    ok("a handled item alone marks no card as opened", !cards()[0].querySelector(".status.opened") && cards()[0].querySelector(".card-head .head-opened").hidden);
     document.getElementById("d-close").click(); await wait(5);
     items(F); await wait(5);
   }

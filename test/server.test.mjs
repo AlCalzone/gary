@@ -134,6 +134,14 @@ const items = {
 		kind: "discussion", repo: REPO, number: 31, title: "answered", url: "https://github.com/acme/widgets/discussions/31", reviewedAt, hint: "Close: answered",
 		routes: [{ id: "r1", type: "close", title: "Close: answered", recommended: true, text: "Thanks, closing.", params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/31#c1", gist: "Hold the button" } } }],
 	},
+	"issue-64": {
+		kind: "issue", repo: REPO, number: 64, title: "two prefills and a fix", reviewedAt, hint: "Reply: x",
+		routes: [
+			{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "Drafted reply" },
+			{ id: "r2", type: "close", title: "Close: x", text: "Closing." },
+			{ id: "r3", type: "follow_up", as: "agent", title: "Start fix: x", text: "Fix it" },
+		],
+	},
 	"issue-60": { kind: "issue", repo: REPO, number: 22, title: "refresh unchanged", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x" }] },
 	"issue-61": { kind: "issue", repo: REPO, number: 23, title: "refresh closed", reviewedAt, hint: "Close: x", routes: [{ id: "r1", type: "close", title: "Close: x", recommended: true, text: "x" }] },
 	"disc-62": { kind: "discussion", repo: REPO, number: 35, title: "refresh commented", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x" }] },
@@ -474,6 +482,31 @@ for (const id of ["issue-60", "issue-61", "disc-62", "pr-63"]) await api("/api/d
 await sleep(100);
 const h60 = itemNow("issue-60").handled;
 check("a reported prefill sets handled with verified null", h60?.routeId === "r1" && h60.routeType === "reply" && h60.verified === null && Date.parse(h60.at) > Date.now() - 10000, h60);
+
+// Every prefill button he used is kept per route and served on the route
+const route64 = async (rid) => (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "issue-64").routes.find((x) => x.id === rid);
+const openedStore = () => JSON.parse(readFileSync(join(home, "state", "opened.json"), "utf8"));
+check("a route he did not use carries no opened mark", (await route64("r1")).opened === undefined);
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r1", text: "Edited reply" });
+let o64 = await route64("r1");
+check("a reported prefill is served as opened with its time", Date.parse(o64.opened?.at) > Date.now() - 10000 && Object.keys(o64.opened).join() === "at" && o64.done === undefined, o64);
+check("the server keeps the copied text with the mark", openedStore()["issue-64"].r1.text === "Edited reply" && /^[0-9a-f]{16}$/.test(openedStore()["issue-64"].r1.draftHash), openedStore());
+const firstAt = o64.opened.at;
+await sleep(20);
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r2", text: "Closing." });
+check("a second prefill on the item keeps the first mark", (await route64("r1")).opened?.at === firstAt && !!(await route64("r2")).opened, await route64("r1"));
+await api("/api/action", { instance: "widgets", itemId: "issue-64", routeId: "r3", draftHash: (await route64("r3")).draftHash });
+check("an agent click on the item replaces handled and keeps the opened mark", itemNow("issue-64").handled?.routeId === "r3" && (await route64("r1")).opened?.at === firstAt && (await route64("r3")).opened === undefined, itemNow("issue-64").handled);
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r1", text: "Edited again" });
+check("copying again moves the time", (await route64("r1")).opened.at > firstAt && openedStore()["issue-64"].r1.text === "Edited again");
+writeFileSync(join(BOARD, "items", "issue-64.json"), JSON.stringify({ ...itemNow("issue-64"), routes: itemNow("issue-64").routes.map((x) => (x.id === "r1" ? { ...x, text: "Rewritten by the routine" } : x)) }));
+await sleep(400);
+check("a rewritten draft clears its mark, the other route keeps its own", (await route64("r1")).opened === undefined && !!(await route64("r2")).opened, await route64("r1"));
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r2", text: "Closing." });
+check("the next click drops the stored mark of the old draft", openedStore()["issue-64"].r1 === undefined && !!openedStore()["issue-64"].r2, openedStore()["issue-64"]);
+r = await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r9" });
+check("a decision for an unknown route stores nothing", r.data.outdated === true && openedStore()["issue-64"].r9 === undefined, r);
+
 const soon = new Date(Date.now() + 60000).toISOString();
 writeFileSync(ghOverrides, JSON.stringify({
 	"issue-23": { state: "CLOSED" },

@@ -58,6 +58,7 @@ Gary has three layers, one place for each kind of change.
     control.json         the pause switch, see Pause
     decisions.jsonl      the decision log, see Learning
     learn.json           the learning cursor
+    opened.json          the `as: "me"` buttons he used, per item and route, see Routes
     failures.json        failed triage count per item, kept by the routine
     runs/<run>/          one directory per worker run, named by its UTC timestamp, which the master picks. summary.txt is the
                          worker's result, would-have.json the writes a paused run intended
@@ -296,7 +297,11 @@ The server checks every id and value in `input` against the route and the item. 
 
 Before a bot route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends `force: true` after a second confirm. A moved head still blocks a merge, an approval and a review with inline comments.
 
-Routes with `as: "me"` never reach GitHub through the server and get no action doc. When the maintainer uses one, the page reports it to `POST /api/decision`, and the server writes a local entry in the decision log (see Learning). The page marks them "opened today" in localStorage.
+Routes with `as: "me"` never reach GitHub through the server and get no action doc. When the maintainer uses one, the page reports it to `POST /api/decision`, and the server writes a local entry in the decision log (see Learning).
+
+The server also keeps every such click per item and route in `<state>/opened.json`: `{ <itemId>: { <routeId>: { at, draftHash, text } } }`, with the text he copied. A click on another route of the item adds to it, and a repeat on the same route replaces its entry. The server serves the mark on the route as `opened: { at }` while the stored `draftHash` equals the route's current draft hash. So a triage that rewrites the route or reviews the item again clears it, like `done`. A click also drops the item's stored marks whose draft is gone. The mark survives a reload and every other click on the item.
+
+The card of a used `as: "me"` route says so in words where a bot card says "Done": a check and "Copied and opened on GitHub, 21:42", or "Opened on GitHub, 21:42" when the button copies nothing. Its button turns into a secondary "Copy again" or "Open again" that still works, and the collapsed card header carries the same check. It never says "Done", because he may have copied the text without posting it. This holds for every `as: "me"` route: `reply`, `request_logs`, `review`, `close`, `merge`, `reopen`, `follow_up`, `move` and `open`.
 
 `dismiss_route` removes a suggested route the maintainer does not want: `{ itemId, routeId, text }` to `/api/action`, with `text` an optional reason of at most 500 characters. The server removes the route from the item and appends `{ type, title, reason, at }` to the item's `dismissedRoutes`. When the removed route was the recommended one and routes remain, the first remaining route becomes recommended and `hint` becomes its title. When no route remains, the server also writes a queued `reanalyze` action doc whose `text` names the dismissed route and the reason, so the agent proposes something else. The dismissal is logged as a done action doc with `via: "board"` and in the decision log.
 
@@ -314,7 +319,7 @@ The page talks to the server only through `window.claude`, which the server inje
 - `use("db")` returns `collection("items" | "actions" | "proposals").orderBy(field, dir).limit(n).onSnapshot(cb)`, with the docs of all instances, each doc with `instance` and keyed `<instance>/<id>`, and `doc("meta/status").onSnapshot(cb)`. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`, whose paths gain the instance. The event stream names the instance in every event, sends a `board` event with the full `board` object when a pause changes, and `reload` when `board.html` changed.
 - `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ instance, action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ instance, itemId, routeId, text, draftHash, force, input }`. The board-only calls are `dismiss_route` with `{ instance, itemId, routeId, text }`, and `accept_proposal` and `dismiss_proposal` with `{ instance, proposalId, text }`.
 
-The page keeps filters, drafts and "opened today" marks in localStorage under keys prefixed `gary:<instance>:`, after a one-time move of the per-repo keys. Tabs, groups and header markers are described under "One server, one master".
+The page keeps filters and drafts in localStorage under keys prefixed `gary:<instance>:`, after a one-time move of the per-repo keys. Tabs, groups and header markers are described under "One server, one master".
 
 ## Day plan
 

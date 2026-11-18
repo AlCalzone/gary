@@ -216,7 +216,7 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .prev-draft pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 13.5px/1.5 var(--font-read); color: var(--fg); }
 .also-label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--fg); }
 .part-btn { gap: 6px; }
-.part-btn .part-check, .opened-mark .i { width: 15px; height: 15px; color: var(--ok); }
+.part-btn .part-check { width: 15px; height: 15px; color: var(--ok); }
 .part-view { font-size: 12.5px; color: var(--muted); }
 .part-view:hover { color: var(--fg); }
 .part-gist { flex-basis: 100%; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
@@ -238,7 +238,10 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .agent-banner.quiet { background: transparent; box-shadow: none; padding: 0; color: var(--muted); font-size: 13.5px; }
 .fix-for { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; color: var(--muted); }
 .fix-for[hidden] { display: none; }
-.opened-mark { display: inline-flex; align-items: center; }
+.status.opened { color: var(--muted); }
+.status.opened .i, .head-opened .i { width: 15px; height: 15px; color: var(--ok); }
+.head-opened { display: inline-flex; align-items: center; flex: none; }
+.head-opened[hidden] { display: none; }
 .part-btn .avatar, .part-btn .actor-icon { width: 16px; height: 16px; }
 .status.soft-warn { color: var(--warn); flex-basis: 100%; }
 .d-handled { margin: 0; padding: 8px 14px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 8%, var(--surface)); font-size: 13.5px; color: var(--fg); }
@@ -657,7 +660,6 @@ button.card-head:hover .chev { color: var(--fg); }
 .me-title code { font-family: var(--font-mono); font-size: 12px; color: var(--fg); overflow-wrap: anywhere; }
 .lane-switch { font: 500 12px/1 var(--font-body); padding: 4px 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .lane-switch:hover:not(:disabled) { color: var(--fg); }
-.opened-mark { font-size: 12px; color: var(--muted); }
 
 .card textarea, .card .field { background: var(--surface); }
 .z-status:empty { display: none; }
@@ -3401,10 +3403,23 @@ function routePayload(d, r, rec, b) {
   return { text, input };
 }
 
+// The prefill buttons he used. The server serves `opened` on the route. A click marks it here at once, before the server's push arrives.
+const localOpened = new Map();
+const openedKey = (id, r) => id + "|" + r.id + "|" + str(r.draftHash);
+
+function openedOf(id, r) {
+  const o = r.opened && typeof r.opened === "object" && parseTime(r.opened.at) ? r.opened : null;
+  return o || localOpened.get(openedKey(id, r)) || null;
+}
+
+// A prefill button copies when it has text to copy
+const meCopies = (b, rec) => b.copy === "escalate" || (b.copy === "draft" && !!rec.ta);
+
 function meButton(id, d, r, rec, b, intent, locked) {
   const key = "r:" + r.id + ":" + b.id;
+  const again = !!openedOf(id, r);
   return h("button", {
-    class: "btn me-btn intent-" + intent + (r.recommended === true ? " primary" : ""), type: "button",
+    class: "btn me-btn intent-" + intent + (again ? " quiet" : r.recommended === true ? " primary" : ""), type: "button",
     disabled: locked || !isGithubUrl(str(d.url)), "data-focus-key": key, title: buttonTip(b, instOf(d)),
     onclick: async () => {
       if (!isGithubUrl(str(d.url))) return;
@@ -3432,9 +3447,18 @@ function meButton(id, d, r, rec, b, intent, locked) {
       if (fallback) detail.meNotes.set(r.id, b.copy === "escalate" ? "Copy failed. Post " + escalateCommand(instOf(d)) + " on GitHub" : "Press Ctrl+C, then paste on GitHub");
       else detail.meNotes.delete(r.id);
       if (!handledOf(id)) localHandled.set(id, { at: new Date().toISOString(), routeId: r.id, routeType: r.type, verified: null });
+      localOpened.set(openedKey(id, r), { at: new Date().toISOString() });
       render();
     },
-  }, actorMark("me", instOf(d)), b.label, icon("external", null, "ext"));
+  }, actorMark("me", instOf(d)), again ? (meCopies(b, rec) ? "Copy again" : "Open again") : b.label, icon("external", null, "ext"));
+}
+
+// What he did with a prefill card, in words. He may have copied without posting, so it never says "Done"
+function openedLine(id, r, rec, buttons) {
+  const o = openedOf(id, r);
+  if (!o) return null;
+  const what = buttons.some((b) => meCopies(b, rec)) ? "Copied and opened on GitHub" : "Opened on GitHub";
+  return h("span", { class: "status opened" }, icon("check"), h("span", { text: what + ", " + hhmm(o.at) }));
 }
 
 // The card's button row: its buttons with their actors, the second confirm, "Post anyway", or the result
@@ -3461,7 +3485,7 @@ function buildCardActions(id, d, r, rec, locked) {
 
   if (buttons.every((b) => b.actor === "me")) {
     return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)), ...partButtons(id, d, r, rec, locked),
-      handledOf(id)?.routeId === r.id ? h("span", { class: "opened-mark", role: "img", title: "You opened this on GitHub today", "aria-label": "You opened this on GitHub today" }, icon("check")) : null,
+      openedLine(id, r, rec, buttons),
       detail.meNotes.has(r.id) ? h("span", { class: "me-note", text: detail.meNotes.get(r.id) }) : null].filter(Boolean);
   }
 
@@ -3584,13 +3608,14 @@ function buildCard(id, d, r, rec) {
   const actor = cardActor(d, r);
   // A wrapper, because an avatar that fails to load replaces its own element with a placeholder
   rec.headActor = actor ? h("span", { class: "head-actor" }, actorMark(actor, instOf(d))) : null;
+  rec.headOpened = h("span", { class: "head-opened", role: "img", hidden: true, title: "You opened this on GitHub", "aria-label": "You opened this on GitHub" }, icon("check"));
   rec.head = h("button", {
     class: "card-head", type: "button", "data-focus-key": "card:" + r.id, "aria-expanded": "false",
     onclick: () => {
       detail.openRoute = detail.openRoute === r.id ? null : r.id;
       render();
     },
-  }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.headActor, icon("chevronDown", null, "chev"));
+  }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.headOpened, rec.headActor, icon("chevronDown", null, "chev"));
   rec.body = h("div", { class: "card-body" },
     str(r.why) ? h("p", { class: "card-why" }, richText(r.why)) : null,
     finding ? h("p", { class: "card-finding" }, h("span", { class: "vlabel sev-" + severityClass(finding.severity), text: str(finding.severity) || "note" }), " ", richText(finding.text)) : null,
@@ -3678,7 +3703,7 @@ function renderRoutes(id, d, locked) {
     }
     // Rebuild the card only when the route itself changed. A new draft text alone updates the editor in place,
     // and never while he is typing in it, so focus, cursor and typed text stay.
-    const { done, refused, text, draftHash, labelDone, answerDone, ...core } = r;
+    const { done, refused, text, draftHash, labelDone, answerDone, opened, ...core } = r;
     // The agent rewrote a draft he had edited: rebuild, so the editor shows the new text and keeps his as "previous"
     const dkR = draftKey(id, "r:" + r.id);
     if (state.drafts.has(dkR) && draftHashes.has(dkR) && draftHashes.get(dkR) !== str(r.draftHash)) rec.core = null;
@@ -3697,9 +3722,10 @@ function renderRoutes(id, d, locked) {
       rec.head.setAttribute("aria-expanded", open ? "true" : "false");
       rec.body.hidden = !open;
       if (rec.headActor) rec.headActor.style.display = open ? "none" : "";
+      rec.headOpened.hidden = !openedOf(id, r);
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
-    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d),
+    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d), openedOf(id, r),
       detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, meLogin(), instOf(d).paused === true, combinedView()]);
     if (sig !== rec.sig) {
       rec.sig = sig;
