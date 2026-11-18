@@ -9,8 +9,15 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const dlgR = document.getElementById("detail");
   const openItem = async (id) => { if (dlgR.open) { document.getElementById("d-close").click(); await wait(5); } openDetail(id); await wait(10); };
   const cards = () => [...document.querySelectorAll("#d-routes .card")];
-  const openCard = () => document.querySelector("#d-routes .card.open");
-  const cardBtn = (text, card = openCard()) => [...(card?.querySelectorAll(".card-actions button") ?? [])].find((b) => b.textContent === text);
+  const expandedCard = () => document.querySelector("#d-routes .card.open");
+  // A card collapses when its action is done. The checks after a click still look at that card
+  let actedCard = null;
+  const openCard = () => expandedCard() || (actedCard && actedCard.isConnected && actedCard.classList.contains("settled") ? actedCard : null);
+  const cardBtn = (text, card = openCard()) => {
+    const btn = [...(card?.querySelectorAll(".card-actions button") ?? [])].find((b) => b.textContent === text);
+    if (btn) actedCard = card;
+    return btn;
+  };
   const expand = async (i) => { cards()[i].querySelector(".card-head").click(); await wait(5); };
   const F = window.makeRouteFixtures(iso);
   const with_ = (id, fn) => F.map((e) => (e[0] === id ? [e[0], fn(e[1])] : e));
@@ -44,6 +51,12 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   let calls = __calls.length;
   replyBtn.click(); await wait(20);
   ok("reply in his name copies, opens the anchor and never calls the server", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls);
+  const hd0 = () => cards()[0].querySelector(".card-top > .head-done");
+  ok("a used prefill card collapses, with the confirmation in its header row", !expandedCard() && !hd0().hidden && !!hd0().querySelector("svg") && /^Copied and opened, \d\d:\d\d$/.test(hd0().textContent) && cards()[0].classList.contains("settled") && cards()[0].querySelector(".card-x").hidden);
+  ok("the done row is muted against the open suggestions", getComputedStyle(cards()[0].querySelector(".card-head .r-hint")).opacity < 1 && getComputedStyle(cards()[2].querySelector(".card-head .r-hint")).opacity === "1");
+  ok("no other card opens in its place", cards().filter((c) => c.classList.contains("open")).length === 0);
+  await expand(0);
+  ok("he can expand it again, and the header confirmation moves into the card", openCard() === cards()[0] && hd0().hidden);
   const om = openCard().querySelector(".card-actions .status.opened");
   ok("a used prefill says so in words with the time, and never Done", !!om && !!om.querySelector("svg") && /^Copied and opened on GitHub, \d\d:\d\d$/.test(om.textContent) && !om.classList.contains("done") && !/Done/.test(openCard().querySelector(".card-actions").textContent) && handledToday("issue-9471"));
   ok("the used button turns into a secondary Copy again", !cardBtn("Copy reply, open GitHub") && cardBtn("Copy again")?.classList.contains("quiet") && !cardBtn("Copy again").classList.contains("primary") && !cardBtn("Copy again").disabled);
@@ -56,9 +69,9 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   })());
   await expand(2);
   ok("clicking a collapsed card opens it and closes the other", openCard() === cards()[2] && cards()[0].querySelector(".card-body").hidden);
-  ok("the collapsed header of a used prefill carries the check", !cards()[0].querySelector(".card-head .head-opened").hidden && !!cards()[0].querySelector(".card-head .head-opened svg") && cards()[2].querySelector(".card-head .head-opened").hidden);
+  ok("the collapsed header of a used prefill carries the check", !hd0().hidden && !!hd0().querySelector("svg") && cards()[2].querySelector(".card-top > .head-done").hidden);
   await expand(2);
-  ok("clicking the open card's head collapses it", !openCard());
+  ok("clicking the open card's head collapses it", !expandedCard());
   await expand(2);
   ok("no lane switch anywhere", !document.querySelector("#d-routes .card-head ~ * .lane-switch[data-focus-key^='lane']"));
   calls = __calls.length;
@@ -66,7 +79,8 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const fixCall = __calls.at(-1);
   ok("follow_up agent: teal Start fix, no confirm, sends routeId and draftHash", __calls.length === calls + 1 && fixCall.itemId === "issue-9471" && fixCall.routeId === "r3" && fixCall.draftHash === "h3" && fixCall.force === false);
   ok("success shows on the card", /The agent is on it/.test(openCard().querySelector(".card-actions").textContent));
-  ok("a click on another card leaves the used prefill marked", !cards()[0].querySelector(".card-head .head-opened").hidden && /Copied and opened on GitHub/.test(cards()[0].querySelector(".card-actions").textContent));
+  ok("a queued agent route collapses with Requested in its header", !expandedCard() && /^Requested$/.test(cards()[2].querySelector(".card-top > .head-done").textContent) && !cards()[2].querySelector(".card-top > .head-done").hidden);
+  ok("a click on another card leaves the used prefill marked", !hd0().hidden && /Copied and opened on GitHub/.test(cards()[0].querySelector(".card-actions").textContent));
   ok("a route click writes no action doc from the page", !__writes.some((w) => w[1].startsWith("actions/")));
 
   // move to another repo: two bot buttons, the close one reveals its text first
@@ -78,6 +92,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   calls = __calls.length;
   cardBtn("Confirm: transfer to widgets-desktop as widgets-bot").click(); await wait(20);
   ok("transfer sends mode transfer without text", __calls.length === calls + 1 && __calls.at(-1).routeId === "r4" && __calls.at(-1).input.mode === "transfer" && __calls.at(-1).text === "");
+  ok("a bot route that ran collapses with Done in its header", !expandedCard() && cards()[3].querySelector(".card-top > .head-done").textContent === "Done" && !cards()[3].querySelector(".card-top > .head-done").hidden);
   items(F); await wait(5);
   await openItem("issue-9471");
   await expand(3);
@@ -104,6 +119,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   window.__reply = () => ({ ok: false, result: "jbarreiros commented 12 minutes ago. Re-check before posting.", stale: true, forceable: true });
   cardBtn("Confirm: ask for a debug log as widgets-bot").click(); await wait(20);
   ok("a refusal shows as failed on the card", /jbarreiros commented 12 minutes ago/.test(openCard().textContent));
+  ok("a refused action leaves its card expanded and unsettled", !!expandedCard() && !expandedCard().classList.contains("settled") && expandedCard().querySelector(".card-top > .head-done").hidden && !expandedCard().querySelector(".card-x").hidden);
   window.__reply = () => ({ ok: false, result: "This route already ran. The board shows its result.", duplicate: true });
   cardBtn("Ask for a debug log").click(); await wait(5);
   cardBtn("Confirm: ask for a debug log as widgets-bot").click(); await wait(20);
@@ -227,16 +243,23 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   localOpened.clear();
   items(routeMap("issue-9471", "r1", (r) => ({ ...r, opened: { at: new Date().toISOString() } }))); await wait(10);
   await openItem("issue-9471");
+  ok("a card the server marks as opened starts collapsed with its confirmation", !expandedCard() && /^Copied and opened, \d\d:\d\d$/.test(hd0().textContent) && !hd0().hidden);
+  await expand(0);
   ok("the opened mark comes from the server's route field", /^Copied and opened on GitHub, \d\d:\d\d$/.test(openCard().querySelector(".status.opened")?.textContent ?? "") && !!cardBtn("Copy again"));
   items(F); await wait(10);
-  ok("a route the server no longer marks is plain again", !openCard().querySelector(".status.opened") && !!cardBtn("Copy reply, open GitHub") && openCard().querySelector(".card-head .head-opened").hidden);
+  ok("a route the server no longer marks is plain again", !openCard().querySelector(".status.opened") && !!cardBtn("Copy reply, open GitHub") && hd0().hidden && !cards()[0].classList.contains("settled") && !cards()[0].querySelector(".card-x").hidden);
 
   // done state from the server and draft persistence
   items(routeMap("issue-9471", "r3", (r) => ({ ...r, done: { status: "done", result: "https://github.com/acme/widgets/pull/999" } }))); await wait(10);
   await openItem("issue-9471");
-  ok("a done route opens with its result and a link", openCard() === cards()[2] && /The agent took this on/.test(openCard().textContent) && openCard().querySelector(".card-actions a")?.href.endsWith("/pull/999"));
-  await expand(0);
+  const hd2 = cards()[2].querySelector(".card-top > .head-done");
+  ok("on a fresh open a done route is collapsed, the recommended one is open", expandedCard() === cards()[0] && !cards()[2].classList.contains("open") && cards()[2].classList.contains("settled"));
+  ok("the done row carries its confirmation and the link inline", !hd2.hidden && /^The agent took this on·view on GitHub$/.test(hd2.textContent.replace(/\s/g, (c) => (c === " " ? " " : ""))) && hd2.querySelector("a")?.href.endsWith("/pull/999") && hd2.querySelector("a").target === "_blank" && cards()[2].querySelector(".card-x").hidden);
   ok("route draft persists in this browser", openCard().querySelector("textarea").value === "A PR is welcome! Edited." && /A PR is welcome! Edited\./.test(localStorage.getItem("gary:widgets:drafts") || ""));
+
+  await expand(2);
+  ok("an expanded done card shows what was sent, read-only", expandedCard() === cards()[2] && /The agent took this on/.test(cards()[2].querySelector(".card-actions").textContent) && cards()[2].querySelector(".card-actions a")?.href.endsWith("/pull/999") && [...cards()[2].querySelectorAll(".card-body textarea, .card-body input")].every((el) => el.disabled) && hd2.hidden);
+  await expand(2);
 
   // Analyze again lives in the footer and opens a note panel
   const foot = document.getElementById("d-foot");

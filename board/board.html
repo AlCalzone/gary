@@ -239,9 +239,12 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .fix-for { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; color: var(--muted); }
 .fix-for[hidden] { display: none; }
 .status.opened { color: var(--muted); }
-.status.opened .i, .head-opened .i { width: 15px; height: 15px; color: var(--ok); }
-.head-opened { display: inline-flex; align-items: center; flex: none; }
-.head-opened[hidden] { display: none; }
+.status.opened .i, .head-done .i { width: 15px; height: 15px; color: var(--ok); flex: none; }
+.head-done { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 12px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.head-done[hidden] { display: none; }
+.head-done a { color: inherit; text-decoration: underline; }
+.card-x[hidden] { display: none; }
+.card.settled:not(.open) .card-head .r-hint, .card.settled.compact .card-head .r-hint { opacity: 0.65; }
 .part-btn .avatar, .part-btn .actor-icon { width: 16px; height: 16px; }
 .status.soft-warn { color: var(--warn); flex-basis: 100%; }
 .d-handled { margin: 0; padding: 8px 14px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 8%, var(--surface)); font-size: 13.5px; color: var(--fg); }
@@ -3597,7 +3600,7 @@ function buildCard(id, d, r, rec) {
   rec.status = h("div", { class: "z-status" });
   const callout = str(r.callout) ? h("div", { class: "callout" + (r.type === "take_over" && p.mode === "replace" ? " strong" : "") }, icon("alert"), h("span", null, richText(r.callout))) : null;
   rec.dismissBox = buildDismissBox(id, r, rec);
-  const dismissX = h("button", {
+  const dismissX = rec.dismissX = h("button", {
     class: "card-x", type: "button", "data-focus-key": "r:" + r.id + ":dismiss", "aria-label": "Not this suggestion", title: "Not this suggestion",
     onclick: () => {
       rec.dismissOpen = !rec.dismissOpen;
@@ -3619,14 +3622,14 @@ function buildCard(id, d, r, rec) {
   const actor = cardActor(d, r);
   // A wrapper, because an avatar that fails to load replaces its own element with a placeholder
   rec.headActor = actor ? h("span", { class: "head-actor" }, actorMark(actor, instOf(d))) : null;
-  rec.headOpened = h("span", { class: "head-opened", role: "img", hidden: true, title: "You opened this on GitHub", "aria-label": "You opened this on GitHub" }, icon("check"));
+  rec.headDone = h("span", { class: "head-done", hidden: true });
   rec.head = h("button", {
     class: "card-head", type: "button", "data-focus-key": "card:" + r.id, "aria-expanded": "false",
     onclick: () => {
       detail.openRoute = detail.openRoute === r.id ? null : r.id;
       render();
     },
-  }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.headOpened, rec.headActor, icon("chevronDown", null, "chev"));
+  }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.headActor, icon("chevronDown", null, "chev"));
   rec.body = h("div", { class: "card-body" },
     str(r.why) ? h("p", { class: "card-why" }, richText(r.why)) : null,
     finding ? h("p", { class: "card-finding" }, h("span", { class: "vlabel sev-" + severityClass(finding.severity), text: str(finding.severity) || "note" }), " ", richText(finding.text)) : null,
@@ -3636,7 +3639,27 @@ function buildCard(id, d, r, rec) {
     ...buildCardInputs(id, d, r, rec),
     rec.actions,
     rec.status);
-  rec.card.replaceChildren(h("div", { class: "card-top" }, rec.head, dismissX), rec.dismissBox, rec.body);
+  rec.card.replaceChildren(h("div", { class: "card-top" }, rec.head, rec.headDone, dismissX), rec.dismissBox, rec.body);
+}
+
+// What a card whose action is done says in its header row: `{ text, url, pending }`, or null while it is still a suggestion.
+// A failed or refused action is no such state. `pending` is true while a used prefill card still has an unused label or answer button.
+function settledOf(id, d, r, rec) {
+  const agent = actorOf(r) === "agent";
+  const parts = extraParts(d, r);
+  const partDone = (part) => (rec && rec.parts[part.name] && rec.parts[part.name].state === "done") || (part.done && typeof part.done === "object" && part.done.status === "done");
+  const marks = parts.filter(partDone).map((part) => part.doneText);
+  if (r.done && typeof r.done === "object") {
+    const result = str(r.done.result);
+    return { text: !agent ? "Done" : r.done.status === "queued" ? "Requested" : "The agent took this on", url: isGithubUrl(result) ? result : "", marks, pending: false };
+  }
+  const note = state.notes.get(id);
+  if (detail.lastRoute === r.id && note && note.kind === "done") return { text: agent ? "Requested" : "Done", url: "", marks, pending: false };
+  const o = openedOf(id, r);
+  const buttons = routeButtons(d, r);
+  if (!o || !buttons.every((b) => b.actor === "me")) return null;
+  const copies = buttons.some((b) => b.copy === "escalate" || (b.copy === "draft" && routeHasEditor(r)));
+  return { text: (copies ? "Copied and opened" : "Opened") + ", " + hhmm(o.at), url: "", marks, pending: !!partActor(d) && parts.some((part) => !partDone(part)) };
 }
 
 // "Not this": an optional reason, then the server drops the route and the agent proposes another one
@@ -3702,7 +3725,9 @@ function renderRoutes(id, d, locked) {
     const done = routes.find((r) => r.done && !routeCompact(r));
     // Pick among the cards on screen, so a dismissed recommendation hands its place to the next card
     const rec = routes.find((r) => r.recommended === true) || routes[0];
-    detail.openRoute = (done || (rec && !routeCompact(rec) ? rec : null) || {}).id ?? null;
+    // A card whose action is done starts collapsed, with its confirmation in the header row
+    const settled = rec ? settledOf(id, d, rec, detail.cards.get(rec.id)) : null;
+    detail.openRoute = rec && !routeCompact(rec) && !(settled && !settled.pending) ? rec.id : null;
   }
   const keep = new Set(routes.map((r) => r.id));
   for (const k of [...detail.cards.keys()]) if (!keep.has(k)) detail.cards.delete(k);
@@ -3726,14 +3751,29 @@ function renderRoutes(id, d, locked) {
     } else if (rec.ta && !state.drafts.has(draftKey(id, "r:" + r.id)) && document.activeElement !== rec.ta && rec.ta.value !== str(text)) {
       rec.ta.value = str(text);
     }
+    const settled = settledOf(id, d, r, rec);
+    const isSettled = !!settled && !settled.pending;
+    // Collapse once, when the state arrives. A card he expands afterwards stays open
+    if (isSettled && rec.settled === false && detail.openRoute === r.id) detail.openRoute = null;
+    rec.settled = isSettled;
     const open = !rec.compact && detail.openRoute === r.id;
     rec.card.classList.toggle("open", open);
+    rec.card.classList.toggle("settled", !!settled);
+    rec.dismissX.hidden = !!settled;
     rec.card.classList.toggle("recommended", r.recommended === true);
     if (!rec.compact) {
       rec.head.setAttribute("aria-expanded", open ? "true" : "false");
       rec.body.hidden = !open;
       if (rec.headActor) rec.headActor.style.display = open ? "none" : "";
-      rec.headOpened.hidden = !openedOf(id, r);
+      rec.headDone.hidden = open || !settled;
+      const doneSig = JSON.stringify(settled);
+      if (rec.doneSig !== doneSig) {
+        rec.doneSig = doneSig;
+        rec.headDone.replaceChildren(...(settled ? [icon("check"), h("span", { text: [settled.text, ...settled.marks].join(" · ") }),
+          settled.url ? h("span", { text: "·" }) : null, settled.url ? ghLink(settled.url, "view on GitHub") : null].filter(Boolean) : []));
+      }
+      // What was sent stays readable and cannot be changed
+      if (r.done) for (const el of rec.body.querySelectorAll("input, textarea, button.seg, button.lane-switch")) el.disabled = true;
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
     const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d), openedOf(id, r),

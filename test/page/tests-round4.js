@@ -32,29 +32,31 @@
   // Label button next to a prefill
   {
     await openItem("issue-9490");
-    const lb = () => [...openCard().querySelectorAll(".card-actions .label-btn")][0];
-    ok("prefill: a quieter label button with the bot's avatar next to Copy", !!cardBtn("Copy request, open GitHub") && lb()?.textContent === "Add label: waiting for info ⏳" && avatarOf(lb(), "widgets-bot") && !lb().classList.contains("primary"));
+    const lb = () => [...cards()[0].querySelectorAll(".card-actions .label-btn")][0];
+    ok("prefill: a quieter label button with the bot's avatar next to Copy", !!cardBtn("Copy request, open GitHub", cards()[0]) && lb()?.textContent === "Add label: waiting for info ⏳" && avatarOf(lb(), "widgets-bot") && !lb().classList.contains("primary"));
     let c = __calls.length;
     lb().click(); await wait(20);
     ok("label: one call with part label, no confirm", __calls.length === c + 1 && JSON.stringify(__calls.at(-1)) === JSON.stringify({ tool: "request_logs", instance: "widgets", itemId: "issue-9490", routeId: "r1", input: { part: "label" } }));
     ok("label: afterwards it reads Label added and is disabled", lb().textContent === "Label added" && lb().disabled);
     c = __calls.length;
-    cardBtn("Copy request, open GitHub").click(); await wait(20);
+    cardBtn("Copy request, open GitHub", cards()[0]).click(); await wait(20);
     ok("label first, copy after: the copy still works", /loglevel/.test(window.__clip) && __calls.length === c);
     items(F); await wait(5);
     await openItem("issue-9490");
-    cardBtn("Copy again").click(); await wait(20);
+    cardBtn("Copy again", cards()[0]).click(); await wait(20);
+    ok("a used prefill with an unused label button stays expanded", cards()[0].classList.contains("open") && !lb().disabled);
     window.__reply = () => ({ ok: false, result: "This route already ran.", duplicate: true });
     lb().click(); await wait(20);
-    ok("copy first, label after; a 409 reads as already done", lb().textContent === "Label added" && lb().disabled && !openCard().querySelector(".status.failed"));
+    ok("copy first, label after; a 409 reads as already done", lb().textContent === "Label added" && lb().disabled && !cards()[0].querySelector(".status.failed"));
     window.__reply = () => ({ ok: true, result: { dryRun: true } });
     items(routeMap("issue-9490", "r1", (r) => ({ ...r, labelDone: { status: "done", result: "" } }))); await wait(10);
     await openItem("issue-9490");
     ok("label: the server's labelDone shows as done", lb().textContent === "Label added" && lb().disabled);
+    ok("a collapsed done card names the done label in its header", !cards()[0].classList.contains("open") && /^Copied and opened, \d\d:\d\d · Label added$/.test(cards()[0].querySelector(".card-top > .head-done").textContent));
     items(F); await wait(5);
     window.__board.instances[0].paused = true; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("issue-9490");
-    ok("paused: the label button carries the paused hint", !!openCard().querySelector(".card-actions .paused-hint"));
+    ok("paused: the label button carries the paused hint", !!cards()[0].querySelector(".card-actions .paused-hint"));
     window.__board.instances[0].paused = false; window.dispatchEvent(new Event("board:info")); await wait(10);
     const W = window.__board.instances[0];
     window.__board.instances = [{ ...W, bot: null, accountMode: "own" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
@@ -62,7 +64,7 @@
     ok("own mode: the label button carries his avatar", avatarOf(lb(), "octocat"));
     window.__board.instances = [{ ...W, bot: null, accountMode: "none" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("issue-9490");
-    ok("no bot and no own mode: no label button", !lb() && !!cardBtn("Copy again"));
+    ok("no bot and no own mode: no label button", !lb() && !!cardBtn("Copy again", cards()[0]));
     window.__board.instances = [W]; window.dispatchEvent(new Event("board:info")); await wait(10);
 
     // As the bot: a checkbox under the editor
@@ -114,6 +116,7 @@
   // The agent rewrites the open item
   {
     items(F); await wait(5);
+    localOpened.clear();
     await openItem("issue-9471");
     const ta = openCard().querySelector("textarea");
     ta.value = "My own reply that I wrote by hand."; ta.dispatchEvent(new Event("input"));
@@ -393,7 +396,7 @@
     hset({ "issue-9471": H(5) }); await wait(10);
     localOpened.clear();
     openDetail("issue-9471"); await wait(10);
-    ok("a handled item alone marks no card as opened", !cards()[0].querySelector(".status.opened") && cards()[0].querySelector(".card-head .head-opened").hidden);
+    ok("a handled item alone marks no card as opened", !cards()[0].querySelector(".status.opened") && cards()[0].querySelector(".card-top > .head-done").hidden);
     document.getElementById("d-close").click(); await wait(5);
     items(F); await wait(5);
   }

@@ -187,7 +187,13 @@ try {
 	await press("Confirm: request changes as widgets-bot");
 	ok("server logs the review as done with only the checked comment", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-12" && a.routeId === "r1" && a.route === "review" && a.status === "done" && a.via === "server" && a.params.comments?.length === 1 && a.params.comments[0].startLine === 7)));
 	ok("the page wrote no action doc of its own", actionFiles().filter((a) => a.itemId === "pr-12").length === 1);
-	ok("the card shows the result", await until(`/Done/.test(${openCardText}) && !${cardButton("Request changes")}`, 8000));
+	ok("the done card collapses with Done in its header row", await until(`!document.querySelector("#d-routes .card.open") && /^Done/.test(document.querySelector("#d-routes .card.settled .card-top > .head-done")?.textContent ?? "") && !document.querySelector("#d-routes .card.settled .card-top > .head-done").hidden`, 8000));
+	ok("the done card still shows its result when expanded", await ev(`const c = document.querySelector("#d-routes .card.settled"); return /Done/.test(c.querySelector(".card-actions").textContent) && ![...c.querySelectorAll(".card-actions button")].some((b) => b.textContent === "Request changes");`));
+	await ev(`location.reload();`);
+	await sleep(1500);
+	await until(`typeof state === "object" && !!state.items.get("widgets/pr-12")`, 15000);
+	await openItem("pr-12");
+	ok("after a reload the done card starts collapsed with its confirmation", await until(`(() => { const c = document.querySelector("#d-routes .card.settled"); return !!c && !c.classList.contains("open") && /^Done/.test(c.querySelector(".card-top > .head-done").textContent); })()`, 8000));
 
 	// Bound actions, repeats and refusals
 	const token = readFileSync(join(ROOTDIR, "state", "server-token"), "utf8").trim();
@@ -269,7 +275,7 @@ try {
 	ok("me route: no /api/action request", await ev(`return window.__apiCalls === 0;`));
 	await sleep(500);
 	ok("me route: no action doc", !actionFiles().some((a) => a.itemId === "issue-21" && a.routeId === "r1"));
-	ok("me route: the card says copied and opened, with Copy again", await until(`/Copied and opened on GitHub, \\d\\d:\\d\\d/.test(document.querySelector("#d-routes .card.open .status.opened")?.textContent ?? "") && !!${cardButton("Copy again")}`));
+	ok("me route: the card collapses and says copied and opened, with Copy again inside", await until(`(() => { const c = document.querySelector("#d-routes .card.settled"); return !!c && /^Copied and opened, \\d\\d:\\d\\d/.test(c.querySelector(".card-top > .head-done").textContent) && /Copied and opened on GitHub, \\d\\d:\\d\\d/.test(c.querySelector(".status.opened")?.textContent ?? "") && [...c.querySelectorAll(".card-actions button")].some((b) => b.textContent === "Copy again"); })()`));
 	ok("me route: the server serves the mark on the route", await until(`!!state.items.get("widgets/issue-21").routes.find((r) => r.id === "r1").opened?.at`, 8000));
 	ok("me route: the server keeps the copied text", await fileUntil(() => / \(edited\)$/.test(json(join(HOME, "state", "opened.json"))["issue-21"].r1.text)));
 	await clickCard(3);
