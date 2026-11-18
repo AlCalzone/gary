@@ -371,6 +371,18 @@ try {
 	ok("Open on GitHub opens the thread and runs nothing", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/28")`) && await ev(`return window.__apiCalls === 0;`));
 	await closeItem();
 
+	// A smaller model did the analysis
+	writeFileSync(itemFile("issue-30"), JSON.stringify(probe("issue", 30, "https://github.com/acme/widgets/issues/30", {
+		hint: "Reply: thanks", analyzedBy: "fallback", routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks", recommended: true, text: "Thanks!" }],
+	})));
+	await until(`!!state.items.get("issue-30")`);
+	await revealAll();
+	ok("fallback: the row shows the smaller-model icon", await until(`!!document.querySelector('.row[data-id="issue-30"] .r-meta svg[aria-label^="The full analysis was stopped"]')`));
+	await openItem("issue-30");
+	ok("fallback: the dialog shows the Smaller model badge", await ev(`return [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Smaller model" && /Code-level conclusions need your check/.test(b.title));`));
+	await closeItem();
+	ok("the instance is named like the project, so the title has no tooltip", await ev(`return document.getElementById("board-title").title === "";`));
+
 	// Paused: gary pause and gary resume change the header live, server writes are refused calmly
 	const gary = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: ENV, encoding: "utf8" });
 	writeFileSync(itemFile("issue-29"), JSON.stringify(probe("issue", 29, "https://github.com/acme/widgets/issues/29", {

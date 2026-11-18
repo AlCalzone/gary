@@ -433,6 +433,25 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("resumed: the marker and the hints go away without a reload", pausedEl.hidden && !document.querySelector("#d-routes .paused-hint"));
   document.getElementById("d-close").click(); await wait(5);
 
+  // A smaller model did the analysis
+  const FALLBACK = "The full analysis was stopped by the safety filter. Code-level conclusions need your check.";
+  await openItem("issue-9483");
+  ok("fallback: a quiet Smaller model badge in the meta row with the tooltip", [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Smaller model" && b.title === FALLBACK && b.classList.contains("tone-muted")));
+  await openItem("issue-9471");
+  ok("no badge without analyzedBy", ![...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Smaller model"));
+  document.getElementById("d-close").click(); await wait(5);
+  for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+  await wait(5);
+  ok("fallback: the list row shows a quiet icon with the same tooltip", !!document.querySelector('.row[data-id="issue-9483"] .r-meta svg[aria-label="' + FALLBACK + '"]') && !document.querySelector('.row[data-id="issue-9471"] .r-meta svg[aria-label="' + FALLBACK + '"]'));
+
+  // The instance name shows only where it differs from the project name
+  const titleEl = document.getElementById("board-title");
+  ok("an instance named like the project adds no tooltip", (applyBoardInfo({ ...window.__board, instance: "widgets" }), titleEl.title === ""));
+  applyBoardInfo({ ...window.__board, instance: "widgets-staging" });
+  ok("a differing instance name is the title's tooltip and nothing else", titleEl.title === "Instance: widgets-staging" && titleEl.textContent === "widgets triage" && !document.querySelector(".wrap").textContent.includes("widgets-staging") && !document.title.includes("widgets-staging"));
+  ok("the storage prefix stays the repo's", localStorage.getItem("gary:acme/widgets:drafts") !== null);
+  applyBoardInfo(window.__board);
+
   // ---------- accounts and projects come from the server ----------
   const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
   const ZW = window.__board;

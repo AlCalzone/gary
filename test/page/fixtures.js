@@ -115,6 +115,14 @@ window.makeRouteFixtures = (iso) => {
       blocked: { reason: "safety_filter", at: iso(3600000) },
       routes: [{ id: "r1", type: "open", as: "me", title: "Open: Read it yourself on GitHub", recommended: true, draftHash: "h1" }],
     }),
+    issue(9483, {
+      title: "Lock reports jammed after a firmware update",
+      author: "someone",
+      story: "After updating the lock to firmware 2.4 it reports jammed after every unlock. The reporter attached a log of one unlock.",
+      state: "Looks like the new firmware sends a different notification event.",
+      analyzedBy: "fallback",
+      routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: ask for the old firmware's log", text: "Could you post a log from before the update?", recommended: true, draftHash: "h1" }],
+    }),
     issue(9482, {
       title: "Pairing fails with a 0x0E status on the third attempt",
       author: "someone",
