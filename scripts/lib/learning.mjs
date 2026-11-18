@@ -4,7 +4,7 @@ import { appendFile, lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { PROPOSAL_ID, writeAtomic } from "./board-store.mjs";
-import { personalFile, profileDir, stateDir } from "./config.mjs";
+import { instanceDir, instanceName, loadInstance, personalFile } from "./config.mjs";
 
 const run = promisify(execFile);
 const MAX_LOG_TEXT = 8000;
@@ -13,8 +13,9 @@ const MAX_RULE = 20000;
 const PROPOSAL_STATUS = ["open", "accepted", "dismissed"];
 const PROFILE_FILE = /^(rules|templates)\/[A-Za-z0-9._-]+\.md$/;
 
-export const decisionsFile = () => join(stateDir(), "decisions.jsonl");
-export const learnFile = () => join(stateDir(), "learn.json");
+const stateOf = (instance = instanceName()) => join(instanceDir(instance), "state");
+export const decisionsFile = (instance) => join(stateOf(instance), "decisions.jsonl");
+export const learnFile = (instance) => join(stateOf(instance), "learn.json");
 
 export const cut = (text) => (typeof text === "string" && text.length > MAX_LOG_TEXT ? text.slice(0, MAX_LOG_TEXT) : text ?? "");
 
@@ -32,9 +33,19 @@ export function itemSummary(item) {
 // One append at a time, so lines never interleave
 let appending = Promise.resolve();
 
-/** Appends one entry to the decision log. Only the board server calls this. */
-export function logDecision(type, itemId, item, fields = {}, file = decisionsFile()) {
-	const entry = { at: new Date().toISOString(), type, itemId, item: itemSummary(item), ...fields };
+/**
+ * Appends one entry to an instance's decision log. Only the board server calls this.
+ * Every entry carries the instance, its kind and the item's repo.
+ */
+export function logDecision(instance, type, itemId, item, fields = {}) {
+	const file = decisionsFile(instance);
+	let instanceKind = null;
+	try {
+		instanceKind = loadInstance(instance).kind;
+	} catch {
+		// A log entry is never lost over a broken config
+	}
+	const entry = { at: new Date().toISOString(), instance, instanceKind, repo: item?.repo ?? null, type, itemId, item: itemSummary(item), ...fields };
 	const next = appending.then(async () => {
 		await mkdir(dirname(file), { recursive: true });
 		await appendFile(file, JSON.stringify(entry) + "\n");
@@ -44,7 +55,8 @@ export function logDecision(type, itemId, item, fields = {}, file = decisionsFil
 }
 
 /** Reads the log. With `since`, only entries whose `at` is later than it. Broken lines are skipped. */
-export async function readDecisions({ since, file = decisionsFile() } = {}) {
+export async function readDecisions({ since, instance } = {}) {
+	const file = decisionsFile(instance);
 	let text = "";
 	try {
 		text = await readFile(file, "utf8");
@@ -93,14 +105,14 @@ export function validateProposal(id, p) {
 	return errors;
 }
 
-/** Resolves the file a proposal targets. Throws when it would leave the allowed directories. */
-export async function proposalTarget(p) {
+/** Resolves the file a proposal of an instance targets. Throws when it would leave the allowed directories. */
+export async function proposalTarget(p, instance = instanceName()) {
 	if (p.target === "personal") {
 		if (p.file !== "personal.md") throw new Error("A personal proposal can only target personal.md");
 		return { file: personalFile(), repo: null };
 	}
 	if (!PROFILE_FILE.test(p.file ?? "")) throw new Error("A profile proposal must target rules/<topic>.md or templates/<name>.md");
-	const profile = await realpath(profileDir());
+	const profile = await realpath(loadInstance(instance).profileDir);
 	const dir = join(profile, dirname(p.file));
 	let realDir;
 	try {
@@ -136,8 +148,8 @@ export function insertRule(content, heading, text) {
  * Appends an accepted proposal's text to its target file, and commits that one file when the profile is a git repo.
  * Returns `{ file, committed, warning }`.
  */
-export async function applyProposal(p, text) {
-	const { file, repo } = await proposalTarget(p);
+export async function applyProposal(p, text, instance = instanceName()) {
+	const { file, repo } = await proposalTarget(p, instance);
 	try {
 		if ((await lstat(file)).isSymbolicLink()) throw new Error(`${p.file} is a symlink`);
 	} catch (e) {
@@ -169,8 +181,8 @@ export async function applyProposal(p, text) {
 	}
 }
 
-/** Validates and writes the learn cursor. */
-export async function writeLearn(data) {
+/** Validates and writes the learn cursor of an instance. */
+export async function writeLearn(data, instance = instanceName()) {
 	const errors = [];
 	if (!data || typeof data !== "object" || Array.isArray(data)) errors.push("learn.json must hold a JSON object");
 	else {
@@ -180,8 +192,8 @@ export async function writeLearn(data) {
 		}
 	}
 	if (errors.length) return errors;
-	await mkdir(stateDir(), { recursive: true });
-	await writeAtomic(learnFile(), data);
+	await mkdir(stateOf(instance), { recursive: true });
+	await writeAtomic(learnFile(instance), data);
 	return [];
 }
 
