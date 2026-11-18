@@ -181,4 +181,27 @@ window.makeProposalFixtures = (iso) => [
     text: "In log requests, start with the request itself. No opening thanks.",
   }],
 ];
+// Two instances on one board: the same number in both repos, so only the instance tells them apart
+window.makeTwoInstanceFixtures = (iso) => {
+  const item = (instance, kind, n, extra) => [instance + "/" + (kind === "pr" ? "pr-" : "issue-") + n, {
+    instance, kind, number: n, url: "https://github.com/" + (instance === "widgets" ? "acme/widgets" : "contoso/gadgets") + (kind === "pr" ? "/pull/" : "/issues/") + n,
+    author: "someone", authorType: "contributor", section: "easy", effortMinutes: 5, priority: 1, updatedAt: iso(n * 60000), reviewDepth: "full", ...extra,
+  }];
+  const reply = (title, text) => [{ id: "r1", type: "reply", as: "me", title, text, recommended: true, draftHash: "h1" }];
+  return [
+    item("widgets", "pr", 12, { title: "Retry the firmware upload after a timeout", state: "Ready apart from a short changelog line.", routes: [{ id: "r1", type: "review", as: "bot", actor: "bot", title: "Approve: ready after the changelog line", params: { event: "approve", comments: [] }, text: "Thanks!", recommended: true, draftHash: "h1" }] }),
+    item("gadgets", "pr", 12, { title: "Add the Gadget Pro 2 to the device list", state: "A config-only PR from a first-time contributor.", routes: [{ id: "r1", type: "review", as: "bot", actor: "bot", title: "Request changes: missing manual link", params: { event: "request_changes", comments: [] }, text: "Please add the link to the manual.", recommended: true, draftHash: "h1" }] }),
+    item("widgets", "issue", 31, { title: "Dashboard shows the wrong battery level", routes: reply("Reply: ask for the firmware version", "Which firmware does the sensor run?") }),
+    item("widgets", "issue", 32, { title: "Docs link to the old forum", routes: reply("Reply: thanks, fixed", "Thanks, the link is fixed.") }),
+    item("widgets", "issue", 33, { title: "Export loses the room names", routes: reply("Reply: a PR is welcome", "A PR is welcome!") }),
+    item("gadgets", "issue", 41, { title: "Pairing button does nothing on Android 15", routes: reply("Reply: ask for a log", "Could you attach a log?") }),
+    item("gadgets", "issue", 42, { title: "Gadget clock drifts by a minute a day", routes: reply("Reply: known issue", "This is a known issue, see #12.") }),
+    item("gadgets", "issue", 43, { title: "Translation missing for Dutch", routes: reply("Reply: a PR is welcome", "A PR is welcome!") }),
+  ];
+};
+
+window.makeTwoInstanceProposals = (iso) => [
+  ["widgets/learn-1", { instance: "widgets", id: "learn-1", title: "Approve changelog-only fixes without a summary", why: "You cleared the summary on three approvals.", evidence: [{ at: iso(86400000), itemId: "pr-12", type: "edited_text", gist: "Cleared the summary." }], target: "profile", file: "rules/review.md", heading: "", text: "Approve changelog-only fixes without a summary." }],
+  ["gadgets/learn-1", { instance: "gadgets", id: "learn-1", title: "Ask for the manual link on device PRs", why: "You asked for it twice by hand.", evidence: [{ at: iso(86400000), itemId: "pr-12", type: "edited_text", gist: "Added the manual link request." }], target: "profile", file: "rules/review.md", heading: "", text: "Ask for the manual link on every device PR." }],
+];
 </script>
