@@ -216,7 +216,7 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .prev-draft pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font: 13.5px/1.5 var(--font-read); color: var(--fg); }
 .also-label { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--fg); }
 .part-btn { gap: 6px; }
-.part-btn .part-check, .opened-mark .i { width: 15px; height: 15px; color: var(--ok); }
+.part-btn .part-check { width: 15px; height: 15px; color: var(--ok); }
 .part-view { font-size: 12.5px; color: var(--muted); }
 .part-view:hover { color: var(--fg); }
 .part-gist { flex-basis: 100%; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
@@ -238,7 +238,13 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .agent-banner.quiet { background: transparent; box-shadow: none; padding: 0; color: var(--muted); font-size: 13.5px; }
 .fix-for { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; color: var(--muted); }
 .fix-for[hidden] { display: none; }
-.opened-mark { display: inline-flex; align-items: center; }
+.status.opened { color: var(--muted); }
+.status.opened .i, .head-done .i { width: 15px; height: 15px; color: var(--ok); flex: none; }
+.head-done { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 12px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.head-done[hidden] { display: none; }
+.head-done a { color: inherit; text-decoration: underline; }
+.card-x[hidden] { display: none; }
+.card.settled:not(.open) .card-head .r-hint, .card.settled.compact .card-head .r-hint { opacity: 0.65; }
 .part-btn .avatar, .part-btn .actor-icon { width: 16px; height: 16px; }
 .status.soft-warn { color: var(--warn); flex-basis: 100%; }
 .d-handled { margin: 0; padding: 8px 14px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 8%, var(--surface)); font-size: 13.5px; color: var(--fg); }
@@ -657,7 +663,6 @@ button.card-head:hover .chev { color: var(--fg); }
 .me-title code { font-family: var(--font-mono); font-size: 12px; color: var(--fg); overflow-wrap: anywhere; }
 .lane-switch { font: 500 12px/1 var(--font-body); padding: 4px 6px; border: 0; background: transparent; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .lane-switch:hover:not(:disabled) { color: var(--fg); }
-.opened-mark { font-size: 12px; color: var(--muted); }
 
 .card textarea, .card .field { background: var(--surface); }
 .z-status:empty { display: none; }
@@ -1020,7 +1025,7 @@ const SORTS = [
 const WAITING_CHIP_DAYS = 3;
 const DAY_MS = 86400000;
 
-const AGENT_ACTIONS = new Set(["full_review", "start_fix", "reanalyze", "address_review", "take_over", "drive", "format"]);
+const AGENT_ACTIONS = new Set(["full_review", "start_fix", "reanalyze", "address_review", "take_over", "revise", "drive", "format"]);
 const BOARD_ACTIONS = new Set(["dismiss", "snooze"]);
 
 const ACTION_NAMES = {
@@ -1028,8 +1033,44 @@ const ACTION_NAMES = {
   review_comment: "review comment", merge: "merge", ready: "mark ready",
   close: "close", label: "labels", assign: "assign", answer_discussion: "mark answer", react: "react",
   full_review: "analyze again", start_fix: "auto-fix", reanalyze: "analyze again", apply_fixes: "apply fixes",
+  take_over: "take-over", revise: "change", address_review: "address the review", drive: "drive", format: "format",
+  review: "review", reopen: "reopen", create_issue: "file issue", transfer: "transfer", update_branch: "update branch",
+  rerun_ci: "re-run CI", request_review: "request review", dismiss_route: "dismiss suggestion",
   dismiss: "dismiss", snooze: "snooze",
 };
+// What a finished agent job on a PR is called
+const DONE_NAMES = { take_over: "Take-over done", revise: "Change done", address_review: "Review addressed", drive: "Drive done", format: "Formatted" };
+const doneName = (a) => DONE_NAMES[a.action] || "Done: " + (ACTION_NAMES[a.action] || str(a.action).replace(/_/g, " "));
+const actionName = (a) => ACTION_NAMES[a.action] || str(a.action).replace(/_/g, " ");
+
+// GraphQL node ids like PRRT_kwDO… mean nothing to him
+const NODE_ID = /\s*\b[A-Z]{1,6}_kw[A-Za-z0-9_-]{6,}/g;
+
+// The result of a finished action: a link, the parts a worker reported, or its text without node ids
+function resultNodes(a) {
+  const p = a.resultParts && typeof a.resultParts === "object" && !Array.isArray(a.resultParts) ? a.resultParts : null;
+  const commits = p && Array.isArray(p.commits) ? p.commits.filter((u) => isGithubUrl(str(u))) : [];
+  const threads = p && Array.isArray(p.threads) ? p.threads.filter((t) => t && typeof t === "object") : [];
+  if (commits.length || threads.length) {
+    const out = [];
+    const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+    if (commits.length) out.push(h("span", { class: "result-part" }, "Pushed ", ghLink(commits.at(-1), plural(commits.length, "commit"))));
+    if (threads.length) {
+      const linked = threads.filter((t) => isGithubUrl(str(t.url)));
+      const words = plural(threads.length, "thread");
+      out.push(h("span", { class: "result-part" }, (out.length ? "· " : "") + (out.length ? "replied in " : "Replied in "),
+        threads.length === 1 && linked.length === 1 ? ghLink(str(linked[0].url), words) : words,
+        threads.length > 1 && linked.length ? " (" : null,
+        ...(threads.length > 1 ? linked.flatMap((t, i) => [i ? ", " : null, ghLink(str(t.url), String(i + 1))]) : []),
+        threads.length > 1 && linked.length ? ")" : null,
+        threads.every((t) => t.resolved === true) ? ", resolved" : null));
+    }
+    return out;
+  }
+  const r = str(a.result);
+  if (isGithubUrl(r)) return [ghLink(r, "view on GitHub")];
+  return r ? [h("span", { text: r.replace(NODE_ID, "") })] : [];
+}
 
 // Keys include the repo, so two boards on one machine keep their own filters, drafts and marks
 // Board-wide settings, like the tab and the budget, share one prefix. Drafts and marks live per instance.
@@ -1536,7 +1577,7 @@ const handledEls = {};
 
 const HANDLED_DONE = {
   reply: "Replied", request_logs: "Asked for a log", close: "Closed", reopen: "Reopened", merge: "Merged", review: "Reviewed",
-  address_review: "Asked the agent to address the review", follow_up: "Followed up", take_over: "Took over", drive: "Asked the agent to drive",
+  address_review: "Asked the agent to address the review", follow_up: "Followed up", take_over: "Took over", revise: "Asked the agent to change the PR", drive: "Asked the agent to drive",
   move: "Moved", chore: "Ran a chore", open: "Opened on GitHub", format: "Asked the agent to format",
 };
 
@@ -1552,6 +1593,22 @@ function handledCheck(d, hd) {
   return null;
 }
 
+// A quiet count line below the groups that expands to its rows
+function quietLine(id) {
+  const count = h("span");
+  const list = h("ul", { class: "handled-list" });
+  const details = h("details", { class: "handled" }, h("summary", null, count), list);
+  return { count, list, details, el: h("section", { class: "handled-sec", id, hidden: true }, details) };
+}
+
+function quietRow(key, d, ...rest) {
+  return h("li", { class: "handled-row", "data-id": key },
+    h("span", { class: "h-kind" }, iconEntry(kindStatus(key, d))),
+    h("span", { class: "h-num", text: combinedView() ? itemRef(d) : "#" + str(d.number) }),
+    h("span", { class: "h-title", text: str(d.title) || "(no title)" }),
+    ...rest);
+}
+
 function renderHandled(rows) {
   if (!handledEls.el) return;
   handledEls.el.hidden = rows.length === 0;
@@ -1563,13 +1620,26 @@ function renderHandled(rows) {
     const check = handledCheck(d, hd);
     const back = h("button", { class: "btn quiet small", type: "button", text: "Bring back", "data-focus-key": "handled:" + key });
     back.addEventListener("click", () => bringBack(key));
-    return h("li", { class: "handled-row", "data-id": key },
-      h("span", { class: "h-kind" }, iconEntry(kindStatus(key, d))),
-      h("span", { class: "h-num", text: combinedView() ? itemRef(d) : "#" + str(d.number) }),
-      h("span", { class: "h-title", text: str(d.title) || "(no title)" }),
+    return quietRow(key, d,
       h("span", { class: "h-what" }, hintEl(what)),
       check ? h("span", { class: "h-check tone-" + check[1], text: check[0] }) : null,
       back);
+  }));
+}
+
+const fixParkedEls = {};
+
+// Issues and discussions whose fix is in progress. The fix PR's own item carries the work until it is merged or closed
+function renderFixParked(rows) {
+  if (!fixParkedEls.el) return;
+  fixParkedEls.el.hidden = rows.length === 0;
+  // The routine's own fixes count toward a limit, also the ones whose item is not listed here
+  const limit = rows.map(([, d]) => fixOf(d).limit).find((l) => l && Number.isInteger(l.pending) && Number.isInteger(l.max));
+  fixParkedEls.count.textContent = "Has a fix in progress: " + rows.length + (limit ? " · automatic: " + limit.pending + " of " + limit.max : "");
+  fixParkedEls.list.replaceChildren(...rows.map(([key, d]) => {
+    const open = h("button", { class: "btn quiet small", type: "button", text: "Open", "data-focus-key": "fixparked:" + key });
+    open.addEventListener("click", () => openDetail(key));
+    return quietRow(key, d, agentChip(d), open);
   }));
 }
 
@@ -1630,10 +1700,8 @@ function buildSections() {
   planEls.done = h("span", { class: "plan-done" }, planEls.doneText, planEls.add);
   planEls.el = h("div", { class: "plan", id: "plan" }, planEls.bar, planEls.spent, planEls.done);
 
-  handledEls.count = h("span");
-  handledEls.list = h("ul", { class: "handled-list" });
-  handledEls.details = h("details", { class: "handled" }, h("summary", null, handledEls.count), handledEls.list);
-  handledEls.el = h("section", { class: "handled-sec", id: "handled", hidden: true }, handledEls.details);
+  Object.assign(handledEls, quietLine("handled"));
+  Object.assign(fixParkedEls, quietLine("fix-parked"));
 
   for (const g of GROUPS) {
     const list = h("div", { class: "list" });
@@ -1782,7 +1850,7 @@ function statusLine(id) {
   }
   const a = latestOf(id);
   if (!a) return null;
-  const name = ACTION_NAMES[a.action] || str(a.action);
+  const name = actionName(a);
   const when = timeEl(a.finishedAt || a.createdAt);
   if (a.status === "queued") {
     const forAgent = AGENT_ACTIONS.has(a.action);
@@ -1791,16 +1859,15 @@ function statusLine(id) {
     return h("div", { class: "status queued" }, icon("queued"), h("span", { text }), when);
   }
   if (a.status === "done") {
-    const r = str(a.result);
     return h("div", { class: "status done" },
       icon("check"),
-      h("span", { text: "Done: " + name }),
-      isGithubUrl(r) ? ghLink(r, "view on GitHub") : r ? h("span", { text: r }) : null,
+      h("span", { text: doneName(a) }),
+      ...resultNodes(a),
       when);
   }
   if (a.status === "failed") {
     return h("div", { class: "status failed" },
-      icon("alert"), h("span", { text: "Failed: " + name + (a.result ? ". " + str(a.result) : "") }), when);
+      icon("alert"), h("span", { text: "Failed: " + name + (a.result ? ". " + str(a.result).replace(NODE_ID, "") : "") }), when);
   }
   return null;
 }
@@ -1816,10 +1883,12 @@ function fixOf(d) {
   return f && ["working", "draft", "open", "merged", "closed"].includes(f.state) ? f : null;
 }
 const fixActive = (d) => ["working", "draft", "open"].includes(fixOf(d)?.state);
+// The server decides when a fix keeps its issue or discussion out of the plan
+const fixParked = (d) => fixActive(d) && fixOf(d).parked === true;
 const pushActive = (d) => workingOf(d)?.kind === "push";
 
 // Routes that would start a second fix, or decide a PR the agent is still changing, are not offered at all
-const PUSH_HIDDEN = new Set(["review", "merge", "close", "take_over", "address_review", "drive", "format"]);
+const PUSH_HIDDEN = new Set(["review", "merge", "close", "take_over", "revise", "address_review", "drive", "format"]);
 function blockedRoute(d, r) {
   if (fixActive(d) && r.type === "follow_up" && actorOf(r) === "agent") return true;
   if (pushActive(d) && (PUSH_HIDDEN.has(r.type) || (r.type === "chore" && paramsOf(r).action === "ready"))) return true;
@@ -1836,12 +1905,21 @@ function ciDot(ci) {
   return ["passing", "failing", "pending"].includes(ci) ? h("span", { class: "ci-dot ci-" + ci, role: "img", "aria-label": "CI " + ci, title: "CI " + ci }) : null;
 }
 
+// The review rounds a fix PR gets on its own, like "Copilot round 2 of 3"
+function fixStage(f) {
+  const v = f && f.review && typeof f.review === "object" ? f.review : null;
+  if (!v || !Number.isInteger(v.round) || !Number.isInteger(v.maxRounds)) return "";
+  const who = str(v.reviewer) || "review";
+  return who.charAt(0).toUpperCase() + who.slice(1) + " round " + v.round + " of " + v.maxRounds;
+}
+
 // The chip on the title line of a row
 function agentChip(d) {
   const f = fixOf(d);
   if (f && f.state === "working") return h("span", { class: "agent-chip", title: "The agent is working on a fix" }, "Fix running");
   if (f && (f.state === "draft" || f.state === "open") && f.pr) {
-    return h("span", { class: "agent-chip", title: (f.state === "draft" ? "Draft fix" : "Fix") + " #" + f.pr.number + " is open on GitHub" }, "Fix: #" + f.pr.number + " " + f.state, ciDot(str(f.pr.ci)));
+    const stage = fixStage(f);
+    return h("span", { class: "agent-chip", title: (f.state === "draft" ? "Draft fix" : "Fix") + " #" + f.pr.number + " is open on GitHub" }, "Fix: #" + f.pr.number + " " + f.state + (stage ? ", " + stage : ""), ciDot(str(f.pr.ci)));
   }
   if (f && f.state === "merged" && f.pr) return h("span", { class: "agent-chip quiet", text: "Fixed by #" + f.pr.number });
   if (pushActive(d)) return h("span", { class: "agent-chip", title: "The agent is changing this PR" }, "Agent working");
@@ -1859,7 +1937,7 @@ function switchDialog(key) {
   openDetail(key);
 }
 
-const PUSH_JOBS = { take_over: "take over", address_review: "addressing the review", drive: "driving the review rounds", format: "formatting" };
+const PUSH_JOBS = { take_over: "take over", revise: "your requested change", address_review: "addressing the review", drive: "driving the review rounds", format: "formatting" };
 
 // The banner under the meta row: what the agent is doing, so nothing here starts it twice
 function renderAgentBanner(d) {
@@ -1876,7 +1954,7 @@ function renderAgentBanner(d) {
     const ci = str(f.pr.ci);
     const ciText = { pending: "running", passing: "passing", failing: "failing" }[ci];
     const board = prKeyOf(d, f.pr.number);
-    parts = [icon("wrench"), h("span", { class: "ab-text" }, (f.state === "draft" ? "Draft fix #" : "Fix #") + f.pr.number + " is open: ", richText(str(f.pr.title)), "." + (ciText ? " CI " + ciText + "." : "")),
+    parts = [icon("wrench"), h("span", { class: "ab-text" }, (f.state === "draft" ? "Draft fix #" : "Fix #") + f.pr.number + " is open: ", richText(str(f.pr.title)), "." + (ciText ? " CI " + ciText + "." : "") + (fixStage(f) ? " " + fixStage(f) + "." : "")),
       isGithubUrl(str(f.pr.url)) ? h("a", { class: "btn small", href: str(f.pr.url), target: "_blank", rel: "noopener noreferrer", text: "Open PR", "data-focus-key": "fix:pr" }) : null,
       board ? h("button", { class: "btn small", type: "button", text: "Open on board", "data-focus-key": "fix:board", onclick: () => switchDialog(board) }) : null];
   } else if (f && f.state === "merged" && f.pr) {
@@ -1917,10 +1995,10 @@ function stateIcons(id, d, dim, withPassing) {
   if (state.busy.has(id)) out.push(["send", "muted", "Sending to the action server", null, "Sending"]);
   else {
     const a = latestOf(id);
-    const name = a ? ACTION_NAMES[a.action] || str(a.action) : "";
+    const name = a ? actionName(a) : "";
     if (a && a.status === "queued") out.push(["queued", "warn", "Requested: " + name + ". The agent picks it up in a moment.", null, "Requested"]);
     else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
-    else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", "Done: " + name, null, "Done: " + name]);
+    else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", doneName(a), null, doneName(a)]);
   }
   const open = !isClosedThread(id, d);
   if (d.kind === "pr" && d.ci === "failing") out.push(["ciFail", "bad", "CI failing"]);
@@ -2102,7 +2180,7 @@ function buildRow(id, d, dim, slot) {
 }
 
 const HINT_ACTIONS = [
-  "Request changes", "Start fix", "Take over", "Apply fixes",
+  "Request changes", "Start fix", "Take over", "Change", "Apply fixes",
   "Merge", "Reply", "Approve", "Close", "Decide", "Review", "Ask", "React", "Snooze", "Dismiss",
 ];
 
@@ -2123,7 +2201,7 @@ const INTENTS = [
   ["talk", ["comment", "review_comment", "react", "answer_discussion"], ["Reply", "Ask", "React"]],
   ["push", ["request_changes"], ["Request changes"]],
   ["think", [], ["Decide", "Review"]],
-  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Address review", "Apply fixes", "Start fix", "Drive", "Format", "Analyze"]],
+  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Change", "Address review", "Apply fixes", "Start fix", "Drive", "Format", "Analyze"]],
   ["away", ["snooze", "dismiss"], ["Snooze", "Dismiss"]],
 ];
 
@@ -2231,12 +2309,17 @@ function renderListNow() {
 
   const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
   const handledRows = [];
+  const fixParkedRows = [];
   for (const [id, d] of state.items) {
     if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
     if (d.hidden === true && !state.filters.showHidden) continue;
     if (!matchesFilters(d)) continue;
     if (handledOf(id, d)) {
       handledRows.push([id, d]);
+      continue;
+    }
+    if (fixParked(d)) {
+      fixParkedRows.push([id, d]);
       continue;
     }
     const dim = isHiddenItem(d);
@@ -2287,6 +2370,7 @@ function renderListNow() {
 
   els.board.classList.toggle("combined", combinedView());
   renderHandled(handledRows);
+  renderFixParked(fixParkedRows);
 
   // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
   for (const m of els.board.querySelectorAll(".r-meta")) {
@@ -2332,6 +2416,8 @@ const detail = {
   reviews: document.getElementById("d-reviews"),
   threads: document.getElementById("d-threads"),
   meNotes: new Map(),
+  // The review event he picked per route, when it differs from the agent's proposal
+  events: new Map(),
   rounds: document.getElementById("d-rounds"),
   analyze: document.getElementById("d-analyze"),
   foot: document.getElementById("d-foot"),
@@ -2521,6 +2607,7 @@ const ROUTE_ACTORS = {
   address_review: ["agent"],
   follow_up: ["agent", "bot", "me"],
   take_over: ["agent"],
+  revise: ["agent"],
   drive: ["agent"],
   move: ["bot", "me"],
   chore: ["bot"],
@@ -2589,16 +2676,24 @@ function moveToRepo(r) {
   return to !== "" && to !== "discussion" && to !== "issue";
 }
 
+const REVIEW_EVENT_LABELS = { request_changes: "Request changes", comment: "Comment", approve: "Approve" };
+
+// The event a review goes out with: his pick on the card, else the agent's proposal
+function reviewEvent(r) {
+  return detail.events.get(r.id) || str(paramsOf(r).event);
+}
+
 function routeIntent(r) {
   const p = paramsOf(r);
   switch (r.type) {
     case "merge": return "finish";
     case "close": return "close";
-    case "review": return p.event === "approve" ? "finish" : p.event === "request_changes" ? "push" : "talk";
+    case "review": return reviewEvent(r) === "approve" ? "finish" : reviewEvent(r) === "request_changes" ? "push" : "talk";
     case "reply":
     case "request_logs": return "talk";
     case "address_review":
     case "take_over":
+    case "revise":
     case "drive":
     case "format": return "agent";
     case "follow_up": return actorOf(r) === "agent" ? "agent" : "talk";
@@ -2629,6 +2724,7 @@ function routeHasEditor(r) {
     case "review":
     case "address_review":
     case "take_over":
+    case "revise":
     case "follow_up": return true;
     case "close":
     case "reopen":
@@ -2642,6 +2738,7 @@ function editorLabel(r) {
   const as = actorOf(r);
   if (r.type === "address_review") return "Note for the whole run (optional)";
   if (r.type === "take_over" || (r.type === "follow_up" && as === "agent")) return "Instructions for the agent (optional)";
+  if (r.type === "revise") return "Instructions for the agent";
   if (r.type === "follow_up") return "Issue text";
   if (r.type === "review") return "Review summary";
   if (r.type === "move") return "Comment before closing";
@@ -2664,7 +2761,7 @@ function routeButtons(d, r) {
   const text = hasText(r);
   const me = (label, extra = {}) => ({ id: "main", actor: "me", label, copy: "draft", ...extra });
   const run = (label, extra = {}) => ({ id: "main", actor: as, label, ...extra });
-  const event = { approve: "Approve", request_changes: "Request changes", comment: "Comment" }[p.event] || "Submit review";
+  const event = REVIEW_EVENT_LABELS[reviewEvent(r)] || "Submit review";
   switch (r.type) {
     case "reply": return [as === "me" ? me("Copy reply, open GitHub") : run("Post reply", { confirm: true, needsText: true })];
     case "request_logs": return [as === "me" ? me("Copy request, open GitHub") : run("Ask for a debug log", { confirm: true, needsText: true })];
@@ -2679,6 +2776,7 @@ function routeButtons(d, r) {
       if (as === "me") return [me("Open GitHub to file the issue", { copy: null })];
       return [run("File issue", { confirm: true })];
     case "take_over": return [{ id: "main", actor: "agent", label: p.mode === "replace" ? "Open a replacement PR" : "Take over" }];
+    case "revise": return [{ id: "main", actor: "agent", label: "Change", needsText: true }];
     case "drive": return [{ id: "main", actor: "agent", label: "Drive this PR" }];
     case "move": {
       if (str(p.to) === "discussion") return [me("Open GitHub to convert", { copy: null })];
@@ -3233,6 +3331,24 @@ function buildCardInputs(id, d, r, rec) {
   } else if (r.type !== "address_review") {
     out.push(...editor);
   }
+  if (r.type === "follow_up" && as === "agent") {
+    // The agent may preset the switch when only the reporter's hardware can show that the fix works
+    if (rec.askReporter === undefined) rec.askReporter = p.askReporter === true;
+    const box = h("input", { type: "checkbox", id: "ar-" + id.replace(/[^A-Za-z0-9_-]/g, "_") + "-" + r.id, checked: rec.askReporter });
+    box.addEventListener("change", () => { rec.askReporter = box.checked; });
+    out.push(h("label", { class: "also-label ask-reporter", for: box.id }, box, "Ask the reporter to test"),
+      p.askReporter === true && str(p.askReporterWhy) ? h("p", { class: "quiet-line ask-reporter-why" }, richText(p.askReporterWhy)) : null);
+  }
+  // GitHub refuses an approval or a change request on one's own PR, so the bot's own PR keeps its event
+  if (r.type === "review" && Object.hasOwn(REVIEW_EVENT_LABELS, str(p.event)) && !(instOf(d).bot && str(d.author) === botLogin(instOf(d)))) {
+    out.push(h("span", { class: "seg-row review-event" }, h("span", { class: "card-label" }, "Submit as"),
+      segControl("Review event", Object.entries(REVIEW_EVENT_LABELS), reviewEvent(r), (v) => {
+        if (v === str(p.event)) detail.events.delete(r.id);
+        else detail.events.set(r.id, v);
+        state.confirming.delete(id);
+        render();
+      })));
+  }
   if (r.type === "review") {
     const comments = (Array.isArray(p.comments) ? p.comments : []).filter((c) => c && typeof c === "object" && typeof c.id === "string");
     if (comments.length) {
@@ -3352,6 +3468,8 @@ function partButtons(id, d, r, rec, locked) {
 function routePayload(d, r, rec, b) {
   const input = { ...(b && b.input ? b.input : {}) };
   if (r.type === "review") input.commentIds = [...rec.checks].filter(([, on]) => on).map(([cid]) => cid);
+  if (r.type === "review" && detail.events.has(r.id)) input.event = detail.events.get(r.id);
+  if (r.type === "follow_up" && actorOf(r) === "agent") input.askReporter = rec.askReporter === true;
   if (r.type === "address_review" || (r.type === "take_over" && takeOverThreads(d).length)) {
     input.decisions = [...rec.decisions].map(([threadId, st]) => ({ threadId, decision: st.decision, ...(st.note.trim() ? { note: st.note.trim() } : {}) }));
   }
@@ -3363,10 +3481,23 @@ function routePayload(d, r, rec, b) {
   return { text, input };
 }
 
+// The prefill buttons he used. The server serves `opened` on the route. A click marks it here at once, before the server's push arrives.
+const localOpened = new Map();
+const openedKey = (id, r) => id + "|" + r.id + "|" + str(r.draftHash);
+
+function openedOf(id, r) {
+  const o = r.opened && typeof r.opened === "object" && parseTime(r.opened.at) ? r.opened : null;
+  return o || localOpened.get(openedKey(id, r)) || null;
+}
+
+// A prefill button copies when it has text to copy
+const meCopies = (b, rec) => b.copy === "escalate" || (b.copy === "draft" && !!rec.ta);
+
 function meButton(id, d, r, rec, b, intent, locked) {
   const key = "r:" + r.id + ":" + b.id;
+  const again = !!openedOf(id, r);
   return h("button", {
-    class: "btn me-btn intent-" + intent + (r.recommended === true ? " primary" : ""), type: "button",
+    class: "btn me-btn intent-" + intent + (again ? " quiet" : r.recommended === true ? " primary" : ""), type: "button",
     disabled: locked || !isGithubUrl(str(d.url)), "data-focus-key": key, title: buttonTip(b, instOf(d)),
     onclick: async () => {
       if (!isGithubUrl(str(d.url))) return;
@@ -3394,9 +3525,18 @@ function meButton(id, d, r, rec, b, intent, locked) {
       if (fallback) detail.meNotes.set(r.id, b.copy === "escalate" ? "Copy failed. Post " + escalateCommand(instOf(d)) + " on GitHub" : "Press Ctrl+C, then paste on GitHub");
       else detail.meNotes.delete(r.id);
       if (!handledOf(id)) localHandled.set(id, { at: new Date().toISOString(), routeId: r.id, routeType: r.type, verified: null });
+      localOpened.set(openedKey(id, r), { at: new Date().toISOString() });
       render();
     },
-  }, actorMark("me", instOf(d)), b.label, icon("external", null, "ext"));
+  }, actorMark("me", instOf(d)), again ? (meCopies(b, rec) ? "Copy again" : "Open again") : b.label, icon("external", null, "ext"));
+}
+
+// What he did with a prefill card, in words. He may have copied without posting, so it never says "Done"
+function openedLine(id, r, rec, buttons) {
+  const o = openedOf(id, r);
+  if (!o) return null;
+  const what = buttons.some((b) => meCopies(b, rec)) ? "Copied and opened on GitHub" : "Opened on GitHub";
+  return h("span", { class: "status opened" }, icon("check"), h("span", { text: what + ", " + hhmm(o.at) }));
 }
 
 // The card's button row: its buttons with their actors, the second confirm, "Post anyway", or the result
@@ -3423,7 +3563,7 @@ function buildCardActions(id, d, r, rec, locked) {
 
   if (buttons.every((b) => b.actor === "me")) {
     return [...buttons.map((b) => meButton(id, d, r, rec, b, intent, locked)), ...partButtons(id, d, r, rec, locked),
-      handledOf(id)?.routeId === r.id ? h("span", { class: "opened-mark", role: "img", title: "You opened this on GitHub today", "aria-label": "You opened this on GitHub today" }, icon("check")) : null,
+      openedLine(id, r, rec, buttons),
       detail.meNotes.has(r.id) ? h("span", { class: "me-note", text: detail.meNotes.get(r.id) }) : null].filter(Boolean);
   }
 
@@ -3467,7 +3607,7 @@ function buildCardActions(id, d, r, rec, locked) {
         if (b.needsText && !payload.text.trim()) {
           detail.lastZone = "route";
           detail.lastRoute = r.id;
-          state.notes.set(id, { kind: "failed", text: "Write the text first. This route posts it." });
+          state.notes.set(id, { kind: "failed", text: b.actor === "agent" ? "Write the instructions first. The agent follows them." : "Write the text first. This route posts it." });
           render();
           return;
         }
@@ -3484,7 +3624,7 @@ function buildCardActions(id, d, r, rec, locked) {
   if (instOf(d).paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
     out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
   }
-  if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
+  if (r.type === "take_over" || r.type === "revise") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   const ownButtons = buttons.filter((b) => b.actor === "own");
   if (ownButtons.length) {
@@ -3524,7 +3664,7 @@ function buildCard(id, d, r, rec) {
   rec.status = h("div", { class: "z-status" });
   const callout = str(r.callout) ? h("div", { class: "callout" + (r.type === "take_over" && p.mode === "replace" ? " strong" : "") }, icon("alert"), h("span", null, richText(r.callout))) : null;
   rec.dismissBox = buildDismissBox(id, r, rec);
-  const dismissX = h("button", {
+  const dismissX = rec.dismissX = h("button", {
     class: "card-x", type: "button", "data-focus-key": "r:" + r.id + ":dismiss", "aria-label": "Not this suggestion", title: "Not this suggestion",
     onclick: () => {
       rec.dismissOpen = !rec.dismissOpen;
@@ -3546,6 +3686,7 @@ function buildCard(id, d, r, rec) {
   const actor = cardActor(d, r);
   // A wrapper, because an avatar that fails to load replaces its own element with a placeholder
   rec.headActor = actor ? h("span", { class: "head-actor" }, actorMark(actor, instOf(d))) : null;
+  rec.headDone = h("span", { class: "head-done", hidden: true });
   rec.head = h("button", {
     class: "card-head", type: "button", "data-focus-key": "card:" + r.id, "aria-expanded": "false",
     onclick: () => {
@@ -3562,7 +3703,27 @@ function buildCard(id, d, r, rec) {
     ...buildCardInputs(id, d, r, rec),
     rec.actions,
     rec.status);
-  rec.card.replaceChildren(h("div", { class: "card-top" }, rec.head, dismissX), rec.dismissBox, rec.body);
+  rec.card.replaceChildren(h("div", { class: "card-top" }, rec.head, rec.headDone, dismissX), rec.dismissBox, rec.body);
+}
+
+// What a card whose action is done says in its header row: `{ text, url, pending }`, or null while it is still a suggestion.
+// A failed or refused action is no such state. `pending` is true while a used prefill card still has an unused label or answer button.
+function settledOf(id, d, r, rec) {
+  const agent = actorOf(r) === "agent";
+  const parts = extraParts(d, r);
+  const partDone = (part) => (rec && rec.parts[part.name] && rec.parts[part.name].state === "done") || (part.done && typeof part.done === "object" && part.done.status === "done");
+  const marks = parts.filter(partDone).map((part) => part.doneText);
+  if (r.done && typeof r.done === "object") {
+    const result = str(r.done.result);
+    return { text: !agent ? "Done" : r.done.status === "queued" ? "Requested" : "The agent took this on", url: isGithubUrl(result) ? result : "", marks, pending: false };
+  }
+  const note = state.notes.get(id);
+  if (detail.lastRoute === r.id && note && note.kind === "done") return { text: agent ? "Requested" : "Done", url: "", marks, pending: false };
+  const o = openedOf(id, r);
+  const buttons = routeButtons(d, r);
+  if (!o || !buttons.every((b) => b.actor === "me")) return null;
+  const copies = buttons.some((b) => b.copy === "escalate" || (b.copy === "draft" && routeHasEditor(r)));
+  return { text: (copies ? "Copied and opened" : "Opened") + ", " + hhmm(o.at), url: "", marks, pending: !!partActor(d) && parts.some((part) => !partDone(part)) };
 }
 
 // "Not this": an optional reason, then the server drops the route and the agent proposes another one
@@ -3628,7 +3789,9 @@ function renderRoutes(id, d, locked) {
     const done = routes.find((r) => r.done && !routeCompact(r));
     // Pick among the cards on screen, so a dismissed recommendation hands its place to the next card
     const rec = routes.find((r) => r.recommended === true) || routes[0];
-    detail.openRoute = (done || (rec && !routeCompact(rec) ? rec : null) || {}).id ?? null;
+    // A card whose action is done starts collapsed, with its confirmation in the header row
+    const settled = rec ? settledOf(id, d, rec, detail.cards.get(rec.id)) : null;
+    detail.openRoute = rec && !routeCompact(rec) && !(settled && !settled.pending) ? rec.id : null;
   }
   const keep = new Set(routes.map((r) => r.id));
   for (const k of [...detail.cards.keys()]) if (!keep.has(k)) detail.cards.delete(k);
@@ -3640,7 +3803,7 @@ function renderRoutes(id, d, locked) {
     }
     // Rebuild the card only when the route itself changed. A new draft text alone updates the editor in place,
     // and never while he is typing in it, so focus, cursor and typed text stay.
-    const { done, refused, text, draftHash, labelDone, answerDone, ...core } = r;
+    const { done, refused, text, draftHash, labelDone, answerDone, opened, ...core } = r;
     // The agent rewrote a draft he had edited: rebuild, so the editor shows the new text and keeps his as "previous"
     const dkR = draftKey(id, "r:" + r.id);
     if (state.drafts.has(dkR) && draftHashes.has(dkR) && draftHashes.get(dkR) !== str(r.draftHash)) rec.core = null;
@@ -3652,16 +3815,32 @@ function renderRoutes(id, d, locked) {
     } else if (rec.ta && !state.drafts.has(draftKey(id, "r:" + r.id)) && document.activeElement !== rec.ta && rec.ta.value !== str(text)) {
       rec.ta.value = str(text);
     }
+    const settled = settledOf(id, d, r, rec);
+    const isSettled = !!settled && !settled.pending;
+    // Collapse once, when the state arrives. A card he expands afterwards stays open
+    if (isSettled && rec.settled === false && detail.openRoute === r.id) detail.openRoute = null;
+    rec.settled = isSettled;
     const open = !rec.compact && detail.openRoute === r.id;
     rec.card.classList.toggle("open", open);
+    rec.card.classList.toggle("settled", !!settled);
+    rec.dismissX.hidden = !!settled;
     rec.card.classList.toggle("recommended", r.recommended === true);
     if (!rec.compact) {
       rec.head.setAttribute("aria-expanded", open ? "true" : "false");
       rec.body.hidden = !open;
       if (rec.headActor) rec.headActor.style.display = open ? "none" : "";
+      rec.headDone.hidden = open || !settled;
+      const doneSig = JSON.stringify(settled);
+      if (rec.doneSig !== doneSig) {
+        rec.doneSig = doneSig;
+        rec.headDone.replaceChildren(...(settled ? [icon("check"), h("span", { text: [settled.text, ...settled.marks].join(" · ") }),
+          settled.url ? h("span", { text: "·" }) : null, settled.url ? ghLink(settled.url, "view on GitHub") : null].filter(Boolean) : []));
+      }
+      // What was sent stays readable and cannot be changed
+      if (r.done) for (const el of rec.body.querySelectorAll("input, textarea, button.seg, button.lane-switch")) el.disabled = true;
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
-    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d),
+    const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d), openedOf(id, r), detail.events.get(r.id),
       detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, meLogin(), instOf(d).paused === true, combinedView()]);
     if (sig !== rec.sig) {
       rec.sig = sig;
@@ -3946,6 +4125,7 @@ function openDetail(id, row) {
   detail.lastRoute = null;
   detail.threadsOpen = false;
   detail.meNotes.clear();
+  detail.events.clear();
   detail.lastZone = null;
   detail.findingsOpen = null;
   detail.pendingFocus = null;
@@ -4410,7 +4590,8 @@ function subscribe(db) {
     for (const doc of snap.docs) {
       const d = doc.data();
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
-      if (d && typeof d === "object" && routesOf(d).length) next.set(doc.id, d);
+      // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
+      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d))) next.set(doc.id, d);
       // Once the server carries the mark, it decides, including clearing it after the next run
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
@@ -4501,7 +4682,7 @@ async function boot() {
   setupDetail();
   setupRowKeys();
   buildSections();
-  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el);
+  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el, fixParkedEls.el);
   renderConnection();
   render();
 

@@ -45,6 +45,8 @@ const items = {
 			{ id: "r15", type: "chore", title: "Chore: ready", as: "bot", params: { action: "ready" } },
 			{ id: "r16", type: "reply", title: "Reply: while it works", as: "bot", text: "Working on it" },
 			{ id: "r17", type: "review", title: "Review: approve later", as: "bot", params: { event: "approve" }, text: "" },
+			{ id: "r18", type: "revise", title: "Change: drop the file", as: "agent", text: "Drop the 0x00c8 file" },
+			{ id: "r19", type: "revise", title: "Change: no text", as: "agent" },
 		],
 	},
 	"issue-21": {
@@ -92,6 +94,20 @@ const items = {
 		autofix: { changes: false, files: 0, lines: 0, tools: ["prettier"] },
 		routes: [{ id: "r1", type: "format", title: "Format: x", as: "agent" }],
 	},
+	"pr-16": {
+		kind: "pr", repo: REPO, number: 16, title: "contributor, not taken over", authorType: "contributor", reviewedAt, hint: "Take over: push",
+		routes: [
+			{ id: "r1", type: "take_over", title: "Take over: replace", as: "agent", params: { mode: "replace" } },
+			{ id: "r2", type: "take_over", title: "Take over: push", as: "agent", params: { mode: "push" }, text: "Finish it", recommended: true },
+			{ id: "r3", type: "take_over", title: "Take over: default mode", as: "agent" },
+			{ id: "r4", type: "revise", title: "Change: the name", as: "agent", text: "Rename it" },
+		],
+	},
+	// A stored take_over on the bot's own PR
+	"pr-17": {
+		kind: "pr", repo: REPO, number: 17, title: "bot fix PR", authorType: "bot", author: "widgets-bot", reviewedAt, hint: "Take over: drop the 0x00c8 file",
+		routes: [{ id: "r1", type: "take_over", title: "Take over: drop the 0x00c8 file", as: "agent", params: { mode: "push" }, text: "Drop the 0x00c8 file", recommended: true }],
+	},
 	"pr-13": {
 		kind: "pr", repo: REPO, number: 13, title: "taken over", authorType: "contributor", takenOver: true, reviewedAt, hint: "Drive: x",
 		routes: [{ id: "r1", type: "drive", title: "Drive: x", as: "agent" }],
@@ -117,6 +133,22 @@ const items = {
 	"disc-31": {
 		kind: "discussion", repo: REPO, number: 31, title: "answered", url: "https://github.com/acme/widgets/discussions/31", reviewedAt, hint: "Close: answered",
 		routes: [{ id: "r1", type: "close", title: "Close: answered", recommended: true, text: "Thanks, closing.", params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/31#c1", gist: "Hold the button" } } }],
+	},
+	"pr-18": {
+		kind: "pr", repo: REPO, number: 14, title: "review with a suggestion", authorType: "contributor", reviewedAt, hint: "Request changes: 2 fixes",
+		routes: [{ id: "r1", type: "review", title: "Request changes: 2 fixes", as: "bot", recommended: true, text: "Two things.",
+			params: { event: "request_changes", comments: [
+				{ id: "c1", path: "src/a.ts", line: 4, text: "Check the length", original: "old", suggestion: "new" },
+				{ id: "c2", path: "src/a.ts", line: 9, text: "Why this value?" },
+			] } }],
+	},
+	"issue-64": {
+		kind: "issue", repo: REPO, number: 64, title: "two prefills and a fix", reviewedAt, hint: "Reply: x",
+		routes: [
+			{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "Drafted reply" },
+			{ id: "r2", type: "close", title: "Close: x", text: "Closing." },
+			{ id: "r3", type: "follow_up", as: "agent", title: "Start fix: x", text: "Fix it" },
+		],
 	},
 	"issue-60": { kind: "issue", repo: REPO, number: 22, title: "refresh unchanged", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x" }] },
 	"issue-61": { kind: "issue", repo: REPO, number: 23, title: "refresh closed", reviewedAt, hint: "Close: x", routes: [{ id: "r1", type: "close", title: "Close: x", recommended: true, text: "x" }] },
@@ -226,10 +258,32 @@ await expect("follow_up without as is invalid", "issue-21", "r7", {}, refused(/i
 await expect("unknown type is invalid", "issue-21", "r10", {}, refused(/invalid/));
 await expect("chore merge is refused", "pr-12", "r6", {}, refused(/cannot run "merge"/));
 await expect("move to a discussion with as bot is invalid", "issue-21", "r3", {}, refused(/invalid/));
-await expect("take_over replace without callout is refused", "pr-12", "r7", {}, refused(/callout/));
+await expect("take_over replace without callout is refused", "pr-16", "r1", {}, refused(/callout/));
+await expect("take_over on a PR we control is refused", "pr-12", "r7", {}, refused(/Use revise on this PR/));
+await expect("revise on a contributor PR that is not taken over is refused", "pr-16", "r4", {}, refused(/Use take_over on a contributor PR/));
+await expect("revise without text is refused", "pr-12", "r19", {}, refused(/needs a text/));
+await expect("revise with blank instructions is refused", "pr-12", "r18", { text: "  " }, refused(/needs a text/));
+await expect("revise takes no input", "pr-12", "r18", { input: { decisions: [] } }, refused(/unknown field/));
+
+// A stored take_over on a PR we control is served and run as revise
+const storedItem = (id) => JSON.parse(readFileSync(join(BOARD, "items", id + ".json"), "utf8"));
+check("a stored take_over on a bot PR is served as revise", served["pr-17"].routes[0].type === "revise" && served["pr-17"].routes[0].title === "Change: drop the 0x00c8 file" && served["pr-17"].routes[0].actor === "agent", served["pr-17"].routes[0]);
+check("the served hint follows the served title", served["pr-17"].hint === "Change: drop the 0x00c8 file", served["pr-17"].hint);
+check("a stored take_over push on a maintainer PR is served as revise", served["pr-12"].routes.find((r) => r.id === "r8").type === "revise" && served["pr-12"].routes.find((r) => r.id === "r12").type === "revise");
+check("a stored replacement stays take_over", served["pr-12"].routes.find((r) => r.id === "r7").type === "take_over");
+check("take_over on a contributor PR is served as it is", served["pr-16"].routes.slice(0, 3).every((r) => r.type === "take_over") && served["pr-16"].hint === "Take over: push", served["pr-16"].routes);
+await expect("the served revise is queued", "pr-17", "r1", {}, (r) => r.data.ok && r.data.queued);
+check("the stored item keeps its take_over route", storedItem("pr-17").routes[0].type === "take_over" && storedItem("pr-17").hint === "Take over: drop the 0x00c8 file", storedItem("pr-17").routes);
+check("the click is recorded as revise", storedItem("pr-17").handled?.routeType === "revise", storedItem("pr-17").handled);
+await expect("a mapped take_over without text is refused as a revise", "pr-12", "r12", {}, refused(/needs a text/));
 
 // Input validation
 await expect("review rejects unknown comment id", "pr-12", "r1", { input: { commentIds: ["c9"] } }, refused(/unknown comment/));
+await expect("review rejects an unknown event", "pr-18", "r1", { input: { event: "dismiss" } }, refused(/input.event must be one of approve, request_changes, comment/));
+await expect("an approval with a checked suggestion is refused", "pr-18", "r1", { input: { event: "approve" } }, refused(/An approval cannot carry suggestions/));
+await expect("a review goes out as a comment when he picks that", "pr-18", "r1", { input: { event: "comment", commentIds: ["c1"] } }, (r) => r.data.ok === true);
+await expect("follow_up rejects an askReporter that is no boolean", "issue-21", "r8", { input: { askReporter: "yes" } }, refused(/input.askReporter must be true or false/));
+await expect("only the agent's fix card takes askReporter", "issue-21", "r1", { input: { askReporter: true } }, refused(/unknown field "askReporter"/));
 await expect("review rejects a repeated comment id", "pr-12", "r1", { input: { commentIds: ["c1", "c1"] } }, refused(/twice/));
 await expect("review rejects unknown input keys", "pr-12", "r1", { input: { commentIds: [], extra: 1 } }, refused(/unknown field/));
 await expect("review rejects non-array commentIds", "pr-12", "r1", { input: { commentIds: "c1" } }, refused(/must be an array/));
@@ -288,6 +342,7 @@ await expect("a second push job on an item with a queued one gets 409", "pr-12",
 await expect("a review is blocked while the agent pushes to the PR", "pr-12", "r17", {}, (r) => r.status === 409 && r.data.result === "The agent is changing this PR. Decide after it is done.");
 await expect("a ready chore is blocked too", "pr-12", "r15", {}, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
 await expect("a reply stays allowed", "pr-12", "r16", {}, (r) => r.data.ok === true);
+await expect("revise is blocked like the other pushing routes", "pr-12", "r18", {}, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
 let st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
 check("the item is served as working while a push job is queued", st.working?.kind === "push" && st.working.action === "drive" && typeof st.working.since === "string", st.working);
 finishQueued();
@@ -300,7 +355,21 @@ await expect("a waiting drive blocks a review", "pr-12", "r17", {}, (r) => r.sta
 rmSync(join(home, "state", "drive", "pr-12.json"));
 st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
 check("a finished job leaves the item without working", st.working === undefined, st.working);
-await expect("take_over defaults to push", "pr-12", "r12", {}, (r) => r.data.ok && r.data.queued);
+await expect("take_over defaults to push", "pr-16", "r3", {}, (r) => r.data.ok && r.data.queued);
+await expect("revise is queued", "pr-12", "r18", {}, (r) => r.data.ok && r.data.queued);
+st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("a queued revise is served as push work", st.working?.kind === "push" && st.working.action === "revise", st.working);
+await expect("a queued revise blocks a review", "pr-12", "r17", {}, (r) => r.status === 409 && r.data.result === "The agent is changing this PR. Decide after it is done.");
+await expect("a queued revise blocks a ready chore", "pr-12", "r15", {}, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
+await expect("a queued revise blocks address_review", "pr-12", "r2", { input: { decisions: [{ threadId: "PRRT_1", decision: "fix" }] } }, (r) => r.status === 409 && /changing this PR/.test(r.data.result));
+await expect("a reply is not blocked while a revise runs", "pr-12", "r4", {}, refused(/yours to do on GitHub/));
+finishQueued();
+// A push claim without a queued request blocks a revise too
+mkdirSync(join(home, "state", "claims"), { recursive: true });
+writeFileSync(join(home, "state", "claims", "pr-12.push.json"), JSON.stringify({ run: "run-revise", at: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() }));
+await expect("a push claim blocks a revise", "pr-12", "r12", { text: "Do it" }, (r) => r.status === 409 && r.data.working === true);
+rmSync(join(home, "state", "claims", "pr-12.push.json"));
+await expect("a mapped take_over with typed instructions is queued as revise", "pr-12", "r12", { text: "Do it" }, (r) => r.data.ok && r.data.queued);
 check("route comments keep diffHunk in the served route", served["pr-12"].routes.find((r) => r.id === "r1").params.comments[1].diffHunk.includes("DIFFHUNK_MARKER"));
 
 await expect("a chore cannot request a Copilot review", "pr-12", "r13", {}, refused(/cannot run "request_review"/));
@@ -311,7 +380,8 @@ await expect("force runs it anyway", "issue-22", "r1", { force: true }, (r) => r
 
 // Agent routes
 finishQueued();
-await expect("take_over push is queued", "pr-12", "r8", {}, (r) => r.data.ok && r.data.queued);
+await expect("take_over push is queued", "pr-16", "r2", {}, (r) => r.data.ok && r.data.queued);
+await expect("a mapped take_over push is queued", "pr-12", "r8", {}, (r) => r.data.ok && r.data.queued);
 finishQueued();
 await expect("address_review is queued", "pr-12", "r2", { input: { decisions: [{ threadId: "PRRT_1", decision: "fix", note: " fix it " }, { threadId: "PRRT_2", decision: "dismiss" }] }, text: "Run note" }, (r) => r.data.ok && r.data.queued);
 // A claim of the matching kind blocks a click, a claim of another kind does not
@@ -321,10 +391,10 @@ writeFileSync(join(home, "state", "claims", "disc-34.review.json"), JSON.stringi
 await sleep(300);
 await expect("a fix claim of the hourly run blocks Start fix", "issue-21", "r8", {}, (r) => r.status === 409 && r.data.fixRunning === true && /already running, started by the routine/.test(r.data.result));
 st = (await api("/api/state")).data.items.filter((i) => i.instance === "widgets");
-check("an issue with a running fix is served with item.fix", st.find((i) => i.id === "issue-21").fix?.state === "working" && st.find((i) => i.id === "issue-21").fix.startedBy === "routine" && st.find((i) => i.id === "issue-22").fix === undefined, st.find((i) => i.id === "issue-21").fix);
+check("an issue with a running fix is served with item.fix", st.find((i) => i.id === "issue-21").fix?.state === "working" && st.find((i) => i.id === "issue-21").fix.startedBy === "routine" && st.find((i) => i.id === "issue-21").fix.parked === true && JSON.stringify(st.find((i) => i.id === "issue-21").fix.limit) === '{"pending":1,"max":10}' && st.find((i) => i.id === "issue-22").fix === undefined, st.find((i) => i.id === "issue-21").fix);
 check("a claim is served as working with its kind and start", st.find((i) => i.id === "issue-21").working?.kind === "fix" && st.find((i) => i.id === "disc-34").working === undefined, st.find((i) => i.id === "issue-21").working);
 rmSync(join(home, "state", "claims", "issue-21.fix.json"));
-await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", {}, (r) => r.data.ok && r.data.queued);
+await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", { input: { askReporter: true } }, (r) => r.data.ok && r.data.queued);
 await expect("a repeated agent click gets 409", "issue-21", "r8", {}, (r) => r.status === 409);
 
 // alsoLabel: the label button next to a prefill reply, and labels right after a bot post
@@ -381,9 +451,15 @@ const byRoute = (itemId, routeId) => docs.filter((d) => d.itemId === itemId && d
 const ar = byRoute("pr-12", "r2")[0];
 check("address_review doc is queued with decisions", ar?.status === "queued" && ar.action === "address_review" && ar.params.decisions.length === 2 && ar.params.decisions[0].note === "fix it" && ar.text === "Run note", ar);
 const sf = byRoute("issue-21", "r8")[0];
-check("start_fix doc carries text and finding only", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2"}', sf);
+check("start_fix doc carries text, finding and the switch he set", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2","askReporter":true}', sf);
+const ev18 = byRoute("pr-18", "r1")[0];
+check("the review goes out with the event he picked", ev18?.status === "done" && ev18.params.event === "comment" && ev18.params.comments.length === 1, ev18);
+check("a changed review event is logged for learning", readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).some((e) => e.type === "changed_event" && e.itemId === "pr-18" && e.from === "request_changes" && e.to === "comment" && e.route.type === "review"));
 check("drive doc", byRoute("pr-13", "r1")[0]?.params?.maxRounds === 3 && byRoute("pr-12", "r11")[0]?.params?.maxRounds === 2, docs.filter((d) => d.action === "drive"));
-check("take_over default doc", byRoute("pr-12", "r12")[0]?.params?.mode === "push", byRoute("pr-12", "r12"));
+check("take_over default doc", byRoute("pr-16", "r3")[0]?.action === "take_over" && byRoute("pr-16", "r3")[0]?.params?.mode === "push", byRoute("pr-16", "r3"));
+const rv = byRoute("pr-12", "r18")[0];
+check("revise doc carries the instructions and no params", rv?.action === "revise" && rv.route === "revise" && rv.via === "queue" && rv.text === "Drop the 0x00c8 file" && JSON.stringify(rv.params) === "{}", rv);
+check("a mapped take_over writes a revise doc", byRoute("pr-12", "r8")[0]?.action === "revise" && byRoute("pr-12", "r8")[0].text === "Finish it" && byRoute("pr-12", "r12")[0]?.action === "revise" && byRoute("pr-12", "r12")[0].text === "Do it" && byRoute("pr-17", "r1")[0]?.action === "revise", byRoute("pr-12", "r8"));
 const labelDoc = byRoute("issue-40", "r1")[0];
 check("the label button writes its own action doc", byRoute("issue-40", "r1").length === 1 && labelDoc.part === "label" && labelDoc.action === "label" && labelDoc.status === "done" && labelDoc.via === "server" && /^[0-9a-f]{16}$/.test(labelDoc.labelHash) && labelDoc.draftHash === undefined && JSON.stringify(labelDoc.params) === '{"add":["needs-info"]}', labelDoc);
 check("a bot post doc records the labels too", byRoute("issue-40", "r2")[0]?.status === "done" && byRoute("issue-40", "r2")[0].label?.status === "done" && JSON.stringify(byRoute("issue-40", "r2")[0].label.params) === '{"add":["needs-info"],"remove":["bug"]}', byRoute("issue-40", "r2"));
@@ -395,8 +471,8 @@ check("the label button logs no decision", !wLog.some((e) => e.chosen?.title ===
 const fmt = byRoute("pr-14", "r3")[0];
 check("format doc is queued with the reviewed head", ["queued", "done"].includes(fmt?.status) && fmt.via === "queue" && fmt.action === "format" && JSON.stringify(fmt.params) === `{"reviewedSha":"${"c".repeat(40)}"}`, fmt);
 check("format does not take the PR over", JSON.parse(readFileSync(join(BOARD, "items", "pr-14.json"), "utf8")).takenOver === undefined);
-check("take_over doc carries the text", byRoute("pr-12", "r8")[0]?.text === "Finish it", byRoute("pr-12", "r8"));
-check("take_over doc", byRoute("pr-12", "r8")[0]?.params?.mode === "push", byRoute("pr-12", "r8"));
+check("take_over doc carries the text", byRoute("pr-16", "r2")[0]?.text === "Finish it", byRoute("pr-16", "r2"));
+check("take_over doc", byRoute("pr-16", "r2")[0]?.action === "take_over" && byRoute("pr-16", "r2")[0]?.params?.mode === "push", byRoute("pr-16", "r2"));
 check("bot route doc is done via server", byRoute("issue-21", "r2")[0]?.status === "done" && byRoute("issue-21", "r2")[0]?.via === "server", byRoute("issue-21", "r2"));
 check("edited flag", byRoute("issue-21", "r9")[0]?.edited === true && byRoute("issue-21", "r5")[0]?.edited === false, docs);
 check("refused routes are not logged", byRoute("pr-12", "r3").length === 0 && byRoute("pr-12", "r4").length === 0 && byRoute("issue-21", "r3").length === 0);
@@ -422,6 +498,33 @@ for (const id of ["issue-60", "issue-61", "disc-62", "pr-63"]) await api("/api/d
 await sleep(100);
 const h60 = itemNow("issue-60").handled;
 check("a reported prefill sets handled with verified null", h60?.routeId === "r1" && h60.routeType === "reply" && h60.verified === null && Date.parse(h60.at) > Date.now() - 10000, h60);
+
+// Every prefill button he used is kept per route and served on the route
+const docsNow = () => readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8")));
+const route64 = async (rid) => (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "issue-64").routes.find((x) => x.id === rid);
+const openedStore = () => JSON.parse(readFileSync(join(home, "state", "opened.json"), "utf8"));
+check("a route he did not use carries no opened mark", (await route64("r1")).opened === undefined);
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r1", text: "Edited reply" });
+let o64 = await route64("r1");
+check("a reported prefill is served as opened with its time", Date.parse(o64.opened?.at) > Date.now() - 10000 && Object.keys(o64.opened).join() === "at" && o64.done === undefined, o64);
+check("the server keeps the copied text with the mark", openedStore()["issue-64"].r1.text === "Edited reply" && /^[0-9a-f]{16}$/.test(openedStore()["issue-64"].r1.draftHash), openedStore());
+const firstAt = o64.opened.at;
+await sleep(20);
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r2", text: "Closing." });
+check("a second prefill on the item keeps the first mark", (await route64("r1")).opened?.at === firstAt && !!(await route64("r2")).opened, await route64("r1"));
+await api("/api/action", { instance: "widgets", itemId: "issue-64", routeId: "r3", draftHash: (await route64("r3")).draftHash });
+check("a fix started without the switch asks nobody", docsNow().find((a) => a.itemId === "issue-64" && a.action === "start_fix")?.params.askReporter === false);
+check("an agent click on the item replaces handled and keeps the opened mark", itemNow("issue-64").handled?.routeId === "r3" && (await route64("r1")).opened?.at === firstAt && (await route64("r3")).opened === undefined, itemNow("issue-64").handled);
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r1", text: "Edited again" });
+check("copying again moves the time", (await route64("r1")).opened.at > firstAt && openedStore()["issue-64"].r1.text === "Edited again");
+writeFileSync(join(BOARD, "items", "issue-64.json"), JSON.stringify({ ...itemNow("issue-64"), routes: itemNow("issue-64").routes.map((x) => (x.id === "r1" ? { ...x, text: "Rewritten by the routine" } : x)) }));
+await sleep(400);
+check("a rewritten draft clears its mark, the other route keeps its own", (await route64("r1")).opened === undefined && !!(await route64("r2")).opened, await route64("r1"));
+await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r2", text: "Closing." });
+check("the next click drops the stored mark of the old draft", openedStore()["issue-64"].r1 === undefined && !!openedStore()["issue-64"].r2, openedStore()["issue-64"]);
+r = await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r9" });
+check("a decision for an unknown route stores nothing", r.data.outdated === true && openedStore()["issue-64"].r9 === undefined, r);
+
 const soon = new Date(Date.now() + 60000).toISOString();
 writeFileSync(ghOverrides, JSON.stringify({
 	"issue-23": { state: "CLOSED" },

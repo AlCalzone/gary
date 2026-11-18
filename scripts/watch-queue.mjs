@@ -3,16 +3,36 @@
 //   gary watch-queue --all          the same for every instance, also ones added later
 //   gary watch-queue [--all] --once print the current queue and exit
 // Each line is { "instance", "id", "itemId", "action" }.
+// A drive that waits for its review bot gets one more line with "event": "review-arrived" when the review is
+// there, or "review-timeout" after 30 minutes. The watcher reads the PR once a minute per waiting drive.
 import { mkdirSync, watch } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
-import { instanceName, instanceNames, instancesDir } from "./lib/config.mjs";
+import { instanceName, instanceNames, instancesDir, withInstance } from "./lib/config.mjs";
 import { isInstancePaused } from "./lib/control.mjs";
+import { readDrives } from "./lib/fixes.mjs";
+import { fetchItem } from "./snapshot.mjs";
 
 const RESCAN_MS = 5000;
 const DEBOUNCE_MS = 100;
+// GARY_DRIVE_POLL_MS shortens the poll in tests
+const DRIVE_POLL_MS = Number(process.env.GARY_DRIVE_POLL_MS) || 60000;
+export const DRIVE_WAIT_MS = 30 * 60000;
+
+/**
+ * What a waiting drive waits for: "review-arrived" when its review bot reviewed or commented after the request,
+ * "review-timeout" when the wait is over, null while it still waits. `entry` is the PR's fresh snapshot entry.
+ */
+export function driveEvent(drive, entry, now = Date.now()) {
+	const since = Date.parse(drive.reviewRequestedAt ?? "");
+	if (!Number.isFinite(since)) return null;
+	const bot = String(drive.reviewBot ?? "").toLowerCase();
+	const arrived = (entry?.facts?.timeline ?? []).some((e) => (e.kind === "review" || e.kind === "thread_comment") && bot && String(e.author).toLowerCase().startsWith(bot) && Date.parse(e.at) > since);
+	if (arrived) return "review-arrived";
+	return now - since > DRIVE_WAIT_MS ? "review-timeout" : null;
+}
 
 function isOpen(doc) {
 	return doc.status === "queued" && !(typeof doc.result === "string" && doc.result.startsWith("claimed by"));
@@ -56,6 +76,38 @@ export async function main(argv) {
 		return found;
 	}
 
+	// One event per review request of a drive
+	const driveEvents = new Set();
+	async function scanDrives() {
+		for (const instance of instances()) {
+			if (isInstancePaused(instance)) continue;
+			let drives = {};
+			try {
+				drives = await readDrives(instance);
+			} catch (e) {
+				console.error(`Reading the drives of ${instance} failed: ${e.message}`);
+			}
+			for (const [itemId, drive] of Object.entries(drives)) {
+				const key = `${instance}/${itemId}/${drive.reviewRequestedAt}`;
+				if (typeof drive.reviewRequestedAt !== "string" || typeof drive.actionId !== "string" || driveEvents.has(key)) continue;
+				let event = driveEvent(drive, null);
+				if (!event) {
+					try {
+						event = driveEvent(drive, await withInstance(instance, () => fetchItem("pr", drive.number, drive.repo)));
+					} catch (e) {
+						// The next poll reads it again
+						console.error(`Reading PR #${drive.number} of ${instance} failed: ${e.message}`);
+					}
+				}
+				if (!event) continue;
+				driveEvents.add(key);
+				process.stdout.write(JSON.stringify({ instance, id: drive.actionId, itemId, action: "drive", event }) + "\n");
+			}
+		}
+	}
+	let drivesRunning = Promise.resolve();
+	const queueDrives = () => (drivesRunning = drivesRunning.then(scanDrives));
+
 	async function scan() {
 		const found = (await Promise.all(instances().map(scanOne))).flat();
 		found.sort((a, b) => String(a.doc.createdAt ?? "").localeCompare(String(b.doc.createdAt ?? "")) || a.key.localeCompare(b.key));
@@ -70,6 +122,7 @@ export async function main(argv) {
 	const queueScan = () => (running = running.then(scan));
 
 	await queueScan();
+	await queueDrives();
 	if (once) process.exit(0);
 
 	let timer = null;
@@ -85,6 +138,7 @@ export async function main(argv) {
 	}
 	// fs.watch can miss a rename, and --all picks up new instances, so rescan on a timer too
 	setInterval(queueScan, RESCAN_MS);
+	setInterval(queueDrives, DRIVE_POLL_MS);
 	process.on("SIGTERM", () => process.exit(0));
 	process.on("SIGINT", () => process.exit(0));
 }

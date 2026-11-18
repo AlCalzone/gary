@@ -19,6 +19,7 @@ const items = {
 			{ id: "label", type: "chore", as: "bot", params: { action: "label", add: ["bug"] } },
 			{ id: "fix", type: "address_review", as: "agent" },
 			{ id: "drive", type: "drive", as: "agent" },
+			{ id: "change", type: "revise", as: "agent", text: "Rename the option" },
 			{ id: "merge", type: "merge", as: "me" },
 			{ id: "melogs", type: "request_logs", as: "me", text: "Please send a log" },
 			{ id: "mebody", type: "review", as: "me", params: { event: "approve" }, text: "LGTM" },
@@ -104,7 +105,9 @@ await withServer(makeHome("nobot", { bot: null }), await freePort(), async ({ st
 	check("the page shim carries the same info", page.includes('"accountMode":"none"') && page.includes('host:gary'));
 	check("prefill actors", actors(route, [["pr-12", "reply", "me"], ["pr-12", "logs", "me"], ["pr-12", "body", "me"], ["issue-21", "issue", "me"], ["issue-20", "reopen", "me"], ["pr-12", "merge", "me"]]), state.items.map((i) => i.routes.map((r) => [r.id, r.actor])));
 	check("routes without prefill are unavailable", actors(route, [["pr-12", "inline", "unavailable"], ["pr-12", "label", "unavailable"]]));
-	check("pushing agent routes are unavailable", actors(route, [["pr-12", "fix", "unavailable"], ["pr-12", "drive", "unavailable"], ["issue-21", "fix", "unavailable"]]));
+	check("pushing agent routes are unavailable", actors(route, [["pr-12", "fix", "unavailable"], ["pr-12", "drive", "unavailable"], ["pr-12", "change", "unavailable"], ["issue-21", "fix", "unavailable"]]));
+	const r7 = await click("pr-12", "change");
+	check("revise is refused", r7.data.ok === false && /needs a bot account/.test(r7.data.result), r7);
 	const mv = route("issue-21", "move");
 	check("move has one actor per button", mv.actors?.transfer === "unavailable" && mv.actors?.close === "me", mv);
 	const r1 = await click("pr-12", "reply");
@@ -137,6 +140,7 @@ await withServer(makeHome("own", { bot: null, allowOwnTokenPushes: true }), awai
 	check("a reply stays prefill", r4.data.ok === false && /Without a bot account/.test(r4.data.result), r4);
 	const r5 = await click("pr-12", "drive", { input: { maxRounds: 2 } });
 	check("drive is queued", r5.data.ok && r5.data.queued, r5);
+	check("revise is an agent route in own mode", actors(route, [["pr-12", "change", "agent"]]));
 });
 
 // With a bot
@@ -149,7 +153,7 @@ await withServer(makeHome("bot"), await freePort(), async ({ state, route, click
 	const r2 = await click("pr-12", "drive", { input: { maxRounds: 4 } });
 	check("drive rejects maxRounds 4 in input", r2.data.ok === false && /maxRounds/.test(r2.data.result), r2);
 	const r4 = await click("pr-16", "r1");
-	check("take_over on a bot PR is queued", r4.data.ok && r4.data.queued, r4);
+	check("a stored take_over on a bot PR is served as revise and queued", route("pr-16", "r1").type === "revise" && r4.data.ok && r4.data.queued, r4);
 	const r3 = await click("pr-12", "drive", { input: { maxRounds: 1 } });
 	check("drive takes maxRounds from input", r3.data.ok && r3.data.queued, r3);
 });

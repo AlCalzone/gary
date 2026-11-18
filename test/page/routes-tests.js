@@ -9,8 +9,15 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const dlgR = document.getElementById("detail");
   const openItem = async (id) => { if (dlgR.open) { document.getElementById("d-close").click(); await wait(5); } openDetail(id); await wait(10); };
   const cards = () => [...document.querySelectorAll("#d-routes .card")];
-  const openCard = () => document.querySelector("#d-routes .card.open");
-  const cardBtn = (text, card = openCard()) => [...(card?.querySelectorAll(".card-actions button") ?? [])].find((b) => b.textContent === text);
+  const expandedCard = () => document.querySelector("#d-routes .card.open");
+  // A card collapses when its action is done. The checks after a click still look at that card
+  let actedCard = null;
+  const openCard = () => expandedCard() || (actedCard && actedCard.isConnected && actedCard.classList.contains("settled") ? actedCard : null);
+  const cardBtn = (text, card = openCard()) => {
+    const btn = [...(card?.querySelectorAll(".card-actions button") ?? [])].find((b) => b.textContent === text);
+    if (btn) actedCard = card;
+    return btn;
+  };
   const expand = async (i) => { cards()[i].querySelector(".card-head").click(); await wait(5); };
   const F = window.makeRouteFixtures(iso);
   const with_ = (id, fn) => F.map((e) => (e[0] === id ? [e[0], fn(e[1])] : e));
@@ -44,12 +51,27 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   let calls = __calls.length;
   replyBtn.click(); await wait(20);
   ok("reply in his name copies, opens the anchor and never calls the server", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls);
-  const om = openCard().querySelector(".card-actions .opened-mark");
-  ok("opened today: a check mark with its label, not a word", !!om && !!om.querySelector("svg") && om.textContent === "" && om.getAttribute("aria-label") === "You opened this on GitHub today" && om.title === "You opened this on GitHub today" && handledToday("issue-9471"));
+  const hd0 = () => cards()[0].querySelector(".card-top > .head-done");
+  ok("a used prefill card collapses, with the confirmation in its header row", !expandedCard() && !hd0().hidden && !!hd0().querySelector("svg") && /^Copied and opened, \d\d:\d\d$/.test(hd0().textContent) && cards()[0].classList.contains("settled") && cards()[0].querySelector(".card-x").hidden);
+  ok("the done row is muted against the open suggestions", getComputedStyle(cards()[0].querySelector(".card-head .r-hint")).opacity < 1 && getComputedStyle(cards()[2].querySelector(".card-head .r-hint")).opacity === "1");
+  ok("no other card opens in its place", cards().filter((c) => c.classList.contains("open")).length === 0);
+  await expand(0);
+  ok("he can expand it again, and the header confirmation moves into the card", openCard() === cards()[0] && hd0().hidden);
+  const om = openCard().querySelector(".card-actions .status.opened");
+  ok("a used prefill says so in words with the time, and never Done", !!om && !!om.querySelector("svg") && /^Copied and opened on GitHub, \d\d:\d\d$/.test(om.textContent) && !om.classList.contains("done") && !/Done/.test(openCard().querySelector(".card-actions").textContent) && handledToday("issue-9471"));
+  ok("the used button turns into a secondary Copy again", !cardBtn("Copy reply, open GitHub") && cardBtn("Copy again")?.classList.contains("quiet") && !cardBtn("Copy again").classList.contains("primary") && !cardBtn("Copy again").disabled);
+  window.__clip = null;
+  cardBtn("Copy again").click(); await wait(20);
+  ok("Copy again still copies and opens", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls && ta201.isConnected);
+  ok("a prefill without text says Opened and offers Open again", (() => {
+    const c = cards()[1]; cardBtn("Open GitHub to close", c).click();
+    return /^Opened on GitHub, \d\d:\d\d$/.test(c.querySelector(".card-actions .status.opened")?.textContent ?? "") && !!cardBtn("Open again", c);
+  })());
   await expand(2);
   ok("clicking a collapsed card opens it and closes the other", openCard() === cards()[2] && cards()[0].querySelector(".card-body").hidden);
+  ok("the collapsed header of a used prefill carries the check", !hd0().hidden && !!hd0().querySelector("svg") && cards()[2].querySelector(".card-top > .head-done").hidden);
   await expand(2);
-  ok("clicking the open card's head collapses it", !openCard());
+  ok("clicking the open card's head collapses it", !expandedCard());
   await expand(2);
   ok("no lane switch anywhere", !document.querySelector("#d-routes .card-head ~ * .lane-switch[data-focus-key^='lane']"));
   calls = __calls.length;
@@ -57,6 +79,9 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const fixCall = __calls.at(-1);
   ok("follow_up agent: teal Start fix, no confirm, sends routeId and draftHash", __calls.length === calls + 1 && fixCall.itemId === "issue-9471" && fixCall.routeId === "r3" && fixCall.draftHash === "h3" && fixCall.force === false);
   ok("success shows on the card", /The agent is on it/.test(openCard().querySelector(".card-actions").textContent));
+  ok("Start fix sends the reporter switch, off by default", fixCall.input.askReporter === false);
+  ok("a queued agent route collapses with Requested in its header", !expandedCard() && /^Requested$/.test(cards()[2].querySelector(".card-top > .head-done").textContent) && !cards()[2].querySelector(".card-top > .head-done").hidden);
+  ok("a click on another card leaves the used prefill marked", !hd0().hidden && /Copied and opened on GitHub/.test(cards()[0].querySelector(".card-actions").textContent));
   ok("a route click writes no action doc from the page", !__writes.some((w) => w[1].startsWith("actions/")));
 
   // move to another repo: two bot buttons, the close one reveals its text first
@@ -68,6 +93,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   calls = __calls.length;
   cardBtn("Confirm: transfer to widgets-desktop as widgets-bot").click(); await wait(20);
   ok("transfer sends mode transfer without text", __calls.length === calls + 1 && __calls.at(-1).routeId === "r4" && __calls.at(-1).input.mode === "transfer" && __calls.at(-1).text === "");
+  ok("a bot route that ran collapses with Done in its header", !expandedCard() && cards()[3].querySelector(".card-top > .head-done").textContent === "Done" && !cards()[3].querySelector(".card-top > .head-done").hidden);
   items(F); await wait(5);
   await openItem("issue-9471");
   await expand(3);
@@ -94,6 +120,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   window.__reply = () => ({ ok: false, result: "jbarreiros commented 12 minutes ago. Re-check before posting.", stale: true, forceable: true });
   cardBtn("Confirm: ask for a debug log as widgets-bot").click(); await wait(20);
   ok("a refusal shows as failed on the card", /jbarreiros commented 12 minutes ago/.test(openCard().textContent));
+  ok("a refused action leaves its card expanded and unsettled", !!expandedCard() && !expandedCard().classList.contains("settled") && expandedCard().querySelector(".card-top > .head-done").hidden && !expandedCard().querySelector(".card-x").hidden);
   window.__reply = () => ({ ok: false, result: "This route already ran. The board shows its result.", duplicate: true });
   cardBtn("Ask for a debug log").click(); await wait(5);
   cardBtn("Confirm: ask for a debug log as widgets-bot").click(); await wait(20);
@@ -134,11 +161,31 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("review: each comment shows its diff hunk with added and removed lines", hunks.length === 2 && !!hunks[0].querySelector(".h-add") && !!hunks[0].querySelector(".h-del") && hunks.every((x) => x.querySelectorAll("span").length <= 12)
     && !!(hunks[0].compareDocumentPosition(hunks[0].parentElement.querySelector(".c-text")) & Node.DOCUMENT_POSITION_FOLLOWING));
   ok("review button label and color from the event", cardBtn("Request changes")?.classList.contains("intent-push"));
+  const evSeg = () => [...openCard().querySelectorAll(".review-event .seg")];
+  ok("review: a switch for the event, preset from the route", evSeg().map((b) => b.textContent).join() === "Request changes,Comment,Approve" && evSeg().find((b) => b.getAttribute("aria-pressed") === "true").textContent === "Request changes");
+  evSeg()[1].click(); await wait(5);
+  ok("review: the button follows the picked event", !cardBtn("Request changes") && cardBtn("Comment")?.classList.contains("intent-talk"));
+  cardBtn("Comment").click(); await wait(5);
+  ok("review: the confirm names the picked event", !!cardBtn("Confirm: comment as widgets-bot"));
+  evSeg()[0].click(); await wait(5);
+  ok("review: switching back drops the open confirm", !!cardBtn("Request changes") && !cardBtn("Confirm: comment as widgets-bot"));
   checks[1].click();
   cardBtn("Request changes").click(); await wait(5);
   calls = __calls.length;
   cardBtn("Confirm: request changes as widgets-bot").click(); await wait(20);
   ok("review sends the checked comment ids", JSON.stringify(__calls.at(-1).input.commentIds) === '["c1"]' && /Two small things/.test(__calls.at(-1).text));
+  ok("review: an unchanged event is not sent", __calls.at(-1).input.event === undefined);
+  items(F); await wait(10);
+  await openItem("pr-9473");
+  evSeg()[2].click(); await wait(5);
+  cardBtn("Approve").click(); await wait(5);
+  cardBtn("Confirm: approve as widgets-bot").click(); await wait(20);
+  ok("review: a picked event goes to the server as input.event", __calls.at(-1).input.event === "approve" && __calls.at(-1).routeId === "r1");
+  items(with_("pr-9473", (d) => ({ ...d, author: "widgets-bot", authorType: "bot" }))); await wait(10);
+  await openItem("pr-9473");
+  ok("review: the bot's own PR has no event switch", !expandedCard().querySelector(".review-event"));
+  items(F); await wait(10);
+  await openItem("pr-9473");
   ok("with a take_over covering every judged thread the list moves onto that card", document.getElementById("d-threads").hidden && cards()[3].querySelectorAll(".decisions > li").length === 2);
   calls = __calls.length;
   ok("merge in his name is a compact green row", cards()[1].classList.contains("compact") && cardBtn("Open GitHub to merge", cards()[1])?.classList.contains("intent-finish"));
@@ -204,7 +251,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   calls = __calls.length;
   cardBtn("Copy escalate command, open GitHub", cards()[0]).click(); await wait(20);
   ok("escalate copies exactly the command and opens the discussion", window.__clip === "@widgets-bot escalate" && window.__opened.at(-1) === "https://github.com/acme/widgets/discussions/9476#issue-comment-box" && __calls.length === calls);
-  ok("escalate shows his avatar", avatarOf(cardBtn("Copy escalate command, open GitHub", cards()[0]), "octocat"));
+  ok("escalate shows his avatar", avatarOf(cardBtn("Copy again", cards()[0]), "octocat") && /^Copied and opened on GitHub/.test(cards()[0].querySelector(".status.opened").textContent));
 
   // issue to a discussion
   await openItem("issue-9477");
@@ -213,12 +260,27 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("move to a discussion opens the issue page, copies nothing", window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9477" && __calls.length === calls && window.__clip === "@widgets-bot escalate");
   ok("react chore shows its emoji", !!cardBtn("👍 React", cards()[2]));
 
+  // The opened mark from the server's route field
+  localOpened.clear();
+  items(routeMap("issue-9471", "r1", (r) => ({ ...r, opened: { at: new Date().toISOString() } }))); await wait(10);
+  await openItem("issue-9471");
+  ok("a card the server marks as opened starts collapsed with its confirmation", !expandedCard() && /^Copied and opened, \d\d:\d\d$/.test(hd0().textContent) && !hd0().hidden);
+  await expand(0);
+  ok("the opened mark comes from the server's route field", /^Copied and opened on GitHub, \d\d:\d\d$/.test(openCard().querySelector(".status.opened")?.textContent ?? "") && !!cardBtn("Copy again"));
+  items(F); await wait(10);
+  ok("a route the server no longer marks is plain again", !openCard().querySelector(".status.opened") && !!cardBtn("Copy reply, open GitHub") && hd0().hidden && !cards()[0].classList.contains("settled") && !cards()[0].querySelector(".card-x").hidden);
+
   // done state from the server and draft persistence
   items(routeMap("issue-9471", "r3", (r) => ({ ...r, done: { status: "done", result: "https://github.com/acme/widgets/pull/999" } }))); await wait(10);
   await openItem("issue-9471");
-  ok("a done route opens with its result and a link", openCard() === cards()[2] && /The agent took this on/.test(openCard().textContent) && openCard().querySelector(".card-actions a")?.href.endsWith("/pull/999"));
-  await expand(0);
+  const hd2 = cards()[2].querySelector(".card-top > .head-done");
+  ok("on a fresh open a done route is collapsed, the recommended one is open", expandedCard() === cards()[0] && !cards()[2].classList.contains("open") && cards()[2].classList.contains("settled"));
+  ok("the done row carries its confirmation and the link inline", !hd2.hidden && /^The agent took this on·view on GitHub$/.test(hd2.textContent.replace(/\s/g, (c) => (c === " " ? " " : ""))) && hd2.querySelector("a")?.href.endsWith("/pull/999") && hd2.querySelector("a").target === "_blank" && cards()[2].querySelector(".card-x").hidden);
   ok("route draft persists in this browser", openCard().querySelector("textarea").value === "A PR is welcome! Edited." && /A PR is welcome! Edited\./.test(localStorage.getItem("gary:widgets:drafts") || ""));
+
+  await expand(2);
+  ok("an expanded done card shows what was sent, read-only", expandedCard() === cards()[2] && /The agent took this on/.test(cards()[2].querySelector(".card-actions").textContent) && cards()[2].querySelector(".card-actions a")?.href.endsWith("/pull/999") && [...cards()[2].querySelectorAll(".card-body textarea, .card-body input")].every((el) => el.disabled) && hd2.hidden);
+  await expand(2);
 
   // Analyze again lives in the footer and opens a note panel
   const foot = document.getElementById("d-foot");
@@ -269,6 +331,52 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("take_over without threads has no thread list", !openCard().querySelector(".decisions") && /Continues in the contributor's PR/.test(openCard().textContent));
   cardBtn("Take over").click(); await wait(20);
   ok("take_over without threads sends no decisions", __calls.at(-1).input.decisions === undefined);
+  items(F); await wait(10);
+
+  // The switch that lets a fix ask the reporter to test
+  items(routeMap("issue-9472", "r3", (r) => ({ ...r, type: "follow_up", as: "agent", actor: "agent", title: "Start fix: the dimmer file", text: "Add the config file.", params: {} }))); await wait(10);
+  await openItem("issue-9472");
+  await expand(2);
+  const ask = () => expandedCard().querySelector(".ask-reporter input");
+  ok("fix card: a switch to ask the reporter to test, off by default and without a reason", !!ask() && !ask().checked && expandedCard().querySelector(".ask-reporter").textContent === "Ask the reporter to test" && !expandedCard().querySelector(".ask-reporter-why"));
+  ask().click();
+  calls = __calls.length;
+  cardBtn("Start fix").click(); await wait(20);
+  ok("fix card: the switch goes to the server as input.askReporter", __calls.length === calls + 1 && __calls.at(-1).input.askReporter === true);
+  document.getElementById("d-close").click(); await wait(5);
+  items(routeMap("issue-9472", "r3", (r) => ({ ...r, type: "follow_up", as: "agent", actor: "agent", title: "Start fix: the dimmer file", text: "Add the config file.", draftHash: "hx", params: { askReporter: true, askReporterWhy: "Only the reporter has this device revision." } }))); await wait(10);
+  await openItem("issue-9472");
+  await expand(2);
+  ok("fix card: the agent's preset turns the switch on and shows why", ask().checked && expandedCard().querySelector(".ask-reporter-why")?.textContent === "Only the reporter has this device revision.");
+  ask().click();
+  cardBtn("Start fix").click(); await wait(20);
+  ok("fix card: he can turn a preset off", __calls.at(-1).input.askReporter === false);
+  document.getElementById("d-close").click(); await wait(5);
+  items(F); await wait(10);
+
+  // revise on a PR we already control: instructions and a button, no threads on the card
+  const reviseItem = (text) => with_("pr-9475", (d) => ({
+    ...d, hint: "Change: drop the 0x00c8 file",
+    threads: [{ id: "t1", author: "copilot-pull-request-reviewer", path: "src/restore.ts", line: 12, summary: "Guard the empty list.", verdict: "valid" }],
+    routes: [{ id: "r1", type: "revise", as: "agent", title: "Change: drop the 0x00c8 file", text, recommended: true, draftHash: "hr" }, d.routes[1]],
+  }));
+  document.getElementById("d-close").click(); await wait(5);
+  items(reviseItem("Drop the 0x00c8 file, the 0x00c9 file covers both.")); await wait(10);
+  ok("revise: the row says Change with the agent's proposal", (() => { const hint = document.querySelector('.row[data-id="pr-9475"] .r-hint'); return hint?.querySelector(".h-act").textContent === "Change" && hint.classList.contains("act-agent") && /: drop the 0x00c8 file$/.test(hint.textContent); })());
+  await openItem("pr-9475");
+  ok("revise: an agent card with the proposal in the instructions field", openCard().classList.contains("intent-agent") && openCard().querySelector("textarea").value === "Drop the 0x00c8 file, the 0x00c9 file covers both."
+    && openCard().querySelector(".card-label").textContent === "Instructions for the agent");
+  ok("revise: the button says Change and the quiet line names who commits", !!cardBtn("Change") && cardBtn("Change").classList.contains("intent-agent") && /Commits as widgets-bot/.test(openCard().querySelector(".card-actions").textContent));
+  ok("revise: no take-over wording and no thread list on the card", !/Continues in the contributor's PR/.test(openCard().textContent) && !/Take over/.test(openCard().textContent) && !openCard().querySelector(".decisions"));
+  ok("revise: the open threads keep their own list", !document.getElementById("d-threads").hidden && /Guard the empty list/.test(document.getElementById("d-threads").textContent));
+  openCard().querySelector("textarea").value = "  "; openCard().querySelector("textarea").dispatchEvent(new Event("input"));
+  calls = __calls.length;
+  cardBtn("Change").click(); await wait(20);
+  ok("revise: empty instructions are not sent", __calls.length === calls && /Write the instructions first/.test(openCard().textContent));
+  openCard().querySelector("textarea").value = "Drop the 0x00c8 file only."; openCard().querySelector("textarea").dispatchEvent(new Event("input"));
+  cardBtn("Change").click(); await wait(20);
+  ok("revise sends the edited instructions without decisions and without a confirm", __calls.length === calls + 1 && __calls.at(-1).routeId === "r1" && __calls.at(-1).text === "Drop the 0x00c8 file only." && __calls.at(-1).input.decisions === undefined);
+  document.getElementById("d-close").click(); await wait(5);
   items(F); await wait(10);
   document.getElementById("d-close").click(); await wait(5);
 
@@ -518,7 +626,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const ZW = window.__board;
   ok("title and storage come from the board info", document.getElementById("board-title").textContent === "widgets triage" && document.title === "widgets triage" && document.getElementById("dry-run").hidden);
   // What the server sends per route for an account mode: "none" has no bot, "own" runs bot routes under his login
-  const PUSHING = new Set(["address_review", "take_over", "drive", "follow_up"]);
+  const PUSHING = new Set(["address_review", "take_over", "revise", "drive", "follow_up"]);
   const PREFILL = new Set(["reply", "request_logs", "reopen", "follow_up"]);
   const served = (mode) => F.map(([id, d]) => [id, { ...d, routes: d.routes.map((r) => {
     const as = r.as;

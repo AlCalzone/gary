@@ -86,7 +86,29 @@ mk case "{${BASE/maintainer/contributor},\"takenOver\":true,\"hint\":\"Fix: x\",
 expect "address_review on a taken-over contributor PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
 node $B put items pr-12 $H/good.json > /dev/null 2>&1
 bad_case "drive on a contributor PR" "taken-over PRs" "{${BASE/maintainer/contributor},\"hint\":\"Drive: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"drive\",\"title\":\"Drive: x\",\"as\":\"agent\",\"recommended\":true}]}"
-bad_case "take_over replace without callout" "needs a callout" "{$BASE,\"hint\":\"Take over: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"take_over\",\"title\":\"Take over: x\",\"as\":\"agent\",\"params\":{\"mode\":\"replace\"},\"recommended\":true}]}"
+CONTRIB=${BASE/maintainer/contributor}
+BOTPR=${BASE/maintainer/bot}
+TO='"id":"r1","type":"take_over","title":"Take over: x","as":"agent","recommended":true'
+RV='"id":"r1","type":"revise","title":"Change: x","as":"agent","recommended":true'
+bad_case "take_over replace without callout" "needs a callout" "{$CONTRIB,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"replace\"}}]}"
+mk case "{$CONTRIB,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"push\"}}]}"
+expect "take_over on a contributor PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "take_over on a bot PR" "Use revise on this PR" "{$BOTPR,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"push\"}}]}"
+bad_case "take_over on a maintainer PR" "Use revise on this PR" "{$BASE,\"hint\":\"Take over: x\",\"routes\":[{$TO}]}"
+bad_case "take_over on a taken-over PR" "Use revise on this PR" "{$CONTRIB,\"takenOver\":true,\"hint\":\"Take over: x\",\"routes\":[{$TO}]}"
+bad_case "take_over replace on a bot PR" "Use revise on this PR" "{$BOTPR,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"replace\"},\"callout\":\"No push access\"}]}"
+mk case "{$BOTPR,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Drop the 0x00c8 file\"}]}"
+expect "revise on a bot PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+expect "validate accepts revise on a bot PR" 0 "1 items checked" node $B validate pr-12
+mk case "{$BOTPR,\"hint\":\"Take over: x\",\"routes\":[{$TO,\"params\":{\"mode\":\"push\"}}]}"
+node $B put --no-validate items pr-12 $H/case.json > /dev/null 2>&1
+expect "validate rejects a stored take_over on a bot PR" 1 "Use revise on this PR" node $B validate pr-12
+mk case "{$CONTRIB,\"takenOver\":true,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Rename it\"}]}"
+expect "revise on a taken-over contributor PR is fine" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "revise on a contributor PR" "Use take_over on a contributor PR" "{$CONTRIB,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Rename it\"}]}"
+bad_case "revise without text" "revise needs a text" "{$BOTPR,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\" \"}]}"
+bad_case "revise with params" "a revise route has no params" "{$BOTPR,\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"Rename it\",\"params\":{\"mode\":\"push\"}}]}"
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 bad_case "finding names no route" 'names no route' "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[$R1],\"findings\":[{\"severity\":\"major\",\"text\":\"x\",\"routeId\":\"r3\"}]}"
 bad_case "bot command in bot text" 'would post the command' "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"@widgets-bot escalate\",\"recommended\":true}]}"
 bad_case "chore with merge" 'a chore cannot run' "{$BASE,\"hint\":\"Chore: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"chore\",\"title\":\"Chore: x\",\"as\":\"bot\",\"params\":{\"action\":\"merge\"},\"recommended\":true}]}"
@@ -120,6 +142,46 @@ expect "an item without routes needs no hint" 0 '"ok":true' zsh -c "print '{\"ro
 mk case "{$BASE,\"hint\":\"Approve: x\",\"threads\":[{\"id\":\"PRRT_1\",\"verdict\":\"valid\"}],\"routes\":[{\"id\":\"r1\",\"type\":\"review\",\"title\":\"Approve: x\",\"as\":\"bot\",\"params\":{\"event\":\"approve\"},\"recommended\":true},{\"id\":\"r2\",\"type\":\"merge\",\"title\":\"Merge: x\",\"as\":\"me\"}]}"
 expect "approve while a thread is valid is a warning" 0 "warning: pr-12: routes[0] (r1): approves while a thread is judged valid" node $B put items pr-12 $H/case.json
 expect "merge while a thread is valid is a warning" 0 "merges while a thread is judged valid" node $B put items pr-12 $H/case.json
+
+# A review with something for the contributor is a change request
+RVW='"id":"r1","type":"review","title":"Review: x","as":"bot","recommended":true,"text":"One thing."'
+mk case "{$CONTRIB,\"hint\":\"Review: x\",\"routes\":[{$RVW,\"params\":{\"event\":\"comment\"}}]}"
+expect "a preset comment review is a warning" 0 'warning: pr-12: routes[0] (r1): a review with something for the contributor is a change request' node $B put items pr-12 $H/case.json
+mk case "{$CONTRIB,\"hint\":\"Review: x\",\"routes\":[{$RVW,\"params\":{\"event\":\"request_changes\"}}]}"
+expect "a change request has no such warning" 0 '"ok":true' zsh -c "node $B put items pr-12 $H/case.json 2>&1 | grep -v 'change request'"
+expect "a change request has no such warning (stderr)" 1 '' zsh -c "node $B put items pr-12 $H/case.json 2>&1 | grep 'is a change request'"
+mk case "{$BOTPR,\"hint\":\"Review: x\",\"routes\":[{$RVW,\"params\":{\"event\":\"comment\"}}]}"
+expect "a comment review on a bot's PR is fine" 1 '' zsh -c "node $B put items pr-12 $H/case.json 2>&1 | grep 'is a change request'"
+
+# After the agent pushed, the item offers the decision
+SHA1=1111111111111111111111111111111111111111
+PUSHED="\"reviewedSha\":\"$SHA1\",\"pushed\":{\"action\":\"take_over\",\"sha\":\"$SHA1\",\"at\":\"2026-11-18T10:00:00Z\"}"
+RPLY='{"id":"r1","type":"reply","title":"Reply: block moved","as":"me","text":"I moved the block.","recommended":true}'
+MRG='{"id":"r1","type":"merge","title":"Merge","as":"me","text":"Thanks!","recommended":true,"callout":"CI is still running on the new head"}'
+bad_case "only a reply after a finished push" "needs a route that decides the PR" "{$CONTRIB,\"takenOver\":true,$PUSHED,\"hint\":\"Reply: block moved\",\"routes\":[$RPLY]}"
+bad_case "no route after a finished push" "needs a route that decides the PR" "{$CONTRIB,\"takenOver\":true,$PUSHED,\"routes\":[]}"
+mk case "{$CONTRIB,\"takenOver\":true,\"ci\":\"pending\",$PUSHED,\"hint\":\"Merge\",\"routes\":[$MRG]}"
+expect "a merge with a CI callout after a push is fine while CI runs" 0 '"ok":true' node $B put items pr-12 $H/case.json
+mk case "{$CONTRIB,\"takenOver\":true,${PUSHED/\"reviewedSha\":\"$SHA1\"/\"reviewedSha\":\"2222222222222222222222222222222222222222\"},\"hint\":\"Reply: block moved\",\"routes\":[$RPLY]}"
+expect "a push on an older head asks for nothing" 0 '"ok":true' node $B put items pr-12 $H/case.json
+bad_case "pushed with an unknown action" "pushed is only for PRs" "{$CONTRIB,${PUSHED/take_over/merge},\"hint\":\"Merge\",\"routes\":[$MRG]}"
+mk case "{$BOTPR,${PUSHED/take_over/revise},\"ci\":\"failing\",\"hint\":\"Change: x\",\"routes\":[{$RV,\"text\":\"The lint job fails on the new file. Fix the import order.\"}]}"
+expect "a revise for red CI after our push is a deciding route" 0 '"ok":true' node $B put items pr-12 $H/case.json
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
+
+# The switch that lets a fix ask the reporter
+FU='"id":"r1","type":"follow_up","title":"Start fix: x","as":"agent","recommended":true,"text":"Fix it"'
+ISSUE=${${BASE/\"kind\":\"pr\"/\"kind\":\"issue\"}/pull\/12/issues\/21}
+mk case "{$ISSUE,\"hint\":\"Start fix: x\",\"routes\":[{$FU,\"params\":{\"askReporter\":true,\"askReporterWhy\":\"Only the reporter has this device revision.\"}}]}"
+expect "a fix route may preset askReporter with a reason" 0 '"ok":true' node $B put items issue-90 $H/case.json
+mk case "{$ISSUE,\"hint\":\"Start fix: x\",\"routes\":[{$FU,\"params\":{\"askReporter\":\"yes\"}}]}"
+expect "askReporter must be a boolean" 1 "params.askReporter must be true or false" node $B put items issue-90 $H/case.json
+mk case "{$ISSUE,\"hint\":\"Start fix: x\",\"routes\":[{$FU,\"params\":{\"askReporter\":false,\"askReporterWhy\":\"x\"}}]}"
+expect "askReporterWhy needs askReporter true" 1 "needs askReporter true" node $B put items issue-90 $H/case.json
+mk case "{$ISSUE,\"hint\":\"Reply: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: x\",\"as\":\"bot\",\"text\":\"x\",\"recommended\":true,\"params\":{\"askReporter\":true}}]}"
+expect "askReporter is only for the agent's fix route" 1 'askReporter is only for follow_up routes' node $B put items issue-90 $H/case.json
+node $B put items issue-90 --delete > /dev/null 2>&1
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 
 # gary validate over stored items
 mk case "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"s1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"x\",\"recommended\":true}]}"

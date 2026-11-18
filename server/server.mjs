@@ -13,13 +13,13 @@ import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
-import { fixBlock, fixStateOf, loadFixSources } from "../scripts/lib/fixes.mjs";
+import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
-import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "../scripts/lib/routes.mjs";
+import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
 const MAX_BODY = 256 * 1024;
@@ -42,7 +42,7 @@ export const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "un
 // What a bot action that ran says about the thread, for `handled.verified`
 const VERIFIED_BY_ACTION = { comment: "commented", review: "commented", create_issue: "commented", close: "closed", label: "labeled" };
 // The routes a pushing agent job blocks on its PR
-export const PUSH_BLOCKED_TYPES = ["review", "merge", "close", "address_review", "take_over", "drive", "format"];
+export const PUSH_BLOCKED_TYPES = ["review", "merge", "close", "address_review", "take_over", "revise", "drive", "format"];
 const PUSH_BLOCKED = (route) => PUSH_BLOCKED_TYPES.includes(route.type) || (route.type === "chore" && route.params?.action === "ready");
 const MERGEABLE_STATES = { MERGEABLE: "mergeable", CONFLICTING: "conflicting", UNKNOWN: "unknown" };
 
@@ -55,7 +55,15 @@ export function draftHash(route, item) {
 }
 
 function routesOf(item) {
-	return Array.isArray(item?.routes) ? item.routes.filter((r) => r && typeof r === "object" && typeof r.id === "string" && r.id) : [];
+	const stored = Array.isArray(item?.routes) ? item.routes.filter((r) => r && typeof r === "object" && typeof r.id === "string" && r.id) : [];
+	return stored.map((r) => servedRoute(r, item));
+}
+
+/** The item's hint as served. It follows the title of a recommended route that is served under another type. */
+function servedHint(item) {
+	const stored = Array.isArray(item?.routes) ? item.routes.find((r) => r?.recommended === true) : undefined;
+	if (!stored || stored.title !== item.hint) return item.hint;
+	return servedRoute(stored, item).title;
 }
 
 /** The actor per route as the page shows it. A move to a repository gets one actor per button. */
@@ -84,10 +92,12 @@ export function validateInput(route, item, input) {
 	const params = isObject(route.params) ? route.params : {};
 
 	if (route.type === "review") {
-		checkKeys(input, ["commentIds"], "input");
+		checkKeys(input, ["commentIds", "event"], "input");
+		if (input.event !== undefined && !Object.hasOwn(REVIEW_EVENTS, input.event)) throw new Refusal(`input.event must be one of ${Object.keys(REVIEW_EVENTS).join(", ")}.`);
+		const event = input.event === undefined ? {} : { event: input.event };
 		const comments = Array.isArray(params.comments) ? params.comments : [];
 		const known = new Set(comments.map((c) => c?.id).filter((id) => typeof id === "string"));
-		if (input.commentIds === undefined) return { commentIds: [...known] };
+		if (input.commentIds === undefined) return { commentIds: [...known], ...event };
 		if (!Array.isArray(input.commentIds)) throw new Refusal("input.commentIds must be an array.");
 		const ids = new Set();
 		for (const id of input.commentIds) {
@@ -95,7 +105,7 @@ export function validateInput(route, item, input) {
 			if (ids.has(id)) throw new Refusal("input.commentIds lists a comment twice.");
 			ids.add(id);
 		}
-		return { commentIds: [...ids] };
+		return { commentIds: [...ids], ...event };
 	}
 
 	if (route.type === "address_review" || route.type === "take_over") {
@@ -139,12 +149,15 @@ export function validateInput(route, item, input) {
 	}
 
 	if (route.type === "follow_up") {
-		checkKeys(input, ["title"], "input");
-		if (input.title === undefined) return {};
+		// Only the card that hands the fix to the agent has the switch
+		checkKeys(input, route.as === "agent" ? ["title", "askReporter"] : ["title"], "input");
+		if (input.askReporter !== undefined && typeof input.askReporter !== "boolean") throw new Refusal("input.askReporter must be true or false.");
+		const ask = input.askReporter === undefined ? {} : { askReporter: input.askReporter };
+		if (input.title === undefined) return ask;
 		if (typeof input.title !== "string" || !input.title.trim() || input.title.length > MAX_TITLE) {
 			throw new Refusal(`input.title must be a non-empty string of at most ${MAX_TITLE} characters.`);
 		}
-		return { title: input.title.trim() };
+		return { title: input.title.trim(), ...ask };
 	}
 
 	if (route.type === "close" && answerParams(route)) {
@@ -251,11 +264,17 @@ export function planRoute(route, item, input, text, mode = "bot") {
 				return { agent: true, action: "address_review", params: { decisions: chosen.decisions }, text };
 			}
 			case "follow_up":
-				return { agent: true, action: "start_fix", params: params.finding === undefined ? {} : { finding: params.finding }, text };
+				// The switch on the card decides. Without it nobody asks the reporter
+				return { agent: true, action: "start_fix", params: { ...(params.finding !== undefined && { finding: params.finding }), askReporter: chosen.askReporter === true }, text };
 			case "take_over": {
-				const refusal = takeOverRefusal(route);
+				const refusal = takeOverRefusal(route, item);
 				if (refusal) throw new Refusal(refusal);
 				return { agent: true, action: "take_over", params: { mode: params.mode ?? "push", ...(chosen.decisions && { decisions: chosen.decisions }) }, text };
+			}
+			case "revise": {
+				const refusal = reviseRefusal(item, text);
+				if (refusal) throw new Refusal(refusal);
+				return { agent: true, action: "revise", params: {}, text };
 			}
 			case "drive": {
 				const maxRounds = chosen.maxRounds ?? params.maxRounds ?? 3;
@@ -281,8 +300,11 @@ export function planRoute(route, item, input, text, mode = "bot") {
 			const comments = (Array.isArray(params.comments) ? params.comments : [])
 				.filter((c) => chosen.commentIds.includes(c.id))
 				.map((c) => ({ path: c.path, line: c.line, ...(c.startLine !== undefined && { startLine: c.startLine }), text: commentBody(c) }));
-			const reviewParams = { event: params.event, ...(comments.length && { comments }) };
-			if (!Object.hasOwn(REVIEW_EVENTS, params.event ?? "")) throw new Refusal("The review route has no valid event.");
+			const event = chosen.event ?? params.event;
+			const reviewParams = { event, ...(comments.length && { comments }) };
+			if (!Object.hasOwn(REVIEW_EVENTS, event ?? "")) throw new Refusal("The review route has no valid event.");
+			const suggests = (Array.isArray(params.comments) ? params.comments : []).some((c) => chosen.commentIds.includes(c.id) && typeof c.suggestion === "string");
+			if (event === "approve" && suggests) throw new Refusal("An approval cannot carry suggestions. Uncheck them, or submit the review as a change request or a comment.");
 			if (typeof item.reviewedSha === "string") reviewParams.sha = item.reviewedSha;
 			return { steps: [{ action: "review", params: reviewParams, text }], guard: { action: "review", params: reviewParams } };
 		}
@@ -887,13 +909,20 @@ export async function startBoardServer({
 		const clicked = clickedByKey(name, actions);
 		const partDone = Object.fromEntries(Object.keys(PARTS).map((p) => [p, partsByKey(name, actions, p)]));
 		const working = await workingByItem(name, actions);
+		const opened = await readOpened(name);
 		const fixSources = await withInstance(name, () => loadFixSources(name));
-		const fixOf = (id, data) => (data.kind === "issue" || data.kind === "discussion" ? fixStateOf(id, fixSources) : null);
+		const autoFixes = { pending: pendingAutoFixes(fixSources), max: instance.config.maxPendingAutoFixes };
+		const fixOf = (id, data) => {
+			const fix = data.kind === "issue" || data.kind === "discussion" ? fixStateOf(id, fixSources) : null;
+			// A pending fix of the routine counts toward its limit, so the page can show "N of 10"
+			return fix && fix.startedBy === "routine" && BLOCKING_FIX_STATES.includes(fix.state) ? { ...fix, limit: autoFixes } : fix;
+		};
 		return items.map(({ id, data }) => ({
 			...data,
 			liveState: liveStates.get(`${name}/${id}`),
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),
+			...(typeof data.hint === "string" && { hint: servedHint(data) }),
 			routes: routesOf(data).map((route) => {
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
@@ -903,7 +932,10 @@ export async function startBoardServer({
 					const done = def.params(route) ? partDone[p].get(`${name}|${id}|${route.id}|${partHash(p, route, data)}`) : undefined;
 					if (done) parts[def.doneField] = done;
 				}
-				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...parts };
+				// Serve the mark only for the draft he used
+				const mark = opened[id]?.[route.id];
+				const used = mark?.draftHash === hash && typeof mark.at === "string" ? { opened: { at: mark.at } } : {};
+				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...used, ...parts };
 			}),
 			instance: name,
 			id,
@@ -1001,7 +1033,12 @@ export async function startBoardServer({
 		// gary pause and resume change control.json, and open pages show the switch at once
 		addWatch(w, i.state, (_type, file) => {
 			if (file === "control.json") schedulePush(name, "board");
+			// A recorded fix PR, its ready mark and a new snapshot change item.fix
+			if (file === "fixes.json" || file === "snapshot.json" || file === "snapshot.pending.json") schedulePush(name, "items");
 		});
+		// A round of a drive changes item.working and the stage of item.fix
+		mkdirSync(driveDir(name), { recursive: true });
+		addWatch(w, driveDir(name), () => schedulePush(name, "items"));
 		// A claim taken or released changes item.working
 		mkdirSync(claimsDir(name), { recursive: true });
 		addWatch(w, claimsDir(name), () => schedulePush(name, "items"));
@@ -1134,6 +1171,25 @@ export async function startBoardServer({
 	}
 
 	const itemFile = (name, itemId) => join(served.get(name).board, "items", itemId + ".json");
+
+	// The `as: "me"` buttons he used: `{ <itemId>: { <routeId>: { at, draftHash, text } } }`
+	const openedFile = (name) => join(served.get(name).state, "opened.json");
+	const readOpened = async (name) => {
+		const data = await readJson(openedFile(name));
+		return isObject(data) ? data : {};
+	};
+
+	/** Records that he used the prefill button of `route` with `text`. Drops the item's marks for drafts that are gone. */
+	async function markOpened(name, itemId, item, route, text) {
+		const file = openedFile(name);
+		await withLock(docLocks, file, async () => {
+			const all = await readOpened(name);
+			const hashes = new Map(routesOf(item).map((r) => [r.id, draftHash(r, item)]));
+			const kept = Object.entries(isObject(all[itemId]) ? all[itemId] : {}).filter(([id, o]) => hashes.get(id) === o?.draftHash);
+			await writeAtomic(file, { ...all, [itemId]: { ...Object.fromEntries(kept), [route.id]: { at: new Date().toISOString(), draftHash: hashes.get(route.id), text } } });
+		});
+		schedulePush(name, "items");
+	}
 
 	// Run only what the agent drafted: type, actor, params and the target come from the item file
 	async function handleAction(body) {
@@ -1460,6 +1516,9 @@ export async function startBoardServer({
 		} catch {
 			// planRoute validated the same input already
 		}
+		if (route.type === "review" && chosen.event !== undefined && chosen.event !== route.params?.event) {
+			decide(name, "changed_event", itemId, item, { route: brief(route), from: route.params?.event ?? null, to: chosen.event });
+		}
 		if (!agent && chosen.alsoLabel === false) decide(name, "skipped_label", itemId, item, { route: brief(route), labels: labelParams(route) });
 		const threads = new Map((Array.isArray(item.threads) ? item.threads : []).map((t) => [t?.id, t]));
 		for (const d of chosen.decisions ?? []) {
@@ -1499,6 +1558,7 @@ export async function startBoardServer({
 		if (recommended && recommended !== route) await decide(name, "chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
 		const drafted = typeof route.text === "string" ? route.text : "";
 		if (typeof text === "string" && text !== drafted) await decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
+		await markOpened(name, itemId, item, route, typeof text === "string" ? text : "");
 		await setHandled(name, itemId, route, null);
 		return [200, { ok: true, result: "Logged." }];
 	}
@@ -1519,7 +1579,7 @@ export async function startBoardServer({
 				const route = item && routesOf(item).find((r) => r.id === routeId);
 				if (!route) return null;
 				const at = new Date().toISOString();
-				const remaining = item.routes.filter((r) => r !== route);
+				const remaining = item.routes.filter((r) => r?.id !== route.id);
 				const next = {
 					...item,
 					routes: remaining,

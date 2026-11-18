@@ -187,7 +187,13 @@ try {
 	await press("Confirm: request changes as widgets-bot");
 	ok("server logs the review as done with only the checked comment", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-12" && a.routeId === "r1" && a.route === "review" && a.status === "done" && a.via === "server" && a.params.comments?.length === 1 && a.params.comments[0].startLine === 7)));
 	ok("the page wrote no action doc of its own", actionFiles().filter((a) => a.itemId === "pr-12").length === 1);
-	ok("the card shows the result", await until(`/Done/.test(${openCardText}) && !${cardButton("Request changes")}`, 8000));
+	ok("the done card collapses with Done in its header row", await until(`!document.querySelector("#d-routes .card.open") && /^Done/.test(document.querySelector("#d-routes .card.settled .card-top > .head-done")?.textContent ?? "") && !document.querySelector("#d-routes .card.settled .card-top > .head-done").hidden`, 8000));
+	ok("the done card still shows its result when expanded", await ev(`const c = document.querySelector("#d-routes .card.settled"); return /Done/.test(c.querySelector(".card-actions").textContent) && ![...c.querySelectorAll(".card-actions button")].some((b) => b.textContent === "Request changes");`));
+	await ev(`location.reload();`);
+	await sleep(1500);
+	await until(`typeof state === "object" && !!state.items.get("widgets/pr-12")`, 15000);
+	await openItem("pr-12");
+	ok("after a reload the done card starts collapsed with its confirmation", await until(`(() => { const c = document.querySelector("#d-routes .card.settled"); return !!c && !c.classList.contains("open") && /^Done/.test(c.querySelector(".card-top > .head-done").textContent); })()`, 8000));
 
 	// Bound actions, repeats and refusals
 	const token = readFileSync(join(ROOTDIR, "state", "server-token"), "utf8").trim();
@@ -269,7 +275,9 @@ try {
 	ok("me route: no /api/action request", await ev(`return window.__apiCalls === 0;`));
 	await sleep(500);
 	ok("me route: no action doc", !actionFiles().some((a) => a.itemId === "issue-21" && a.routeId === "r1"));
-	ok("me route: opened mark shown", await until(`!!document.querySelector('#d-routes .card.open .opened-mark[aria-label="You opened this on GitHub today"] svg')`));
+	ok("me route: the card collapses and says copied and opened, with Copy again inside", await until(`(() => { const c = document.querySelector("#d-routes .card.settled"); return !!c && /^Copied and opened, \\d\\d:\\d\\d/.test(c.querySelector(".card-top > .head-done").textContent) && /Copied and opened on GitHub, \\d\\d:\\d\\d/.test(c.querySelector(".status.opened")?.textContent ?? "") && [...c.querySelectorAll(".card-actions button")].some((b) => b.textContent === "Copy again"); })()`));
+	ok("me route: the server serves the mark on the route", await until(`!!state.items.get("widgets/issue-21").routes.find((r) => r.id === "r1").opened?.at`, 8000));
+	ok("me route: the server keeps the copied text", await fileUntil(() => / \(edited\)$/.test(json(join(HOME, "state", "opened.json"))["issue-21"].r1.text)));
 	await clickCard(3);
 	await press("Open GitHub to file the issue");
 	ok("me follow_up opens the new-issue form", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/new?title=A%20%26%20B&body=Line%201")`));
@@ -316,6 +324,25 @@ try {
 	await press("Take over");
 	ok("the server queues take_over with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-14" && a.action === "take_over" && a.status === "queued" && a.params.decisions?.map((d) => d.decision).join() === "fix,fix,dismiss")));
 	ok("after the take-over is queued the PR shows the push banner and no second take-over", await until(`/The agent is changing this PR/.test(document.getElementById("d-fix").textContent) && !document.querySelector("#d-routes .card")`, 8000));
+	await closeItem();
+
+	// A stored take_over on the bot's own PR is shown and run as revise
+	writeFileSync(itemFile("pr-17"), JSON.stringify(probe("pr", 17, "https://github.com/acme/widgets/pull/17", {
+		author: "widgets-bot", authorType: "bot", hint: "Take over: drop the 0x00c8 file",
+		threads: [{ id: "t1", author: "copilot-pull-request-reviewer", path: "config/a.json", line: 3, summary: "Use the manual's name", verdict: "valid" }],
+		routes: [{ id: "r1", type: "take_over", as: "agent", title: "Take over: drop the 0x00c8 file", params: { mode: "push" }, text: "Drop the 0x00c8 file", recommended: true }],
+	})));
+	await until(`!!state.items.get("widgets/pr-17")`);
+	await revealAll();
+	ok("revise: the row of a stored take_over on a bot PR says Change", await until(`document.querySelector('.row[data-id="widgets/pr-17"] .r-hint')?.textContent === "Change: drop the 0x00c8 file"`));
+	await openItem("pr-17");
+	ok("revise: the card has the proposal as instructions, the Change button and who commits", await ev(`const c = document.querySelector("#d-routes .card.open"); return c.querySelector("textarea")?.value === "Drop the 0x00c8 file" && !!${cardButton("Change")} && /Commits as widgets-bot/.test(c.textContent);`));
+	ok("revise: no take-over wording and no thread list on the card", await ev(`const c = document.querySelector("#d-routes .card.open"); return !/Take over|Continues in the contributor's PR/.test(c.textContent) && !c.querySelector(".decisions");`));
+	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.value = "Drop the 0x00c8 file only"; ta.dispatchEvent(new Event("input"));`);
+	await press("Change");
+	ok("the server queues revise with the edited instructions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-17" && a.action === "revise" && a.route === "revise" && a.status === "queued" && a.text === "Drop the 0x00c8 file only" && JSON.stringify(a.params) === "{}")));
+	ok("the stored item keeps its route type", json(itemFile("pr-17")).routes[0].type === "take_over");
+	ok("after the revise is queued the PR shows the push banner and no second change", await until(`/The agent is changing this PR \\(your requested change/.test(document.getElementById("d-fix").textContent) && !document.querySelector("#d-routes .card")`, 8000));
 	await closeItem();
 
 	// "Not this": dismissing suggested routes
@@ -506,6 +533,36 @@ try {
 	ok("push: merge, approve and drive are hidden, the reply stays", await ev(`const t = [...document.querySelectorAll("#d-routes .card .card-head .r-hint")].map((e) => e.textContent).join("|"); return t === "Reply: on it";`));
 	ok("push: the banner", await ev(`return /The agent is changing this PR \\(take over, started/.test(document.getElementById("d-fix").textContent);`));
 	await closeItem();
+
+	// A running fix takes its issue out of the plan, from the server's fix state
+	mkdirSync(join(HOME, "state", "claims"), { recursive: true });
+	const fixClaim = join(HOME, "state", "claims", "issue-33.fix.json");
+	writeFileSync(fixClaim, JSON.stringify({ run: "run-hourly", at: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() }));
+	ok("fix parked: the server marks the fix and the row moves to the fix line", await until(`state.items.get("widgets/issue-33")?.fix?.parked === true && !document.querySelector('#board .group .row[data-id="widgets/issue-33"]') && !!document.querySelector('#fix-parked .handled-row[data-id="widgets/issue-33"]')`, 8000));
+	ok("fix parked: the line counts it", await ev(`return document.querySelector("#fix-parked summary").textContent === "Has a fix in progress: 1 · automatic: 1 of 10" && !document.getElementById("fix-parked").hidden;`));
+	await ev(`[...document.querySelectorAll('#fix-parked .handled-row[data-id="widgets/issue-33"] button')].find((b) => b.textContent === "Open").click();`);
+	ok("fix parked: its dialog opens with the fix banner", await until(`document.getElementById("detail").open && detail.id === "widgets/issue-33" && /^A fix is running\\./.test(document.getElementById("d-fix").textContent)`));
+	await closeItem();
+	rmSync(fixClaim);
+	ok("fix parked: the row is back when the fix no longer parks it", await until(`!!document.querySelector('#board .row[data-id="widgets/issue-33"]') && document.getElementById("fix-parked").hidden`, 8000));
+
+	// The review rounds of a recorded fix PR show on the issue as each stage is written, without a triage run
+	const fixesFile = join(HOME, "state", "fixes.json");
+	writeFileSync(fixesFile, JSON.stringify({ "issue-33": [{ number: 14, url: "https://github.com/acme/widgets/pull/14", branch: "triage/issue-33", run: "r", startedBy: "routine", at: new Date().toISOString() }] }));
+	const parkedChip = `document.querySelector('#fix-parked .handled-row[data-id="widgets/issue-33"] .agent-chip')?.textContent`;
+	ok("fix rounds: a recorded fix PR parks the issue at once", await until(`/^Fix: #14 (draft|open)$/.test(${parkedChip} ?? "")`, 8000));
+	ok("fix limit: the line counts the routine's fix against the limit", await ev(`return document.querySelector("#fix-parked summary").textContent === "Has a fix in progress: 1 · automatic: 1 of 10";`));
+	mkdirSync(join(HOME, "state", "drive"), { recursive: true });
+	const driveFile = join(HOME, "state", "drive", "pr-14.json");
+	const driveDoc = { actionId: "pr-14-1", repo: "acme/widgets", number: 14, maxRounds: 3, by: "fix", fixFor: "issue-33", reviewBot: "copilot", rounds: [], reviewRequestedAt: new Date().toISOString() };
+	writeFileSync(driveFile, JSON.stringify(driveDoc));
+	ok("fix rounds: the chip names round 1 when the review is requested", await until(`/, Copilot round 1 of 3$/.test(${parkedChip} ?? "")`, 8000));
+	writeFileSync(driveFile, JSON.stringify({ ...driveDoc, rounds: [{ n: 1, fixed: ["x"], dismissed: [], open: [] }] }));
+	ok("fix rounds: the chip moves to round 2 when the round is recorded", await until(`/, Copilot round 2 of 3$/.test(${parkedChip} ?? "")`, 8000));
+	rmSync(driveFile);
+	ok("fix rounds: the stage goes when the rounds end", await until(`/^Fix: #14 (draft|open)$/.test(${parkedChip} ?? "")`, 8000));
+	rmSync(fixesFile);
+	ok("fix rounds: without the record the row is back", await until(`!!document.querySelector('#board .row[data-id="widgets/issue-33"]')`, 8000));
 
 	// A handled item leaves the plan; Bring back clears the mark on the server
 	await put("issue-33", { handled: { at: new Date().toISOString(), routeId: "r1", routeType: "reply", verified: "unchanged" } });

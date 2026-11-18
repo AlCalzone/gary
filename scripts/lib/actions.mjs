@@ -1,10 +1,10 @@
 import { allowedRepo, instanceName, loadProfile, repoParts, withInstance } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
-import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReviewAsMaintainer, verifyOwnLogin, writeLogin } from "./gh.mjs";
+import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReview, verifyOwnLogin, writeLogin } from "./gh.mjs";
 
 export const KINDS = ["pr", "issue", "discussion"];
 const BOARD_ACTIONS = ["dismiss", "snooze"];
-export const AGENT_ACTIONS = ["full_review", "reanalyze", "start_fix", "address_review", "take_over", "drive", "format"];
+export const AGENT_ACTIONS = ["full_review", "reanalyze", "start_fix", "address_review", "take_over", "revise", "drive", "format"];
 const MERGE_METHODS = { squash: "SQUASH", merge: "MERGE", rebase: "REBASE" };
 const ISSUE_CLOSE_REASONS = { completed: "COMPLETED", not_planned: "NOT_PLANNED", duplicate: "DUPLICATE" };
 const DISCUSSION_CLOSE_REASONS = { completed: "RESOLVED", not_planned: "OUTDATED", duplicate: "DUPLICATE" };
@@ -204,9 +204,10 @@ export const ACTIONS = {
 		},
 	},
 	request_review: {
-		description: "Request a Copilot review on the PR under your own gh login. `params.reviewer` must be copilot and listed in the profile's reviewBots.",
+		description:
+			"Request a Copilot review on the PR under your own gh login, or as the bot with `params.as: \"bot\"`. `params.reviewer` must be copilot and listed in the profile's reviewBots.",
 		kinds: ["pr"],
-		params: ["reviewer"],
+		params: ["reviewer", "as"],
 		run: async (ctx) => {
 			if (ctx.params.reviewer !== "copilot") throw new Error("params.reviewer must be copilot");
 			if (!loadProfile().reviewBots.includes("copilot")) throw new Error("The profile does not list copilot in reviewBots");
@@ -214,7 +215,7 @@ export const ACTIONS = {
 			const target = await resolveTarget(ctx);
 			requireOpen(target);
 			// requestCopilotCodeReview also starts a new request after a finished Copilot review, per its schema description
-			const outcome = await requestCopilotReviewAsMaintainer(target.id, { dryRun: ctx.dryRun });
+			const outcome = await requestCopilotReview(target.id, { dryRun: ctx.dryRun, as: ctx.params.as ?? "me" });
 			if (ctx.dryRun) {
 				ctx.invocations.push(outcome.invocation);
 				return target.url;

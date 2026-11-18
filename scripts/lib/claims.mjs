@@ -15,6 +15,7 @@ export const ACTION_KINDS = {
 	full_review: "review",
 	reanalyze: "review",
 	take_over: "push",
+	revise: "push",
 	address_review: "push",
 	drive: "push",
 	format: "push",

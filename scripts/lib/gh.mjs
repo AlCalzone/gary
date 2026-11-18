@@ -123,22 +123,26 @@ export async function gh(args, { input } = {}) {
 }
 
 /**
- * Requests a Copilot review on a PR under your own stored `gh` login. With a bot configured this is the only
- * way to reach that login: it runs only this fixed mutation, after checking that the login is `me`.
+ * Requests a Copilot review on a PR. By default it runs under your own stored `gh` login. With a bot configured
+ * this is the only way to reach that login: it runs only this fixed mutation, after checking that the login is `me`.
+ * With `as: "bot"` the bot's token sends the same mutation.
  * With `dryRun` it runs only the login check and returns the invocation it would send.
  */
-export async function requestCopilotReviewAsMaintainer(pullRequestId, { dryRun = false } = {}) {
+export async function requestCopilotReview(pullRequestId, { dryRun = false, as = "me" } = {}) {
 	if (typeof pullRequestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(pullRequestId)) {
 		throw new Error("pullRequestId must be a node id");
 	}
-	const login = await verifyOwnLogin();
+	if (as !== "me" && as !== "bot") throw new Error('as must be "me" or "bot"');
+	if (as === "bot" && !loadConfig().bot) throw new Error("No bot account is configured, so the bot cannot request the review");
+	const login = as === "bot" ? loadConfig().bot.login : await verifyOwnLogin();
+	const env = as === "bot" ? { ...process.env, ...GH_ENV, GH_TOKEN: botToken() } : storedLoginEnv();
 	const query = `mutation($id: ID!) { requestCopilotCodeReview(input: { pullRequestId: $id }) { success failureReason } }`;
 	const body = { query, variables: { id: pullRequestId } };
 	if (dryRun) return { dryRun: true, login, invocation: { command: ["gh", ...GRAPHQL_ARGS], as: login, stdin: body } };
 
 	let stdout;
 	try {
-		stdout = await run(GRAPHQL_ARGS, JSON.stringify(body), storedLoginEnv());
+		stdout = await run(GRAPHQL_ARGS, JSON.stringify(body), env);
 	} catch (e) {
 		stdout = e.stdout;
 		if (!stdout || e.timedOut) throw new Error(e.message);

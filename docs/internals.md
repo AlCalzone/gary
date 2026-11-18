@@ -116,7 +116,7 @@ It sends the write through the board server, so it queues behind clicks on the s
 
 ### gary watch-queue
 
-`gary watch-queue` prints one line like `{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued.
+`gary watch-queue` prints one line like `{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued. For every drive that waits for its review bot it reads the PR once a minute and prints one more line with `"event": "review-arrived"`, or `"review-timeout"` after 30 minutes, so the next round starts without the hourly run.
 
 ### gary validate
 
@@ -185,7 +185,7 @@ The page cannot send an arbitrary action. A click sends `{ itemId, routeId, text
 - A route that already ran or was queued with the same draft is refused with 409.
 - A route whose actor is `me` never reaches GitHub through the server: the page copies its text and opens the thread, and the maintainer acts there. That covers replies to people, every close and every merge. The one close the server runs is a `move` with `input.mode: "close"`, which posts the route's text and closes as not planned.
 - A bot route runs after the click as the bot, or under the maintainer's login in `own` mode. An `unavailable` route is refused.
-- An agent route writes a queued action doc. `drive` and `address_review` are refused unless the PR is by a maintainer, a bot or Copilot, or carries `takenOver: true`. Pushing our commits to a contributor's PR is always a take-over, so a `take_over` route carries the per-thread decisions there.
+- An agent route writes a queued action doc. `drive` and `address_review` are refused unless the PR is by a maintainer, a bot or Copilot, or carries `takenOver: true`. Pushing our commits to a contributor's PR is always a take-over, so a `take_over` route carries the per-thread decisions there. `take_over` is refused on every PR where `drive` is allowed. A change to such a PR is a `revise` route: the agent follows the route's text, which the maintainer can edit on the "Change" card, and pushes to the PR branch. A stored `take_over` with mode `push` on such a PR is served and run as `revise` (`servedRoute` in `scripts/lib/routes.mjs`), so the board is right before the next triage rewrites the item.
 - `dismiss_route` removes one suggested route and remembers it with the reason. When it was the last route, a `reanalyze` request is queued so the agent proposes something else.
 - Before a route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends the click again past that check after a second confirm. A moved head still blocks an approval and a review with inline comments. The code is in `scripts/lib/guard.mjs`.
 - The server writes one action doc per bot or agent click with `routeId`, `route`, `draftHash`, `edited`, the action it ran and the result.
@@ -242,7 +242,7 @@ Gary never reviews style. A full PR review runs the project's formatter and lint
 
 ## Claims
 
-`gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` (kinds `fix`, `review`, `push`) marks an item as worked on by one run. It exits with 3 when someone else holds the claim. Without `--request`, a `fix` claim is also refused while another `start_fix` request is queued or a fix PR is in draft or open. Every worker releases its claims on every exit path and sets its action doc to `done` or `failed`, because queued or claimed docs do not expire. The master marks the jobs of dead workers as failed and releases their claims. `gary release` frees it, and `gary claims` lists the current ones. Every fix, full review or triage, take-over, address_review, drive round and format claims its item first and releases it at the end, also on failure. An autonomous fix reads the queue right before it starts and before it opens a PR, and gives way to a `start_fix` request for the same item.
+`gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` (kinds `fix`, `review`, `push`) marks an item as worked on by one run. It exits with 3 when someone else holds the claim. Without `--request`, a `fix` claim is also refused while another `start_fix` request is queued or a fix PR is in draft or open. Every worker releases its claims on every exit path and sets its action doc to `done` or `failed`, because queued or claimed docs do not expire. The master marks the jobs of dead workers as failed and releases their claims. `gary release` frees it, and `gary claims` lists the current ones. Every fix, full review or triage, take-over, revise, address_review, drive round and format claims its item first and releases it at the end, also on failure. An autonomous fix reads the queue right before it starts and before it opens a PR, and gives way to a `start_fix` request for the same item.
 
 ## Answers when closing discussions
 
@@ -264,6 +264,12 @@ Every pushing mode returns routes for the new head only: routes written before t
 
 The code keeps `fix: { state, pr, startedBy, since }` per issue and discussion, with `state` `working`, `draft`, `open`, `merged` or `closed`. `gary fixes --json` lists it. The fix flow calls `gary fix-record <itemId> --pr <n> --branch <name> --run <run> --by routine|maintainer` right after `gh pr create`, and checks `gary fixes` before it creates the branch and before it opens the PR. The PR's own item carries `fixFor: { itemId, ref }`. The validator and the server refuse a `follow_up` route as agent while the state is `working`, `draft` or `open`, and every hourly run removes such stored routes. Gary's own draft fix PR is the one draft that becomes a board item, once its CI finished. A merged fix leads to a close card on the source item, and a closed unmerged fix allows a new one.
 
+While the state is `working`, `draft` or `open`, the fix carries `parked: true` (`parksItem` in `scripts/lib/fixes.mjs`) and the board keeps the issue or discussion out of the plan, in the line "Has a fix in progress". The server computes this from the fix state when it serves the items, so it holds for stored items without a new triage. The item returns when the fix PR is merged or closed, or when the other side wrote after the fix PR was recorded: the snapshot entry's `lastThemAt` is later than the fix's `since`.
+
+A fix PR Gary recorded gets review rounds without a click, as a drive with `by: "fix"`. `gary fix-review start` requests the first review and writes the waiting drive. `gary watch-queue` polls every waiting drive once a minute and prints a `review-arrived` or `review-timeout` line, on which the master starts the next round. `gary fix-review finish` marks the PR ready after a `done` drive and queues the `full_review` that puts the PR on the board. The fix state carries `review: { reviewer, round, maxRounds }` while the rounds run. `scripts/fix-review.mjs` holds both commands, and both refuse a PR that is not in `fixes.json`.
+
+`maxPendingAutoFixes` limits the pending fixes the routine started itself. `pendingAutoFixes` in `scripts/lib/fixes.mjs` counts them, and `gary claim <itemId> fix` without `--request` refuses at the limit after it took the claim.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):
@@ -276,6 +282,7 @@ board/meta.json             run status
 control.json                the pause switch
 decisions.jsonl             the decision log
 learn.json                  the learning cursor
+opened.json                 the prefill buttons he used, per item and route
 failures.json               failed analyses per item
 runs/<run>/would-have.json  what a paused run would have done
 snapshot.json, snapshot.pending.json, logs
@@ -283,7 +290,7 @@ snapshot.json, snapshot.pending.json, logs
 
 ## Learning
 
-The board server logs where the maintainer deviates from the agent's proposals in `state/decisions.jsonl`: a dismissed route, another route than the recommended one, an edited text, a thread decision against the agent's verdict, an unchecked review comment, a note to the agent, a snooze. Routes he does on GitHub himself are reported by the page to `/api/decision`, which writes only that local log entry.
+The board server logs where the maintainer deviates from the agent's proposals in `state/decisions.jsonl`: a dismissed route, another route than the recommended one, an edited text, a thread decision against the agent's verdict, an unchecked review comment, a note to the agent, a snooze. Routes he does on GitHub himself are reported by the page to `/api/decision`. It writes that local log entry and keeps the click in `state/opened.json`, so the card still says "Copied and opened on GitHub" after a reload or a click on another card.
 
 The `triage-learn` skill reads new entries with `gary decisions --since <ISO>`, writes rule proposals with `gary put proposals <id> <file>` and its cursor with `gary put learn <file>`. The board shows open proposals. Accepting one appends the rule under its heading in the profile's `rules/` or `templates/`, or in the home's `personal.md`, and commits that file when the profile is a git repository. It never pushes. Dismissing one stores the reason and logs it, so the pattern is not proposed again. Both work in dry-run mode, because they change only local files. `gary proposals` lists every proposal with its status.
 

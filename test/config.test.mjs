@@ -96,6 +96,27 @@ t.check("automatedComments entries refuse unknown fields", ac([{ name: "x", patt
 t.check("aiAuthors is a list of strings", c.validateProfile({ ...gprofile, aiAuthors: ["devin"] }).length === 0 && c.validateProfile({ ...gprofile, aiAuthors: [1] }).some((e) => /"aiAuthors" must be a list of strings/.test(e)));
 t.check("fastTier defaults to off", c.loadInstance("widgets").config.fastTier === "off");
 t.check("fastTier takes off, shadow or on", c.validateConfig({ profile: "p", me: "me", fastTier: "shadow" }).length === 0 && c.validateConfig({ profile: "p", me: "me", fastTier: "fast" }).some((e) => /"fastTier" must be one of/.test(e)));
+
+// fixReview and maxPendingAutoFixes
+const base = { profile: "p", me: "me" };
+const reviewBots = { reviewBots: ["copilot"] };
+const withBot = { ...base, bot: { login: "b", tokenFile: "t" } };
+t.check("maxPendingAutoFixes defaults to 10", c.loadInstance("widgets").config.maxPendingAutoFixes === 10 && c.CONFIG_DEFAULTS.maxPendingAutoFixes === 10);
+t.check("maxPendingAutoFixes takes 0 and whole numbers only", c.validateConfig({ ...base, maxPendingAutoFixes: 0 }).length === 0 && c.validateConfig({ ...base, maxPendingAutoFixes: 25 }).length === 0
+	&& c.validateConfig({ ...base, maxPendingAutoFixes: -1 }).some((e) => /"maxPendingAutoFixes" must be a whole number/.test(e)) && c.validateConfig({ ...base, maxPendingAutoFixes: "10" }).length === 1 && c.validateConfig({ ...base, maxPendingAutoFixes: 1.5 }).length === 1);
+t.check("fixReview defaults to three Copilot rounds requested as me, then ready, when the instance can push", JSON.stringify(c.fixReviewOf(withBot, reviewBots)) === '{"reviewer":"copilot","requestAs":"me","maxRounds":3,"markReady":true,"reason":null}');
+t.check("fixReview defaults to on with allowOwnTokenPushes too", c.fixReviewOf({ ...base, allowOwnTokenPushes: true }, reviewBots).reviewer === "copilot");
+t.check("fixReview is off without an account that may push", c.fixReviewOf({ ...base, bot: null }, reviewBots).reviewer === "off" && /no account may push/.test(c.fixReviewOf({ ...base, bot: null }, reviewBots).reason));
+t.check("fixReview is off when the profile lists no copilot review bot", /does not list copilot/.test(c.fixReviewOf(withBot, { reviewBots: [] }).reason));
+t.check("fixReview off in config.json stays off", c.fixReviewOf({ ...withBot, fixReview: { reviewer: "off" } }, reviewBots).reviewer === "off");
+t.check("fixReview fills the fields config.json leaves out", JSON.stringify(c.fixReviewOf({ ...withBot, fixReview: { maxRounds: 1, requestAs: "bot" } }, reviewBots)) === '{"reviewer":"copilot","requestAs":"bot","maxRounds":1,"markReady":true,"reason":null}');
+t.check("requestAs bot needs a bot", /no bot is configured/.test(c.fixReviewOf({ ...base, allowOwnTokenPushes: true, fixReview: { requestAs: "bot" } }, reviewBots).reason));
+t.check("a full fixReview is valid", c.validateConfig({ ...base, fixReview: { reviewer: "copilot", requestAs: "me", maxRounds: 2, markReady: false } }).length === 0);
+const frErrors = c.validateConfig({ ...base, fixReview: { reviewer: "gemini", requestAs: "him", maxRounds: 4, markReady: "yes" } });
+t.check("fixReview refuses values outside its lists", frErrors.length === 4 && frErrors.some((e) => /"fixReview.reviewer" must be one of copilot, off/.test(e)) && frErrors.some((e) => /"fixReview.requestAs" must be one of me, bot/.test(e)) && frErrors.some((e) => /"fixReview.maxRounds" must be 1, 2 or 3/.test(e)) && frErrors.some((e) => /"fixReview.markReady" must be true or false/.test(e)), frErrors);
+t.check("fixReview must be an object", c.validateConfig({ ...base, fixReview: "copilot" }).some((e) => /"fixReview" must be/.test(e)));
+const frCheck = c.checkConfig({ ...base, fixReview: { reviewer: "copilot", waitMinutes: 10 } });
+t.check("an unknown fixReview field is only a warning at run time", frCheck.errors.length === 0 && frCheck.unknown.includes('unknown field "fixReview.waitMinutes"'), frCheck);
 let error = "";
 
 // Root config rules

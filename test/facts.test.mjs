@@ -52,6 +52,11 @@ t.check("lastEventUrl is null with only the opening post", f.buildTimeline([{ ..
 
 const node = (over) => ({ headRefName: "fix-x", allCommits: { nodes: [{ commit: { message: "x", author: { name: "Jane", user: { login: "jane" } }, committer: { name: "Jane", user: { login: "jane" } } } }] }, ...over });
 const commitBy = (name, login, message = "x") => ({ allCommits: { nodes: [{ commit: { message, author: { name, user: login ? { login } : null }, committer: { name: "GitHub", user: null } } }] } });
+const takenOver = { author: { login: "jane" }, headRefName: "fix-x", allCommits: { nodes: [node().allCommits.nodes[0], commitBy("Widgets Bot", BOT).allCommits.nodes[0]] } };
+const own = f.aiFacts(takenOver, { logins: [BOT], names: [], own: BOT });
+t.check("our own commit on a contributor's PR does not make it AI-written", own.aiAuthored === false && own.ourCommits === 1 && own.aiSignals.length === 0, own);
+t.check("the bot's own PR stays AI or bot authored", f.aiFacts({ ...takenOver, author: { login: BOT } }, { logins: [BOT], names: [], own: BOT }).aiAuthored === true);
+t.check("another agent's commit next to ours still counts", f.aiFacts({ ...takenOver, allCommits: { nodes: [...takenOver.allCommits.nodes, commitBy("Copilot", "Copilot").allCommits.nodes[0]] } }, { logins: [BOT], names: [], own: BOT }).aiAuthored === true);
 t.check("a human PR has no AI signals", f.aiFacts(node(), { logins: [BOT], names: [] }).aiAuthored === false);
 t.check("the configured bot and botLogins count", f.aiFacts(node(commitBy("Widgets Bot", BOT)), { logins: [BOT], names: [] }).aiSignals[0] === `commit author ${BOT}`);
 t.check("copilot logins and copilot/ branches count", f.aiFacts(node(commitBy("Copilot", "Copilot")), {}).aiAuthored && f.aiFacts(node({ headRefName: "copilot/fix-1" }), {}).aiSignals.includes("branch copilot/fix-1"));

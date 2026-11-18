@@ -22,6 +22,7 @@ export const issuesAndPrs = {
 	14: { __typename: "PullRequest", id: "PR_14", url: `${URL}/pull/14`, state: "OPEN", isDraft: false, headRefOid: "c".repeat(40) },
 	15: { __typename: "PullRequest", id: "PR_15", url: `${URL}/pull/15`, state: "CLOSED", isDraft: false, headRefOid: "d".repeat(40) },
 	16: { __typename: "PullRequest", id: "PR_16", url: `${URL}/pull/16`, state: "MERGED", isDraft: false, headRefOid: "e".repeat(40) },
+	19: { __typename: "PullRequest", id: "PR_19", url: `${URL}/pull/19`, state: "OPEN", isDraft: true, headRefOid: "9".repeat(40) },
 	20: { __typename: "Issue", id: "I_20", url: `${URL}/issues/20`, state: "CLOSED" },
 	21: { __typename: "Issue", id: "I_21", url: `${URL}/issues/21`, state: "OPEN" },
 	22: { __typename: "Issue", id: "I_22", url: `${URL}/issues/22`, state: "OPEN" },

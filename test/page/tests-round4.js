@@ -32,29 +32,31 @@
   // Label button next to a prefill
   {
     await openItem("issue-9490");
-    const lb = () => [...openCard().querySelectorAll(".card-actions .label-btn")][0];
-    ok("prefill: a quieter label button with the bot's avatar next to Copy", !!cardBtn("Copy request, open GitHub") && lb()?.textContent === "Add label: waiting for info ⏳" && avatarOf(lb(), "widgets-bot") && !lb().classList.contains("primary"));
+    const lb = () => [...cards()[0].querySelectorAll(".card-actions .label-btn")][0];
+    ok("prefill: a quieter label button with the bot's avatar next to Copy", !!cardBtn("Copy request, open GitHub", cards()[0]) && lb()?.textContent === "Add label: waiting for info ⏳" && avatarOf(lb(), "widgets-bot") && !lb().classList.contains("primary"));
     let c = __calls.length;
     lb().click(); await wait(20);
     ok("label: one call with part label, no confirm", __calls.length === c + 1 && JSON.stringify(__calls.at(-1)) === JSON.stringify({ tool: "request_logs", instance: "widgets", itemId: "issue-9490", routeId: "r1", input: { part: "label" } }));
     ok("label: afterwards it reads Label added and is disabled", lb().textContent === "Label added" && lb().disabled);
     c = __calls.length;
-    cardBtn("Copy request, open GitHub").click(); await wait(20);
+    cardBtn("Copy request, open GitHub", cards()[0]).click(); await wait(20);
     ok("label first, copy after: the copy still works", /loglevel/.test(window.__clip) && __calls.length === c);
     items(F); await wait(5);
     await openItem("issue-9490");
-    cardBtn("Copy request, open GitHub").click(); await wait(20);
+    cardBtn("Copy again", cards()[0]).click(); await wait(20);
+    ok("a used prefill with an unused label button stays expanded", cards()[0].classList.contains("open") && !lb().disabled);
     window.__reply = () => ({ ok: false, result: "This route already ran.", duplicate: true });
     lb().click(); await wait(20);
-    ok("copy first, label after; a 409 reads as already done", lb().textContent === "Label added" && lb().disabled && !openCard().querySelector(".status.failed"));
+    ok("copy first, label after; a 409 reads as already done", lb().textContent === "Label added" && lb().disabled && !cards()[0].querySelector(".status.failed"));
     window.__reply = () => ({ ok: true, result: { dryRun: true } });
     items(routeMap("issue-9490", "r1", (r) => ({ ...r, labelDone: { status: "done", result: "" } }))); await wait(10);
     await openItem("issue-9490");
     ok("label: the server's labelDone shows as done", lb().textContent === "Label added" && lb().disabled);
+    ok("a collapsed done card names the done label in its header", !cards()[0].classList.contains("open") && /^Copied and opened, \d\d:\d\d · Label added$/.test(cards()[0].querySelector(".card-top > .head-done").textContent));
     items(F); await wait(5);
     window.__board.instances[0].paused = true; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("issue-9490");
-    ok("paused: the label button carries the paused hint", !!openCard().querySelector(".card-actions .paused-hint"));
+    ok("paused: the label button carries the paused hint", !!cards()[0].querySelector(".card-actions .paused-hint"));
     window.__board.instances[0].paused = false; window.dispatchEvent(new Event("board:info")); await wait(10);
     const W = window.__board.instances[0];
     window.__board.instances = [{ ...W, bot: null, accountMode: "own" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
@@ -62,7 +64,7 @@
     ok("own mode: the label button carries his avatar", avatarOf(lb(), "octocat"));
     window.__board.instances = [{ ...W, bot: null, accountMode: "none" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("issue-9490");
-    ok("no bot and no own mode: no label button", !lb() && !!cardBtn("Copy request, open GitHub"));
+    ok("no bot and no own mode: no label button", !lb() && !!cardBtn("Copy again", cards()[0]));
     window.__board.instances = [W]; window.dispatchEvent(new Event("board:info")); await wait(10);
 
     // As the bot: a checkbox under the editor
@@ -111,9 +113,37 @@
     document.getElementById("d-close").click(); await wait(5);
   }
 
+  // A finished agent job: its name in words, its result as short text with links
+  {
+    items(F); await wait(5);
+    const doneAction = (extra) => window.__subs["actions"](__mkSnap([["widgets/t1", { instance: "widgets", itemId: "pr-9474", action: "take_over", status: "done", via: "queue", createdAt: new Date().toISOString(), finishedAt: new Date().toISOString(), ...extra }]]));
+    const commit = "https://github.com/acme/widgets/pull/9474/commits/cb97aa0";
+    const thread = "https://github.com/acme/widgets/pull/9474#discussion_r1";
+    doneAction({ result: commit, resultParts: { commits: [commit], threads: [{ url: thread, resolved: true }] } }); await wait(10);
+    state.notes.delete("pr-9474");
+    await openItem("pr-9474");
+    const line = () => document.querySelector("#detail .status.done");
+    const text = () => line().textContent.replace(/\s+/g, " ");
+    ok("a finished take-over is named in words", /^Take-over done/.test(text()) && !/take_over/.test(document.getElementById("detail").textContent));
+    ok("its result is short text with the commit and the thread as links", /Pushed 1 commit ?· replied in 1 thread, resolved/.test(text())
+      && [...line().querySelectorAll("a")].map((a) => a.textContent + "=" + a.href).join() === "1 commit=" + commit + ",1 thread=" + thread);
+    ok("the badge uses the same words", [...document.querySelectorAll("#d-meta *")].some((e) => e.textContent === "Take-over done") && !/Done: take/.test(document.getElementById("d-meta").textContent));
+    doneAction({ action: "revise", result: commit, resultParts: { commits: [commit, commit + "1"], threads: [{ url: thread, resolved: true }, { url: thread + "2", resolved: false }] } }); await wait(10);
+    ok("several commits and threads are counted, the threads numbered", /^Change done ?Pushed 2 commits ?· replied in 2 threads \(1, 2\)/.test(text()) && !/resolved/.test(text()) && line().querySelectorAll("a").length === 3);
+    doneAction({ action: "address_review", result: "Pushed " + commit + " and replied in thread PRRT_kwDOB40DsM6rwtan (" + thread + "), resolved" }); await wait(10);
+    ok("an old result string loses its node id", /^Review addressed/.test(text()) && !/PRRT_/.test(text()) && /replied in thread \(/.test(text()));
+    doneAction({ action: "format", result: commit }); await wait(10);
+    ok("a format run reads Formatted with its link", /^Formatted ?view on GitHub/.test(text()));
+    doneAction({ action: "drive", status: "failed", result: "The push was refused for thread PRRT_kwDOB40DsM6rwtan." }); await wait(10);
+    ok("a failed job is named in words too", /^Failed: drive\. The push was refused for thread\./.test(document.querySelector("#detail .status.failed").textContent));
+    window.__subs["actions"](__mkSnap([])); await wait(10);
+    document.getElementById("d-close").click(); await wait(5);
+  }
+
   // The agent rewrites the open item
   {
     items(F); await wait(5);
+    localOpened.clear();
     await openItem("issue-9471");
     const ta = openCard().querySelector("textarea");
     ta.value = "My own reply that I wrote by hand."; ta.dispatchEvent(new Event("input"));
@@ -221,6 +251,52 @@
     ok("row chip: a quiet Fixed by #9500", chipOf("issue-9499")?.textContent === "Fixed by #9500" && chipOf("issue-9499").classList.contains("quiet"));
     ok("row chip: Agent working on a PR the agent is changing", chipOf("pr-9493")?.textContent === "Agent working" && filled(chipOf("pr-9493")));
     ok("the row hint does not point at a hidden fix route", !/Start fix/.test(document.querySelector('.row[data-id="issue-9495"] .r-hint')?.textContent ?? ""));
+    // A fix in progress takes its issue out of the plan, the fix PR's item carries the work
+    {
+      const park = (ids, extra = () => ({})) => F.map(([k, d]) => [k, ids.includes(k) ? { ...d, fix: { ...d.fix, parked: true }, ...extra(k, d) } : d]);
+      const inGroups = (k) => !!document.querySelector('#board .group .row[data-id="' + k + '"]');
+      const parkedRow = (k) => document.querySelector('#fix-parked .handled-row[data-id="' + k + '"]');
+      const line = document.getElementById("fix-parked");
+      ok("no fix line while no fix parks an item", line.hidden && inGroups("issue-9495"));
+      const spentBefore = document.querySelector("#plan .sum").textContent;
+      items(park(["issue-9494", "issue-9495"])); await wait(10);
+      for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+      await wait(5);
+      ok("parked: the issues leave every plan group", !inGroups("issue-9494") && !inGroups("issue-9495"));
+      ok("parked: the fix PR's own item stays in the plan", inGroups("pr-9496"));
+      ok("parked: a quiet line counts them and folds the rows", !line.hidden && line.querySelector("summary").textContent === "Has a fix in progress: 2" && !line.querySelector("details").open
+        && line.previousElementSibling === document.getElementById("handled"));
+      ok("parked: the rows carry the fix chip", parkedRow("issue-9494")?.querySelector(".agent-chip")?.textContent === "Fix running" && parkedRow("issue-9495")?.querySelector(".agent-chip")?.textContent === "Fix: #9496 draft");
+      ok("parked: no minutes count as spent", document.querySelector("#plan .sum").textContent === spentBefore);
+      ok("a fix that does not park keeps its row and chip", inGroups("issue-9497") && chipOf("issue-9497")?.textContent === "Fix: #9498 open");
+      line.querySelector("details").open = true;
+      [...parkedRow("issue-9495").querySelectorAll("button")].find((b) => b.textContent === "Open").click(); await wait(20);
+      ok("parked: Open shows the dialog with the fix banner", dlgR.open && detail.id === "issue-9495" && /^Draft fix #9496 is open/.test(document.getElementById("d-fix").textContent));
+      await openItem("pr-9496");
+      [...document.getElementById("d-fix-for").querySelectorAll("button")].find((b) => b.textContent === "Open on board").click(); await wait(20);
+      ok("parked: the fix PR's dialog still opens the issue", dlgR.open && detail.id === "issue-9495");
+      document.getElementById("d-close").click(); await wait(5);
+      // Without routes the parked item stays loaded for that link
+      items(park(["issue-9495"], () => ({ routes: [], hint: undefined }))); await wait(10);
+      ok("parked without routes: listed in the fix line, not in the plan", !!parkedRow("issue-9495") && !inGroups("issue-9495") && line.querySelector("summary").textContent === "Has a fix in progress: 1");
+      await openItem("pr-9496");
+      [...document.getElementById("d-fix-for").querySelectorAll("button")].find((b) => b.textContent === "Open on board").click(); await wait(20);
+      ok("parked without routes: the dialog opens with the banner and no cards", dlgR.open && detail.id === "issue-9495" && !document.getElementById("d-fix").hidden && cards().length === 0);
+      document.getElementById("d-close").click(); await wait(5);
+      items(F.map(([k, d]) => [k, k === "issue-9495" ? { ...d, handled: { at: new Date().toISOString(), routeId: "r2", routeType: "reply", verified: null }, fix: { ...d.fix, parked: true } } : d])); await wait(10);
+      ok("a handled item with a parked fix is listed once, as handled", !!document.querySelector('#handled .handled-row[data-id="issue-9495"]') && !parkedRow("issue-9495"));
+      // The review rounds of the fix PR and the limit on automatic fixes
+      items(F.map(([k, d]) => [k, k === "issue-9495" ? { ...d, fix: { ...d.fix, startedBy: "routine", parked: true, review: { reviewer: "copilot", round: 2, maxRounds: 3 }, limit: { pending: 3, max: 10 } } } : d])); await wait(10);
+      ok("fix rounds: the chip names the stage", parkedRow("issue-9495")?.querySelector(".agent-chip")?.textContent === "Fix: #9496 draft, Copilot round 2 of 3");
+      ok("fix limit: the line shows the automatic fixes against the limit", line.querySelector("summary").textContent === "Has a fix in progress: 1 · automatic: 3 of 10");
+      await openItem("issue-9495");
+      ok("fix rounds: the banner names the stage", /^Draft fix #9496 is open: fix: stop retrying on a 413\. CI running\. Copilot round 2 of 3\./.test(document.getElementById("d-fix").textContent));
+      document.getElementById("d-close").click(); await wait(5);
+      items(F); await wait(10);
+      for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+      await wait(5);
+      ok("when the fix no longer parks the item, the row is back with its chip", inGroups("issue-9495") && chipOf("issue-9495")?.textContent === "Fix: #9496 draft" && line.hidden);
+    }
     state.reveal.clear(); render();
     // Dialog banners
     await openItem("issue-9494");
@@ -254,11 +330,15 @@
     await openItem("pr-9493");
     ok("push: the banner says what runs and to decide after", /^The agent is changing this PR \(take over, started \d\d:\d\d\)\. Decide after it is done\.$/.test(ban.textContent));
     const titles = cards().map((c) => c.querySelector(".card-head .r-hint").textContent);
-    for (const hidden of ["Approve", "Merge", "Close", "Mark ready", "Take over", "Address review", "Drive", "Format"]) {
+    for (const hidden of ["Approve", "Merge", "Close", "Mark ready", "Take over", "Change", "Address review", "Drive", "Format"]) {
       ok("push: hides " + hidden, !titles.some((t) => t.startsWith(hidden)));
     }
     ok("push: reply and label stay", titles.some((t) => t.startsWith("Reply")) && titles.some((t) => t.startsWith("Label")));
     ok("push: Snooze and Analyze again stay", !document.querySelector('#d-foot [aria-label="Snooze 1 day"]').disabled && !!document.querySelector("#d-foot .foot-analyze"));
+    items(F.map(([k, d]) => [k, k === "pr-9493" ? { ...d, working: { kind: "push", action: "revise", since: iso(60000) } } : d])); await wait(10);
+    await openItem("pr-9493");
+    ok("push: a running revise names itself in the banner and hides the pushing routes", /^The agent is changing this PR \(your requested change, started \d\d:\d\d\)\./.test(ban.textContent)
+      && !cards().some((c) => /^(Change|Take over|Drive|Approve)/.test(c.querySelector(".card-head .r-hint").textContent)));
     items(F.map(([k, d]) => [k, k === "pr-9493" ? { ...d, working: undefined } : d])); await wait(10);
     await openItem("pr-9493");
     window.__reply = () => ({ ok: false, result: "The agent is changing this PR. Decide after it is done.", duplicate: true });
@@ -325,7 +405,7 @@
     await openItem("issue-9477");
     ok("not handled yet: not in the handled line", !document.querySelector('#handled .handled-row[data-id="issue-9477"]'));
     cardBtn("Open GitHub to convert", cards()[0]).click(); await wait(20);
-    ok("after the click nothing moves while the dialog is open", !document.querySelector('#handled .handled-row[data-id="issue-9477"]') && !!cards()[0].querySelector(".opened-mark"));
+    ok("after the click nothing moves while the dialog is open", !document.querySelector('#handled .handled-row[data-id="issue-9477"]') && !!cards()[0].querySelector(".status.opened") && !!cardBtn("Open again", cards()[0]));
     document.getElementById("d-close").click(); await wait(10);
     ok("closing the dialog moves it to the handled line", !document.querySelector('#board .group .row[data-id="issue-9477"]') && !!document.querySelector('#handled .handled-row[data-id="issue-9477"]'));
     // Focus: refresh recent, unverified items once per focus, quietly on 429
@@ -339,10 +419,11 @@
     document.dispatchEvent(new Event("visibilitychange")); await wait(10);
     ok("a rate-limited refresh is quiet", !document.querySelector(".status.failed") && document.getElementById("notice").textContent === "");
     window.__refreshFails = false;
-    // The check mark comes from the server's field
+    // The item's handled mark names one route. It marks no card
     hset({ "issue-9471": H(5) }); await wait(10);
+    localOpened.clear();
     openDetail("issue-9471"); await wait(10);
-    ok("the check next to the used button comes from the server's mark", !!cards()[0].querySelector('.opened-mark[aria-label="You opened this on GitHub today"]'));
+    ok("a handled item alone marks no card as opened", !cards()[0].querySelector(".status.opened") && cards()[0].querySelector(".card-top > .head-done").hidden);
     document.getElementById("d-close").click(); await wait(5);
     items(F); await wait(5);
   }

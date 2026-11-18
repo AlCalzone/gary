@@ -55,6 +55,18 @@ t.check("GitHub's state wins over the record, and a merged PR over a closed one"
 s = f.fixStateOf("issue-1", { ...none, records: { "issue-1": [record] }, snapshot: { "issue-1": { closingPrs: [closing(31, "closed")] } } });
 t.check("a recorded PR GitHub does not show still blocks", s.state === "open" && s.pr.number === 30 && !!f.fixBlock(s), s);
 
+// A fix in progress keeps its item out of the plan until the other side writes
+t.check("a running fix parks its item", f.fixStateOf("issue-1", { ...none, claims: [{ itemId: "issue-1", kind: "fix", at: "2026-11-18T10:00:00Z", expired: false }] }).parked === true);
+const parkedWith = (state, isDraft, entry = {}) => f.fixStateOf("issue-1", { ...none, records: { "issue-1": [record] }, snapshot: { "issue-1": { closingPrs: [closing(30, state, isDraft)], ...entry } } });
+t.check("a draft fix PR parks its item", parkedWith("open", true).parked === true && parkedWith("open", true).state === "draft");
+t.check("an open fix PR parks its item", parkedWith("open", false).parked === true);
+t.check("a merged or closed fix PR does not park", parkedWith("merged", false).parked === false && parkedWith("closed", false).parked === false);
+t.check("a comment from before the fix PR keeps the item parked", parkedWith("open", true, { lastThemAt: "2026-11-18T08:59:00Z" }).parked === true);
+s = parkedWith("open", true, { lastThemAt: "2026-11-18T09:30:00Z" });
+t.check("a comment by the other side after the fix PR brings the item back, with its fix state", s.parked === false && s.state === "draft" && s.pr.number === 30, s);
+t.check("a fix PR without a recorded time parks until it is merged or closed", f.fixStateOf("issue-1", { ...none, snapshot: { "issue-1": { closingPrs: [closing(30, "open")], lastThemAt: "2026-11-18T09:30:00Z" } } }).parked === true);
+t.check("a running fix parks also after a new comment", f.parksItem("working", "2026-11-18T09:00:00Z", "2026-11-18T09:30:00Z") === true);
+
 // gary fix-record and the snapshot
 let r = gary("fix-record", "issue-23", "--pr", "19", "--branch", "gary/fix-issue-23", "--run", "run-1", "--by", "routine");
 t.check("fix-record writes the record", r.status === 0 && json(r).url === "https://github.com/acme/widgets/pull/19" && JSON.parse(readFileSync(join(home, "state", "fixes.json"), "utf8"))["issue-23"][0].branch === "gary/fix-issue-23", r.stdout + r.stderr);
@@ -71,6 +83,14 @@ t.check("a #number reference counts, other repos do not", JSON.stringify(out.cha
 
 let fx = json(gary("fixes", "--json"));
 t.check("gary fixes: a recorded draft PR", fx["issue-23"]?.state === "draft" && fx["issue-23"].pr.number === 19 && fx["issue-23"].startedBy === "routine" && fx["issue-23"].pr.ci === "pending", fx["issue-23"]);
+t.check("gary fixes: the draft fix parks its issue", fx["issue-23"]?.parked === true && fx["disc-31"]?.parked === false, fx);
+const staged = JSON.parse(readFileSync(join(home, "state", "snapshot.pending.json"), "utf8")).items;
+t.check("the staged snapshot keeps lastThemAt for the fix state", typeof staged["issue-23"]?.lastThemAt === "string" && "lastThemAt" in staged["pr-19"], staged["issue-23"]);
+const fixesFile = join(home, "state", "fixes.json");
+const recorded = JSON.parse(readFileSync(fixesFile, "utf8"));
+writeFileSync(fixesFile, JSON.stringify({ ...recorded, "issue-23": [{ ...recorded["issue-23"][0], at: "2000-01-01T00:00:00Z" }] }));
+t.check("gary fixes: a comment after the fix PR was recorded brings the issue back", json(gary("fixes", "--json"))["issue-23"]?.parked === false);
+writeFileSync(fixesFile, JSON.stringify(recorded));
 t.check("gary fixes: GitHub's closing PR", fx["issue-22"]?.state === "open" && fx["issue-22"].pr.number === 12 && fx["issue-22"].startedBy === "other", fx["issue-22"]);
 t.check("gary fixes: a discussion found through a reference", fx["disc-35"]?.state === "open" && fx["disc-35"].pr.number === 21 && fx["disc-31"]?.state === "closed", fx);
 r = gary("fixes");

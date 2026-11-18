@@ -40,11 +40,12 @@ When there are no new entries, stop and report that.
 Group the entries by what they say about his preferences. Use the `item` context (`kind`, `authorType`, `section`, `labels`) to describe the situation. The kinds of signal:
 
 - `dismissed_route`: he dismisses a route type in a recurring situation, like a close on feature-request discussions.
-- `chose_alternative`: he picks the alternative over the recommendation in a recurring situation, like a `review` over `take_over` on PRs by one kind of contributor.
+- `chose_alternative`: he picks the alternative over the recommendation in a recurring situation, like a `review` over `take_over` on PRs by one kind of contributor, or a `merge` over a `revise` the agent proposed on the bot's own PRs.
 - `edited_text`: he rewrites drafted text in a consistent direction. Compare `draft` and `final`: tone, length, phrases he removes, phrases he adds, links he inserts. A canned text he keeps rewriting points to its template.
+- `changed_event`: he submits reviews with another event than the agent preset, like "Comment" on PRs by first-time contributors. `from` and `to` name the events.
 - `thread_override`: he flips thread verdicts the same way, like always dismissing one review bot's comments on test files.
 - `unchecked_comment`: he unchecks the same kind of inline comment, like style nits in generated files.
-- `agent_note` and `dismissed_proposal` reasons: his notes repeat an instruction.
+- `agent_note` and `dismissed_proposal` reasons: his notes repeat an instruction. On a `revise` route the `agent_note` holds the instructions he sent after editing the agent's proposal, so a recurring rewrite shows what the proposals get wrong.
 - `snoozed`: he puts off the same kind of item. Use it only as support for another signal, never alone.
 
 ## 3. Evidence bar

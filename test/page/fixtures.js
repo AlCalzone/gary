@@ -168,6 +168,7 @@ window.makeRouteFixtures = (iso) => {
         { id: "r8", type: "format", as: "agent", title: "Format: fix formatting and lint", draftHash: "h8" },
         { id: "r9", type: "reply", as: "me", title: "Reply: thanks for the patience", text: "Thanks, we are on it.", draftHash: "h9" },
         { id: "r10", type: "chore", as: "bot", title: "Label: needs review", params: { action: "label", add: ["needs review"] }, draftHash: "h10" },
+        { id: "r11", type: "revise", as: "agent", title: "Change: rename the option", text: "Rename the option to retryLimit.", draftHash: "h11" },
       ],
     }),
     issue(9494, {

@@ -11,6 +11,7 @@ export const ROUTE_TYPES = {
 	address_review: ["agent"],
 	follow_up: ["agent", "bot", "me"],
 	take_over: ["agent"],
+	revise: ["agent"],
 	drive: ["agent"],
 	format: ["agent"],
 	move: ["bot", "me"],
@@ -20,7 +21,7 @@ export const ROUTE_TYPES = {
 export const DRIVE_AUTHORS = new Set(["maintainer", "bot", "copilot"]);
 // Without a bot these turn into text the maintainer posts himself
 export const PREFILL_TYPES = new Set(["reply", "request_logs", "reopen", "follow_up"]);
-export const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "drive", "follow_up", "format"]);
+export const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "revise", "drive", "follow_up", "format"]);
 export const MOVE_MODES = ["transfer", "close"];
 export const CHORE_ACTIONS = new Set(["label", "assign", "ready", "answer_discussion", "react", "update_branch", "rerun_ci"]);
 
@@ -94,12 +95,33 @@ export function driveRefusal(item, maxRounds = 3) {
 	return null;
 }
 
-/** Why the server refuses this take_over route, or null when it accepts it. */
-export function takeOverRefusal(route) {
+/** Why the server refuses a revise route with these instructions on this item, or null when it accepts it. */
+export function reviseRefusal(item, text) {
+	const refusal = pushRefusal(item, "revise");
+	if (refusal) return refusal;
+	if (!(typeof text === "string" && text.trim())) return "revise needs a text that says what to change.";
+	return null;
+}
+
+/** Why the server refuses this take_over route on this item, or null when it accepts it. */
+export function takeOverRefusal(route, item) {
+	if (item?.kind !== "pr") return "take_over works only on PRs.";
+	// A PR we already control has nothing to take over
+	if (!pushRefusal(item)) return "take_over is only for contributor PRs that are not taken over. Use revise on this PR.";
 	const mode = route?.params?.mode ?? "push";
 	if (mode !== "push" && mode !== "replace") return 'take_over needs params.mode "push" or "replace".';
 	if (mode === "replace" && !(typeof route.callout === "string" && route.callout.trim())) {
 		return "A replacement PR needs a callout that says why pushing is not possible.";
 	}
 	return null;
+}
+
+/**
+ * The route as the server serves and runs it. A stored take_over that pushes to a PR we already control
+ * becomes a revise with the same id, text and params, so its draft hash stays the same.
+ */
+export function servedRoute(route, item) {
+	if (route?.type !== "take_over" || (route.params?.mode ?? "push") !== "push" || pushRefusal(item)) return route;
+	const title = typeof route.title === "string" ? route.title.replace(/^Take over\b/, "Change") : route.title;
+	return { ...route, type: "revise", title };
 }

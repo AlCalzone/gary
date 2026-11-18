@@ -33,12 +33,15 @@ Run the triage-routine skill for Gary instance <name>, job hourly, run directory
 
 ## 4. Waiting drives
 
-For each instance, read the files in `<state>/drive/`. A drive waits for a bot review when its file has `reviewRequestedAt`.
+You arm nothing per drive. The queue Monitor of step 5 also watches every waiting drive, the ones a click started and the review rounds of Gary's own fix PRs. It reads each waiting PR once a minute and prints one line when the review arrived or the 30 minutes are over:
 
-- Requested less than 30 minutes ago and no drive Monitor armed for it in this session: arm the poll Monitor from `triage-review-pr`'s `references/drive.md` for that PR. Take the repo and the PR number from the drive file or the item doc, never from the id.
-- Older: start a worker for the final round.
+```json
+{ "instance": "widgets", "id": "<action id>", "itemId": "pr-412", "action": "drive", "event": "review-arrived" }
+```
 
-On a drive Monitor event, start a worker for the next round. On its expiry, start a worker for the final round. A drive round worker gets the job `agent request { id, itemId, action: "drive" }` with the drive's action id.
+On such a line, start a worker for the next round with the job `agent request { id, itemId, action: "drive" }`, and add `event: "<event>"` to it. A line with `review-timeout` starts the worker that ends the drive.
+
+A drive's action doc stays claimed while its file in `<state>/drive/` exists. That is a waiting drive, never a dead worker: leave it alone in step 5a.
 
 ## 5. The queue
 
@@ -56,7 +59,7 @@ Run the triage-routine skill for Gary instance <instance>, job agent request {"i
 
 On expiry, arm it again with the same call. Arm only one, also across hourly runs in this session. The claim in the action file keeps a request from running twice.
 
-When a request worker's summary says the drive waits for a review, go to step 4 for that drive.
+When a request worker's summary says the drive waits for a review, do nothing: the queue Monitor prints the drive's line when the review is there. A `full_review` line for a PR that is not on the board yet comes from the end of a fix PR's review rounds. Start its worker like any other request.
 
 ## Start a worker
 
