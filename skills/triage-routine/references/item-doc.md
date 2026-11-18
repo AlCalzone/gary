@@ -26,7 +26,7 @@ The briefing in the detail dialog. Assume the maintainer has not read the thread
 
 1. Who wants or reports what, with the concrete symptom or change. Name the component, the versions, the file, whatever anchors it.
 2. What happened since: what was tried, what the logs showed, what was asked and answered, what a review found.
-3. Where it stands now and who it waits on.
+3. Where it stands now and who it waits on. Describe the last exchange correctly: who asked what, who answered, what is open now. Read it from the timeline of all comments and replies (`classification.maintainer.md`, "The timeline"), never from the top-level comments alone.
 
 Do not recite every comment. Leave out greetings, pleasantries and anything that changed nothing. Keep numbers and identifiers. Write past events in past tense. The story explains, `state` gives the verdict, and they do not repeat each other. Every item doc has a story, quick ones too. For a quick classification, build it from the body and the last comments in the snapshot, and say less when you know less.
 

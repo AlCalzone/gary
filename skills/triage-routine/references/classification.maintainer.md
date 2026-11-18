@@ -4,7 +4,13 @@ Read this file, then `<profile>/rules/classification.md`, then the `<personal>` 
 
 Draft PRs never reach the routine. `gary snapshot` leaves them out, so they get no review, no board item and no label changes. A draft that is marked ready appears as a new item. The draft fix PRs the routine opens itself are reachable through the link on their issue's item.
 
-Quick classification uses only the snapshot data: author and author type, labels, draft flag, head SHA, CI rollup, review decision, changed file paths, the last 5 comments with author and association, comment count and `updatedAt`. It decides the section and the routes. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
+Quick classification uses the snapshot data: author and author type, labels, draft flag, head SHA, CI rollup, review decision, changed file paths, the last 5 comments with author and association, their `replies` and `replyCount`, comment count and `updatedAt`. It decides the section and the routes.
+
+## The timeline
+
+Who spoke last and whether someone answered is decided on one timeline: every top-level comment and every reply of a discussion, sorted by time. A reply inside a comment's thread is part of the conversation, often the most recent part. PR review threads go into the same timeline. A statement like "nobody replied since" or "the reporter has not answered" is only allowed after checking that timeline.
+
+A discussion comment carries only its last 2 replies inline. When `replyCount` is larger than the replies in the snapshot entry, fetch the thread before deciding, with the discussion query from the `triage-issue` skill. That is required for every discussion you want to label, mark as waiting, or call unanswered. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
 
 Who counts as "us" is in `accounts.md`, including the automated bot comments that do not count. Every other human is a reporter or contributor. Dependency update bots and CI bots count as neither side.
 
@@ -73,7 +79,7 @@ He has to think about whether to act or about the content: a behavior change, se
 
 ### `deferred`: waiting on others, or large
 
-- We asked the reporter for something, and nobody outside our side commented since. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
+- We wait on the reporter: our last message on the timeline asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. Nobody outside our side wrote since. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
 - Changes requested, and no new commits since that review.
 - The maintainer's own PR that his own account has not finished: merge conflicts, failing CI his change caused, or a stacked PR waiting on its base. No routes.
 - Feature requests and enhancements that need design work or a large effort. The profile may name labels for that.
@@ -139,7 +145,9 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 Apply these without a click, with `gary action --autonomous <file>` (`label` with `params.add` or `params.remove`, `assign` with `params.assignees`). `--autonomous` makes the code refuse labels outside `autoLabels`. Only labels in the profile's `autoLabels` qualify, and only under the conditions the profile's rules state. Each change records a fact that is already true on GitHub. A label that states a judgment becomes a `chore` route with `action: "label"`, and only when the label is the whole job.
 
-A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before.
+A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before. "Waiting on the reporter" also covers a message that asked them to try something and report back.
+
+The `reason` of every autonomous action describes the last exchange on the timeline correctly: who asked what, who answered, what is open now. Example: `The maintainer asked for a re-interview log. The reporter sent it in a reply. The maintainer then asked them to upgrade and report back, which is open.`
 
 ## Bot commands
 
