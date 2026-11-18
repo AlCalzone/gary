@@ -34,6 +34,7 @@ Gary has three layers, one place for each kind of change.
     board-put.mjs        gary put
     execute-action.mjs   gary action
     watch-queue.mjs      gary watch-queue
+    auto-review.mjs      gary auto-review
     setup.mjs            gary setup
     migrate.mjs          gary migrate
     serve.mjs            gary serve

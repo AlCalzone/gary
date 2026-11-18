@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runAction } from "./lib/actions.mjs";
-import { autoReviewState, autoReviewsFile, composeBody, actionComments, lastReview, maintainerJoinedAt, offerKind, reRequestedAt, readAutoReviews, refusal, templateText, TEMPLATE_DEFAULTS, validateAutoReview, writeAutoReview } from "./lib/auto-review.mjs";
+import { autoReviewState, autoReviewsFile, composeBody, actionComments, lastReview, maintainerJoinedAt, offerKind, reRequestedAt, readAutoReviews, refusal, templateText, TEMPLATE_DEFAULTS, updateAutoReview, validateAutoReview } from "./lib/auto-review.mjs";
 import { boardDir, readJson, writeAtomic } from "./lib/board-store.mjs";
 import { listClaims, releaseClaim, takeClaim } from "./lib/claims.mjs";
 import { autoReviewOf, instanceName, loadInstance, maintainerLogins } from "./lib/config.mjs";
@@ -166,14 +166,14 @@ async function post(argv) {
 		const now = new Date().toISOString();
 		const reason = lastReview(c.record) ? "re_requested" : "first";
 		const review = { sha: out.sha, at: now, url: sent.result, run: out.run, event, reason, findings: findings.map(({ severity, text: t, ref, evidence }) => ({ severity, text: t, ...(ref && { ref }), evidence })), comments: comments.length, offered: offer };
-		await writeAutoReview(c.itemId, {
-			...(c.record ?? {}),
+		await updateAutoReview(c.itemId, (cur) => ({
+			...(cur ?? {}),
 			repo: c.repo,
 			number: c.number,
 			author: entry.author,
-			reviews: [...(c.record?.reviews ?? []), review],
-			...(offer && { offer: { kind: offer, at: now, url: sent.result, sha: out.sha, state: offer === "push" ? "open" : "named" } }),
-		});
+			reviews: [...(cur?.reviews ?? []), review],
+			...(offer && !cur?.offer && { offer: { kind: offer, at: now, url: sent.result, sha: out.sha, state: offer === "push" ? "open" : "named" } }),
+		}));
 		await logDecision(c.instance.name, "auto_review", c.itemId, item, { review: { url: sent.result, sha: out.sha, event, reason, comments: comments.length, offer }, findings: review.findings.map(({ severity, text: t, ref }) => ({ severity, text: t, ...(ref && { ref }) })) });
 		return { ok: true, posted: true, url: sent.result, event, reason, findings: findings.length, comments: comments.length, offer, record: autoReviewsFile() };
 	} finally {
@@ -196,7 +196,7 @@ async function acceptOffer(c, { by, at, run }) {
 	if (by === "reply" && !(answer?.replies ?? []).some((r) => r.at === at)) throw new Refused("not-accepted", `PR #${c.number} has no unjudged reply of its author at ${at}.`);
 	const joined = maintainerJoinedAt(entry, { maintainers: maintainerLogins(), ownReviewUrls: c.record.reviews.map((r) => r.url) });
 	if (Date.parse(joined ?? "") > Date.parse(offer.at)) {
-		await writeAutoReview(c.itemId, { ...c.record, offer: { ...offer, state: "closed", closedAt: new Date().toISOString() } });
+		await updateAutoReview(c.itemId, (cur) => ({ ...cur, offer: { ...cur.offer, state: "closed", closedAt: new Date().toISOString() } }));
 		throw new Refused("maintainer-active", `A maintainer joined PR #${c.number} at ${joined}. The offer is closed, and the format card is his.`);
 	}
 	if (entry.facts.maintainerCanModify !== true) throw new Refused("cannot-push", `PR #${c.number} no longer allows edits by maintainers.`);
@@ -207,8 +207,10 @@ async function acceptOffer(c, { by, at, run }) {
 	try {
 		const now = new Date().toISOString();
 		const actionId = await writeAction(c.itemId, { action: "format", params: { reviewedSha: entry.headSha, by: "auto_review" }, text: "", status: "queued", via: "queue", createdAt: now, finishedAt: null, result: "" });
-		const judged = by === "reply" ? [...new Set([...(offer.judged ?? []), at])] : offer.judged;
-		await writeAutoReview(c.itemId, { ...c.record, offer: { ...offer, state: "accepted", acceptedAt: now, acceptedBy: by, actionId, ...(by === "reply" && { replyAt: at }), ...(judged && { judged }) } });
+		await updateAutoReview(c.itemId, (cur) => ({
+			...cur,
+			offer: { ...cur.offer, state: "accepted", acceptedAt: now, acceptedBy: by, actionId, ...(by === "reply" && { replyAt: at, judged: [...new Set([...(cur.offer.judged ?? []), at])] }) },
+		}));
 		return { ok: true, accepted: true, by, actionId, itemId: c.itemId, reviewedSha: entry.headSha };
 	} finally {
 		await releaseClaim({ itemId: c.itemId, kind: "push", run: holder });
@@ -229,7 +231,7 @@ async function reply(argv) {
 	if (out.agrees === "yes") return acceptOffer(c, { by: "reply", at: out.at, run: out.run });
 	const offer = c.record?.offer;
 	if (!offer || offer.state !== "open") throw new Refused("no-offer", `PR #${c.number} has no open format offer.`);
-	await writeAutoReview(c.itemId, { ...c.record, offer: { ...offer, judged: [...new Set([...(offer.judged ?? []), out.at])] } });
+	await updateAutoReview(c.itemId, (cur) => ({ ...cur, offer: { ...cur.offer, judged: [...new Set([...(cur.offer.judged ?? []), out.at])] } }));
 	return { ok: true, accepted: false, itemId: c.itemId };
 }
 
@@ -247,7 +249,7 @@ async function rerequest(argv) {
 	if (c.record.reRequestQueued === at) return { ok: true, queued: false, reason: `The review for the request of ${at} is already queued.` };
 	const now = new Date().toISOString();
 	const actionId = await writeAction(c.itemId, { action: "full_review", params: { repo: c.repo, number: c.number, by: "auto_review", reRequestedAt: at }, text: "The author re-requested a review.", status: "queued", via: "queue", createdAt: now, finishedAt: null, result: "" });
-	await writeAutoReview(c.itemId, { ...c.record, reRequestQueued: at });
+	await updateAutoReview(c.itemId, (cur) => ({ ...cur, reRequestQueued: at }));
 	return { ok: true, queued: true, actionId, itemId: c.itemId, reRequestedAt: at };
 }
 

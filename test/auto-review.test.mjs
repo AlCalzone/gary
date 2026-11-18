@@ -228,6 +228,12 @@ rec = read(recordsFile)["pr-25"];
 t.check("the author's re-request allows a second review", r.status === 0 && o.posted === true && o.reason === "re_requested" && writes().length === 2 && rec.reviews.length === 2, o);
 t.check("the second review makes no second offer", o.offer === null && !/formatter/.test(writes()[1].variables.body) && rec.offer.at === rec.reviews[0].at, writes()[1].variables.body);
 
+// Two writers at once keep both records
+await Promise.all(Array.from({ length: 12 }, (_, i) => lib.updateAutoReview(`pr-${100 + i}`, () => ({ number: 100 + i, reviews: [] }), "widgets")));
+const kept = Object.keys(read(recordsFile));
+t.check("parallel writes for different PRs lose no record", kept.length === 13 && kept.includes("pr-25") && !existsSync(recordsFile + ".lock"), kept);
+writeFileSync(recordsFile, JSON.stringify({ "pr-25": read(recordsFile)["pr-25"] }));
+
 // Our own review under the maintainer's login is no maintainer activity
 const ownEntry = { author: "hubot", reviews: [{ url: REVIEW_URL, submittedAt: iso(6) }], facts: { timeline: [{ at: iso(2), author: "hubot", side: "them", kind: "opened" }, { at: iso(6), author: ME, side: "us", kind: "review" }, { at: iso(6, 0), author: ME, side: "us", kind: "thread_comment" }] } };
 t.check("the automatic review itself does not count as the maintainer joining", lib.maintainerJoinedAt(ownEntry, { maintainers: [ME], ownReviewUrls: [REVIEW_URL] }) === null && lib.maintainerJoinedAt(ownEntry, { maintainers: [ME], ownReviewUrls: [] }) === iso(6));

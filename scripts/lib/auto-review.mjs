@@ -1,10 +1,11 @@
 // The one automatic first review on a contributor's PR: its record in <state>/auto-reviews.json, the rules that
 // decide whether a PR may get one, the check of the review doc, and the format offer. See "Automatic first review" in SPEC.md.
-import { readFile } from "node:fs/promises";
-import { join, matchesGlob } from "node:path";
+import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
+import { dirname, join, matchesGlob } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { readJson, writeAtomic } from "./board-store.mjs";
 import { instanceDir, instanceName } from "./config.mjs";
-import { commentBody } from "./routes.mjs";
+import { commentBody, isObject } from "./routes.mjs";
 import { checkSuggestion } from "./validate-item.mjs";
 
 export const autoReviewsFile = (instance = instanceName()) => join(instanceDir(instance), "state", "auto-reviews.json");
@@ -14,9 +15,38 @@ export async function readAutoReviews(instance = instanceName()) {
 	return (await readJson(autoReviewsFile(instance))) ?? {};
 }
 
-export async function writeAutoReview(itemId, record, instance = instanceName()) {
-	const all = await readAutoReviews(instance);
-	await writeAtomic(autoReviewsFile(instance), { ...all, [itemId]: record });
+const LOCK_STALE_MS = 10000;
+const LOCK_TRIES = 200;
+
+/**
+ * Changes the record of one PR: `change` gets the stored record or null and returns the new one.
+ * A lock file keeps two processes from writing at once, so a post for one PR never drops the record of another.
+ */
+export async function updateAutoReview(itemId, change, instance = instanceName()) {
+	const file = autoReviewsFile(instance);
+	const lock = file + ".lock";
+	await mkdir(dirname(file), { recursive: true });
+	for (let i = 0; ; i++) {
+		try {
+			await (await open(lock, "wx")).close();
+			break;
+		} catch (e) {
+			if (e.code !== "EEXIST") throw e;
+			const age = Date.now() - ((await stat(lock).catch(() => null))?.mtimeMs ?? Date.now());
+			// A lock this old belongs to a process that died
+			if (age > LOCK_STALE_MS) await unlink(lock).catch(() => {});
+			else if (i >= LOCK_TRIES) throw new Error(`${file} stays locked by another process`);
+			else await sleep(25);
+		}
+	}
+	try {
+		const all = await readAutoReviews(instance);
+		const next = change(all[itemId] ?? null);
+		await writeAtomic(file, { ...all, [itemId]: next });
+		return next;
+	} finally {
+		await unlink(lock).catch(() => {});
+	}
 }
 
 export const lastReview = (record) => record?.reviews?.at(-1) ?? null;
@@ -30,7 +60,6 @@ export const MAX_EVIDENCE = 400;
 // Wording of a guess. A certain finding states a fact and shows the case
 const HEDGES = /\b(i think|i believe|i guess|i suspect|i am not sure|i'm not sure|not sure|maybe|perhaps|probably|imo|in my opinion|it seems|seems like|seems to)\b/i;
 
-const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const isString = (v) => typeof v === "string" && v.trim().length > 0;
 const same = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
 
