@@ -186,6 +186,27 @@ try {
 	const plainStatus = JSON.parse(m[2].content[0].text);
 	t.check("MCP board tools work from any directory", !m[2].isError && plainStatus.portAnswers === true && plainStatus.sessionInstance === null && /belongs to no instance/.test(plainStatus.sessionInstanceError), plainStatus);
 	t.check("MCP action tools fail clearly without an instance", m[3].isError && /belongs to no instance/.test(m[3].content[0].text), m[3]);
+
+	// Settings problems: an unknown field only warns at run time but fails doctor, an invalid profile is an error
+	const gfile = join(gadgets, "profile.json");
+	const gprofile = readFileSync(gfile, "utf8");
+	writeFileSync(gfile, JSON.stringify({ ...JSON.parse(gprofile), futureField: 1 }));
+	r = gary(["instances", "--json"], { cwd: plain });
+	let row = JSON.parse(r.stdout).find((x) => x.name === "gadgets");
+	t.check("gary instances lists an unknown field as a warning", row.valid === true && !row.settingsError && /unknown field "futureField"/.test(row.settingsWarnings?.[0]), row);
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor fails on an unknown field", r.status === 1 && /fail\s+profile\s+unknown fields: .*futureField/.test(r.stdout), r.stdout);
+	writeFileSync(gfile, JSON.stringify({ ...JSON.parse(gprofile), automatedComments: [{ name: "x", pattern: "(" }] }));
+	r = gary(["instances", "--json"], { cwd: plain });
+	row = JSON.parse(r.stdout).find((x) => x.name === "gadgets");
+	t.check("gary instances lists an invalid instance with its error", r.status === 0 && row.valid === false && row.repos.length === 0 && /not a valid regular expression/.test(row.settingsError), row);
+	r = gary(["instances"], { cwd: plain });
+	t.check("the plain list shows the error", /gadgets\s+invalid/.test(r.stdout) && /error: Profile .* is invalid/.test(r.stdout), r.stdout);
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor fails on an invalid profile", r.status === 1 && /fail\s+profile\s+Profile .* is invalid/.test(r.stdout), r.stdout);
+	writeFileSync(gfile, gprofile);
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor shows the fast tier", /ok\s+fast tier\s+off/.test(r.stdout), r.stdout);
 } finally {
 	fake.kill();
 }

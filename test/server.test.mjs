@@ -1,7 +1,7 @@
 // /api/action and /api/state of server/server.mjs on a temp root in dry-run mode, with the fake gh.
 // The second half runs two instances in the one server and adds a third while it runs.
 import { spawn } from "node:child_process";
-import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { get } from "node:http";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -436,6 +436,64 @@ sse.events.length = 0;
 editJson(join(T, "profile-gadgets", "profile.json"), (p) => ({ ...p, relatedRepos: ["stale"] }));
 await sleep(600);
 check("the old profile is no longer watched", !sse.events.some((e) => e.event === "board" && e.data.instance === "gadgets"), sse.events.map((e) => [e.event, e.data.instance]));
+
+
+// Invalid settings keep the instance served with its last valid settings
+const gadgetsOf = (e) => e?.data.board.instances.find((i) => i.name === "gadgets");
+const servedNow = async () => (await api("/api/state")).data;
+const brokenProfile = join(otherProfile, "profile.json");
+const goodProfile = readFileSync(brokenProfile, "utf8");
+const configStat = statSync(join(gadgets.home, "config.json")).mtimeMs;
+writeFileSync(brokenProfile, JSON.stringify({ ...JSON.parse(goodProfile), colour: "red" }));
+await sleep(600);
+multi = await servedNow();
+check("with an unknown profile field gadgets is still listed with its items", !!entry("gadgets") && !!itemOf("gadgets", "issue-90"), multi.board.instances.map((i) => [i.name, i.settingsError]));
+check("an unknown field is a warning, not an error", entry("gadgets").settingsError === undefined && entry("gadgets").settingsWarnings?.some((w) => /unknown field "colour"/.test(w)), entry("gadgets"));
+sse.events.length = 0;
+editJson(brokenProfile, (p) => ({ ...p, colour: undefined, repo: "not a repo" }));
+let broken = await sse.waitFor((e) => e.event === "board" && /"repo" must look like/.test(gadgetsOf(e)?.settingsError ?? ""));
+check("an invalid profile value sends a board event with the error", !!broken, sse.events.filter((e) => e.event === "board").map((e) => gadgetsOf(e)?.settingsError));
+multi = await servedNow();
+check("the instance keeps its last valid settings and items", entry("gadgets")?.repos[0] === "acme/gadgets" && itemOf("gadgets", "issue-90")?.ref === "acme/gadgets#90", entry("gadgets"));
+check("health still lists it", (await (await fetch(base + "/api/health")).json()).instances.includes("gadgets"));
+r = await api("/api/action", { instance: "gadgets", itemId: "issue-90", routeId: "r1", draftHash: gHash("issue-90", "r1") });
+check("a bot click is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result) && /"repo" must look like/.test(r.data.settingsError), r);
+r = await api("/api/db", { instance: "gadgets", op: "update", path: "items/issue-90", data: { priority: 2 } });
+check("board-only writes keep working", r.status === 200, r);
+r = await api("/api/action", { instance: "gadgets", action: "dismiss_proposal", proposalId: "learn-none" });
+check("board-only actions keep working", r.status === 200 && !/settings/.test(r.data.result), r);
+sse.events.length = 0;
+writeFileSync(brokenProfile, "{ broken");
+broken = await sse.waitFor((e) => e.event === "board" && /not valid JSON/.test(gadgetsOf(e)?.settingsError ?? ""));
+check("invalid JSON in place changes the error", !!broken, sse.events.filter((e) => e.event === "board").map((e) => gadgetsOf(e)?.settingsError));
+multi = await servedNow();
+check("items stay served with invalid JSON", !!itemOf("gadgets", "issue-90") && entry("gadgets").title === "gadgets-two", entry("gadgets"));
+sse.events.length = 0;
+const tmpProfile = brokenProfile + ".tmp";
+writeFileSync(tmpProfile, goodProfile);
+renameSync(tmpProfile, brokenProfile);
+const cleared = await sse.waitFor((e) => e.event === "board" && gadgetsOf(e) && gadgetsOf(e).settingsError === undefined);
+check("repairing the profile clears the error", !!cleared, sse.events.filter((e) => e.event === "board").map((e) => gadgetsOf(e)?.settingsError));
+check("without touching config.json", statSync(join(gadgets.home, "config.json")).mtimeMs === configStat);
+r = await api("/api/action", { instance: "gadgets", itemId: "issue-90", routeId: "r1", draftHash: (await servedNow()).items.find((i) => i.instance === "gadgets" && i.id === "issue-90").routes[0].draftHash });
+check("clicks are no longer refused for the settings", r.data.settingsError === undefined && !/settings/.test(r.data.result ?? ""), r);
+check("the log names the error and its end", /settings of gadgets are invalid/.test(readFileSync(join(root, "state", "server.log"), "utf8")) && /settings of gadgets are valid again/.test(readFileSync(join(root, "state", "server.log"), "utf8")));
+
+// An instance that was never valid is listed with its error and no items
+sse.events.length = 0;
+const neverHome = join(root, "instances", "never");
+mkdirSync(join(neverHome, "state", "board", "items"), { recursive: true });
+writeFileSync(join(neverHome, "state", "board", "items", "issue-1.json"), JSON.stringify({ kind: "issue", repo: "acme/never", number: 1, title: "x", routes: [{ id: "r1", type: "reply", as: "bot", text: "x" }] }));
+writeFileSync(join(neverHome, "config.json"), "{ not json");
+const never = await sse.waitFor((e) => e.event === "board" && e.data.board.instances.some((i) => i.name === "never"));
+const neverEntry = never?.data.board.instances.find((i) => i.name === "never");
+check("a never valid instance is listed with its error", /not valid JSON/.test(neverEntry?.settingsError ?? "") && neverEntry.repos.length === 0, neverEntry);
+multi = await servedNow();
+check("and serves no items", !multi.items.some((i) => i.instance === "never"));
+r = await api("/api/action", { instance: "never", itemId: "issue-1", routeId: "r1" });
+check("a click on it is refused with the error", r.data.ok === false && /not valid JSON/.test(r.data.settingsError ?? ""), r);
+rmSync(neverHome, { recursive: true, force: true });
+await sleep(400);
 
 // A new instance appears while the server runs
 sse.events.length = 0;

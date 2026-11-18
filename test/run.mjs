@@ -15,6 +15,8 @@ const SUITES = [
 	["node", "pause.test.mjs"],
 	["node", "instances.test.mjs"],
 	["node", "migrate.test.mjs"],
+	["node", "facts.test.mjs"],
+	["node", "tiers.test.mjs"],
 	["zsh", "sharing.test.zsh"],
 	["zsh", "validate.test.zsh"],
 ];

@@ -59,6 +59,7 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
 		err("labels", "labels must be a list of strings");
 	}
+	checkWants(item, profile, err);
 
 	const threads = item.threads === undefined ? [] : item.threads;
 	if (!Array.isArray(threads)) err("threads", "threads must be a list");
@@ -235,5 +236,32 @@ function checkSuggestion(c, where, err, warn) {
 	}
 }
 
+// `wants` is the label and assignee state the agent would set. Only the profile's autoLabels are allowed in it
+function checkWants(item, profile, err) {
+	if (item.wants === undefined) {
+		if (item.wantsReason !== undefined) err("wants-reason", "wantsReason needs wants");
+		return;
+	}
+	const w = item.wants;
+	const strings = (v) => Array.isArray(v) && v.every(isString);
+	if (!isObject(w) || Object.keys(w).some((k) => !["labels", "assignees"].includes(k))) {
+		return err("wants", 'wants must be { labels?: { add?, remove? }, assignees? }');
+	}
+	if (!isString(item.wantsReason)) err("wants-reason", "wantsReason is required with wants, one sentence");
+	if (w.labels !== undefined) {
+		const l = w.labels;
+		if (!isObject(l) || Object.keys(l).some((k) => !["add", "remove"].includes(k)) || (l.add !== undefined && !strings(l.add)) || (l.remove !== undefined && !strings(l.remove))) {
+			err("wants-labels", "wants.labels must be { add?: [label], remove?: [label] }");
+		} else {
+			const allowed = new Set((profile.autoLabels ?? []).map((x) => x.toLowerCase()));
+			const outside = [...(l.add ?? []), ...(l.remove ?? [])].filter((x) => !allowed.has(x.toLowerCase()));
+			if (outside.length) err("wants-label-not-auto", `wants.labels may only name the profile's autoLabels, not ${outside.map((x) => `"${x}"`).join(", ")}`);
+			const both = (l.add ?? []).filter((x) => (l.remove ?? []).some((y) => y.toLowerCase() === x.toLowerCase()));
+			if (both.length) err("wants-labels", `wants.labels adds and removes ${both.join(", ")}`);
+		}
+	}
+	if (w.assignees !== undefined && !strings(w.assignees)) err("wants-assignees", "wants.assignees must be a list of logins");
+}
+
 /** Item fields whose change needs a validation of the merged item. */
-export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings"];
+export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason"];

@@ -12,7 +12,7 @@ import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
-import { INSTANCE_NAME, ROOT, allowedRepo, instanceSettingsFiles, instancesDir, itemRef, listInstances, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
+import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
@@ -324,9 +324,26 @@ function readBody(req) {
 
 const account = (login) => (login ? { login, avatarUrl: `https://github.com/${encodeURIComponent(login)}.png?size=80` } : null);
 
+/**
+ * The instance with its account mode, and `error` and `warnings` about its settings files.
+ * While `error` is set, the library serves the last valid settings. `instance` is null when they were never valid.
+ */
+export function settingsOf(name) {
+	try {
+		const instance = loadInstance(name);
+		return { instance, mode: withInstance(name, accountMode), error: instance.settingsError, warnings: instance.settingsWarnings };
+	} catch (e) {
+		return { instance: null, mode: null, error: e.message };
+	}
+}
+
 /** What the page needs to name one instance's project and accounts without hard-coding them. */
 export function instanceInfo(name) {
-	const i = loadInstance(name);
+	const { instance: i, mode, error, warnings } = settingsOf(name);
+	const paused = isPaused(join(instanceDir(name), "state"));
+	if (!i) {
+		return { name, title: name, kind: null, repos: [], repoUrl: null, me: null, bot: null, accountMode: "none", paused, relatedRepos: [], botCommands: {}, reviewBots: [], settingsError: error };
+	}
 	return {
 		name,
 		title: i.title,
@@ -335,11 +352,13 @@ export function instanceInfo(name) {
 		repoUrl: `https://github.com/${i.repos[0]}`,
 		me: account(i.config.me),
 		bot: account(i.config.bot?.login),
-		accountMode: withInstance(name, accountMode),
-		paused: i.paused,
+		accountMode: mode ?? "none",
+		paused,
 		relatedRepos: i.profile.relatedRepos,
 		botCommands: i.profile.botCommands,
 		reviewBots: i.profile.reviewBots,
+		...(error && { settingsError: error }),
+		...(warnings?.length && { settingsWarnings: warnings }),
 	};
 }
 
@@ -353,7 +372,7 @@ export function boardInfo(names, { dryRun = false, log = () => {} } = {}) {
 			return [];
 		}
 	});
-	return { me: instances[0]?.me ?? null, dryRun, instances };
+	return { me: instances.find((i) => i.me)?.me ?? null, dryRun, instances };
 }
 
 function shim(token, info, version) {
@@ -670,6 +689,8 @@ export async function startBoardServer({
 	const served = new Map();
 	// Watchers on <root>/instances and on each directory in it, which see a config.json appear
 	const rootWatchers = new Map();
+	// Instances whose config.json or profile.json changed since the last rescan
+	const settingsChanged = new Set();
 	let closed = false;
 	// Routes that ran in this process, so a repeat is refused even before the action file lands
 	const doneKeys = new Set();
@@ -712,11 +733,14 @@ export async function startBoardServer({
 		return out;
 	}
 
-	const modeOf = (name) => withInstance(name, accountMode);
+	const modeOf = (name) => settingsOf(name).mode ?? "none";
 
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
 	async function readItems(name) {
-		const mode = modeOf(name);
+		const { instance, mode: current } = settingsOf(name);
+		// An instance that was never valid has no repo to check its items against
+		if (!instance) return [];
+		const mode = current ?? "none";
 		const [items, actions] = await Promise.all([readCollection(name, "items"), readCollection(name, "actions")]);
 		const clicked = clickedByKey(name, actions);
 		return items.map(({ id, data }) => ({
@@ -737,7 +761,7 @@ export async function startBoardServer({
 
 	const flat = (name, docs) => docs.map(({ id, data }) => ({ ...data, instance: name, id }));
 	const readActions = async (name) => flat(name, await readCollection(name, "actions"));
-	const readOpenProposals = async (name) => flat(name, (await readCollection(name, "proposals")).filter((p) => p.data.status === "open"));
+	const readOpenProposals = async (name) => (!settingsOf(name).instance ? [] : flat(name, (await readCollection(name, "proposals")).filter((p) => p.data.status === "open")));
 	const readMeta = (name) => readJson(join(served.get(name).board, "meta.json"));
 	const readers = { items: readItems, actions: readActions, proposals: readOpenProposals };
 
@@ -797,17 +821,16 @@ export async function startBoardServer({
 		for (const file of files) {
 			addWatch(watchers, dirname(file), (_type, changed) => {
 				if (changed !== basename(file)) return;
-				schedulePush(name, "board");
-				// A config edit can point the instance to another profile
-				const t = setTimeout(() => served.has(name) && watchSettings(name), DEBOUNCE_MS);
-				t.unref();
+				settingsChanged.add(name);
+				scheduleRescan();
 			});
 		}
 		entry.settings = { key, watchers };
 	}
 
 	function serve(name) {
-		const i = loadInstance(name);
+		const state = join(instanceDir(name), "state");
+		const i = { board: join(state, "board"), state };
 		for (const c of COLLECTIONS) mkdirSync(join(i.board, c), { recursive: true });
 		const entry = { board: i.board, state: i.state, watchers: [], settings: null };
 		served.set(name, entry);
@@ -827,7 +850,9 @@ export async function startBoardServer({
 			if (file === "control.json") schedulePush(name, "board");
 		});
 		watchSettings(name);
-		log(`Serving instance ${name} (${i.repos.join(", ")}).`);
+		const { instance, error } = settingsOf(name);
+		entry.settingsError = error;
+		log(`Serving instance ${name}${instance ? ` (${instance.repos.join(", ")})` : ""}.${error ? ` Its settings are invalid: ${error}` : ""}`);
 	}
 
 	function unserve(name) {
@@ -859,7 +884,7 @@ export async function startBoardServer({
 			});
 			if (list[0]) rootWatchers.set(dir, list[0]);
 		}
-		const wanted = new Set(listInstances().map((i) => i.name));
+		const wanted = new Set(instanceNames());
 		const changed = [];
 		for (const name of [...served.keys()]) {
 			if (!wanted.has(name)) {
@@ -876,6 +901,17 @@ export async function startBoardServer({
 				log(`Serving instance ${name} failed:`, e.message);
 			}
 		}
+		// A rescan runs before the board event, so the event never lists an instance that is gone
+		for (const name of settingsChanged) {
+			if (!served.has(name) || changed.includes(name)) continue;
+			const { error } = settingsOf(name);
+			if (error !== served.get(name).settingsError) log(error ? `The settings of ${name} are invalid, it keeps its last valid ones: ${error}` : `The settings of ${name} are valid again.`);
+			served.get(name).settingsError = error;
+			// A config edit can point the instance to another profile
+			watchSettings(name);
+			schedulePush(name, "board");
+		}
+		settingsChanged.clear();
 		for (const name of changed) {
 			schedulePush(name, "board");
 			for (const event of ["items", "actions", "proposals", "meta"]) {
@@ -949,6 +985,8 @@ export async function startBoardServer({
 		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
 		if (body.action === "dismiss_route") return handleDismissRoute(name, body);
 		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(name, body);
+		const { error: settingsError } = settingsOf(name);
+		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
 		const { itemId, routeId, text, force, input } = body;
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;

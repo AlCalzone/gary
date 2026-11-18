@@ -9,7 +9,7 @@
 // An item write is validated against the result. --no-validate skips that, for migrations.
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { applyWrite, docPath, mergeFields, readJson, replaceFields, tokenFile } from "./lib/board-store.mjs";
+import { ID_PATTERN, applyWrite, docPath, mergeFields, readJson, replaceFields, tokenFile } from "./lib/board-store.mjs";
 import { instanceName, loadInstance, loadProfile, rootConfig } from "./lib/config.mjs";
 import { accountMode } from "./lib/gh.mjs";
 import { validateProposal, writeLearn } from "./lib/learning.mjs";
@@ -30,6 +30,18 @@ async function check(instance, write) {
 	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos });
 	for (const w of warnings) console.error(`warning: ${id}: ${w.message}`);
 	if (errors.length) fail(`${id} breaks ${errors.length} rule${errors.length === 1 ? "" : "s"}, nothing was written`, errors.map((e) => e.message));
+}
+
+/** The problems in a meta.json document. Only the fields the learning loop reads are checked. */
+export function validateMeta(meta) {
+	const problems = [];
+	if (meta.rulesHash !== undefined && !(typeof meta.rulesHash === "string" && meta.rulesHash.length > 0 && meta.rulesHash.length <= 200)) {
+		problems.push("rulesHash must be a non-empty string");
+	}
+	if (meta.rulesPending !== undefined && !(Array.isArray(meta.rulesPending) && meta.rulesPending.every((id) => typeof id === "string" && ID_PATTERN.test(id)))) {
+		problems.push(`rulesPending must be a list of item ids matching ${ID_PATTERN}`);
+	}
+	return problems;
 }
 
 function readDoc(file) {
@@ -71,6 +83,10 @@ export async function main(argv) {
 	if (write.path.startsWith("proposals/")) {
 		const problems = validateProposal(write.path.slice("proposals/".length), write.data);
 		if (problems.length) fail("The proposal is invalid, nothing was written", problems);
+	}
+	if (write.path === "meta") {
+		const problems = validateMeta(write.data);
+		if (problems.length) fail("meta.json is invalid, nothing was written", problems);
 	}
 	if (!noValidate) await check(instance, write);
 

@@ -84,11 +84,12 @@ The core contains no repo name, no account name and no absolute path. It works a
   "activeWindowDays": 30,
   "activeMaxWaitDays": 14,
   "maxFullReviewsPerRun": 10,
-  "maxAutoFixesPerRun": 2
+  "maxAutoFixesPerRun": 2,
+  "fastTier": "off"                // off | shadow | on: whether simple items get a smaller model. shadow runs both and records them for `gary shadow report`
 }
 ```
 
-`profile` and `me` are required. The other fields have the defaults shown. Unknown fields are errors. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
+`profile` and `me` are required. The other fields have the defaults shown. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
 
 Code looks up an instance through `loadInstance(name)`. Its allowed repos are the profile's one `repo`, and `allowedRepo(instance, repo)`, `checkoutFor(instance, repo)` and `rulesFor(instance, repo, topic)` answer per repo. For `maintainer` they return the configured checkout and the profile's `rules/<topic>.md`. The skills read that file directly.
 
@@ -105,11 +106,16 @@ Code looks up an instance through `loadInstance(name)`. Its allowed repos are th
   "sensitivePaths": [".github/**", "**/package.json"],   // globs. A PR that touches one carries `sensitiveFiles`
   "autoLabels": ["needs-info"],    // labels the routine may set without a click
   "botCommands": { "escalate": "@widgets-bot escalate" },   // commands the maintainer posts himself. No bot-posted text may contain any of them. Only `escalate` has a route
-  "requiredTools": ["mcp__widgets-logs__loadLogFile"]   // checked at the start of a run
+  "requiredTools": ["mcp__widgets-logs__loadLogFile"],   // checked at the start of a run
+  "automatedComments": [           // comments a workflow posts on its own. They do not count as anyone's turn in the snapshot facts
+    { "name": "logfile feedback", "pattern": "<!-- LOGFILE_COMMENT_TAG -->", "origin": "the workflow that posts it" }
+  ]
 }
 ```
 
-`name` and `repo` are required. Unknown fields are errors.
+`name` and `repo` are required. Unknown fields are handled like in config.json. An `automatedComments` entry has `name`, `pattern` and an optional `origin`. `pattern` is a JavaScript regular expression of at most 500 characters, without flags, tested against the first 20000 characters of the comment body with leading white space removed. Validation compiles it and refuses one that does not compile or nests quantifiers like `(a+)+`.
+
+A long-running process, like the board server, keeps the last valid settings of an instance when its config.json or profile.json breaks. `loadInstance` then returns them with `settingsError` naming the problem, and `settingsWarnings` lists unknown fields. An instance whose settings were never valid in the process is listed by `listInstances` with `valid: false`, no repos and its `settingsError`, and serves no items.
 
 Reading order for every rule: the core reference, then the profile's file of the same topic, then the shared `<root>/personal.md`, then the instance's `personal.md` when it exists. A later file overrides an earlier one. The hard limits in the core skills cannot be overridden.
 
@@ -139,20 +145,23 @@ Two older layouts are moved by commands, never silently:
 
 - `gary snapshot`, `gary snapshot --commit`: see Snapshot.
 - `gary item <id>`, `gary item <pr|issue|discussion> <number> [--repo <owner/name>]`: print the fresh snapshot entry of one item, read from GitHub with the same fields as the snapshot. With an id, kind, number and repo come from the stored item doc. The repo must be one of the instance's. It writes no state.
-- `gary put items <id> <file>`, `gary put --merge items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run. Without `--merge` the file is the complete item and replaces the stored one. Only the maintainer's `hidden` and `snoozedUntil` carry over, and `priority` when the file has none. With `--merge` only the fields in the file change, and `null` removes a field. Both modes validate the resulting item, see Validation. A merge that touches none of `routes`, `threads`, `hint` and `findings` is not validated. `--no-validate` skips the check, for migrations.
+- `gary put items <id> <file>`, `gary put --merge items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run. Without `--merge` the file is the complete item and replaces the stored one. Only the maintainer's `hidden` and `snoozedUntil` carry over, and `priority` when the file has none. With `--merge` only the fields in the file change, and `null` removes a field. Both modes validate the resulting item, see Validation. A merge that touches none of `routes`, `threads`, `hint`, `findings`, `wants` and `wantsReason` is not validated. `gary put meta` checks `rulesHash` and `rulesPending`. `--no-validate` skips the check, for migrations.
 - `gary validate [<id> ...] [--json]`: run the same validation over the stored items, read-only. Without ids it checks all of them and groups the problems.
 - `gary action [--dry-run] [--check-fresh] [--autonomous] [file]`: run one GitHub action from a JSON file or stdin. `--autonomous` marks an action nobody clicked: only `label` within `autoLabels` and `assign` may run.
 - `gary watch-queue [--all] [--once]`: print queued agent requests as JSON lines, `{ "instance", "id", "itemId", "action" }`. `--all` follows every instance, also ones added later, and is what the master runs.
 - `gary serve [--watch] [--dry-run]`: run the one board server in the foreground.
 - `gary migrate`: move instances to the single-server layout, see Instances. Safe to run again.
 - `gary pause [--all]`, `gary resume [--all]`: set and clear the pause switch of the instance, or of every instance, see Pause.
-- `gary instances [--json]`: list every instance with `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served` (the board server lists it) and `current` (the working directory resolves to it).
+- `gary instances [--json]`: list every instance with `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `valid`, `served` (the board server lists it) and `current` (the working directory resolves to it), plus `settingsError` and `settingsWarnings` when there are any.
+- `gary wants [--json]`: list, per item with `wants`, the labels to add, the labels to remove and the assignees to add that GitHub does not show yet, with `wantsReason`. GitHub's state comes from the labels and assignees in the staged snapshot, or in the baseline when nothing is staged. Items without a snapshot entry are listed as `unknown`. Read-only.
+- `gary shadow record <file>`: append shadow comparison entries, one object or a list, to `<state>/shadow.jsonl`. Each is `{ at, run, itemId, repo, tier: "fast" | "standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be null when the fast tier handed up, and only the fast tier hands up. An invalid entry refuses the whole file.
+- `gary shadow report [--since <ISO>] [--json]`: pair the latest fast and standard entry per run and item, and print the number of pairs, how often the fast tier handed up, the agreement on section and on the recommended route type over the pairs the fast tier answered, and every disagreement with both answers.
 - `gary decisions [--since <ISO>] [--json]`: print the decision log, see Learning. `--since` is exclusive.
 - `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
 - `gary put proposals <id> <file>`: write one rule proposal, validated. `gary put learn <file>`: write the learn cursor.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the skill links and the launcher.
+- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the fast tier, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
 
 Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
@@ -301,6 +310,7 @@ The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
+- `wants` is `{ labels?: { add?, remove? }, assignees? }`. Every label in it is one of the profile's `autoLabels`, no label is both added and removed, and `wantsReason` is required with `wants` and refused without it.
 - A review comment with `suggestion` has `original` with exactly `line - startLine + 1` lines (1 without `startLine`), no ```` ```suggestion ```` fence in `text`, and a `diffHunk`, when present, that starts with `@@`.
 
 A `review` that approves or a `merge` route while a thread is judged `valid` is a warning on stderr, not a refusal. So is a review comment without `suggestion` whose `text` holds a suggestion fence, the old form.
@@ -365,7 +375,9 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "snoozedUntil": null,
   "dismissedRoutes": [             // set by dismiss_route, never cleared by the routine
     { "type": "close", "title": "Close: fixed in 2.3.1", "reason": "Not fixed for him yet", "at": "ISO" }
-  ]
+  ],
+  "wants": { "labels": { "add": ["needs-info"], "remove": [] }, "assignees": ["octocat"] },   // optional, the agent's: labels and assignees it would set. Replaced with the doc
+  "wantsReason": "One sentence."   // required with wants
 }
 ```
 
@@ -400,8 +412,12 @@ The maintainer's fields in an item are `snoozedUntil`, `hidden` and `dismissedRo
 ### `meta.json`
 
 ```jsonc
-{ "lastRunAt": "ISO", "lastRunSummary": "…", "pendingReviews": 12, "staleIssues": 240, "staleDiscussions": 500 }
+{ "lastRunAt": "ISO", "lastRunSummary": "…", "pendingReviews": 12, "staleIssues": 240, "staleDiscussions": 500,
+  "rulesHash": "…",                // optional: hash of the rules the last run read
+  "rulesPending": ["pr-12"] }      // optional: item ids still to triage again under the current rules
 ```
+
+`gary put meta` refuses a `rulesHash` that is not a non-empty string of at most 200 characters, and a `rulesPending` that is not a list of item ids.
 
 ## Actions
 
@@ -529,7 +545,28 @@ gary snapshot            # prints JSON work list to stdout, stages <state>/snaps
 gary snapshot --commit   # after a successful run: save the staged snapshot as the new baseline
 ```
 
-Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`.
+Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too.
+
+Every entry of the full snapshot and of `gary item` carries `facts`, computed by code:
+
+```jsonc
+"facts": {
+  "timeline": [ { "at": "ISO", "author": "login", "side": "us", "kind": "comment" } ],   // oldest first, at most 200, the newest kept
+  "timelineTruncated": true,       // only when events are missing: more than 200, or more than a page holds
+  "lastSpeaker": "them",           // side of the last event that is not automated, or null
+  "lastUsAt": "ISO", "lastThemAt": "ISO",   // or null
+  "waitingOn": "us",               // us when they spoke last, them when we did, nobody without a person in the timeline
+  "waitingDays": 3,                // whole days since the last event of us or them, 0 for nobody
+  // PRs
+  "ciGreen": true, "dependencyOnly": false, "touchesSensitive": false, "openThreadCount": 0,
+  "approvedBy": ["octocat"], "changesRequestedBy": [],
+  "isClean": true,                 // mergeable, CI green, no open thread, no requested changes
+  // issues and discussions
+  "hasClosingPr": false, "isAnswered": false, "authorIsUs": false
+}
+```
+
+`kind` is `opened`, `comment`, `reply` (discussion replies), `review` or `thread_comment`. `side` is `automated` when the body matches an `automatedComments` pattern, `us` for maintainers, `me` and the configured bot, `bot` for GitHub Apps, `[bot]` accounts and the Copilot agent, and `them` for everyone else. Only `us` and `them` decide `waitingOn`. The timeline reads the last 50 comments, the last 20 replies per discussion comment and the last 20 comments per review thread. A discussion comment with more replies gets them all, up to 300, through extra calls. `dependencyOnly` needs the complete file list and only manifests, lock files and version pin files in it. `hasClosingPr` counts closing PRs that are open or merged.
 
 Output:
 

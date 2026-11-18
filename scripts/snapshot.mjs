@@ -5,6 +5,7 @@ import { join, matchesGlob } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
+import { buildTimeline, issueFacts, prFacts, speakerFacts } from "./lib/facts.mjs";
 import { graphql } from "./lib/gh.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
@@ -14,6 +15,10 @@ const MAX_FILES = 50;
 const MAX_THREAD_TEXT = 600;
 const MAX_OPEN_THREADS = 20;
 const THREAD_PAGE = 100;
+const TIMELINE_PAGE = 50;
+const TIMELINE_REPLIES = 20;
+const TIMELINE_THREAD_COMMENTS = 20;
+const MAX_REPLIES = 300;
 // GitHub's Copilot coding agent, the same account on every repository
 const COPILOT = ["copilot-swe-agent", "copilot"];
 
@@ -28,8 +33,12 @@ const THREAD_FIELDS = `
 	nodes {
 		id isResolved isOutdated path line originalLine
 		comments(first: 1) { nodes { author { login __typename } createdAt url body } }
+		allComments: comments(last: ${TIMELINE_THREAD_COMMENTS}) { totalCount nodes { author { login __typename } createdAt body } }
 	}
 `;
+
+// Light comment lists for the facts timeline. Bodies are needed only to spot automated comments
+const TIMELINE_COMMENTS = `timelineComments: comments(last: ${TIMELINE_PAGE}) { totalCount nodes { author { login __typename } createdAt body } }`;
 
 const REVIEW_STATE_FIELDS = `
 	pageInfo { hasNextPage endCursor }
@@ -46,6 +55,7 @@ const PR_FIELDS = `
 				commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 				files(first: ${MAX_FILES}) { totalCount nodes { path } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
+				${TIMELINE_COMMENTS}
 				reviews(last: 10) { nodes { author { login __typename } state submittedAt url body } }
 				allReviews: reviews(first: 100) { ${REVIEW_STATE_FIELDS} }
 				reviewRequests(first: 20) {
@@ -93,6 +103,7 @@ const ISSUE_FIELDS = `
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
+				${TIMELINE_COMMENTS}
 				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft } }
 `;
 
@@ -119,7 +130,22 @@ const DISCUSSION_FIELDS = `
 						replies(last: 2) { totalCount nodes { id author { login __typename } authorAssociation createdAt body } }
 					}
 				}
+				timelineComments: comments(last: ${TIMELINE_PAGE}) {
+					totalCount
+					nodes {
+						id author { login __typename } createdAt body
+						replies(last: ${TIMELINE_REPLIES}) { totalCount nodes { author { login __typename } createdAt body } }
+					}
+				}
 `;
+
+const MORE_REPLIES_QUERY = `query($id: ID!, $after: String) {
+	node(id: $id) {
+		... on DiscussionComment {
+			replies(first: 100, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { author { login __typename } createdAt body } }
+		}
+	}
+}`;
 
 const DISCUSSION_QUERY = `query($owner: String!, $name: String!, $after: String) {
 	repository(owner: $owner, name: $name) {
@@ -144,6 +170,7 @@ export async function main(argv = []) {
 	const cutoff = Date.now() - config.activeWindowDays * 24 * 60 * 60 * 1000;
 	const classify = authorClassifier(maintainerLogins(), botLogins());
 	const sensitive = loadProfile().sensitivePaths;
+	const ctx = factsContext();
 
 	const [prs, issues, discussions] = await Promise.all([
 		fetchAll(PR_QUERY, "pullRequests"),
@@ -153,14 +180,15 @@ export async function main(argv = []) {
 
 	// Drafts are ignored entirely. A draft that becomes ready shows up as a new item
 	const readyPrs = prs.nodes.filter((n) => !n.isDraft);
-	await Promise.all(
-		readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
-	);
+	await Promise.all([
+		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
+		...discussions.nodes.map(fetchRemainingReplies),
+	]);
 
 	const items = [
-		...readyPrs.map((n) => toPr(n, classify, sensitive)),
-		...issues.nodes.map((n) => toIssue(n, classify)),
-		...discussions.nodes.map((n) => toDiscussion(n, classify)),
+		...readyPrs.map((n) => withFacts("pr", n, toPr(n, classify, sensitive), ctx)),
+		...issues.nodes.map((n) => withFacts("issue", n, toIssue(n, classify), ctx)),
+		...discussions.nodes.map((n) => withFacts("discussion", n, toDiscussion(n, classify), ctx)),
 	];
 
 	const baseline = readJson(BASELINE())?.items ?? {};
@@ -232,11 +260,14 @@ export async function fetchItem(kind, number, repo = loadProfile().repo) {
 	const node = data.repository[field];
 	if (!node) throw new Error(`${id} not found in ${owner}/${name}`);
 	const classify = authorClassifier(maintainerLogins(), botLogins());
+	const ctx = factsContext();
 	if (kind === "pr") {
 		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node)]);
-		return toPr(node, classify, loadProfile().sensitivePaths);
+		return withFacts("pr", node, toPr(node, classify, loadProfile().sensitivePaths), ctx);
 	}
-	return kind === "issue" ? toIssue(node, classify) : toDiscussion(node, classify);
+	if (kind === "issue") return withFacts("issue", node, toIssue(node, classify), ctx);
+	await fetchRemainingReplies(node);
+	return withFacts("discussion", node, toDiscussion(node, classify), ctx);
 }
 
 const ITEM_USAGE = "Usage: gary item <id> | gary item <pr|issue|discussion> <number> [--repo <owner/name>]";
@@ -268,7 +299,62 @@ function baselineEntry(item) {
 		headSha: item.headSha ?? null,
 		lastReviewAt: item.reviews?.at(-1)?.submittedAt ?? null,
 		openThreadCount: item.openThreadCount ?? 0,
+		// Kept for every entry, so `gary wants` can compare unchanged items too
+		labels: item.labels ?? [],
+		assignees: item.assignees ?? [],
 	};
+}
+
+/** Who counts as us, and the profile's patterns for automated comments. */
+function factsContext() {
+	return { us: [...new Set([...maintainerLogins(), ...botLogins()])], patterns: loadProfile().automatedComments ?? [] };
+}
+
+/** Adds the computed `facts` to a snapshot entry, from the raw GraphQL node. */
+function withFacts(kind, node, entry, ctx) {
+	const events = [{ at: node.createdAt, author: node.author, body: node.body, kind: "opened" }];
+	const comments = node.timelineComments ?? node.comments;
+	let truncated = (comments?.totalCount ?? 0) > (comments?.nodes?.length ?? 0);
+	for (const c of comments?.nodes ?? []) {
+		events.push({ at: c.createdAt, author: c.author, body: c.body, kind: "comment" });
+		if (c.replies) {
+			for (const r of c.replies.nodes ?? []) events.push({ at: r.createdAt, author: r.author, body: r.body, kind: "reply" });
+			if ((c.replies.totalCount ?? 0) > (c.replies.nodes?.length ?? 0)) truncated = true;
+		}
+	}
+	if (kind === "pr") {
+		for (const r of node.allReviews?.nodes ?? []) {
+			if (r.submittedAt) events.push({ at: r.submittedAt, author: r.author, body: "", kind: "review" });
+		}
+		for (const t of node.reviewThreads?.nodes ?? []) {
+			const all = t.allComments ?? t.comments;
+			for (const c of all?.nodes ?? []) events.push({ at: c.createdAt, author: c.author, body: c.body, kind: "thread_comment" });
+			if ((all?.totalCount ?? 0) > (all?.nodes?.length ?? 0)) truncated = true;
+		}
+	}
+	const { timeline, timelineTruncated } = buildTimeline(events, ctx, { truncated });
+	const facts = { timeline, ...(timelineTruncated && { timelineTruncated }), ...speakerFacts(timeline), ...(kind === "pr" ? prFacts(entry) : issueFacts(entry, timeline)) };
+	return { ...entry, facts };
+}
+
+/** Replaces the inline replies of a discussion's comments with all of them when the inline page was short. */
+async function fetchRemainingReplies(discussion) {
+	for (const c of discussion.timelineComments?.nodes ?? []) {
+		if (!c.replies || (c.replies.totalCount ?? 0) <= (c.replies.nodes?.length ?? 0) || !c.id) continue;
+		const all = [];
+		let after = null;
+		let total = c.replies.totalCount;
+		while (all.length < MAX_REPLIES) {
+			const data = await withRetry(() => graphql(MORE_REPLIES_QUERY, { id: c.id, after }));
+			const page = data.node?.replies;
+			if (!page) break;
+			total = page.totalCount ?? total;
+			all.push(...page.nodes);
+			if (!page.pageInfo?.hasNextPage) break;
+			after = page.pageInfo.endCursor;
+		}
+		if (all.length) c.replies = { totalCount: total, nodes: all };
+	}
 }
 
 function commit() {
