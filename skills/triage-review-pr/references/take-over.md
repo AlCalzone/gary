@@ -42,3 +42,5 @@ The exception. The route's `callout` said why pushing to the branch is not possi
    - `takenOver: true`.
 
 The new PR is a draft. The maintainer marks it ready himself.
+
+The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.

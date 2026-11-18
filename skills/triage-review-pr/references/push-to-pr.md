@@ -74,9 +74,13 @@ Your final report is one JSON object and nothing else:
 - Findings and threads you handled are removed. The rest stay.
 - `reviewedSha` is the new head SHA you pushed.
 - `links` gets `{ "label": "Our commit", "url": "<commit URL>" }`.
-- `routes` fit the new state. Usually one route: `review` with `event: "approve"` and text `Thanks!`, or `merge` as `me` when the PR is already approved. `state` says that CI has to pass first. Our push can dismiss an earlier approval. When the PR had one, `state` says it needs a new approval.
+- **Routes after a push** (the one rule, the mode files point here): every route written before the push is dropped, never carried over. No "Approve as is", no "Merge as is", no old `review` with inline comments on lines that moved. The new routes fit the new head, by the existing rules:
+  - `merge` as `me` when nothing is left. While CI still runs on the new head, no routes, and `state` says CI has to pass first.
+  - A new `review` only when your own check of the pushed changes found something for the contributor.
+  - `drive` or `address_review` where they are allowed.
+  Our push can dismiss an earlier approval. When the PR had one, `state` says it needs a new approval.
 - A short note to the contributor that the maintainer may want to send goes into a `reply` route with ready text, like `I pushed the missing fields from the sibling file.` You never post it yourself.
 
-On failure, return `status: "failed"`, the reason in `result`, and the item doc unchanged except for a `state` that names the reason.
+On failure or refusal, release the claim and return `status: "failed"`, the reason in `result`, and the previous item doc unchanged except for a `state` that names the reason. Its old routes come back that way.
 
 Check `item` against the validation checklist in `item-doc.md`.

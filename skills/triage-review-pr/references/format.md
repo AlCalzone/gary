@@ -14,3 +14,5 @@ The maintainer clicked `format` on a PR. You apply exactly the autofix result to
 6. Return as `push-to-pr.md` describes. The item gets `autofix` with `changes: false`, the new `reviewedSha`, the commit in `links`, and the `format` route removed. Everything else on the item stays as it was, including its other routes. Without other findings, the recommended route becomes `merge` as `me`, or a `review` approval when the PR lacks one.
 
 The commit runs CI again. When CI was red only because of the lint job, it should turn green.
+
+The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.

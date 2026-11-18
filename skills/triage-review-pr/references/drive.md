@@ -75,3 +75,5 @@ Monitor command="until gh api repos/<owner>/<repo>/pulls/<n>/reviews --jq '[.[] 
 ```
 
 On the event, it starts the next round's subagent. On expiry, it starts one more subagent that ends the drive with the reason `The review did not arrive within 30 minutes.`
+
+The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
