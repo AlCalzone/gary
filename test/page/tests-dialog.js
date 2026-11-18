@@ -40,7 +40,7 @@
   const dismiss = dlg.querySelector('#d-foot [aria-label="Snooze until new activity"]');
   dismiss.click(); await wait(30);
   ok("dismiss closed dialog", !dlg.open);
-  ok("dismiss wrote", __writes.some((w) => w[1] === "items/pr-9488" && w[2].hidden === true));
+  ok("dismiss wrote", __writes.some((w) => w[1] === "items/widgets/pr-9488" && w[2].hidden === true));
   ok("focus back on row", document.activeElement && document.activeElement.dataset.id === "pr-9488");
   document.querySelector('.row[data-id="pr-9488"]').click();
   await wait(20);

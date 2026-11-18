@@ -183,6 +183,17 @@ header { display: flex; flex-direction: column; gap: 14px; }
 h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .dry { font-size: 11.5px; font-weight: 600; color: var(--warn); padding: 1px 7px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--warn); }
 .dry[hidden] { display: none; }
+/* Project tabs: quiet text, the current one underlined in ink. No counts, the plan says enough. */
+.tabs { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 14px; border-bottom: 1px solid var(--line); }
+.tabs[hidden] { display: none; }
+.tab { padding: 6px 0 8px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: var(--muted); font: 500 14px/1.2 var(--font-body); cursor: pointer; }
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.combined .row { grid-template-columns: 16px 16px 0 4.9em minmax(0, 1fr) 7.5em 3.4em 3.6em; }
+.combined .r-num { display: none; }
+.r-ref { display: block; font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.p-instance { margin-left: auto; font-size: 12px; color: var(--muted); }
 /* Paused is a state he chose, so it reads calm: muted ink, a soft pill */
 .paused-mark { font-size: 11.5px; font-weight: 600; color: var(--fg); padding: 1px 8px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: help; }
 .paused-mark[hidden] { display: none; }
@@ -833,6 +844,7 @@ textarea {
       <span class="conn" id="conn" data-state="checking"></span>
       <div class="controls" id="filters"></div>
     </div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Projects" hidden></nav>
   </header>
   <div id="notice"></div>
   <main id="board"></main>
@@ -939,8 +951,9 @@ const ACTION_NAMES = {
 };
 
 // Keys include the repo, so two boards on one machine keep their own filters, drafts and marks
-let storagePrefix = "gary:local:";
-const storeKey = (name) => storagePrefix + name;
+// Board-wide settings, like the tab and the budget, share one prefix. Drafts and marks live per instance.
+const BOARD_PREFIX = "gary:board:";
+const instanceKey = (instance, name) => "gary:" + (instance || "local") + ":" + name;
 
 const state = {
   db: null,
@@ -951,6 +964,7 @@ const state = {
   loaded: { items: false, actions: false, meta: false },
   items: new Map(),
   proposals: [],
+  tab: loadTab(),
   latestAction: new Map(),
   meta: null,
   server: "checking",
@@ -1126,7 +1140,7 @@ function defaultFilters() {
 function loadFilters() {
   const def = defaultFilters();
   try {
-    const raw = localStorage.getItem(storeKey("filters"));
+    const raw = localStorage.getItem(BOARD_PREFIX + "filters");
     if (!raw) return def;
     const f = JSON.parse(raw);
     return {
@@ -1145,7 +1159,7 @@ function loadFilters() {
 
 function saveFilters() {
   try {
-    localStorage.setItem(storeKey("filters"), JSON.stringify(state.filters));
+    localStorage.setItem(BOARD_PREFIX + "filters", JSON.stringify(state.filters));
   } catch {
     // Filters stay in memory for this visit
   }
@@ -1213,8 +1227,10 @@ function recentlyDone(a) {
 
 // An item counts as handled today when he opened one of its steps on GitHub today, or its latest action was created today and is queued or done
 function handledToday(id) {
-  if (itemOpenedToday(id)) return true;
-  const a = state.latestAction.get(id);
+  return itemOpenedToday(id) || handledAction(latestOf(id));
+}
+
+function handledAction(a) {
   if (!a || (a.status !== "done" && a.status !== "queued")) return false;
   const t = parseTime(a.createdAt);
   return Number.isFinite(t) && dayKey(t) === dayKey(Date.now());
@@ -1229,10 +1245,12 @@ function budgetMinutes() {
 // Count every item handled today, whatever its section or filter, because that time is already gone
 function spentMinutes() {
   let sum = 0;
-  for (const id of state.latestAction.keys()) {
-    if (!handledToday(id)) continue;
-    const d = state.items.get(id);
-    sum += d ? planEffort(d) : DEFAULT_EFFORT_MIN;
+  // Handled items can have left the board, so the action log is the source and the item only adds its effort
+  const keyOf = new Map([...state.items].map(([k, d]) => [actionRef(refOf(k).instance, refOf(k).id), k]));
+  for (const [ref, a] of state.latestAction) {
+    const key = keyOf.get(ref);
+    if (key ? !handledToday(key) : !handledAction(a)) continue;
+    sum += key ? planEffort(state.items.get(key)) : DEFAULT_EFFORT_MIN;
   }
   return sum;
 }
@@ -1571,7 +1589,7 @@ function statusLine(id) {
   if (note) {
     return h("div", { class: "status " + note.kind }, icon(note.kind === "failed" ? "alert" : "check"), h("span", { text: note.text }));
   }
-  const a = state.latestAction.get(id);
+  const a = latestOf(id);
   if (!a) return null;
   const name = ACTION_NAMES[a.action] || str(a.action);
   const when = timeEl(a.finishedAt || a.createdAt);
@@ -1604,7 +1622,7 @@ function stateIcons(id, d, dim, withPassing) {
   // Entries are [icon, class, tooltip, inline text, badge text]. The dialog shows the badge text, list rows only the icon.
   if (state.busy.has(id)) out.push(["send", "muted", "Sending to the action server", null, "Sending"]);
   else {
-    const a = state.latestAction.get(id);
+    const a = latestOf(id);
     const name = a ? ACTION_NAMES[a.action] || str(a.action) : "";
     if (a && a.status === "queued") out.push(["queued", "warn", "Queued for next run: " + name, null, "Queued"]);
     else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
@@ -1666,7 +1684,7 @@ function authorEl(d, cls, withType = true) {
 }
 
 function finishedBy(id) {
-  const a = state.latestAction.get(id);
+  const a = latestOf(id);
   return a && a.status === "done" && (a.action === "merge" || a.action === "close") ? a : null;
 }
 
@@ -1767,9 +1785,11 @@ function buildRow(id, d, dim, slot) {
   },
     h("span", { class: "r-kind" }, iconEntry(kindStatus(id, d))),
     h("span", { class: "r-rev" }, review ? iconEntry(review) : null),
-    h("span", { class: "r-num", text: "#" + str(d.number) }),
+    h("span", { class: "r-num", text: combinedView() ? "" : "#" + str(d.number) }),
     h("span", { class: "r-cat" }, categoryChip(d)),
     h("span", { class: "r-main" },
+      // The combined tab names the repo, so the full ref gets its own quiet line above the title
+      combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
       h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
@@ -1816,9 +1836,9 @@ function hintGroup(verb) {
 }
 
 // Who acts on a step, shown inside its button: the bot's avatar, the maintainer's avatar, or the agent icon
-function actorMark(actor) {
+function actorMark(actor, inst) {
   if (actor === "agent") return icon("sparkles", null, "actor-icon");
-  const account = actor === "bot" ? boardCap.bot : boardCap.me;
+  const account = actor === "bot" ? inst && inst.bot : boardInfo.me;
   if (!account || !str(account.login)) return icon(actor === "bot" ? "bot" : "user", null, "actor-icon");
   return avatarEl(str(account.login), account.avatarUrl);
 }
@@ -1858,6 +1878,7 @@ function renderList() {
 
   const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
   for (const [id, d] of state.items) {
+    if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
     if (d.hidden === true && !state.filters.showHidden) continue;
     if (!matchesFilters(d)) continue;
     const dim = isHiddenItem(d);
@@ -1905,6 +1926,8 @@ function renderList() {
     sec.empty.hidden = ordered.length > 0 || !state.loaded.items;
     sec.more.hidden = ordered.length <= shown;
   }
+
+  els.board.classList.toggle("combined", combinedView());
 
   // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
   for (const m of els.board.querySelectorAll(".r-meta")) {
@@ -1972,8 +1995,12 @@ function grow(ta) {
   detail.body.scrollTop = top;
 }
 
+function itemRef(d) {
+  return str(d.ref) || (str(d.repo) ? str(d.repo) + "#" + str(d.number) : "#" + str(d.number));
+}
+
 function renderDetailHead(d, dim) {
-  const ref = ghLink(d.url, "#" + str(d.number), "ref");
+  const ref = ghLink(d.url, combinedView() ? itemRef(d) : "#" + str(d.number), "ref");
   ref.dataset.focusKey = "head:link";
   if (ref.tagName === "A") ref.title = "Open on GitHub";
   // Review badges below the verdict replace the single review icon in the dialog
@@ -2050,39 +2077,39 @@ const REACTION_EMOJI = { THUMBS_UP: "👍", HEART: "❤️", HOORAY: "🎉", ROC
 // The draft hash each in-memory step draft was typed against
 const draftHashes = new Map();
 
-function readDraftStore() {
+function readDraftStore(itemKey) {
   try {
-    const v = JSON.parse(localStorage.getItem(storeKey("drafts")) || "{}");
+    const v = JSON.parse(localStorage.getItem(instanceKey(refOf(itemKey).instance, "drafts")) || "{}");
     return v && typeof v === "object" && !Array.isArray(v) ? v : {};
   } catch {
     return {};
   }
 }
 
-function writeDraftStore(store) {
+function writeDraftStore(itemKey, store) {
   try {
-    localStorage.setItem(storeKey("drafts"), JSON.stringify(store));
+    localStorage.setItem(instanceKey(refOf(itemKey).instance, "drafts"), JSON.stringify(store));
   } catch {
     // Drafts then live only until the next reload
   }
 }
 
 function saveDraft(itemId, stepId, hash, text) {
-  const store = readDraftStore();
-  store[itemId + "|" + stepId + "|" + hash] = text;
-  writeDraftStore(store);
+  const store = readDraftStore(itemId);
+  store[refOf(itemId).id + "|" + stepId + "|" + hash] = text;
+  writeDraftStore(itemId, store);
 }
 
 function dropSavedDraft(itemId, stepId) {
-  const store = readDraftStore();
-  const prefix = itemId + "|" + stepId + "|";
+  const store = readDraftStore(itemId);
+  const prefix = refOf(itemId).id + "|" + stepId + "|";
   for (const k of Object.keys(store)) if (k.startsWith(prefix)) delete store[k];
-  writeDraftStore(store);
+  writeDraftStore(itemId, store);
 }
 
 function savedDraft(itemId, stepId, hash) {
-  const store = readDraftStore();
-  const prefix = itemId + "|" + stepId + "|";
+  const store = readDraftStore(itemId);
+  const prefix = refOf(itemId).id + "|" + stepId + "|";
   let found = null;
   let changed = false;
   for (const k of Object.keys(store)) {
@@ -2093,7 +2120,7 @@ function savedDraft(itemId, stepId, hash) {
       changed = true;
     }
   }
-  if (changed) writeDraftStore(store);
+  if (changed) writeDraftStore(itemId, store);
   return found;
 }
 
@@ -2134,12 +2161,12 @@ function routesOf(d) {
     .filter((r) => r && typeof r === "object" && typeof r.id === "string" && Object.hasOwn(ROUTE_ACTORS, r.type))
     // A move to another repo has one actor per button, so only its buttons decide
     .filter((r) => r.actor === undefined || ROUTE_ACTOR_KINDS.has(r.actor) || (r.type === "move" && moveToRepo(r) && r.actors))
-    .filter((r) => r.type !== "move" || str(paramsOf(r).to) !== "issue" || escalateCommand() !== "")
+    .filter((r) => r.type !== "move" || str(paramsOf(r).to) !== "issue" || escalateCommand(instOf(d)) !== "")
     .filter((r) => r.type !== "move" || !moveToRepo(r) || ["transfer", "close"].some((m) => moveActor(r, m) !== null));
 }
 
-function escalateCommand() {
-  return str(boardCap.botCommands.escalate).trim();
+function escalateCommand(inst) {
+  return str(inst && inst.botCommands && inst.botCommands.escalate).trim();
 }
 
 function recommendedRoute(d) {
@@ -2284,19 +2311,20 @@ function routeButtons(d, r) {
   }
 }
 
-function confirmText(b) {
-  return "Confirm: " + (b.confirmVerb || b.label.toLowerCase()) + " as " + (b.actor === "own" ? "you" : botLogin());
+function confirmText(b, inst) {
+  return "Confirm: " + (b.confirmVerb || b.label.toLowerCase()) + " as " + (b.actor === "own" ? "you" : botLogin(inst));
 }
 
-function buttonTip(b) {
+function buttonTip(b, inst) {
   if (b.actor === "agent") return "The agent does this";
-  if (b.actor === "bot") return botLogin() + (b.confirm ? " does this after you confirm" : " does this now");
+  if (b.actor === "bot") return botLogin(inst) + (b.confirm ? " does this after you confirm" : " does this now");
   if (b.actor === "own") return "Runs right away under your GitHub login" + (b.confirm ? ", after you confirm" : "");
   return b.copy ? "Copies the text and opens GitHub, you post it" : "Opens GitHub, you do it there";
 }
 
 function repoBase(d) {
-  if (isGithubUrl(str(boardCap.repoUrl))) return str(boardCap.repoUrl).replace(/\/$/, "");
+  const repoUrl = str(instOf(d).repoUrl);
+  if (isGithubUrl(repoUrl)) return repoUrl.replace(/\/$/, "");
   const m = /^https:\/\/github\.com\/[^/]+\/[^/]+/.exec(str(d.url));
   return m ? m[0] : "https://github.com";
 }
@@ -2317,12 +2345,12 @@ function routeTarget(d, r, title, body) {
 // Routes he opened on GitHub today, kept in this browser. The routine sees his real comment or merge on its next run.
 
 function openedKey(id, r) {
-  return [id, r.id, str(r.draftHash), dayKey(Date.now())].join("|");
+  return [refOf(id).id, r.id, str(r.draftHash), dayKey(Date.now())].join("|");
 }
 
-function readOpened() {
+function readOpened(id) {
   try {
-    const v = JSON.parse(localStorage.getItem(storeKey("opened")) || "{}");
+    const v = JSON.parse(localStorage.getItem(instanceKey(refOf(id).instance, "opened")) || "{}");
     return v && typeof v === "object" && !Array.isArray(v) ? v : {};
   } catch {
     return {};
@@ -2330,66 +2358,171 @@ function readOpened() {
 }
 
 function openedToday(id, r) {
-  return readOpened()[openedKey(id, r)] === true;
+  return readOpened(id)[openedKey(id, r)] === true;
 }
 
 function itemOpenedToday(id) {
   const today = "|" + dayKey(Date.now());
-  return Object.keys(readOpened()).some((k) => k.startsWith(id + "|") && k.endsWith(today));
+  return Object.keys(readOpened(id)).some((k) => k.startsWith(refOf(id).id + "|") && k.endsWith(today));
 }
 
 function markOpened(id, r) {
-  const store = readOpened();
+  const store = readOpened(id);
   const today = "|" + dayKey(Date.now());
   // Keep only today's marks
   for (const k of Object.keys(store)) if (!k.endsWith(today)) delete store[k];
   store[openedKey(id, r)] = true;
   try {
-    localStorage.setItem(storeKey("opened"), JSON.stringify(store));
+    localStorage.setItem(instanceKey(refOf(id).instance, "opened"), JSON.stringify(store));
   } catch {
     // Without storage the mark lasts until the next reload
   }
 }
 
-// Project, repo and accounts from the board server. Nothing about one project is built into the page.
-let boardCap = { name: "", repo: "", repoUrl: "", me: null, bot: null, botCommands: {}, dryRun: false };
+// The board server serves every instance. Accounts, repos, bot commands and the pause switch belong to each instance.
+let boardInfo = { me: null, dryRun: false, instances: [] };
+const EMPTY_INSTANCE = { name: "", title: "", kind: "maintainer", repos: [], repoUrl: "", bot: null, accountMode: "bot", paused: false, relatedRepos: [], botCommands: {}, reviewBots: [] };
 
-const botLogin = () => str(boardCap.bot && boardCap.bot.login) || "the bot";
+function instanceByName(name) {
+  return boardInfo.instances.find((x) => x.name === name) || null;
+}
 
-// Copies the project's info in, names the page after it and moves this browser's old keys to the repo's own keys
+// The instance entry an item belongs to. With one instance every item belongs to it.
+function instOf(d) {
+  return (d && instanceByName(str(d.instance))) || (boardInfo.instances.length === 1 ? boardInfo.instances[0] : EMPTY_INSTANCE);
+}
+
+// An item's address on the server: its instance and its own id. The page's map key is opaque.
+function refOf(key) {
+  const d = state.items.get(key);
+  return { instance: str(d && d.instance) || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : ""), id: str(d && d.id) || key };
+}
+
+const actionRef = (instance, itemId) => str(instance) + "|" + str(itemId);
+
+function latestOf(key) {
+  const r = refOf(key);
+  return state.latestAction.get(actionRef(r.instance, r.id));
+}
+
+const botLogin = (inst) => str(inst && inst.bot && inst.bot.login) || "the bot";
+const meLogin = () => str(boardInfo.me && boardInfo.me.login);
+
+function normalizeInstance(x) {
+  const o = x && typeof x === "object" ? x : {};
+  return {
+    ...EMPTY_INSTANCE, ...o,
+    name: str(o.name), title: str(o.title) || str(o.name),
+    repos: Array.isArray(o.repos) ? o.repos.map(str) : [],
+    botCommands: o.botCommands && typeof o.botCommands === "object" ? o.botCommands : {},
+    paused: o.paused === true,
+  };
+}
+
+// Copies the board info in, names the page and moves this browser's older per-repo keys to per-instance keys once
 function applyBoardInfo(b) {
   if (!b || typeof b !== "object") return;
-  boardCap = { ...boardCap, ...b, botCommands: b.botCommands && typeof b.botCommands === "object" ? b.botCommands : {} };
-  const repo = str(boardCap.repo);
-  if (/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-    storagePrefix = "gary:" + repo + ":";
-    try {
-      // Move the keys of the tool's previous name once. The old prefix is assembled so the old name appears nowhere else
-      const oldPrefix = ["triage", "board"].join("-") + ":" + repo + ":";
-      const legacy = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i) || "";
-        if (k.startsWith(oldPrefix)) legacy.push(k);
+  boardInfo = {
+    me: b.me && typeof b.me === "object" ? b.me : null,
+    dryRun: b.dryRun === true,
+    instances: (Array.isArray(b.instances) ? b.instances : []).map(normalizeInstance).filter((x) => x.name),
+  };
+  try {
+    for (const inst of boardInfo.instances) {
+      for (const repo of inst.repos) {
+        if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) continue;
+        // The tool's previous name is assembled, so it appears nowhere else in the page
+        for (const oldPrefix of ["gary:" + repo + ":", ["triage", "board"].join("-") + ":" + repo + ":"]) {
+          for (const name of ["drafts", "opened", "filters"]) {
+            const old = oldPrefix + name;
+            const v = localStorage.getItem(old);
+            if (v === null) continue;
+            const key = name === "filters" ? BOARD_PREFIX + name : instanceKey(inst.name, name);
+            if (localStorage.getItem(key) === null) localStorage.setItem(key, v);
+            localStorage.removeItem(old);
+          }
+        }
       }
-      for (const old of legacy) {
-        const v = localStorage.getItem(old);
-        const key = storagePrefix + old.slice(oldPrefix.length);
-        if (v !== null && localStorage.getItem(key) === null) localStorage.setItem(key, v);
-        localStorage.removeItem(old);
-      }
-    } catch {
-      // Without storage there is nothing to move
     }
+  } catch {
+    // Without storage there is nothing to move
   }
-  const name = str(boardCap.name).trim();
-  document.title = name ? name + " triage" : "Gary";
-  const titleEl = document.getElementById("board-title");
-  titleEl.textContent = name ? name + " triage" : "Gary";
-  // Several instances can share a project name, so a differing instance name is named on hover
-  const instance = str(boardCap.instance).trim();
-  titleEl.title = instance && instance !== name ? "Instance: " + instance : "";
-  document.getElementById("dry-run").hidden = boardCap.dryRun !== true;
-  document.getElementById("paused").hidden = boardCap.paused !== true;
+  if (state.tab !== "all" && !instanceByName(state.tab)) state.tab = "all";
+  renderTabs();
+  renderMarkers();
+}
+
+// More than one instance shows tabs. "All" combines them and names every item with its full ref.
+const multiInstance = () => boardInfo.instances.length > 1;
+const combinedView = () => multiInstance() && state.tab === "all";
+
+function loadTab() {
+  try {
+    return localStorage.getItem(BOARD_PREFIX + "tab") || "all";
+  } catch {
+    return "all";
+  }
+}
+
+function setTab(name) {
+  state.tab = name;
+  try {
+    localStorage.setItem(BOARD_PREFIX + "tab", name);
+  } catch {
+    // The tab then resets on reload
+  }
+  state.reveal.clear();
+  renderTabs();
+  renderMarkers();
+  render();
+}
+
+function renderTabs() {
+  const bar = document.getElementById("tabs");
+  bar.hidden = !multiInstance();
+  if (bar.hidden) {
+    bar.replaceChildren();
+    return;
+  }
+  const tabs = [["all", "All"], ...boardInfo.instances.map((x) => [x.name, x.title])];
+  const buttons = tabs.map(([name, label]) => h("button", {
+    type: "button", role: "tab", class: "tab", "data-tab": name, text: label,
+    "aria-selected": state.tab === name ? "true" : "false", tabindex: state.tab === name ? "0" : "-1",
+    onclick: () => setTab(name),
+  }));
+  bar.replaceChildren(...buttons);
+}
+
+function setupTabs() {
+  const bar = document.getElementById("tabs");
+  // Arrow keys move between tabs, as for any tab list
+  bar.addEventListener("keydown", (e) => {
+    const tabs = [...bar.querySelectorAll(".tab")];
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    let j = null;
+    if (e.key === "ArrowRight") j = (i + 1) % tabs.length;
+    else if (e.key === "ArrowLeft") j = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === "Home") j = 0;
+    else if (e.key === "End") j = tabs.length - 1;
+    if (j === null) return;
+    e.preventDefault();
+    setTab(tabs[j].dataset.tab);
+    bar.querySelector('.tab[data-tab="' + CSS.escape(tabs[j].dataset.tab) + '"]').focus();
+  });
+}
+
+function renderMarkers() {
+  const one = boardInfo.instances.length === 1 ? boardInfo.instances[0] : null;
+  const title = one ? one.title + " triage" : "Gary";
+  document.title = title;
+  document.getElementById("board-title").textContent = title;
+  document.getElementById("dry-run").hidden = boardInfo.dryRun !== true;
+  const scope = state.tab === "all" || !multiInstance() ? boardInfo.instances : boardInfo.instances.filter((x) => x.name === state.tab);
+  const paused = scope.filter((x) => x.paused);
+  const el = document.getElementById("paused");
+  el.hidden = paused.length === 0;
+  el.textContent = paused.length && paused.length < scope.length ? "Paused: " + paused.map((x) => x.title).join(", ") : "Paused";
 }
 
 // ---------- running a route ----------
@@ -2435,7 +2568,7 @@ async function runRoute(id, r, payload) {
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
     await state.mcp.callTool(SERVER, r.type, {
-      itemId: id, routeId: r.id, text: str(payload.text), draftHash: str(r.draftHash),
+      instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, text: str(payload.text), draftHash: str(r.draftHash),
       force: payload.force === true, input: payload.input || {},
     });
     state.notes.set(id, { kind: "done", text: actorOf(r) === "agent" ? "The agent is on it" : "Done: " + str(r.title) });
@@ -2636,7 +2769,7 @@ function meButton(id, d, r, rec, b, intent, locked) {
   const key = "r:" + r.id + ":" + b.id;
   return h("button", {
     class: "btn me-btn intent-" + intent + (r.recommended === true ? " primary" : ""), type: "button",
-    disabled: locked || !isGithubUrl(str(d.url)), "data-focus-key": key, title: buttonTip(b),
+    disabled: locked || !isGithubUrl(str(d.url)), "data-focus-key": key, title: buttonTip(b, instOf(d)),
     onclick: async () => {
       if (!isGithubUrl(str(d.url))) return;
       if (b.reveal && !rec.revealed) {
@@ -2645,8 +2778,8 @@ function meButton(id, d, r, rec, b, intent, locked) {
         if (rec.ta) rec.ta.focus();
         return;
       }
-      postDecision({ itemId: id, routeId: r.id, text: rec.ta ? rec.ta.value : "" });
-      const copy = b.copy === "escalate" ? escalateCommand() : b.copy === "draft" && rec.ta ? rec.ta.value : "";
+      postDecision({ instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, text: rec.ta ? rec.ta.value : "" });
+      const copy = b.copy === "escalate" ? escalateCommand(instOf(d)) : b.copy === "draft" && rec.ta ? rec.ta.value : "";
       let fallback = false;
       if (copy.trim()) {
         try {
@@ -2660,12 +2793,12 @@ function meButton(id, d, r, rec, b, intent, locked) {
         }
       }
       window.open(routeTarget(d, r, rec.titleInput ? rec.titleInput.value : str(paramsOf(r).title), rec.ta ? rec.ta.value : str(r.text)), "_blank", "noopener,noreferrer");
-      if (fallback) detail.meNotes.set(r.id, b.copy === "escalate" ? "Copy failed. Post " + escalateCommand() + " on GitHub" : "Press Ctrl+C, then paste on GitHub");
+      if (fallback) detail.meNotes.set(r.id, b.copy === "escalate" ? "Copy failed. Post " + escalateCommand(instOf(d)) + " on GitHub" : "Press Ctrl+C, then paste on GitHub");
       else detail.meNotes.delete(r.id);
       markOpened(id, r);
       render();
     },
-  }, actorMark("me"), b.label, icon("external", null, "ext"));
+  }, actorMark("me", instOf(d)), b.label, icon("external", null, "ext"));
 }
 
 // The card's button row: its buttons with their actors, the second confirm, "Post anyway", or the result
@@ -2705,9 +2838,9 @@ function buildCardActions(id, d, r, rec, locked) {
     const mode = confirmMode(id, "r:" + r.id + ":" + confirming.id);
     return [
       h("button", {
-        class: "btn confirm intent-" + intent, type: "button", disabled: locked, "data-focus-key": "r:" + r.id + ":" + confirming.id + ":confirm", title: buttonTip(confirming),
+        class: "btn confirm intent-" + intent, type: "button", disabled: locked, "data-focus-key": "r:" + r.id + ":" + confirming.id + ":confirm", title: buttonTip(confirming, instOf(d)),
         onclick: () => send(confirming, mode === "force"),
-      }, actorMark(confirming.actor), confirmText(confirming)),
+      }, actorMark(confirming.actor, instOf(d)), confirmText(confirming, instOf(d))),
       h("button", {
         class: "btn quiet", type: "button", "data-focus-key": "r:" + r.id + ":" + confirming.id, text: "Cancel",
         onclick: () => { state.confirming.delete(id); render(); },
@@ -2720,7 +2853,7 @@ function buildCardActions(id, d, r, rec, locked) {
     if (b.actor === "me") return meButton(id, d, r, rec, b, intent, locked);
     return h("button", {
       class: "btn intent-" + intent + (r.recommended === true && i === 0 ? " primary" : ""), type: "button", disabled: locked,
-      "data-focus-key": key, "data-focus-alt": key + ":confirm", title: buttonTip(b),
+      "data-focus-key": key, "data-focus-alt": key + ":confirm", title: buttonTip(b, instOf(d)),
       onclick: () => {
         if (b.reveal && !rec.revealed) {
           rec.revealed = true;
@@ -2747,12 +2880,12 @@ function buildCardActions(id, d, r, rec, locked) {
         }
         send(b, false);
       },
-    }, actorMark(b.actor), b.label);
+    }, actorMark(b.actor, instOf(d)), b.label);
   });
-  if (boardCap.paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
+  if (instOf(d).paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
     out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
   }
-  if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (boardCap.bot ? botLogin() : str(boardCap.me && boardCap.me.login) || "you") }));
+  if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   const ownButtons = buttons.filter((b) => b.actor === "own");
   if (ownButtons.length) {
@@ -2808,7 +2941,7 @@ function buildCard(id, d, r, rec) {
     return;
   }
   const actor = cardActor(d, r);
-  rec.headActor = actor ? actorMark(actor) : null;
+  rec.headActor = actor ? actorMark(actor, instOf(d)) : null;
   rec.head = h("button", {
     class: "card-head", type: "button", "data-focus-key": "card:" + r.id, "aria-expanded": "false",
     onclick: () => {
@@ -2860,7 +2993,7 @@ async function dismissRoute(id, r, reason) {
   render();
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
-    await state.mcp.callTool(SERVER, "dismiss_route", { itemId: id, routeId: r.id, text: reason });
+    await state.mcp.callTool(SERVER, "dismiss_route", { instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, text: reason });
     // Hide the card until the server pushes the item without it. The route that takes its place opens.
     detail.dismissed.add(r.id);
     detail.openRoute = undefined;
@@ -2922,7 +3055,7 @@ function renderRoutes(id, d, locked) {
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
     const sig = JSON.stringify([r.done, r.refused, state.confirming.get(id), locked, isClosedThread(id, d), openedToday(id, r),
-      detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, str(boardCap.me && boardCap.me.login), boardCap.paused === true]);
+      detail.meNotes.get(r.id), detail.lastRoute === r.id ? state.notes.get(id) : null, meLogin(), instOf(d).paused === true, combinedView()]);
     if (sig !== rec.sig) {
       rec.sig = sig;
       rec.actions.replaceChildren(...buildCardActions(id, d, r, rec, locked));
@@ -3123,10 +3256,10 @@ function renderDetail() {
   const dim = isHiddenItem(d);
   const locked = state.busy.has(id) || state.dbMissing;
 
-  if (partChanged("head", [d, dim, state.latestAction.get(id)])) renderDetailHead(d, dim);
+  if (partChanged("head", [d, dim, latestOf(id), combinedView()])) renderDetailHead(d, dim);
   if (partChanged("info", [d])) renderDetailInfo(d);
   renderZones(id, d, locked);
-  if (partChanged("status", [state.latestAction.get(id), state.busy.has(id), state.notes.get(id), detail.lastZone])) renderZoneStatus(id);
+  if (partChanged("status", [latestOf(id), state.busy.has(id), state.notes.get(id), detail.lastZone])) renderZoneStatus(id);
 
   if (open) {
     detail.body.scrollTop = scrollTop;
@@ -3195,9 +3328,9 @@ const learn = {
 
 // The server serves open proposals only, so an accepted one stays here from memory until the dialog closes
 function openProposals() {
-  for (const p of state.proposals) learn.known.set(p.id, p);
-  const live = new Set(state.proposals.map((p) => p.id));
-  return [...learn.known.values()].filter((p) => !learn.gone.has(p.id) && (live.has(p.id) || learn.added.has(p.id)));
+  for (const p of state.proposals) learn.known.set(p.key, p);
+  const live = new Set(state.proposals.map((p) => p.key));
+  return [...learn.known.values()].filter((p) => !learn.gone.has(p.key) && (live.has(p.key) || learn.added.has(p.key)));
 }
 
 function proposalTarget(p) {
@@ -3211,17 +3344,25 @@ function proposalAdded(p) {
   return p.target === "personal" ? "Added to your personal rules" : "Added to " + str(p.file);
 }
 
-function evidenceLine(e) {
+// The board key of an item named by instance and id, or null when it is not on the board
+function itemKeyOf(instance, itemId) {
+  for (const [key, d] of state.items) if (refOf(key).id === itemId && refOf(key).instance === instance) return key;
+  return null;
+}
+
+function evidenceLine(e, p) {
   const itemId = str(e.itemId);
-  const num = "#" + (itemId.split("-").pop() || "?");
+  const key = itemKeyOf(str(p.instance) || refOf(itemId).instance, itemId);
+  const d = key ? state.items.get(key) : null;
+  const num = d ? (combinedView() ? str(d.ref) || "#" + str(d.number) : "#" + str(d.number)) : itemId;
   const at = Date.parse(str(e.at));
   const day = Number.isFinite(at) ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-  const ref = state.items.has(itemId)
+  const ref = key
     ? h("button", {
       type: "button", class: "lane-switch ev-link", text: num, title: "Open " + num,
       onclick: () => {
         closeLearn();
-        openDetail(itemId);
+        openDetail(key);
       },
     })
     : h("span", { class: "ev-ref", text: num });
@@ -3233,19 +3374,19 @@ function evidenceLine(e) {
 }
 
 async function proposalAction(p, rec, action, text) {
-  if (learn.busy.has(p.id)) return;
-  learn.busy.add(p.id);
+  if (learn.busy.has(p.key)) return;
+  learn.busy.add(p.key);
   rec.status.replaceChildren(h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the board server" })));
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
-    await state.mcp.callTool(SERVER, action, { proposalId: p.id, text });
-    if (action === "accept_proposal") learn.added.set(p.id, proposalAdded(p));
-    else learn.gone.add(p.id);
+    await state.mcp.callTool(SERVER, action, { instance: str(p.instance), proposalId: p.id, text });
+    if (action === "accept_proposal") learn.added.set(p.key, proposalAdded(p));
+    else learn.gone.add(p.key);
     rec.sig = null;
   } catch (e) {
     rec.status.replaceChildren(h("div", { class: "status failed" }, icon("alert"), h("span", { text: routeFailure(e, { type: "chore" }) })));
   } finally {
-    learn.busy.delete(p.id);
+    learn.busy.delete(p.key);
     renderLearn();
   }
 }
@@ -3262,12 +3403,13 @@ function buildProposal(p, rec) {
       h("button", { class: "btn quiet", type: "button", text: "Dismiss suggestion", onclick: () => proposalAction(p, rec, "dismiss_proposal", why.value.trim()) }),
       h("button", { class: "btn quiet", type: "button", text: "Cancel", onclick: () => { rec.dismissBox.hidden = true; } })));
   rec.card.replaceChildren(
-    h("div", { class: "card-head" }, h("span", { class: "p-title", text: str(p.title) })),
+    h("div", { class: "card-head" }, h("span", { class: "p-title", text: str(p.title) }),
+      multiInstance() ? h("span", { class: "p-instance", text: (instanceByName(str(p.instance)) || EMPTY_INSTANCE).title || str(p.instance) }) : null),
     h("div", { class: "card-body" },
       str(p.why) ? h("p", { class: "card-why" }, richText(p.why)) : null,
       evidence.length ? h("details", { class: "evidence" },
         h("summary", null, "Based on " + evidence.length + (evidence.length === 1 ? " decision" : " decisions")),
-        h("ul", null, evidence.map(evidenceLine))) : null,
+        h("ul", null, evidence.map((e) => evidenceLine(e, p)))) : null,
       h("p", { class: "quiet-line", text: proposalTarget(p) }),
       h("label", { class: "card-label", text: "Rule" }),
       rec.ta,
@@ -3277,8 +3419,8 @@ function buildProposal(p, rec) {
 }
 
 function proposalButtons(p, rec) {
-  if (learn.added.has(p.id)) {
-    return [h("span", { class: "status done step-done" }, icon("doneCheck"), h("span", { text: learn.added.get(p.id) }))];
+  if (learn.added.has(p.key)) {
+    return [h("span", { class: "status done step-done" }, icon("doneCheck"), h("span", { text: learn.added.get(p.key) }))];
   }
   return [
     h("button", { class: "btn intent-think primary", type: "button", text: "Add rule", onclick: () => proposalAction(p, rec, "accept_proposal", rec.ta.value) }),
@@ -3288,20 +3430,20 @@ function proposalButtons(p, rec) {
 
 function renderLearn() {
   const list = openProposals();
-  const waiting = list.filter((p) => !learn.added.has(p.id)).length;
+  const waiting = list.filter((p) => !learn.added.has(p.key)).length;
   learn.btn.hidden = waiting === 0;
   learn.btn.replaceChildren(icon("lightbulb"), h("span", { class: "learn-count", text: String(waiting) }));
   const label = waiting === 1 ? "1 suggested rule" : waiting + " suggested rules";
   learn.btn.setAttribute("aria-label", label);
   learn.btn.title = label;
   if (!learn.el.open) return;
-  const keep = new Set(list.map((p) => p.id));
+  const keep = new Set(list.map((p) => p.key));
   for (const k of [...learn.recs.keys()]) if (!keep.has(k)) learn.recs.delete(k);
   const nodes = list.map((p) => {
-    let rec = learn.recs.get(p.id);
+    let rec = learn.recs.get(p.key);
     if (!rec) {
       rec = { card: h("section", { class: "card open intent-think pcard" }), core: null, sig: null, draft: null };
-      learn.recs.set(p.id, rec);
+      learn.recs.set(p.key, rec);
     }
     const core = JSON.stringify(p);
     if (core !== rec.core) {
@@ -3309,11 +3451,11 @@ function renderLearn() {
       rec.sig = null;
       buildProposal(p, rec);
     }
-    const sig = JSON.stringify([learn.added.get(p.id), learn.busy.has(p.id)]);
+    const sig = JSON.stringify([learn.added.get(p.key), learn.busy.has(p.key)]);
     if (sig !== rec.sig) {
       rec.sig = sig;
       rec.actions.replaceChildren(...proposalButtons(p, rec));
-      if (learn.added.has(p.id)) {
+      if (learn.added.has(p.key)) {
         rec.ta.disabled = true;
         rec.dismissBox.hidden = true;
       }
@@ -3484,7 +3626,8 @@ function errorText(e) {
   return str(e && (e.message || e.code)) || "Unknown error";
 }
 
-async function writeActionLog(itemId, action, params, text, status, via, result) {
+async function writeActionLog(itemKey, action, params, text, status, via, result) {
+  const { instance, id: itemId } = refOf(itemKey);
   const id = itemId + "-" + Date.now();
   const createdAt = nowIso();
   const doc = {
@@ -3498,7 +3641,7 @@ async function writeActionLog(itemId, action, params, text, status, via, result)
     finishedAt: status === "queued" ? null : createdAt,
     result: str(result),
   };
-  await state.db.doc("actions/" + id).set(doc);
+  await state.db.doc("actions/" + instance + "/" + id).set({ instance, ...doc });
 }
 
 function resultString(r) {
@@ -3544,7 +3687,7 @@ async function runAction(itemId, action, rawParams, text, stepKey) {
 }
 
 async function runBoardAction(itemId, action, params) {
-  const ref = state.db.doc("items/" + itemId);
+  const ref = state.db.doc("items/" + refOf(itemId).instance + "/" + refOf(itemId).id);
   if (action === "dismiss") {
     await ref.update({ hidden: true });
   } else if (action === "snooze") {
@@ -3559,7 +3702,7 @@ async function restoreItem(itemId) {
   state.busy.add(itemId);
   render();
   try {
-    await state.db.doc("items/" + itemId).update({ hidden: false, snoozedUntil: null });
+    await state.db.doc("items/" + refOf(itemId).instance + "/" + refOf(itemId).id).update({ hidden: false, snoozedUntil: null });
   } catch (e) {
     state.notes.set(itemId, { kind: "failed", text: "Restoring failed: " + errorText(e) });
   } finally {
@@ -3609,8 +3752,9 @@ function subscribe(db) {
     for (const doc of snap.docs) {
       const a = doc.data();
       if (!a || typeof a.itemId !== "string") continue;
-      const prev = latest.get(a.itemId);
-      if (!prev || str(a.createdAt) > str(prev.createdAt)) latest.set(a.itemId, a);
+      const ref = actionRef(a.instance || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : ""), a.itemId);
+      const prev = latest.get(ref);
+      if (!prev || str(a.createdAt) > str(prev.createdAt)) latest.set(ref, a);
     }
     state.latestAction = latest;
     markLoaded("actions", snap.metadata);
@@ -3620,7 +3764,10 @@ function subscribe(db) {
   // Rule proposals are their own collection. A server without them leaves the header entry hidden.
   try {
     db.collection("proposals").onSnapshot((snap) => {
-      state.proposals = snap.docs.map((doc) => ({ ...doc.data(), id: doc.id })).filter((x) => x && typeof x.title === "string");
+      state.proposals = snap.docs.map((doc) => {
+        const d = doc.data() || {};
+        return { ...d, key: doc.id, id: str(d.id) || doc.id };
+      }).filter((x) => typeof x.title === "string");
       renderLearn();
     }, () => {});
   } catch {
@@ -3650,10 +3797,12 @@ async function boot() {
   const use = claude && typeof claude.use === "function" ? (n) => claude.use(n).catch(() => null) : async () => null;
   // The project info names the storage keys, so it comes before the saved filters
   boardApi = await use("board");
+  setupTabs();
   applyBoardInfo(boardApi);
   // The shim updates the board object in place when the pause switch changes, then tells the page
   window.addEventListener("board:info", () => {
     applyBoardInfo(boardApi);
+    renderMarkers();
     for (const rec of detail.cards.values()) rec.sig = null;
     render();
   });
