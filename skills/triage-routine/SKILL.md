@@ -115,6 +115,10 @@ The item files in `<state>/board/items/` hold the previous review results and th
 
 Delete the item for every id in `closed` with `gary put items <id> --delete`.
 
+### 4d. Fix routes while a fix runs
+
+Every hourly run, even for items that did not change on GitHub: run `gary fixes --json`. For each item whose state is `working`, `draft` or `open` while its stored routes still contain a `follow_up` route with `as: "agent"`, remove that route with `gary put --merge items <id>`, sending the remaining `routes` and a `hint` that matches the new recommended route, or `"hint": null` and `"effortMinutes": null` when no route is left. Pass each item's `fix` to the subagents that classify or triage it.
+
 ### 4c. Handled items (right after step 4, before 4a)
 
 `handled: { at, routeId, routeType, verified }` is a maintainer field. The server sets it when he used a prefill button or a bot or agent route ran, and the board hides the item until the next run. Run `gary handled --json` and decide for each item:

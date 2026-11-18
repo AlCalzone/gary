@@ -256,6 +256,10 @@ A `close` route on a discussion with `facts.answerable` and no `facts.answerChos
 
 The server sets the maintainer field `handled: { at, routeId, routeType, verified }` when he used a prefill button or a bot or agent route ran, and the board hides the item until the next run. `gary handled --json` lists such items. Early in every hourly run, after the snapshot, the routine clears `handled` with `gary put --merge items <id>` and `{ "handled": null }` when the thread changed on GitHub after `handled.at`, and classifies the item again. When nothing changed and `handled.at` is more than 30 minutes old, it clears `handled`, keeps the routes and prepends a `question` finding that he opened the thread but nothing changed there. A younger mark, or an agent job still queued or claimed, keeps `handled`.
 
+## Fix state
+
+The code keeps `fix: { state, pr, startedBy, since }` per issue and discussion, with `state` `working`, `draft`, `open`, `merged` or `closed`. `gary fixes --json` lists it. The fix flow calls `gary fix-record <itemId> --pr <n> --branch <name> --run <run> --by routine|maintainer` right after `gh pr create`, and checks `gary fixes` before it creates the branch and before it opens the PR. The PR's own item carries `fixFor: { itemId, ref }`. The validator and the server refuse a `follow_up` route as agent while the state is `working`, `draft` or `open`, and every hourly run removes such stored routes. Gary's own draft fix PR is the one draft that becomes a board item, once its CI finished. A merged fix leads to a close card on the source item, and a closed unmerged fix allows a new one.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):

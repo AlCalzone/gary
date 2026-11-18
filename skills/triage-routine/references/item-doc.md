@@ -133,6 +133,8 @@ Read the item's `dismissedRoutes` before you write routes. Each entry `{ type, t
 
 ### Delegate to an agent
 
+Never while a fix for the item is `working`, `draft` or `open` (the classification file, "Fixes in progress").
+
 Backlog by the bot or an agent: an issue or discussion authored by the bot or an agent that describes doable work gets exactly one route, a `follow_up` with `as: "agent"`, titled `Implement: <gist>`, with the one-sentence `why`. Its section is `deferred`, and it sorts after everything else there. The maintainer's own note gets the same card when it describes a concrete change, and no routes otherwise.
 
 An item that describes work somebody could do, like a feature, a bug, a docs gap or missing data, gets a `follow_up` route with `as: "agent"` as an alternative. Add it whenever an agent could plausibly attempt the work and the account setup allows pushing, even when the recommended route is a reply or a close. The title starts with `Implement:` for new work or `Start fix:` for a bug, like `Implement: brute-force search for a missing PIN`. Its `why` says in one sentence what the agent would build and what is uncertain. Leave it out only when the work needs real hardware, needs a design decision the maintainer has not made, or is clearly too large for one draft PR. Then say so in the `why` of the recommended route.
@@ -236,6 +238,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 12b. `analyzedBy` is absent or `"fallback"`. With `"fallback"`, `findings` has the `question` entry about the safety-filter stop.
 12d. `autofix`, when present, is `{ changes: boolean, files: number, lines: number, tools: [string] }`, and `changes` is true exactly when `files` is above 0. A `format` route appears only with `autofix.changes: true`. No finding, inline comment, `state` or `story` is about formatting or lint autofix.
 12f. `params.alsoAnswer`, when present, appears only on a `close` of a discussion with `facts.answerable` and no chosen answer, with a `commentId`, an `https://` `url` and a `gist` of at most 12 words.
+12i. An issue or discussion whose fix state is `working`, `draft` or `open` has no `follow_up` route with `as: "agent"` and no fix wording in any route.
 12h. A returned doc carries no `handled` and no `dismissedRoutes` changes.
 12g. An item with routes has `effortMinutes`. Bot or agent backlog has exactly one `Implement:` route and section `deferred`.
 12e. `params.alsoLabel`, when present, appears only on `reply` and `request_logs`, uses only labels from `autoLabels`, adds only labels the item lacks and removes only labels it has, and never contradicts `wants`.

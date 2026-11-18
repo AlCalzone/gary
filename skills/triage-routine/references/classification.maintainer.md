@@ -2,7 +2,7 @@
 
 Read this file, then `<profile>/rules/classification.md`, then the `<personal>` files, shared first. Later wins.
 
-Draft PRs never reach the routine. `gary snapshot` leaves them out, so they get no review, no board item and no label changes. A draft that is marked ready appears as a new item. The draft fix PRs the routine opens itself are reachable through the link on their issue's item.
+Draft PRs never reach the routine. `gary snapshot` leaves them out, so they get no review, no board item and no label changes. A draft that is marked ready appears as a new item. The one exception is Gary's own draft fix PR, which carries `fixFor: { itemId, ref }`: see "Fixes in progress".
 
 Quick classification uses the snapshot data: author and author type, labels, draft flag, head SHA, CI rollup, review decision, changed file paths, the last 5 comments with author and association, their `replies` and `replyCount`, comment count, `updatedAt`, and `facts` (see "Facts first"). It decides the section and the routes.
 
@@ -100,6 +100,16 @@ The item cannot be reproduced without real hardware or an environment the agent 
 
 `facts.aiAuthored` says whether an AI agent wrote the PR, with the evidence in `facts.aiSignals`. The profile's rules say what follows. The fast tier never decides such a PR. Estimate his reading time from `facts.changedLines` (`item-doc.md`, `effortMinutes`).
 
+## Fixes in progress
+
+The code keeps a fix state per issue and discussion: `fix: { state, pr, startedBy, since }`, with `state` `working`, `draft`, `open`, `merged` or `closed`. Read it with `gary fixes --json`, or from the `fix` field the routine passes along, before you write routes.
+
+- **`working`, `draft` or `open`**: a fix is under way. Write no `follow_up` route for the agent, and no "start a fix" wording anywhere. The routes are about the conversation only: a `reply` that tells the reporter a fix is in review and links the PR, when that has not been said yet, otherwise no routes. `state` says where the fix stands, like `Draft fix pr-431 is in review, CI passing.`
+- **`merged`**: recommend a `close` with a closing message that names the release when it is known (`item-doc.md`, `close`).
+- **`closed`** without a merge: a new fix may start. `story` says that the earlier attempt was closed, and why when the thread says so.
+
+Gary's own draft fix PR, with `fixFor`, is a board item once its CI finished: section `review`, `state` like `Draft fix for acme/widgets#398. CI passing.`, routes by the rules for bot PRs. He reviews it, `drive` fits when review threads are open, and a `chore` with `action: "ready"` is the alternative that marks it ready. Its effort comes from the changed lines. While its CI still runs, it has no routes.
+
 ## Open review feedback
 
 `reviewDecision` alone does not tell you whether a PR is ready. A review with state `COMMENTED` never changes it, and that is how most review bots review. Look at `reviews` and `openThreads` in the snapshot entry:
@@ -125,7 +135,7 @@ Some items need nothing from the maintainer right now. They get no routes, and t
 - Answered discussions where no reply is owed.
 - Items that need analysis first. They get `reviewDepth: "pending"`, and the routine reviews them without a click.
 
-- An issue whose decision lives on an open PR, because `facts.hasClosingPr` is true or a PR is clearly its companion. `state` names the PR item, like `Decided with pr-412.` The decision appears once on the board, on the PR.
+- An issue or discussion whose decision lives on an open PR, because `facts.hasClosingPr` is true, a PR's `fixFor` names it, or a PR is clearly its companion. `state` names the PR item, like `Decided with pr-412.` The decision appears once on the board, on the PR.
 
 Such an item comes back when it changes on GitHub. The one exception is a close that becomes due: after `activeMaxWaitDays` of waiting on a reporter, the recommended route is `close` with reason `not_planned`.
 

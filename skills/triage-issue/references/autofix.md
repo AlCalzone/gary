@@ -16,6 +16,10 @@ Claim the item with `gary claim <itemId> fix --run <run>`, and release it with `
 
 For an autonomous fix, read the queue right before you start and again right before you open the PR. When a `start_fix` request for this item is queued or claimed, the item is the maintainer's: stop without opening a PR, release the claim, and return the item unchanged. A fix he started with instructions follows those instructions exactly. An autonomous fix uses your own approach, unless the route's `text` gives one.
 
+## 0a. Fix state
+
+Run `gary fixes --json` for the item right before you create the branch, and again right before `gh pr create`. A `working` state held by another run, or a `draft` or `open` state, means stop: release the claim and return the item unchanged. This is on top of the claim.
+
 ## 1. Worktree
 
 ```bash
@@ -61,6 +65,8 @@ Open it under the writing identity:
 ```bash
 gh pr create --repo <owner>/<repo> --draft --base <default branch> --head triage/issue-<n> --title "<title>" --body-file <scratch>/pr-body.md
 ```
+
+Right after `gh pr create`, before anything else can fail, record the PR: `gary fix-record <itemId> --pr <number> --branch triage/issue-<n> --run <run> --by routine`, or `--by maintainer` when he started the fix with a click.
 
 The title follows the project's format for PR titles.
 
