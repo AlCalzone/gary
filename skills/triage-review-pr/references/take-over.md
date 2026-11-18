@@ -2,6 +2,12 @@
 
 The maintainer clicked `take_over` on a contributor PR that is not taken over yet, or on a PR by the bot or a dependency bot whose CI fails because of its own change. Finishing it ourselves is quicker than another round trip. You get the action file (`params.mode`, optional `params.decisions` with one decision per open thread, optional `text` with instructions), the item doc with the review's findings and threads, and a scratch directory.
 
+## What a take-over never does
+
+Taking over means finishing the code. It never means deciding the PR. You do not merge, approve, close or mark the PR ready, also when the instructions mention a merge. The maintainer has the last word and merges on GitHub himself.
+
+You may set the PR's title when it does not follow the profile's title format, because the title becomes the squash commit message: `gh pr edit <n> --repo <owner>/<repo> --title "<title>"` under the writing identity. Change nothing else on the PR: no labels beyond the autonomous ones, no reviewers, no milestone, no base branch. Say in the returned `state` that you changed the title.
+
 ## `mode: "push"`
 
 The normal mode. Continue in the contributor's PR with our commits, pushed under the writing identity:
