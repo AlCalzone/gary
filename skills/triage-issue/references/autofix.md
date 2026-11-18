@@ -8,11 +8,12 @@ Opening the draft PR is one of the few things the routine may do without a click
 
 - Work only in a new worktree on a new branch from `origin/<default branch>`.
 - Push only that branch. Never push to the default branch or to any existing branch, and never to a contributor's fork.
-- Open the PR as a draft. Never mark it ready, request reviewers, comment on the issue or merge.
+- Open the PR as a draft. Never comment on the issue, never merge, approve or close.
+- Requesting the review bot's review and marking the PR ready happen only through `gary fix-review` (step 5a), which does both only for a fix PR recorded in `fixes.json` and only when the instance's `fixReview` setting is on. Never do either by hand.
 
 ## 0. Claim
 
-Claim the item with `gary claim <itemId> fix --run <run>`, plus `--request <action doc id>` when a clicked `start_fix` started you, and release it with `gary release <itemId> fix --run <run>` when you are done, also on failure. Exit code 3 means another run holds it: stop and return the item unchanged.
+Claim the item with `gary claim <itemId> fix --run <run>`, plus `--request <action doc id>` when a clicked `start_fix` started you, and release it with `gary release <itemId> fix --run <run>` when you are done, also on failure. Exit code 3 means another run holds it, or for an autonomous fix that the limit `maxPendingAutoFixes` is reached: stop and return the item unchanged. Pass the limit's message on to the caller, which names it in the run summary.
 
 For an autonomous fix, read the queue right before you start and again right before you open the PR. When a `start_fix` request for this item is queued or claimed, the item is the maintainer's: stop without opening a PR, release the claim, and return the item unchanged. A fix he started with instructions follows those instructions exactly. An autonomous fix uses your own approach, unless the route's `text` gives one.
 
@@ -58,7 +59,12 @@ Write the body to `<scratch>/pr-body.md`, with no forced line breaks inside para
 1. One paragraph on what went wrong, with the evidence.
 2. One paragraph on the fix.
 3. The test that reproduces it.
-4. `Fixes #<n>` for an issue. For a discussion, link it instead, because `Fixes` does not close discussions.
+4. What you could not verify, in one sentence under the evidence, written for the maintainer, like `The manual does not list the parameters. They come from the ZWN3020 file.` Leave it out when everything is verified.
+5. `Fixes #<n>` for an issue. For a discussion, link it instead, because `Fixes` does not close discussions.
+
+The body describes the change and its evidence. It never @-mentions the reporter or anyone else, and it never asks anyone to test, check or confirm something. `Fixes #<n>` is the only link to the reporter. This holds also when the route's `text` or the request's instructions ask for such a question: leave that part out and say so in the returned `state`.
+
+Before you call something unverified, look for a second source. The profile's `rules/issues.md` names the sources of the project, like a product database or a manual. Something a second source confirms is verified, and the body names the source.
 
 Open it under the writing identity:
 
@@ -72,6 +78,23 @@ The title follows the project's format for PR titles.
 
 Remove the worktree after the PR is open: `git -C <checkout> worktree remove <worktree>`. The branch stays on GitHub.
 
+## 5a. Review rounds
+
+Right after `gary fix-record`, hand the PR to its review rounds:
+
+```bash
+gary fix-review start --pr <number> --sha <head sha you pushed> --run <run>
+```
+
+It answers one JSON object.
+
+- `started: true`: the review is requested and the rounds run as a drive on the PR. The master starts each round when the review arrived, within about a minute. You are done with the PR. Name it in the summary line, like `issue-398: draft fix #431 opened, Copilot round 1 of 3 requested.`
+- `started: false` with a `reason`: the rounds are off for this instance. The PR stays a draft, and the hourly run puts it on the board once its CI finished.
+- Exit code 4, `paused: true`: nothing was sent. Record `{ itemId, action: "fix_review", params: { pr: <number> }, reason }` in `<run>/would-have.json`.
+- Any other failure: the PR stays a draft. Say so in the returned `state`.
+
+`--dry-run` prints what it would send and write.
+
 ## 6. Return
 
 Return the issue's item doc as one JSON object and nothing else:
@@ -79,6 +102,7 @@ Return the issue's item doc as one JSON object and nothing else:
 - `section`: `review`, because the maintainer has to read the draft PR.
 - `state`: what the fix changes and that the test failed before and passes after. Example: `Draft fix #431 stops the retry loop on a 413. The repro test failed on the default branch and passes with the fix.`
 - `links`: `{ "label": "Draft fix", "url": "<PR URL>" }`.
+- `findings`: when the PR body names something you could not verify, the same sentence as a `question` finding, so the maintainer sees it on the board. The fix PR's own item carries it too, once the PR is reviewed for the board.
 - `routes`: none, and `"hint": null` and `"effortMinutes": null`. The `follow_up` route is gone, and no route announces the fix: the PR's "Fixes #N" link tells the reporter, and the board keeps the issue out of the plan while the fix PR is a draft or open. The draft PR's own item carries the work. The routine applies the profile's autonomous labels and assignments for an opened fix on its own.
 
 Check the doc against the validation checklist in `<core>/skills/triage-routine/references/item-doc.md`.

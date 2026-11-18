@@ -266,6 +266,10 @@ The code keeps `fix: { state, pr, startedBy, since }` per issue and discussion, 
 
 While the state is `working`, `draft` or `open`, the fix carries `parked: true` (`parksItem` in `scripts/lib/fixes.mjs`) and the board keeps the issue or discussion out of the plan, in the line "Has a fix in progress". The server computes this from the fix state when it serves the items, so it holds for stored items without a new triage. The item returns when the fix PR is merged or closed, or when the other side wrote after the fix PR was recorded: the snapshot entry's `lastThemAt` is later than the fix's `since`.
 
+A fix PR Gary recorded gets review rounds without a click, as a drive with `by: "fix"`. `gary fix-review start` requests the first review and writes the waiting drive. `gary watch-queue` polls every waiting drive once a minute and prints a `review-arrived` or `review-timeout` line, on which the master starts the next round. `gary fix-review finish` marks the PR ready after a `done` drive and queues the `full_review` that puts the PR on the board. The fix state carries `review: { reviewer, round, maxRounds }` while the rounds run. `scripts/fix-review.mjs` holds both commands, and both refuse a PR that is not in `fixes.json`.
+
+`maxPendingAutoFixes` limits the pending fixes the routine started itself. `pendingAutoFixes` in `scripts/lib/fixes.mjs` counts them, and `gary claim <itemId> fix` without `--request` refuses at the limit after it took the claim.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):
