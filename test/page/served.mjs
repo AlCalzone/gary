@@ -261,11 +261,11 @@ try {
 	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.value += " (edited)"; ta.dispatchEvent(new Event("input"));`);
 	await press("Copy reply, open GitHub");
 	ok("me route: clipboard gets the edited text", await until(`String(window.__clip).endsWith(" (edited)")`));
-	ok("me route: opens the thread with the anchor", await until(`window.__opened[0] === ${JSON.stringify(ISSUE + "#issuecomment-new")}`));
+	ok("me route: an issue without comments opens its plain URL", await until(`window.__opened[0] === ${JSON.stringify(ISSUE)}`));
 	ok("me route: no /api/action request", await ev(`return window.__apiCalls === 0;`));
 	await sleep(500);
 	ok("me route: no action doc", !actionFiles().some((a) => a.itemId === "issue-21" && a.routeId === "r1"));
-	ok("me route: opened mark shown", await until(`/opened/.test(${openCardText})`));
+	ok("me route: opened mark shown", await until(`!!document.querySelector('#d-routes .card.open .opened-mark[aria-label="You opened this on GitHub today"] svg')`));
 	await clickCard(3);
 	await press("Open GitHub to file the issue");
 	ok("me follow_up opens the new-issue form", await until(`window.__opened.includes("https://github.com/acme/widgets/issues/new?title=A%20%26%20B&body=Line%201")`));

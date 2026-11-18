@@ -133,3 +133,33 @@
     ok("a new dialog starts without the line", document.getElementById("d-updated").hidden);
     document.getElementById("d-close").click(); await wait(5);
   }
+
+  // Prefill buttons open the thread at its comment box
+  {
+    const base = "https://github.com/acme/widgets";
+    items([...F,
+      ["issue-9601", { kind: "issue", number: 9601, title: "With comments", url: base + "/issues/9601#old-fragment", author: "someone", authorType: "contributor", section: "easy", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full",
+        facts: { lastEventUrl: base + "/issues/9601#issuecomment-123" },
+        routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks", text: "Thanks!", recommended: true, draftHash: "h1" }, { id: "r2", type: "close", as: "me", title: "Close: done", params: { reason: "completed" }, draftHash: "h2" }] }],
+      ["pr-9602", { kind: "pr", number: 9602, title: "PR without lastEventUrl", url: base + "/pull/9602", author: "someone", authorType: "contributor", section: "easy", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full",
+        routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks", text: "Thanks!", recommended: true, draftHash: "h1" }, { id: "r2", type: "merge", as: "me", title: "Merge: ready", draftHash: "h2" }] }],
+      ["disc-9603", { kind: "discussion", number: 9603, title: "Discussion", url: base + "/discussions/9603", author: "someone", authorType: "contributor", section: "easy", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full",
+        routes: [{ id: "r1", type: "move", as: "me", title: "Move: escalate to an issue", params: { to: "issue" }, recommended: true, draftHash: "h1" }] }],
+    ]); await wait(10);
+    await openItem("issue-9601");
+    cardBtn("Copy reply, open GitHub").click(); await wait(20);
+    ok("with lastEventUrl: the prefill opens the newest comment, the old fragment replaced", window.__opened.at(-1) === base + "/issues/9601#issuecomment-123");
+    cardBtn("Open GitHub to close", cards()[1]).click(); await wait(20);
+    ok("close opens at the comment box too", window.__opened.at(-1) === base + "/issues/9601#issuecomment-123");
+    await openItem("pr-9602");
+    cardBtn("Copy reply, open GitHub").click(); await wait(20);
+    ok("a PR without lastEventUrl opens at #issue-comment-box", window.__opened.at(-1) === base + "/pull/9602#issue-comment-box");
+    cardBtn("Open GitHub to merge", cards()[1]).click(); await wait(20);
+    ok("merge keeps the plain PR URL", window.__opened.at(-1) === base + "/pull/9602");
+    await openItem("disc-9603");
+    cardBtn("Copy escalate command, open GitHub", cards()[0]).click(); await wait(20);
+    ok("a discussion's escalate command opens at #issue-comment-box", window.__opened.at(-1) === base + "/discussions/9603#issue-comment-box");
+    ok("no #issuecomment-new anywhere", !window.__opened.some((u) => /#issuecomment-new/.test(u)));
+    document.getElementById("d-close").click(); await wait(5);
+    items(F); await wait(5);
+  }

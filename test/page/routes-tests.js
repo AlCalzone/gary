@@ -43,8 +43,9 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ta201.value = "A PR is welcome! Edited."; ta201.dispatchEvent(new Event("input"));
   let calls = __calls.length;
   replyBtn.click(); await wait(20);
-  ok("reply in his name copies, opens the anchor and never calls the server", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471#issuecomment-new" && __calls.length === calls);
-  ok("opened today mark and counts as handled", /opened/.test(openCard().querySelector(".card-actions").textContent) && handledToday("issue-9471"));
+  ok("reply in his name copies, opens the anchor and never calls the server", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls);
+  const om = openCard().querySelector(".card-actions .opened-mark");
+  ok("opened today: a check mark with its label, not a word", !!om && !!om.querySelector("svg") && om.textContent === "" && om.getAttribute("aria-label") === "You opened this on GitHub today" && om.title === "You opened this on GitHub today" && handledToday("issue-9471"));
   await expand(2);
   ok("clicking a collapsed card opens it and closes the other", openCard() === cards()[2] && cards()[0].querySelector(".card-body").hidden);
   await expand(2);
@@ -202,7 +203,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("a compact recommended route leaves every card closed", !openCard() && cards()[0].classList.contains("compact"));
   calls = __calls.length;
   cardBtn("Copy escalate command, open GitHub", cards()[0]).click(); await wait(20);
-  ok("escalate copies exactly the command and opens the discussion", window.__clip === "@widgets-bot escalate" && window.__opened.at(-1) === "https://github.com/acme/widgets/discussions/9476" && __calls.length === calls);
+  ok("escalate copies exactly the command and opens the discussion", window.__clip === "@widgets-bot escalate" && window.__opened.at(-1) === "https://github.com/acme/widgets/discussions/9476#issue-comment-box" && __calls.length === calls);
   ok("escalate shows his avatar", avatarOf(cardBtn("Copy escalate command, open GitHub", cards()[0]), "octocat"));
 
   // issue to a discussion
@@ -540,7 +541,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("no bot: request_logs is a prefill with his avatar", !!cardBtn("Copy request, open GitHub") && /jdoe/.test(cardBtn("Copy request, open GitHub").querySelector("img")?.src ?? "") && !!openCard().querySelector("textarea.tall"));
   calls = __calls.length;
   cardBtn("Copy request, open GitHub").click(); await wait(20);
-  ok("no bot: the prefill copies and opens GitHub, never the server", /loglevel `debug`/.test(window.__clip) && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9472#issuecomment-new" && __calls.length === calls);
+  ok("no bot: the prefill copies and opens GitHub, never the server", /loglevel `debug`/.test(window.__clip) && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9472" && __calls.length === calls);
   await expand(2);
   ok("no bot: follow_up as bot becomes the new-issue form of the configured repo", !!cardBtn("Open GitHub to file the issue"));
   cardBtn("Open GitHub to file the issue").click(); await wait(20);
