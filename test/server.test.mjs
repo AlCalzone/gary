@@ -1,7 +1,7 @@
 // /api/action and /api/state of server/server.mjs on a temp root in dry-run mode, with the fake gh.
 // The second half runs two instances in the one server and adds a third while it runs.
 import { spawn } from "node:child_process";
-import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { get } from "node:http";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -411,6 +411,31 @@ for (const body of [{ op: "update", path: "items/issue-90", data: {} }, { instan
 	r = await api("/api/db", body);
 	check(`a db write without a known instance is refused: ${body.path}`, r.status === 400, r);
 }
+
+// Settings edits apply without a restart, also in a profile outside the root
+const editJson = (file, change) => {
+	const tmp = file + ".tmp";
+	writeFileSync(tmp, JSON.stringify(change(JSON.parse(readFileSync(file, "utf8")))));
+	renameSync(tmp, file);
+};
+const entryTitle = (e) => e?.data.board.instances.find((i) => i.name === "gadgets")?.title;
+const relatedOf = (e) => e?.data.board.instances.find((i) => i.name === "gadgets")?.relatedRepos ?? [];
+sse.events.length = 0;
+editJson(join(T, "profile-gadgets", "profile.json"), (p) => ({ ...p, relatedRepos: ["gadgets-cloud"] }));
+let edited = await sse.waitFor((e) => e.event === "board" && relatedOf(e).includes("gadgets-cloud"));
+check("a profile edit sends a board event with the new relatedRepos", !!edited, sse.events.filter((e) => e.event === "board").map(relatedOf));
+const otherProfile = profileFor("gadgets-two", "acme/gadgets");
+editJson(join(gadgets.home, "config.json"), (c) => ({ ...c, profile: otherProfile }));
+check("pointing the config to another profile sends a board event", !!(await sse.waitFor((e) => e.event === "board" && entryTitle(e) === "gadgets-two")), sse.events.filter((e) => e.event === "board").map(entryTitle));
+sse.events.length = 0;
+await sleep(300);
+editJson(join(otherProfile, "profile.json"), (p) => ({ ...p, relatedRepos: ["gadgets-two-cloud"] }));
+edited = await sse.waitFor((e) => e.event === "board" && relatedOf(e).includes("gadgets-two-cloud"));
+check("the watcher follows the new profile", !!edited, sse.events.filter((e) => e.event === "board").map(relatedOf));
+sse.events.length = 0;
+editJson(join(T, "profile-gadgets", "profile.json"), (p) => ({ ...p, relatedRepos: ["stale"] }));
+await sleep(600);
+check("the old profile is no longer watched", !sse.events.some((e) => e.event === "board" && e.data.instance === "gadgets"), sse.events.map((e) => [e.event, e.data.instance]));
 
 // A new instance appears while the server runs
 sse.events.length = 0;

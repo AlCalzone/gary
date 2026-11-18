@@ -12,7 +12,7 @@ import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
-import { INSTANCE_NAME, ROOT, allowedRepo, instancesDir, itemRef, listInstances, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
+import { INSTANCE_NAME, ROOT, allowedRepo, instanceSettingsFiles, instancesDir, itemRef, listInstances, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
@@ -786,10 +786,30 @@ export async function startBoardServer({
 		}
 	}
 
+	// Watch the directories of the instance's config.json and profile.json, because editors replace files by rename
+	function watchSettings(name) {
+		const entry = served.get(name);
+		const files = instanceSettingsFiles(name);
+		const key = files.join("\u0000");
+		if (entry.settings?.key === key) return;
+		for (const w of entry.settings?.watchers ?? []) w.close();
+		const watchers = [];
+		for (const file of files) {
+			addWatch(watchers, dirname(file), (_type, changed) => {
+				if (changed !== basename(file)) return;
+				schedulePush(name, "board");
+				// A config edit can point the instance to another profile
+				const t = setTimeout(() => served.has(name) && watchSettings(name), DEBOUNCE_MS);
+				t.unref();
+			});
+		}
+		entry.settings = { key, watchers };
+	}
+
 	function serve(name) {
 		const i = loadInstance(name);
 		for (const c of COLLECTIONS) mkdirSync(join(i.board, c), { recursive: true });
-		const entry = { board: i.board, state: i.state, watchers: [] };
+		const entry = { board: i.board, state: i.state, watchers: [], settings: null };
 		served.set(name, entry);
 		const w = entry.watchers;
 		addWatch(w, join(i.board, "items"), () => schedulePush(name, "items"));
@@ -806,11 +826,12 @@ export async function startBoardServer({
 		addWatch(w, i.state, (_type, file) => {
 			if (file === "control.json") schedulePush(name, "board");
 		});
+		watchSettings(name);
 		log(`Serving instance ${name} (${i.repos.join(", ")}).`);
 	}
 
 	function unserve(name) {
-		for (const w of served.get(name).watchers) w.close();
+		for (const w of [...served.get(name).watchers, ...(served.get(name).settings?.watchers ?? [])]) w.close();
 		served.delete(name);
 		log(`Stopped serving instance ${name}.`);
 	}
@@ -899,7 +920,7 @@ export async function startBoardServer({
 		for (const w of rootWatchers.values()) w.close();
 		rootWatchers.clear();
 		for (const name of [...served.keys()]) {
-			for (const w of served.get(name).watchers) w.close();
+			for (const w of [...served.get(name).watchers, ...(served.get(name).settings?.watchers ?? [])]) w.close();
 			served.delete(name);
 		}
 	}
