@@ -140,6 +140,7 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		}
 
 		if (params.alsoLabel !== undefined) checkAlsoLabel(route, params.alsoLabel, profile, where, err);
+		if (params.alsoAnswer !== undefined) checkAlsoAnswer(item, route, params.alsoAnswer, where, err);
 
 		switch (route.type) {
 			case "review": {
@@ -268,6 +269,17 @@ function checkAlsoLabel(route, also, profile, where, err) {
 	if (outside.length) err("also-label-not-auto", `${where}: params.alsoLabel may only name the profile's autoLabels, not ${outside.map((x) => `"${x}"`).join(", ")}`);
 	const both = add.filter((x) => remove.some((y) => y.toLowerCase() === x.toLowerCase()));
 	if (both.length) err("also-label", `${where}: params.alsoLabel adds and removes ${both.join(", ")}`);
+}
+
+// The comment a discussion close route also marks as the answer, offered as a second button
+function checkAlsoAnswer(item, route, also, where, err) {
+	if (route.type !== "close" || item.kind !== "discussion") return err("also-answer", `${where}: alsoAnswer is only for close routes of discussions`);
+	if (!isObject(also) || Object.keys(also).some((k) => !["commentId", "url", "gist"].includes(k))) {
+		return err("also-answer", `${where}: params.alsoAnswer must be { commentId, url, gist }`);
+	}
+	if (typeof also.commentId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(also.commentId)) err("also-answer", `${where}: params.alsoAnswer.commentId must be a discussion comment node id`);
+	if (typeof also.url !== "string" || typeof item.url !== "string" || !also.url.startsWith(item.url + "#")) err("also-answer", `${where}: params.alsoAnswer.url must be a comment URL in this discussion`);
+	if (!isString(also.gist) || also.gist.length > 200) err("also-answer", `${where}: params.alsoAnswer.gist must say in at most 200 characters what the answer says`);
 }
 
 // What the project's autofix would change in a PR, from the mechanical check before the review

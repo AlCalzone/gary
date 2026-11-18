@@ -111,6 +111,10 @@ const items = {
 			{ id: "r7", type: "reply", title: "Reply: no labels", as: "bot", text: "x" },
 		],
 	},
+	"disc-31": {
+		kind: "discussion", repo: REPO, number: 31, title: "answered", url: "https://github.com/acme/widgets/discussions/31", reviewedAt, hint: "Close: answered",
+		routes: [{ id: "r1", type: "close", title: "Close: answered", recommended: true, text: "Thanks, closing.", params: { alsoAnswer: { commentId: "DC_c1", url: "https://github.com/acme/widgets/discussions/31#c1", gist: "Hold the button" } } }],
+	},
 	"issue-41": { kind: "issue", repo: REPO, number: 20, title: "closed", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { add: ["needs-info"] } } }] },
 };
 for (const [id, data] of Object.entries(items)) writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(data));
@@ -130,6 +134,10 @@ const gadgetItems = {
 	"issue-90": { kind: "issue", repo: "acme/gadgets", number: 90, title: "only in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }, { id: "r2", type: "request_logs", title: "Ask: log", as: "bot", text: "Log?" }] },
 	"issue-91": { kind: "issue", repo: REPO, number: 91, title: "widgets repo in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", as: "bot", recommended: true, text: "x" }] },
 	"issue-92": { kind: "issue", repo: "acme/gadgets", number: 22, title: "label in gadgets", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { add: ["needs-info"] } } }] },
+	"disc-95": {
+		kind: "discussion", repo: "acme/gadgets", number: 31, title: "gadgets answer", reviewedAt, hint: "Close: x",
+		routes: [{ id: "r1", type: "close", title: "Close: x", recommended: true, text: "x", params: { alsoAnswer: { commentId: "DC_c1", url: "x#c1", gist: "x" } } }],
+	},
 	"issue-93": { kind: "issue", repo: "acme/gadgets", number: 21, title: "own login", reviewedAt, hint: "Reply: x", routes: [{ id: "r1", type: "reply", title: "Reply: x", recommended: true, text: "x", params: { alsoLabel: { remove: ["bug"] } } }] },
 };
 for (const [id, data] of Object.entries(gadgetItems)) writeFileSync(join(GBOARD, "items", id + ".json"), JSON.stringify(data));
@@ -309,7 +317,7 @@ check("the label button takes only input.part", r.data.ok === false && /only inp
 r = await labelClick("widgets", "issue-40", "r1", { input: { part: "label", add: ["bug"] } });
 check("the label button takes no labels from the client", r.data.ok === false && /unknown field "add"/.test(r.data.result), r);
 r = await labelClick("widgets", "issue-40", "r1", { input: { part: "text" } });
-check("input.part must be label", r.data.ok === false && /input.part must be "label"/.test(r.data.result), r);
+check("input.part must name a button", r.data.ok === false && /input.part must be one of label, answer/.test(r.data.result), r);
 r = await labelClick("widgets", "issue-40", "r1", { text: "x" });
 check("the label button sends no text", r.status === 400, r);
 r = await labelClick("widgets", "issue-40", "r4");
@@ -330,6 +338,20 @@ r = await click("issue-40", "r6", { input: { alsoLabel: "yes" } });
 check("input.alsoLabel must be a boolean", refused(/input.alsoLabel must be true or false/)(r), r);
 r = await click("issue-40", "r7", { input: { alsoLabel: false } });
 check("input.alsoLabel needs a route with alsoLabel", refused(/unknown field "alsoLabel"/)(r), r);
+
+// alsoAnswer: the answer button next to a prefill close of a discussion
+r = await click("disc-31", "r1");
+check("the close itself stays the maintainer's", refused(/yours to do on GitHub/)(r), r);
+r = await labelClick("widgets", "disc-31", "r1");
+check("a close route has no label button", r.data.ok === false && /sets no labels/.test(r.data.result), r);
+r = await labelClick("widgets", "disc-31", "r1", { input: { part: "answer", commentId: "DC_x" } });
+check("the answer button takes no comment id from the client", r.data.ok === false && /unknown field "commentId"/.test(r.data.result), r);
+r = await labelClick("widgets", "issue-40", "r1", { input: { part: "answer" } });
+check("a reply route has no answer button", r.data.ok === false && /marks no answer/.test(r.data.result), r);
+r = await labelClick("widgets", "disc-31", "r1", { input: { part: "answer" } });
+check("the answer button marks exactly the route's comment as the bot", r.data.ok === true && invocations(r).includes("markDiscussionCommentAsAnswer") && invocations(r).includes("DC_c1"), r);
+r = await labelClick("widgets", "disc-31", "r1", { input: { part: "answer" } });
+check("a repeat of the answer button gets 409", r.status === 409 && r.data.duplicate === true, r);
 
 // Action log
 await new Promise((r) => setTimeout(r, 300));
@@ -363,6 +385,9 @@ const after = Object.fromEntries((await api("/api/state")).data.items.filter((i)
 const r1 = after["pr-12"].routes.find((r) => r.id === "r1");
 check("state marks a ran route as done", r1.done?.status === "done", r1);
 check("state marks a queued route", after["pr-12"].routes.find((r) => r.id === "r2").done?.status === "queued");
+check("state serves answerDone", after["disc-31"].routes[0].answerDone?.status === "done" && after["disc-31"].routes[0].labelDone === undefined, after["disc-31"].routes[0]);
+const answerDoc = byRoute("disc-31", "r1")[0];
+check("the answer button writes its own action doc", answerDoc?.part === "answer" && answerDoc.action === "answer_discussion" && /^[0-9a-f]{16}$/.test(answerDoc.answerHash) && JSON.stringify(answerDoc.params) === '{"commentId":"DC_c1"}', answerDoc);
 const labelled = after["issue-40"].routes[0];
 check("state serves labelDone next to done", labelled.labelDone?.status === "done" && typeof labelled.labelDone.result === "string" && labelled.done === undefined, labelled);
 
@@ -478,6 +503,8 @@ r = await api("/api/action", { instance: "gadgets", itemId: "pr-12", routeId: "r
 check("a gadgets bot click is refused while gadgets is paused", r.data.ok === false && r.data.paused === true, r);
 r = await labelClick("gadgets", "issue-92", "r1");
 check("the label button is refused while paused", r.data.ok === false && r.data.paused === true, r);
+r = await labelClick("gadgets", "disc-95", "r1", { input: { part: "answer" } });
+check("the answer button is refused while paused", r.data.ok === false && r.data.paused === true, r);
 r = await api("/api/action", { instance: "widgets", itemId: "issue-30", routeId: "r1", draftHash: itemOf("widgets", "issue-30").routes[0].draftHash });
 check("a widgets bot click still runs", r.data.ok === true && JSON.stringify(r.data.result.invocations).includes("Hi from widgets"), r);
 writeFileSync(join(gadgets.home, "state", "control.json"), JSON.stringify({ paused: false }));
@@ -494,6 +521,8 @@ writeFileSync(gConfig, JSON.stringify({ ...JSON.parse(gConfigText), bot: null })
 await sleep(300);
 r = await labelClick("gadgets", "issue-93", "r1");
 check("the label button needs a bot or own-token pushes", r.data.ok === false && /needs a bot account, or allowOwnTokenPushes/.test(r.data.result), r);
+r = await labelClick("gadgets", "disc-95", "r1", { input: { part: "answer" } });
+check("the answer button needs a bot or own-token pushes", r.data.ok === false && /Marking the answer needs a bot account/.test(r.data.result), r);
 writeFileSync(gConfig, JSON.stringify({ ...JSON.parse(gConfigText), bot: null, allowOwnTokenPushes: true }));
 await sleep(300);
 r = await labelClick("gadgets", "issue-93", "r1");
@@ -598,6 +627,8 @@ r = await api("/api/action", { instance: "gadgets", itemId: "issue-90", routeId:
 check("a bot click is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result) && /"repo" must look like/.test(r.data.settingsError), r);
 r = await labelClick("gadgets", "issue-93", "r1");
 check("the label button is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result), r);
+r = await labelClick("gadgets", "disc-95", "r1", { input: { part: "answer" } });
+check("the answer button is refused with the settings error", r.data.ok === false && /settings of gadgets are invalid/.test(r.data.result), r);
 r = await api("/api/db", { instance: "gadgets", op: "update", path: "items/issue-90", data: { priority: 2 } });
 check("board-only writes keep working", r.status === 200, r);
 r = await api("/api/action", { instance: "gadgets", action: "dismiss_proposal", proposalId: "learn-none" });

@@ -135,6 +135,12 @@ export function validateInput(route, item, input) {
 		return { title: input.title.trim() };
 	}
 
+	if (route.type === "close" && answerParams(route)) {
+		checkKeys(input, ["part"], "input");
+		if (input.part !== undefined && input.part !== "answer") throw new Refusal('input.part must be "answer".');
+		return input.part ? { part: input.part } : {};
+	}
+
 	if (route.type === "reply" || route.type === "request_logs") {
 		const also = labelParams(route);
 		checkKeys(input, also ? ["alsoLabel", "part"] : [], "input");
@@ -157,11 +163,44 @@ export function labelParams(route) {
 	return Object.keys(out).length ? out : null;
 }
 
-/** Fingerprint of a route's label button. It changes when the labels change or the item is reviewed again. */
-export function labelHash(route, item) {
-	const reviewedAt = typeof item?.reviewedAt === "string" ? item.reviewedAt : "";
-	return createHash("sha256").update(JSON.stringify(labelParams(route)) + "\u0000" + reviewedAt).digest("hex").slice(0, 16);
+/** The `answer_discussion` params of a discussion close route's `alsoAnswer`, or null when it has none. */
+export function answerParams(route) {
+	if (route?.type !== "close") return null;
+	const commentId = route.params?.alsoAnswer?.commentId;
+	return typeof commentId === "string" && commentId ? { commentId } : null;
 }
+
+// The second buttons a route can carry next to its prefill. Each runs one bot action with params from the route only
+export const PARTS = {
+	label: {
+		params: labelParams,
+		action: "label",
+		hashField: "labelHash",
+		doneField: "labelDone",
+		// Labels on a closed thread make no sense. Marking an answer comes after the close
+		openOnly: true,
+		none: "This route sets no labels.",
+		needs: "Setting the labels needs",
+		duplicate: "These labels are already set. The board shows the result.",
+	},
+	answer: {
+		params: answerParams,
+		action: "answer_discussion",
+		hashField: "answerHash",
+		doneField: "answerDone",
+		openOnly: false,
+		none: "This route marks no answer.",
+		needs: "Marking the answer needs",
+		duplicate: "The answer is already marked. The board shows the result.",
+	},
+};
+
+/** Fingerprint of a route's second button. It changes when its params change or the item is reviewed again. */
+export function partHash(part, route, item) {
+	const reviewedAt = typeof item?.reviewedAt === "string" ? item.reviewedAt : "";
+	return createHash("sha256").update(JSON.stringify(PARTS[part].params(route)) + "\u0000" + reviewedAt).digest("hex").slice(0, 16);
+}
+export const labelHash = (route, item) => partHash("label", route, item);
 
 /**
  * The body GitHub gets for one inline review comment: its text, then a suggestion block when it has `suggestion`.
@@ -766,11 +805,12 @@ export async function startBoardServer({
 	}
 
 	// The label buttons that ran, keyed by item, route and label hash. Failed ones are served too
-	function labelsByKey(name, actions) {
+	function partsByKey(name, actions, part) {
 		const out = new Map();
-		const sorted = actions.map((a) => a.data).filter((a) => a.part === "label" && typeof a.routeId === "string" && typeof a.labelHash === "string").sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+		const field = PARTS[part].hashField;
+		const sorted = actions.map((a) => a.data).filter((a) => a.part === part && typeof a.routeId === "string" && typeof a[field] === "string").sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 		for (const a of sorted) {
-			out.set(`${name}|${a.itemId}|${a.routeId}|${a.labelHash}`, { status: a.status, result: typeof a.result === "string" ? a.result : "" });
+			out.set(`${name}|${a.itemId}|${a.routeId}|${a[field]}`, { status: a.status, result: typeof a.result === "string" ? a.result : "" });
 		}
 		return out;
 	}
@@ -806,7 +846,7 @@ export async function startBoardServer({
 		const mode = current ?? "none";
 		const [items, actions] = await Promise.all([readCollection(name, "items"), readCollection(name, "actions")]);
 		const clicked = clickedByKey(name, actions);
-		const labelled = labelsByKey(name, actions);
+		const partDone = Object.fromEntries(Object.keys(PARTS).map((p) => [p, partsByKey(name, actions, p)]));
 		const working = await workingByItem(name, actions);
 		return items.map(({ id, data }) => ({
 			...data,
@@ -816,8 +856,12 @@ export async function startBoardServer({
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
 				const ran = clicked.get(key) ?? (doneKeys.has(key) ? { status: "done", result: "", finishedAt: null } : undefined);
-				const labelDone = labelParams(route) ? labelled.get(`${name}|${id}|${route.id}|${labelHash(route, data)}`) : undefined;
-				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...(labelDone && { labelDone }) };
+				const parts = {};
+				for (const [p, def] of Object.entries(PARTS)) {
+					const done = def.params(route) ? partDone[p].get(`${name}|${id}|${route.id}|${partHash(p, route, data)}`) : undefined;
+					if (done) parts[def.doneField] = done;
+				}
+				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...parts };
 			}),
 			instance: name,
 			id,
@@ -1058,7 +1102,7 @@ export async function startBoardServer({
 		const { error: settingsError } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
 		const { itemId, routeId, text, force, input } = body;
-		if (isObject(input) && input.part !== undefined) return handleLabelPart(name, body);
+		if (isObject(input) && input.part !== undefined) return handlePart(name, body);
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
 		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) {
@@ -1190,61 +1234,66 @@ export async function startBoardServer({
 	}
 
 	/**
-	 * Runs the label button of a route with `alsoLabel`: exactly the route's labels, as the bot or under the own
-	 * login. It is no route choice, so it logs no decision.
+	 * Runs the second button of a route: the labels of `alsoLabel` or the answer of `alsoAnswer`, with params from
+	 * the route only, as the bot or under the own login. It is no route choice, so it logs no decision.
 	 */
-	async function handleLabelPart(name, body) {
+	async function handlePart(name, body) {
 		const { itemId, routeId, input, force } = body;
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
-		if (body.text !== undefined) return [400, { ok: false, result: "The label button sends no text." }];
+		const part = input.part;
+		const def = Object.hasOwn(PARTS, part) ? PARTS[part] : null;
+		if (!def) return [200, { ok: false, result: `input.part must be one of ${Object.keys(PARTS).join(", ")}.` }];
+		if (body.text !== undefined) return [400, { ok: false, result: `The ${part} button sends no text.` }];
 		return withLock(actionLocks, `${name}/${itemId}`, async () => {
 			const item = await readJson(itemFile(name, itemId));
 			const route = item && routesOf(item).find((r) => r.id === routeId);
 			if (!route) return outdated;
-			const labels = labelParams(route);
-			if (!labels) return [200, { ok: false, result: "This route sets no labels." }];
+			const params = def.params(route);
+			if (!params) return [200, { ok: false, result: def.none }];
 			if (!allowedRepo(name, item.repo)) {
 				return [200, { ok: false, result: typeof item.repo === "string" ? `${item.repo} is not a repository of instance ${name}. Nothing was sent.` : "The item names no repository. Nothing was sent." }];
 			}
 			try {
 				const chosen = validateInput(route, item, input);
-				if (chosen.part !== "label" || input.alsoLabel !== undefined) throw new Refusal('The label button sends only input.part "label".');
+				if (chosen.part !== part || Object.keys(input).length !== 1) throw new Refusal(`The ${part} button sends only input.part "${part}".`);
 			} catch (e) {
 				if (e instanceof Refusal) return [200, { ok: false, result: e.message }];
 				throw e;
 			}
 			const mode = modeOf(name);
-			if (mode === "none") return [200, { ok: false, result: "Setting the labels needs a bot account, or allowOwnTokenPushes in config.json to run it under your own gh login." }];
-			const hash = labelHash(route, item);
+			if (mode === "none") return [200, { ok: false, result: `${def.needs} a bot account, or allowOwnTokenPushes in config.json to run it under your own gh login.` }];
+			const hash = partHash(part, route, item);
 			const key = `${name}|${itemId}|${routeId}|${hash}`;
-			if (doneKeys.has(`label|${key}`) || labelsByKey(name, await readCollection(name, "actions")).get(key)?.status === "done") {
-				return [409, { ok: false, result: "These labels are already set. The board shows the result.", duplicate: true }];
+			if (doneKeys.has(`${part}|${key}`) || partsByKey(name, await readCollection(name, "actions"), part).get(key)?.status === "done") {
+				return [409, { ok: false, result: def.duplicate, duplicate: true }];
 			}
 			if (isPaused(served.get(name).state)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
 			const { kind, number, repo } = item;
-			const fresh = await checkFresh({ instance: name, action: "label", params: labels, kind, number, item, force: force === true, openOnly: true });
-			if (fresh.state) {
-				liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
-				schedulePush(name, "items");
+			if (def.openOnly) {
+				const fresh = await checkFresh({ instance: name, action: def.action, params, kind, number, item, force: force === true, openOnly: true });
+				if (fresh.state) {
+					liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
+					schedulePush(name, "items");
+				}
+				if (!fresh.ok) return [200, { ok: false, result: fresh.reason, stale: true, forceable: false }];
 			}
-			if (!fresh.ok) return [200, { ok: false, result: fresh.reason, stale: true, forceable: false }];
-			const outcome = await runAction({ instance: name, repo, action: "label", params: labels, kind, number, dryRun });
+			const outcome = await runAction({ instance: name, repo, action: def.action, params, kind, number, dryRun });
 			await logClick(name, itemId, {
 				routeId,
 				route: route.type,
-				part: "label",
-				labelHash: hash,
+				part,
+				[def.hashField]: hash,
 				createdAt: new Date().toISOString(),
-				action: "label",
-				params: labels,
+				action: def.action,
+				params,
 				text: "",
 				status: outcome.ok ? "done" : "failed",
 				via: "server",
 				finishedAt: new Date().toISOString(),
 				result: typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result),
 			});
-			if (outcome.ok) doneKeys.add(`label|${key}`);
+			if (outcome.ok) doneKeys.add(`${part}|${key}`);
 			schedulePush(name, "items");
 			return [200, outcome];
 		});

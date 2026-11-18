@@ -170,6 +170,18 @@ mk also2 "{$BASE,\"hint\":\"Reopen: x\",\"routes\":[{\"id\":\"r1\",\"type\":\"re
 expect "alsoLabel is only for reply and request_logs" 1 "alsoLabel is only for reply and request_logs routes" node $B put items pr-12 $H/also2.json
 node $B put items pr-12 $H/good.json > /dev/null 2>&1
 
+# alsoAnswer on discussion close routes
+DBASE='"repo":"acme/widgets","kind":"discussion","number":31,"title":"t","url":"https://github.com/acme/widgets/discussions/31","author":"a","authorType":"contributor","section":"easy","priority":1,"effortMinutes":5,"reviewDepth":"full","state":"Decide."'
+answer() { mk ans "{${2:-$DBASE},\"hint\":\"Close: answered\",\"routes\":[{\"id\":\"r1\",\"type\":\"${3:-close}\",\"title\":\"Close: answered\",\"as\":\"me\",\"text\":\"Closing.\",\"recommended\":true,\"params\":{\"alsoAnswer\":$1}}]}"; node $B put items disc-31 $H/ans.json }
+expect "alsoAnswer on a discussion close" 0 '"ok":true' answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/31#discussioncomment-1","gist":"Hold the button"}'
+expect "alsoAnswer needs a comment URL of the discussion" 1 "must be a comment URL in this discussion" answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/310#x","gist":"x"}'
+expect "alsoAnswer needs a node id" 1 "must be a discussion comment node id" answer '{"commentId":"a b","url":"https://github.com/acme/widgets/discussions/31#x","gist":"x"}'
+expect "alsoAnswer needs a gist" 1 "gist must say" answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/31#x"}'
+expect "alsoAnswer has only commentId, url and gist" 1 "must be { commentId, url, gist }" answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/31#x","gist":"x","extra":1}'
+expect "alsoAnswer is refused on issues" 1 "only for close routes of discussions" answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/issues/21#x","gist":"x"}' "${DBASE/discussion/issue}"
+expect "alsoAnswer is refused on other routes" 1 "only for close routes of discussions" answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/31#x","gist":"x"}' "$DBASE" reply
+node $B put items disc-31 --delete > /dev/null 2>&1
+
 # gary action --autonomous
 act() { print -r -- "$1" | node $B action --dry-run $2 }
 expect "autonomous: a label from autoLabels" 0 "addLabelsToLabelable" act '{"action":"label","kind":"issue","number":21,"params":{"add":["needs-info"]}}' --autonomous
