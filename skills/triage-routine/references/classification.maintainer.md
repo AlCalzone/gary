@@ -110,6 +110,8 @@ The code keeps a fix state per issue and discussion: `fix: { state, pr, startedB
 
 A fix PR whose review rounds run (`fix.review` on its source item in `gary fixes --json`) is no board item yet. The rounds end with a `full_review` request that brings it to the board, ready for review when the rounds went through, still a draft when they stopped. Its item then carries the `rounds` and says in `state` how they ended. As finished agent work it sits at the top of its group ("Work the maintainer asked the agent for comes back first" covers it too).
 
+A fix PR asks nobody to verify it. When its body names something the fix could not verify, the PR's item carries that as a `question` finding for the maintainer. Whether to ask the reporter is his decision: offer it as a `reply` route as `me` on the fix PR's item only when the doubt is real, like a parameter set no second source confirms. Never recommend that route. A device config taken from a sibling device or confirmed by a source the profile names needs no such route.
+
 With the rounds off, Gary's own draft fix PR, with `fixFor`, is a board item once its CI finished: section `review`, `state` like `Draft fix for acme/widgets#398. CI passing.`, routes by the rules for bot PRs. He reviews it, `drive` fits when review threads are open, and a `chore` with `action: "ready"` is the alternative that marks it ready. Its effort comes from the changed lines. While its CI still runs, it has no routes.
 
 ## Open review feedback

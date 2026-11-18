@@ -48,4 +48,5 @@ Keep `question` findings as questions to the contributor only when the contribut
 - Restating what the reporter wrote.
 - Speculation presented as a fact. Say "I think" or leave it out.
 - Promises about timelines.
+- In a fix PR's body: an @-mention of the reporter, and any request to test, check or confirm the fix. The body describes the change and its evidence. A doubt goes to the maintainer in one sentence under the evidence.
 - Any mention of the triage routine, the board or an AI.
