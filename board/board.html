@@ -3863,7 +3863,9 @@ function subscribe(db) {
     for (const doc of snap.docs) {
       const a = doc.data();
       if (!a || typeof a.itemId !== "string") continue;
-      const ref = actionRef(a.instance || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : ""), a.itemId);
+      const inst = a.instance || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : "");
+      // An action doc may name its item by the plain id or by the full key
+      const ref = actionRef(inst, a.itemId.startsWith(inst + "/") ? a.itemId.slice(inst.length + 1) : a.itemId);
       const prev = latest.get(ref);
       if (!prev || str(a.createdAt) > str(prev.createdAt)) latest.set(ref, a);
     }

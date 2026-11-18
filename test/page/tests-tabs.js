@@ -90,6 +90,11 @@
   ok("both instances' proposals with the same id stay apart", lcards().length === 2 && /Added to rules\/review\.md/.test(gCard.textContent) && !/Added to/.test(lcards().find((c) => c !== gCard).textContent));
   document.getElementById("learn-close").click(); await wait(5);
   window.__subs["proposals"](__mkSnap([])); await wait(5);
+  // Action docs may name the item by its key
+  window.__subs["actions"](__mkSnap([["gadgets/a1", { instance: "gadgets", itemId: "gadgets/issue-42", action: "comment", status: "done", via: "server", createdAt: new Date().toISOString() }]])); await wait(10);
+  ok("an action doc that names its item by key counts for that item", handledToday("gadgets/issue-42") && !handledToday("widgets/issue-31"));
+  window.__subs["actions"](__mkSnap([])); await wait(5);
+
   // Hover and focus audit: every button variant keeps a readable label in both themes
   {
     // Copy every :hover and :focus-visible rule to a class, so the states can be measured without a pointer
