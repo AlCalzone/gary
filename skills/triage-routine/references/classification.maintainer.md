@@ -53,7 +53,7 @@ Every rule in this section also needs `facts.waitingDays` to be at most `activeM
 
 ### `easy`: an obvious decision
 
-The section follows his effort to decide, not the number of steps after his click. `easy` means the decision is obvious and the expected change is small: a reorder, a missing field, a typo-level fix, one or two `valid` review comments with clear fixes. That holds for `take_over`, `address_review` and `drive` too. `effortMinutes` is 1 or 2.
+The section follows his effort to decide, not the number of steps after his click. `easy` means the decision is obvious and the expected change is small: a reorder, a missing field, a typo-level fix, one or two `valid` review comments with clear fixes. That holds for `take_over`, `revise`, `address_review` and `drive` too. `effortMinutes` is 1 or 2.
 
 - A PR with `facts.isClean`: approved, `facts.ciGreen`, no open review feedback (see "Open review feedback" below). Recommended route: `merge` as `me`.
 - A clean PR by the bot or a dependency bot (`facts.dependencyOnly` or a bot author, `facts.ciGreen`), that lacks his approval: recommended `merge` as `me`, with a `why` that says he approves on the PR page. Never a bot approval on a bot PR. For a dependency update, say in `state` which package and version range it changes. A major version bump goes to `review` instead.
@@ -67,12 +67,12 @@ The section follows his effort to decide, not the number of steps after his clic
 
 ### `almost`: he has to think
 
-He has to think about whether to act or about the content: a behavior change, several threads with mixed verdicts, a verdict that needs his domain check, a decision on an open question. The route for PRs we would fix ourselves follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. `effortMinutes` is 5 or more.
+He has to think about whether to act or about the content: a behavior change, several threads with mixed verdicts, a verdict that needs his domain check, a decision on an open question. The route for PRs we would fix ourselves follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over. On the others, `drive` or `address_review` for open threads and `revise` for any other change. `effortMinutes` is 5 or more.
 
 - A PR whose full review found only `minor` or cosmetic findings. Recommended route: `review` with `event: "comment"`, inline comments and a summary, with an approval as the alternative. At least one `major` or `blocker` finding makes it `event: "request_changes"` (`item-doc.md`, `review`).
 - A PR with failing CI where the failure comes from the PR's own change and the fix is small.
 - An issue or feature request that only needs the maintainer's yes or no, like "accept this API?". Put the open question in `state`.
-- A PR by the bot or a dependency bot whose CI fails because of its own change, when the fix is small: `take_over` with `mode: "push"`.
+- A PR by the bot or a dependency bot whose CI fails because of its own change, when the fix is small: `revise` with the fix as its `text`. These PRs are ours already, so never `take_over`.
 - The maintainer's own PR with open review threads: `drive` (rule in `item-doc.md`, "Who may push to a PR").
 
 ### `review`: a human must read the code
@@ -117,7 +117,7 @@ Gary's own draft fix PR, with `fixFor`, is a board item once its CI finished: se
 - `openThreadCount` above 0: unresolved review threads exist. Name the count and who opened them in `state`, like `Approved, but a review bot left 2 open threads after the approval.`
 - A review that arrived after the latest approval, from a person or a bot, with change requests or recommendations in its body.
 
-A PR with open review feedback never gets a recommended `merge`. It is `easy` when one or two `valid` threads have clear fixes and the rest is obvious, `almost` when he has to check verdicts or content, `review` when the code needs his reading. It is a full-review candidate. The full review judges each open thread in `threads`: `valid`, `optional` or `wrong`, with a note. Once every thread has a verdict, the route follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. Outdated threads that are not resolved count as open. The agent behind it can push only when the account setup allows pushes and the PR allows it: a fork PR needs `maintainerCanModify: true`, a branch inside the repo needs nothing extra. When it cannot push and a thread is `valid`, recommend a `review` route that asks the contributor instead.
+A PR with open review feedback never gets a recommended `merge`. It is `easy` when one or two `valid` threads have clear fixes and the rest is obvious, `almost` when he has to check verdicts or content, `review` when the code needs his reading. It is a full-review candidate. The full review judges each open thread in `threads`: `valid`, `optional` or `wrong`, with a note. Once every thread has a verdict, the route follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. A `revise` carries no thread decisions, so it is never the route for open threads. Outdated threads that are not resolved count as open. The agent behind it can push only when the account setup allows pushes and the PR allows it: a fork PR needs `maintainerCanModify: true`, a branch inside the repo needs nothing extra. When it cannot push and a thread is `valid`, recommend a `review` route that asks the contributor instead.
 
 Bot reviewers are often right about real bugs and often wrong about project conventions. Never dismiss a thread because a bot wrote it, and never treat it as settled because a bot wrote it.
 
@@ -158,7 +158,7 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 `priority` is 1 for the top of a section. The maintainer works a section from the top, so cheap decisions come first. Order within a section:
 
-Work the maintainer asked the agent for comes back first. An item whose agent job finished since he last handled it (a take-over, an address-review, a drive, a format, a fix he started) and that now only needs his decision goes to `easy`, at the very top, before everything else, newest result first. He asked for it and is waiting to finish it. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
+Work the maintainer asked the agent for comes back first. An item whose agent job finished since he last handled it (a take-over, a change he asked for with `revise`, an address-review, a drive, a format, a fix he started) and that now only needs his decision goes to `easy`, at the very top, before everything else, newest result first. He asked for it and is waiting to finish it. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
 
 After those, in every section, other people come before our own work: first items by outside contributors and reporters, then items by the maintainer himself, then items by bots and agents. Someone outside is waiting on the first group, and nobody waits on the others. Within each of these groups:
 
