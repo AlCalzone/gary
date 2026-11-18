@@ -4,12 +4,7 @@
 
 <p align="center"><em>Get Anything Ready for You</em></p>
 
-Gary turns the open PRs, issues and discussions of your projects into a plan for your day.
-
-- **Know what matters in a minute.** Every item comes with a short briefing: what happened, who is waiting, and how long it will take you.
-- **The next step is already prepared.** A review with inline suggestions, a reply in your voice, a fix with a test. You read it and click.
-- **You keep the last word.** Gary never merges, approves or closes. Those stay with you.
-- **It learns how you work.** Dismiss a suggestion or rewrite a draft, and Gary proposes a rule for next time.
+Gary turns the open PRs, issues and discussions of your projects into a plan for your day. Every item comes briefed, with the next step prepared: a review, a reply, a fix. You read, click, and keep the last word.
 
 <!-- Screenshot of the board goes here. -->
 
