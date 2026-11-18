@@ -221,6 +221,45 @@
     ok("row chip: a quiet Fixed by #9500", chipOf("issue-9499")?.textContent === "Fixed by #9500" && chipOf("issue-9499").classList.contains("quiet"));
     ok("row chip: Agent working on a PR the agent is changing", chipOf("pr-9493")?.textContent === "Agent working" && filled(chipOf("pr-9493")));
     ok("the row hint does not point at a hidden fix route", !/Start fix/.test(document.querySelector('.row[data-id="issue-9495"] .r-hint')?.textContent ?? ""));
+    // A fix in progress takes its issue out of the plan, the fix PR's item carries the work
+    {
+      const park = (ids, extra = () => ({})) => F.map(([k, d]) => [k, ids.includes(k) ? { ...d, fix: { ...d.fix, parked: true }, ...extra(k, d) } : d]);
+      const inGroups = (k) => !!document.querySelector('#board .group .row[data-id="' + k + '"]');
+      const parkedRow = (k) => document.querySelector('#fix-parked .handled-row[data-id="' + k + '"]');
+      const line = document.getElementById("fix-parked");
+      ok("no fix line while no fix parks an item", line.hidden && inGroups("issue-9495"));
+      const spentBefore = document.querySelector("#plan .sum").textContent;
+      items(park(["issue-9494", "issue-9495"])); await wait(10);
+      for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+      await wait(5);
+      ok("parked: the issues leave every plan group", !inGroups("issue-9494") && !inGroups("issue-9495"));
+      ok("parked: the fix PR's own item stays in the plan", inGroups("pr-9496"));
+      ok("parked: a quiet line counts them and folds the rows", !line.hidden && line.querySelector("summary").textContent === "Has a fix in progress: 2" && !line.querySelector("details").open
+        && line.previousElementSibling === document.getElementById("handled"));
+      ok("parked: the rows carry the fix chip", parkedRow("issue-9494")?.querySelector(".agent-chip")?.textContent === "Fix running" && parkedRow("issue-9495")?.querySelector(".agent-chip")?.textContent === "Fix: #9496 draft");
+      ok("parked: no minutes count as spent", document.querySelector("#plan .sum").textContent === spentBefore);
+      ok("a fix that does not park keeps its row and chip", inGroups("issue-9497") && chipOf("issue-9497")?.textContent === "Fix: #9498 open");
+      line.querySelector("details").open = true;
+      [...parkedRow("issue-9495").querySelectorAll("button")].find((b) => b.textContent === "Open").click(); await wait(20);
+      ok("parked: Open shows the dialog with the fix banner", dlgR.open && detail.id === "issue-9495" && /^Draft fix #9496 is open/.test(document.getElementById("d-fix").textContent));
+      await openItem("pr-9496");
+      [...document.getElementById("d-fix-for").querySelectorAll("button")].find((b) => b.textContent === "Open on board").click(); await wait(20);
+      ok("parked: the fix PR's dialog still opens the issue", dlgR.open && detail.id === "issue-9495");
+      document.getElementById("d-close").click(); await wait(5);
+      // Without routes the parked item stays loaded for that link
+      items(park(["issue-9495"], () => ({ routes: [], hint: undefined }))); await wait(10);
+      ok("parked without routes: listed in the fix line, not in the plan", !!parkedRow("issue-9495") && !inGroups("issue-9495") && line.querySelector("summary").textContent === "Has a fix in progress: 1");
+      await openItem("pr-9496");
+      [...document.getElementById("d-fix-for").querySelectorAll("button")].find((b) => b.textContent === "Open on board").click(); await wait(20);
+      ok("parked without routes: the dialog opens with the banner and no cards", dlgR.open && detail.id === "issue-9495" && !document.getElementById("d-fix").hidden && cards().length === 0);
+      document.getElementById("d-close").click(); await wait(5);
+      items(F.map(([k, d]) => [k, k === "issue-9495" ? { ...d, handled: { at: new Date().toISOString(), routeId: "r2", routeType: "reply", verified: null }, fix: { ...d.fix, parked: true } } : d])); await wait(10);
+      ok("a handled item with a parked fix is listed once, as handled", !!document.querySelector('#handled .handled-row[data-id="issue-9495"]') && !parkedRow("issue-9495"));
+      items(F); await wait(10);
+      for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
+      await wait(5);
+      ok("when the fix no longer parks the item, the row is back with its chip", inGroups("issue-9495") && chipOf("issue-9495")?.textContent === "Fix: #9496 draft" && line.hidden);
+    }
     state.reveal.clear(); render();
     // Dialog banners
     await openItem("issue-9494");

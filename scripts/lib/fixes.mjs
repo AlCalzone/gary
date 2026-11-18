@@ -72,7 +72,8 @@ const RANK = { draft: 3, open: 3, merged: 2, closed: 1 };
 
 /**
  * The fix state of one issue or discussion, or null when nothing fixes it:
- * `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy, since }`.
+ * `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy, since, parked }`.
+ * `parked` is true while the fix keeps the item out of the day plan, see `parksItem`.
  */
 export function fixStateOf(itemId, { claims, actions, records, snapshot, repo }) {
 	const queued = actions.map((a) => a.data).filter((a) => a.itemId === itemId && a.action === "start_fix" && a.status === "queued");
@@ -80,7 +81,7 @@ export function fixStateOf(itemId, { claims, actions, records, snapshot, repo })
 	if (queued.length || claim) {
 		// A board click queues a request. A claim without one is the routine's automatic fix
 		const since = [claim?.at, ...queued.map((a) => a.createdAt)].filter(Boolean).sort()[0] ?? null;
-		return { state: "working", pr: null, startedBy: queued.length ? "maintainer" : "routine", since };
+		return { state: "working", pr: null, startedBy: queued.length ? "maintainer" : "routine", since, parked: true };
 	}
 	const entry = snapshot[itemId];
 	const candidates = new Map();
@@ -104,7 +105,19 @@ export function fixStateOf(itemId, { claims, actions, records, snapshot, repo })
 		pr: { number: best.number, url: best.url ?? `https://github.com/${repo}/pull/${best.number}`, title: best.title ?? null, isDraft: best.isDraft ?? best.state === "draft", ci: best.ci ?? null, author: best.author ?? null },
 		startedBy: best.startedBy ?? "other",
 		since: best.since ?? null,
+		parked: parksItem(best.state, best.since, entry?.lastThemAt),
 	};
+}
+
+/**
+ * Whether a fix in `state` keeps its issue or discussion out of the day plan. The fix PR's own item carries the work
+ * while the PR is a draft or open. The item returns when the other side wrote after the fix PR was recorded.
+ * A fix PR without a recorded time keeps the item out until the PR is merged or closed.
+ */
+export function parksItem(state, since, lastThemAt) {
+	if (!BLOCKING_FIX_STATES.includes(state)) return false;
+	if (state === "working") return true;
+	return !(Date.parse(lastThemAt ?? "") > Date.parse(since ?? ""));
 }
 
 /** Why a new fix for the item must not start, or null. */

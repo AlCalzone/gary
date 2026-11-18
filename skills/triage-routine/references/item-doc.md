@@ -244,7 +244,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 12d. `autofix`, when present, is `{ changes: boolean, files: number, lines: number, tools: [string] }`, and `changes` is true exactly when `files` is above 0. A `format` route appears only with `autofix.changes: true`. No finding, inline comment, `state` or `story` is about formatting or lint autofix.
 12f. `params.alsoAnswer`, when present, appears only on a `close` of a discussion with `facts.answerable` and no chosen answer, with a `commentId`, a `url` that starts with the item's `url` plus `#`, and a `gist` of at most 200 characters.
 12j. A doc returned after a push has `reviewedSha` set to the new head and no route that was written for the old head.
-12i. An issue or discussion whose fix state is `working`, `draft` or `open` has no `follow_up` route with `as: "agent"` and no fix wording in any route.
+12i. An issue or discussion whose fix state is `working`, `draft` or `open` has no `follow_up` route with `as: "agent"`, no fix wording in any route, and no route that only announces the fix.
 12h. A returned doc carries no `handled` and no `dismissedRoutes` changes.
 12g. An item with routes has `effortMinutes`. Bot or agent backlog has exactly one `Implement:` route and section `deferred`.
 12e. `params.alsoLabel`, when present, appears only on `reply` and `request_logs`, uses only labels from `autoLabels`, adds only labels the item lacks and removes only labels it has, and never contradicts `wants`.

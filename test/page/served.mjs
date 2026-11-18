@@ -526,6 +526,18 @@ try {
 	ok("push: the banner", await ev(`return /The agent is changing this PR \\(take over, started/.test(document.getElementById("d-fix").textContent);`));
 	await closeItem();
 
+	// A running fix takes its issue out of the plan, from the server's fix state
+	mkdirSync(join(HOME, "state", "claims"), { recursive: true });
+	const fixClaim = join(HOME, "state", "claims", "issue-33.fix.json");
+	writeFileSync(fixClaim, JSON.stringify({ run: "run-hourly", at: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600000).toISOString() }));
+	ok("fix parked: the server marks the fix and the row moves to the fix line", await until(`state.items.get("widgets/issue-33")?.fix?.parked === true && !document.querySelector('#board .group .row[data-id="widgets/issue-33"]') && !!document.querySelector('#fix-parked .handled-row[data-id="widgets/issue-33"]')`, 8000));
+	ok("fix parked: the line counts it", await ev(`return document.querySelector("#fix-parked summary").textContent === "Has a fix in progress: 1" && !document.getElementById("fix-parked").hidden;`));
+	await ev(`[...document.querySelectorAll('#fix-parked .handled-row[data-id="widgets/issue-33"] button')].find((b) => b.textContent === "Open").click();`);
+	ok("fix parked: its dialog opens with the fix banner", await until(`document.getElementById("detail").open && detail.id === "widgets/issue-33" && /^A fix is running\\./.test(document.getElementById("d-fix").textContent)`));
+	await closeItem();
+	rmSync(fixClaim);
+	ok("fix parked: the row is back when the fix no longer parks it", await until(`!!document.querySelector('#board .row[data-id="widgets/issue-33"]') && document.getElementById("fix-parked").hidden`, 8000));
+
 	// A handled item leaves the plan; Bring back clears the mark on the server
 	await put("issue-33", { handled: { at: new Date().toISOString(), routeId: "r1", routeType: "reply", verified: "unchanged" } });
 	ok("handled: the row leaves the groups and appears in the handled line", await until(`!document.querySelector('#board .group .row[data-id="widgets/issue-33"]') && !!document.querySelector('#handled .handled-row[data-id="widgets/issue-33"]')`, 8000));

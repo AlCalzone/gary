@@ -264,6 +264,8 @@ Every pushing mode returns routes for the new head only: routes written before t
 
 The code keeps `fix: { state, pr, startedBy, since }` per issue and discussion, with `state` `working`, `draft`, `open`, `merged` or `closed`. `gary fixes --json` lists it. The fix flow calls `gary fix-record <itemId> --pr <n> --branch <name> --run <run> --by routine|maintainer` right after `gh pr create`, and checks `gary fixes` before it creates the branch and before it opens the PR. The PR's own item carries `fixFor: { itemId, ref }`. The validator and the server refuse a `follow_up` route as agent while the state is `working`, `draft` or `open`, and every hourly run removes such stored routes. Gary's own draft fix PR is the one draft that becomes a board item, once its CI finished. A merged fix leads to a close card on the source item, and a closed unmerged fix allows a new one.
 
+While the state is `working`, `draft` or `open`, the fix carries `parked: true` (`parksItem` in `scripts/lib/fixes.mjs`) and the board keeps the issue or discussion out of the plan, in the line "Has a fix in progress". The server computes this from the fix state when it serves the items, so it holds for stored items without a new triage. The item returns when the fix PR is merged or closed, or when the other side wrote after the fix PR was recorded: the snapshot entry's `lastThemAt` is later than the fix's `since`.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):

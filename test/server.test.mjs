@@ -370,7 +370,7 @@ writeFileSync(join(home, "state", "claims", "disc-34.review.json"), JSON.stringi
 await sleep(300);
 await expect("a fix claim of the hourly run blocks Start fix", "issue-21", "r8", {}, (r) => r.status === 409 && r.data.fixRunning === true && /already running, started by the routine/.test(r.data.result));
 st = (await api("/api/state")).data.items.filter((i) => i.instance === "widgets");
-check("an issue with a running fix is served with item.fix", st.find((i) => i.id === "issue-21").fix?.state === "working" && st.find((i) => i.id === "issue-21").fix.startedBy === "routine" && st.find((i) => i.id === "issue-22").fix === undefined, st.find((i) => i.id === "issue-21").fix);
+check("an issue with a running fix is served with item.fix", st.find((i) => i.id === "issue-21").fix?.state === "working" && st.find((i) => i.id === "issue-21").fix.startedBy === "routine" && st.find((i) => i.id === "issue-21").fix.parked === true && st.find((i) => i.id === "issue-22").fix === undefined, st.find((i) => i.id === "issue-21").fix);
 check("a claim is served as working with its kind and start", st.find((i) => i.id === "issue-21").working?.kind === "fix" && st.find((i) => i.id === "disc-34").working === undefined, st.find((i) => i.id === "issue-21").working);
 rmSync(join(home, "state", "claims", "issue-21.fix.json"));
 await expect("follow_up as agent is queued as start_fix", "issue-21", "r8", {}, (r) => r.data.ok && r.data.queued);

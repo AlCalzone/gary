@@ -1552,6 +1552,22 @@ function handledCheck(d, hd) {
   return null;
 }
 
+// A quiet count line below the groups that expands to its rows
+function quietLine(id) {
+  const count = h("span");
+  const list = h("ul", { class: "handled-list" });
+  const details = h("details", { class: "handled" }, h("summary", null, count), list);
+  return { count, list, details, el: h("section", { class: "handled-sec", id, hidden: true }, details) };
+}
+
+function quietRow(key, d, ...rest) {
+  return h("li", { class: "handled-row", "data-id": key },
+    h("span", { class: "h-kind" }, iconEntry(kindStatus(key, d))),
+    h("span", { class: "h-num", text: combinedView() ? itemRef(d) : "#" + str(d.number) }),
+    h("span", { class: "h-title", text: str(d.title) || "(no title)" }),
+    ...rest);
+}
+
 function renderHandled(rows) {
   if (!handledEls.el) return;
   handledEls.el.hidden = rows.length === 0;
@@ -1563,13 +1579,24 @@ function renderHandled(rows) {
     const check = handledCheck(d, hd);
     const back = h("button", { class: "btn quiet small", type: "button", text: "Bring back", "data-focus-key": "handled:" + key });
     back.addEventListener("click", () => bringBack(key));
-    return h("li", { class: "handled-row", "data-id": key },
-      h("span", { class: "h-kind" }, iconEntry(kindStatus(key, d))),
-      h("span", { class: "h-num", text: combinedView() ? itemRef(d) : "#" + str(d.number) }),
-      h("span", { class: "h-title", text: str(d.title) || "(no title)" }),
+    return quietRow(key, d,
       h("span", { class: "h-what" }, hintEl(what)),
       check ? h("span", { class: "h-check tone-" + check[1], text: check[0] }) : null,
       back);
+  }));
+}
+
+const fixParkedEls = {};
+
+// Issues and discussions whose fix is in progress. The fix PR's own item carries the work until it is merged or closed
+function renderFixParked(rows) {
+  if (!fixParkedEls.el) return;
+  fixParkedEls.el.hidden = rows.length === 0;
+  fixParkedEls.count.textContent = "Has a fix in progress: " + rows.length;
+  fixParkedEls.list.replaceChildren(...rows.map(([key, d]) => {
+    const open = h("button", { class: "btn quiet small", type: "button", text: "Open", "data-focus-key": "fixparked:" + key });
+    open.addEventListener("click", () => openDetail(key));
+    return quietRow(key, d, agentChip(d), open);
   }));
 }
 
@@ -1630,10 +1657,8 @@ function buildSections() {
   planEls.done = h("span", { class: "plan-done" }, planEls.doneText, planEls.add);
   planEls.el = h("div", { class: "plan", id: "plan" }, planEls.bar, planEls.spent, planEls.done);
 
-  handledEls.count = h("span");
-  handledEls.list = h("ul", { class: "handled-list" });
-  handledEls.details = h("details", { class: "handled" }, h("summary", null, handledEls.count), handledEls.list);
-  handledEls.el = h("section", { class: "handled-sec", id: "handled", hidden: true }, handledEls.details);
+  Object.assign(handledEls, quietLine("handled"));
+  Object.assign(fixParkedEls, quietLine("fix-parked"));
 
   for (const g of GROUPS) {
     const list = h("div", { class: "list" });
@@ -1816,6 +1841,8 @@ function fixOf(d) {
   return f && ["working", "draft", "open", "merged", "closed"].includes(f.state) ? f : null;
 }
 const fixActive = (d) => ["working", "draft", "open"].includes(fixOf(d)?.state);
+// The server decides when a fix keeps its issue or discussion out of the plan
+const fixParked = (d) => fixActive(d) && fixOf(d).parked === true;
 const pushActive = (d) => workingOf(d)?.kind === "push";
 
 // Routes that would start a second fix, or decide a PR the agent is still changing, are not offered at all
@@ -2231,12 +2258,17 @@ function renderListNow() {
 
   const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
   const handledRows = [];
+  const fixParkedRows = [];
   for (const [id, d] of state.items) {
     if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
     if (d.hidden === true && !state.filters.showHidden) continue;
     if (!matchesFilters(d)) continue;
     if (handledOf(id, d)) {
       handledRows.push([id, d]);
+      continue;
+    }
+    if (fixParked(d)) {
+      fixParkedRows.push([id, d]);
       continue;
     }
     const dim = isHiddenItem(d);
@@ -2287,6 +2319,7 @@ function renderListNow() {
 
   els.board.classList.toggle("combined", combinedView());
   renderHandled(handledRows);
+  renderFixParked(fixParkedRows);
 
   // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
   for (const m of els.board.querySelectorAll(".r-meta")) {
@@ -4415,7 +4448,8 @@ function subscribe(db) {
     for (const doc of snap.docs) {
       const d = doc.data();
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
-      if (d && typeof d === "object" && routesOf(d).length) next.set(doc.id, d);
+      // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
+      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d))) next.set(doc.id, d);
       // Once the server carries the mark, it decides, including clearing it after the next run
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
@@ -4506,7 +4540,7 @@ async function boot() {
   setupDetail();
   setupRowKeys();
   buildSections();
-  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el);
+  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el, fixParkedEls.el);
   renderConnection();
   render();
 

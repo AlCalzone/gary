@@ -309,6 +309,8 @@ function baselineEntry(item) {
 		assignees: item.assignees ?? [],
 		// `gary handled` compares it with the time the maintainer handled the item
 		lastEventAt: item.facts?.timeline?.at(-1)?.at ?? null,
+		// The fix state compares it with the time a fix PR was recorded
+		lastThemAt: item.facts?.lastThemAt ?? null,
 		// The fix state of issues and discussions reads these
 		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
 		...(item.closingPrs && { closingPrs: item.closingPrs }),
