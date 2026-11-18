@@ -142,7 +142,9 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 `priority` is 1 for the top of a section. The maintainer works a section from the top, so cheap decisions come first. Order within a section:
 
-In every section, other people come before our own work: first items by outside contributors and reporters, then items by the maintainer himself, then items by bots and agents. Someone outside is waiting on the first group, and nobody waits on the others. Within each of these groups:
+Work the maintainer asked the agent for comes back first. An item whose agent job finished since he last handled it (a take-over, an address-review, a drive, a format, a fix he started) and that now only needs his decision goes to `easy`, at the very top, before everything else, newest result first. He asked for it and is waiting to finish it. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
+
+After those, in every section, other people come before our own work: first items by outside contributors and reporters, then items by the maintainer himself, then items by bots and agents. Someone outside is waiting on the first group, and nobody waits on the others. Within each of these groups:
 
 - `active`: longest wait first.
 - `easy`: lowest `effortMinutes` first, then merges, closes, answers.
