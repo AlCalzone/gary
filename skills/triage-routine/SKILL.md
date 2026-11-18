@@ -113,7 +113,7 @@ Delete the item for every id in `closed` with `gary put items <id> --delete`.
 
 ### 4a. Wanted labels and assignees
 
-Every hourly run, independent of what changed: for every stored item with `wants`, compare it with the item's current labels and assignees in the snapshot. Read them from the staged snapshot, which holds every open item. The `unchanged` list only names ids, so look the entry up there. Whatever is still missing is attempted with `gary action --autonomous`, one input file per label or assignee, with `wantsReason` as the reason. A label in `wants.labels.remove` that is still set is removed the same way. When the snapshot shows the change applied, nothing happens. This needs no extra GitHub read.
+Every hourly run, independent of what changed, run `gary wants --json`. It lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the item's `wantsReason`, and marks items without a snapshot entry as `unknown`. Skip the `unknown` ones. Attempt each listed change with `gary action --autonomous`, one input file per label or assignee, with the reason. Assignees are only added, never removed. Do not compare labels yourself.
 
 While paused, each attempt is refused and recorded in `would-have.json`. A refusal for another reason, like a label outside `autoLabels`, goes into the run summary.
 
@@ -136,7 +136,7 @@ Quick classification runs in subagents. Split `changed`, plus the items from ste
 - **Standard tier** (model `sonnet`): the classification described above, for every handed-up item and every item that needs drafted text.
 - Full reviews stay on the large model.
 
-With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board: record each pair with `gary shadow record` next to the standard tier's doc.
+With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board. Record both tiers per item with `gary shadow record <file>`, where the file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be `null` only when the fast tier handed up.
 
 Then build the full-review list:
 

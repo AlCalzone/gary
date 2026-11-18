@@ -213,9 +213,22 @@ An item doc may carry `wants: { labels: { add: [], remove: [] }, assignees: [] }
 
 ## Facts and tiers
 
-Every snapshot entry carries `facts`, computed in code: the time-sorted `timeline` of comments, replies and reviews with `side` (`us`, `them`, `automated`, `bot`), `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn`, `waitingDays`, for PRs `ciGreen`, `dependencyOnly`, `touchesSensitive`, `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`, for issues and discussions `hasClosingPr`, `isAnswered`, `authorIsUs`. The classification rules take these as given. The profile's `automatedComments` decides which bot comments are `automated`.
+Every snapshot entry carries `facts`, computed in code:
 
-Quick classification has two tiers, set by `fastTier` in the instance config. The fast tier (Haiku) settles only cases the facts decide and hands up everything else. The standard tier (Sonnet) does the rest. With `shadow`, both run and only the standard result is stored, while `gary shadow record` keeps the pairs and `gary shadow report` compares them. `triage-learn` proposes `on` once 40 pairs show at least 95 percent section agreement.
+- `timeline: [{ at, author, side, kind }]`, oldest first, the newest 200 events kept. `side` is `us`, `them`, `automated` or `bot`. `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `timelineTruncated` is set only when events are missing.
+- `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), `waitingDays`.
+- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
+- Issues and discussions: `hasClosingPr` (an open or merged PR), `isAnswered`, `authorIsUs`.
+
+The classification rules take these as given. The profile's `automatedComments` decides which bot comments are `automated`. Its entries are `{ name, pattern, origin? }`, where `pattern` is a regex without flags, tested against the start of the comment body.
+
+Quick classification has two tiers, set by `fastTier` (`off`, `shadow` or `on`, default `off`) in the instance config. The fast tier (Haiku) settles only cases the facts decide and hands up everything else. The standard tier (Sonnet) does the rest. With `shadow`, both run, only the standard result is stored, and `gary shadow record <file>` keeps both tiers' entries per item. A file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be `null` only when the fast tier handed up. `gary shadow report [--since <ISO>] [--json]` compares them. `triage-learn` proposes `on` once 40 pairs show at least 95 percent section agreement.
+
+`gary wants --json` lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the reason, and `unknown` for items without a snapshot entry. The routine attempts those changes every run. Assignees are only added.
+
+Unknown fields in an instance config or a profile are warnings at run time. `gary doctor` and `gary setup` refuse them. `gary instances --json` reports `valid`, `settingsError` and `settingsWarnings` per instance, and the master skips an instance with `valid: false`.
+
+`autofix.changes` is true exactly when `autofix.files` is above 0. The server does not check that a PR is still open when `format` is clicked. The format mode refuses a closed PR and a moved head itself.
 
 ## Format check and the format route
 

@@ -31,6 +31,6 @@ The profile's `rules/review.md` names the autofix commands per file type, with a
 "autofix": { "changes": true, "files": 2, "lines": 14, "tools": ["oxfmt", "oxlint --fix"] }
 ```
 
-`tools` lists the commands that changed something. Without changes: `{ "changes": false, "files": 0, "lines": 0, "tools": [] }`.
+`tools` lists the commands that changed something. Without changes: `{ "changes": false, "files": 0, "lines": 0, "tools": [] }`. `changes` is true exactly when `files` is above 0.
 
 When a command fails, leave `autofix` out and say so in a finding of severity `question`, with the command and its error line. A failing formatter is no verdict on the PR.

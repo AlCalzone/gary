@@ -10,9 +10,9 @@ Quick classification uses the snapshot data: author and author type, labels, dra
 
 Every snapshot entry carries `facts`, computed in code. Use them as given and never re-derive them from the thread:
 
-- `facts.timeline`: comments, replies and reviews as one time-sorted list, each with `side`: `us`, `them`, `automated` or `bot`. Who spoke last is `facts.lastSpeaker`, with `facts.lastUsAt` and `facts.lastThemAt`. Who we wait on is `facts.waitingOn`, and for how long `facts.waitingDays`.
+- `facts.timeline`: `[{ at, author, side, kind }]`, oldest first, the newest 200 events. `side` is `us`, `them`, `automated` or `bot`, and `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `facts.timelineTruncated` is set only when older events are missing. Who spoke last is `facts.lastSpeaker`, with `facts.lastUsAt` and `facts.lastThemAt`. Who we wait on is `facts.waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), and for how long `facts.waitingDays`.
 - PRs: `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
-- Issues and discussions: `facts.hasClosingPr`, `facts.isAnswered`, `facts.authorIsUs`.
+- Issues and discussions: `facts.hasClosingPr` (an open or merged PR closes it), `facts.isAnswered`, `facts.authorIsUs`.
 
 Read the thread text only for what was said: what was asked, what was answered, what is open. A statement like "nobody replied since" comes from `facts.lastSpeaker` and `facts.timeline`, never from reading the top-level comments. When a discussion's `replyCount` is larger than the replies in the snapshot entry and you need the wording of a reply, fetch the thread with the discussion query from the `triage-issue` skill. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
 
@@ -85,7 +85,7 @@ He has to think about whether to act or about the content: a behavior change, se
 
 ### `deferred`: waiting on others, or large
 
-- We wait on the reporter: `facts.waitingOn` is the reporter, because our last message asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
+- We wait on the reporter: `facts.waitingOn` is `them`, because our last message asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
 - Changes requested, and no new commits since that review.
 - The maintainer's own PR that his own account has not finished: merge conflicts, failing CI his change caused, or a stacked PR waiting on its base. No routes.
 - Feature requests and enhancements that need design work or a large effort. The profile may name labels for that.

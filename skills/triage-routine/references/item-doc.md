@@ -223,7 +223,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 11a. No route has a type listed in the item's `dismissedRoutes`. A `close` with reason `not_planned` on a feature request is not the only route.
 12. An `address_review` route, or a `take_over` route on an item with threads, appears only when `threads` is non-empty and no thread is `unjudged`. Its title counts the `valid` threads, the only ones that default to fix, like `Address review: 3 of 4 threads` or `Take over: fix 1 review comment`.
 12b. `analyzedBy` is absent or `"fallback"`. With `"fallback"`, `findings` has the `question` entry about the safety-filter stop.
-12d. `autofix`, when present, is `{ changes: boolean, files: number, lines: number, tools: [string] }`. A `format` route appears only with `autofix.changes: true`. No finding, inline comment, `state` or `story` is about formatting or lint autofix.
+12d. `autofix`, when present, is `{ changes: boolean, files: number, lines: number, tools: [string] }`, and `changes` is true exactly when `files` is above 0. A `format` route appears only with `autofix.changes: true`. No finding, inline comment, `state` or `story` is about formatting or lint autofix.
 12c. `wants`, when present, is `{ labels: { add: [string], remove: [string] }, assignees: [string] }` with every label in the profile's `autoLabels`, and comes with a non-empty one-sentence `wantsReason`.
 13. `rounds`, when present, is an array of `{ n, fixed, dismissed, open }`: `n` a number, `fixed` and `open` arrays of strings, `dismissed` an array of `{ summary, reason }`. `takenOver`, when present, is `true`.
 14. `links`, when present, is an array of `{label, url}` with `https://` URLs.

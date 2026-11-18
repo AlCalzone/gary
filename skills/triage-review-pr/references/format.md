@@ -6,7 +6,7 @@ The maintainer clicked `format` on a PR. You apply exactly the autofix result to
 
 ## Steps
 
-1. Check the preconditions in `push-to-pr.md`. The head must still equal `reviewedSha`. Refuse with `status: "failed"` when it moved.
+1. Check the preconditions in `push-to-pr.md`. The server does not check them for `format`. Refuse with `status: "failed"` when the PR is no longer open or its head moved since `reviewedSha`.
 2. Run the check in `format-check.md` again, against the current head, and keep the patch.
 3. Refuse when the patch touches a file the PR did not change, or when it is empty.
 4. Set up the PR worktree as `push-to-pr.md` describes and apply the patch: `git -C <worktree> -c core.hooksPath=/dev/null apply --index <scratch>/format.patch`. If it does not apply cleanly, refuse. Never resolve conflicts.

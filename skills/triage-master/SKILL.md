@@ -19,7 +19,7 @@ Find the `board_start` MCP tool with ToolSearch and call it. It starts the one b
 
 ## 2. List the instances
 
-Run `gary instances --json`. Each entry has `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served` and `current`. A paused instance still gets its hourly worker, because a paused run triages read-only. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`. An instance missing from its `instances`, or with `served: false`, is not on the board yet. Note it in the summary.
+Run `gary instances --json`. Each entry has `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served`, `current`, `valid`, `settingsError` and `settingsWarnings`. Skip an instance with `valid: false`, start no worker for it, and name it in the summary with its `settingsError`. A paused instance still gets its hourly worker, because a paused run triages read-only. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`. An instance missing from its `instances`, or with `served: false`, is not on the board yet. Note it in the summary.
 
 ## 3. Hourly workers
 
