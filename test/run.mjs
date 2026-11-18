@@ -9,6 +9,7 @@ const SUITES = [
 	["node", "config.test.mjs"],
 	["node", "actions.test.mjs"],
 	["node", "server.test.mjs"],
+	["node", "server-shim.test.mjs"],
 	["node", "accounts.test.mjs"],
 	["node", "learning.test.mjs"],
 	["node", "pause.test.mjs"],
