@@ -28,6 +28,7 @@ const mcp = {
 };
 window.__mkSnap = mkSnap;
 const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
-window.__board = window.__board || { name: "widgets", repo: "acme/widgets", repoUrl: "https://github.com/acme/widgets", me: acct("octocat"), bot: acct("widgets-bot"), accountMode: "bot", botCommands: { escalate: "@widgets-bot escalate" }, relatedRepos: ["widgets-desktop"], reviewBots: ["copilot"], dryRun: false };
+window.__board = window.__board || { name: "widgets", repo: "acme/widgets", repoUrl: "https://github.com/acme/widgets", me: acct("octocat"), bot: acct("widgets-bot"), accountMode: "bot", botCommands: { escalate: "@widgets-bot escalate" }, relatedRepos: ["widgets-desktop"], reviewBots: ["copilot"], dryRun: false, decision: async (body) => { window.__decisions.push(body); if (window.__decisionFails) throw new Error("down"); } };
+window.__decisions = [];
 window.claude = { use: async (n) => (n === "db" ? db : n === "mcp" ? mcp : n === "board" ? window.__board : null) };
 </script>

@@ -310,6 +310,73 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("then the dialog closes", !dlgR.open);
   items(F); await wait(10);
 
+  // Learning: prefill clicks report the decision, proposals live in their own dialog
+  const learnBtn = document.getElementById("learn");
+  ok("no proposals: the header shows no lightbulb", learnBtn.hidden);
+  await openItem("issue-9471");
+  const decTa = openCard().querySelector("textarea");
+  decTa.value = "A PR is welcome, the check goes in getNodeProtocolInfo()."; decTa.dispatchEvent(new Event("input"));
+  const nDec = window.__decisions.length;
+  cardBtn("Copy reply, open GitHub").click(); await wait(20);
+  ok("a prefill click posts the decision with the textarea's text", window.__decisions.length === nDec + 1 && JSON.stringify(window.__decisions.at(-1)) === JSON.stringify({ itemId: "issue-9471", routeId: "r1", text: "A PR is welcome, the check goes in getNodeProtocolInfo()." }));
+  window.__decisionFails = true;
+  const opened = window.__opened.length;
+  cardBtn("Open GitHub to close", cards()[1]).click(); await wait(20);
+  ok("a failing decision post does not block the copy and open, and shows no error", window.__opened.length === opened + 1 && window.__decisions.at(-1).text === "" && window.__decisions.at(-1).routeId === "r2"
+    && !document.querySelector("#d-routes .status.failed") && !/fail/i.test(document.getElementById("d-foot").textContent));
+  window.__decisionFails = false;
+  calls = __calls.length;
+  await expand(2);
+  cardBtn("Start fix").click(); await wait(20);
+  ok("bot and agent routes post no decision", window.__decisions.length === nDec + 2);
+  document.getElementById("d-close").click(); await wait(5);
+  items(F); await wait(10);
+  const P = window.makeProposalFixtures(iso);
+  const planBefore = document.querySelector("#plan .sum")?.textContent;
+  window.__subs["proposals"](__mkSnap(P)); await wait(10);
+  ok("proposals show a lightbulb with their count", !learnBtn.hidden && learnBtn.textContent === "2" && learnBtn.getAttribute("aria-label") === "2 suggested rules");
+  ok("proposals stay out of the plan and the budget", document.querySelector("#plan .sum")?.textContent === planBefore && !document.querySelector('#board .row[data-id="p1"]'));
+  learnBtn.click(); await wait(10);
+  const ldlg = document.getElementById("learn-dialog");
+  const pcards = () => [...ldlg.querySelectorAll(".pcard")];
+  ok("the dialog lists the proposals as cards", ldlg.open && pcards().length === 2 && /closing feature requests/.test(pcards()[0].textContent) && /invited yourself/.test(pcards()[0].querySelector(".card-why").textContent));
+  ok("evidence is collapsed and counted", !pcards()[0].querySelector("details").open && pcards()[0].querySelector("summary").textContent === "Based on 3 decisions" && pcards()[1].querySelector("summary").textContent === "Based on 4 decisions");
+  ok("where the rule goes", /Adds to rules\/classification\.md under “Feature requests” in the project profile/.test(pcards()[0].textContent) && /Adds to your personal rules under “Voice”/.test(pcards()[1].textContent));
+  ok("an evidence line links to an item still on the board, others stay plain", !!pcards()[0].querySelector("li .ev-link") && pcards()[0].querySelectorAll("li .ev-link").length === 1 && pcards()[0].querySelectorAll("li .ev-ref").length === 2);
+  const ruleTa = pcards()[0].querySelector("textarea");
+  ok("the rule text is editable and the buttons are Add rule and Not this", /Never suggest closing/.test(ruleTa.value) && [...pcards()[0].querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Add rule,Not this"
+    && pcards()[0].querySelector(".card-actions .btn").classList.contains("intent-think"));
+  ruleTa.value = "Never suggest closing a feature request a maintainer asked for."; ruleTa.dispatchEvent(new Event("input"));
+  calls = __calls.length;
+  [...pcards()[0].querySelectorAll(".card-actions button")][0].click(); await wait(20);
+  ok("Add rule sends accept_proposal with the edited text", __calls.length === calls + 1 && __calls.at(-1).tool === "accept_proposal" && __calls.at(-1).proposalId === "p1" && __calls.at(-1).text === "Never suggest closing a feature request a maintainer asked for.");
+  ok("the card then says where it went", /Added to rules\/classification\.md/.test(pcards()[0].textContent) && learnBtn.textContent === "1");
+  window.__subs["proposals"](__mkSnap(P.slice(1))); await wait(10);
+  ok("the accepted card stays when the server stops serving it", pcards().length === 2 && /Added to rules\/classification\.md/.test(pcards()[0].textContent));
+  [...pcards()[1].querySelectorAll(".card-actions button")][1].click(); await wait(5);
+  const pwhy = pcards()[1].querySelector(".dismiss-box input");
+  ok("Not this reveals an optional reason", !pcards()[1].querySelector(".dismiss-box").hidden && pwhy.placeholder === "Why not? (optional)");
+  pwhy.value = "I like the thanks in bug reports"; pwhy.dispatchEvent(new Event("input"));
+  calls = __calls.length;
+  [...pcards()[1].querySelectorAll(".dismiss-box button")][0].click(); await wait(20);
+  ok("Not this sends dismiss_proposal with the reason and the card disappears", __calls.at(-1).tool === "dismiss_proposal" && __calls.at(-1).proposalId === "p2" && __calls.at(-1).text === "I like the thanks in bug reports" && pcards().length === 1);
+  document.getElementById("learn-close").click(); await wait(10);
+  ok("after closing, the lightbulb hides when nothing is left", learnBtn.hidden);
+  window.__subs["proposals"](__mkSnap([["p3", { ...P[1][1], title: "Link the troubleshooting page in every log request" }]])); await wait(10);
+  window.__reply = () => ({ ok: false, result: "The proposal is gone." });
+  learnBtn.click(); await wait(10);
+  [...pcards()[0].querySelectorAll(".card-actions button")][0].click(); await wait(20);
+  ok("a refused action shows its reason on the card", /The proposal is gone/.test(pcards()[0].textContent));
+  window.__reply = () => ({ ok: true, result: { dryRun: true } });
+  pcards()[0].querySelector("details").open = true;
+  learn.gone.clear();
+  window.__subs["proposals"](__mkSnap(P)); await wait(10);
+  pcards()[0].querySelector("details").open = true;
+  pcards()[0].querySelector(".ev-link").click(); await wait(20);
+  ok("an evidence link opens the item's dialog", !ldlg.open && dlgR.open && detail.id === "issue-9471");
+  document.getElementById("d-close").click(); await wait(5);
+  window.__subs["proposals"](__mkSnap([])); await wait(5);
+
   // ---------- accounts and projects come from the server ----------
   const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
   const ZW = window.__board;

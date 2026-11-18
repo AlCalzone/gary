@@ -2825,8 +2825,9 @@ async function dismissRoute(id, r, reason) {
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
     await state.mcp.callTool(SERVER, "dismiss_route", { itemId: id, routeId: r.id, text: reason });
-    // Hide the card until the server pushes the item without it
+    // Hide the card until the server pushes the item without it. The route that takes its place opens.
     detail.dismissed.add(r.id);
+    detail.openRoute = undefined;
     const d = state.items.get(id);
     if (d && !routesOf(d).some((x) => !detail.dismissed.has(x.id))) {
       // The item leaves the board with its last route, so the dialog says why before it closes
@@ -2852,7 +2853,8 @@ function renderRoutes(id, d, locked) {
   const routes = routesOf(d).filter((r) => !detail.dismissed.has(r.id));
   if (detail.openRoute === undefined || (detail.openRoute !== null && !routes.some((r) => r.id === detail.openRoute))) {
     const done = routes.find((r) => r.done && !routeCompact(r));
-    const rec = recommendedRoute(d);
+    // Pick among the cards on screen, so a dismissed recommendation hands its place to the next card
+    const rec = routes.find((r) => r.recommended === true) || routes[0];
     detail.openRoute = (done || (rec && !routeCompact(rec) ? rec : null) || {}).id ?? null;
   }
   const keep = new Set(routes.map((r) => r.id));
@@ -3131,13 +3133,17 @@ const learn = {
   empty: document.getElementById("learn-empty"),
   btn: document.getElementById("learn"),
   recs: new Map(),
+  known: new Map(),
   added: new Map(),
   gone: new Set(),
   busy: new Set(),
 };
 
+// The server serves open proposals only, so an accepted one stays here from memory until the dialog closes
 function openProposals() {
-  return state.proposals.filter((p) => !learn.gone.has(p.id));
+  for (const p of state.proposals) learn.known.set(p.id, p);
+  const live = new Set(state.proposals.map((p) => p.id));
+  return [...learn.known.values()].filter((p) => !learn.gone.has(p.id) && (live.has(p.id) || learn.added.has(p.id)));
 }
 
 function proposalTarget(p) {
@@ -3160,7 +3166,7 @@ function evidenceLine(e) {
     ? h("button", {
       type: "button", class: "lane-switch ev-link", text: num, title: "Open " + num,
       onclick: () => {
-        learn.el.close();
+        closeLearn();
         openDetail(itemId);
       },
     })
@@ -3271,18 +3277,26 @@ function setupLearn() {
   });
   const close = document.getElementById("learn-close");
   close.append(icon("x", null, "lg"));
-  close.addEventListener("click", () => learn.el.close());
+  close.addEventListener("click", closeLearn);
   learn.el.addEventListener("click", (e) => {
     if (e.target !== learn.el) return;
     const r = learn.el.getBoundingClientRect();
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) learn.el.close();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeLearn();
   });
-  learn.el.addEventListener("close", () => {
-    // Added cards stay until the next open, so he sees the result, then they make room
-    for (const id of learn.added.keys()) learn.gone.add(id);
-    learn.recs.clear();
-    renderLearn();
-  });
+  // Escape closes the dialog without our button, so the close event tidies up as well
+  learn.el.addEventListener("close", forgetDecided);
+}
+
+// Added cards stay until the dialog closes, so he sees the result, then they make room
+function forgetDecided() {
+  for (const id of learn.added.keys()) learn.gone.add(id);
+  learn.recs.clear();
+  renderLearn();
+}
+
+function closeLearn() {
+  if (learn.el.open) learn.el.close();
+  forgetDecided();
 }
 
 // ---------- page reload ----------

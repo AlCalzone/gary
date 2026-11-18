@@ -1,15 +1,18 @@
 // Drives headless Chrome against the real board server (dry run) through the DevTools protocol.
 // Needs Chrome or Chromium. CHROME names the binary, default google-chrome. GitHub reads go to the fake gh.
-import { spawn } from "node:child_process";
-import { cpSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { GARY, ROOT, TEST_DIR, freePort, makeHome, removeDir, tempDir } from "../lib.mjs";
+import { GARY, PROFILE, ROOT, TEST_DIR, freePort, makeHome, removeDir, tempDir } from "../lib.mjs";
 
 const PORT = await freePort();
 const DEBUG_PORT = await freePort();
 const DIR = tempDir();
-const { home: HOME, env: ENV } = makeHome(DIR, { port: PORT });
+// Accepted rules are appended to the profile, so the test works on its own copy outside any git repo
+const PROFILE_COPY = join(DIR, "profile");
+cpSync(PROFILE, PROFILE_COPY, { recursive: true });
+const { home: HOME, env: ENV } = makeHome(DIR, { port: PORT, profile: PROFILE_COPY });
 const BOARD = join(HOME, "state", "board");
 const FIXTURE_ITEMS = JSON.parse(readFileSync(join(TEST_DIR, "fixtures", "board-items.json"), "utf8"));
 const writeFixtureItems = () => {
@@ -280,6 +283,77 @@ try {
 	ok("Analyze again queues one reanalyze doc from the page", await fileUntil(() => actionFiles().filter((a) => a.itemId === "issue-24" && a.action === "reanalyze" && a.status === "queued" && a.text === "").length === 1));
 	ok("the panel closes after sending", await until(`document.getElementById("d-analyze").hidden`));
 	await closeItem();
+
+	// Learning: the decision log behind a prefill button
+	const decisions = () => JSON.parse(spawnSync(process.execPath, [GARY, "decisions", "--json"], { env: ENV, encoding: "utf8" }).stdout || "[]");
+	ok("a prefill click logs the edited text through /api/decision", await fileUntil(() => decisions().some((e) => e.type === "edited_text" && e.itemId === "issue-21" && e.route?.type === "reply" && / \(edited\)$/.test(e.final))));
+	ok("a prefill that is not the recommended route logs the alternative", await fileUntil(() => decisions().some((e) => e.type === "chose_alternative" && e.itemId === "pr-12" && e.chosen?.type === "merge")));
+
+	// take_over on a contributor's PR carries the judged threads
+	writeFileSync(itemFile("pr-14"), JSON.stringify(probe("pr", 14, "https://github.com/acme/widgets/pull/14", {
+		hint: "Take over: fix the parameter name",
+		threads: [
+			{ id: "t1", author: "copilot-pull-request-reviewer", path: "config/zen52.json", line: 18, summary: "Parameter 2 is called ledIndicator in the manual", verdict: "valid" },
+			{ id: "t2", author: "copilot-pull-request-reviewer", path: "config/zen52.json", line: 31, summary: "Add unsigned to parameter 5", verdict: "wrong" },
+		],
+		routes: [{ id: "r1", type: "take_over", as: "agent", title: "Take over: fix the parameter name", params: { mode: "push" }, recommended: true }],
+	})));
+	await until(`!!state.items.get("pr-14")`);
+	await openItem("pr-14");
+	ok("take_over lists the judged threads", await until(`document.querySelectorAll("#d-routes .card.open .decisions > li").length === 2`));
+	await ev(`document.querySelectorAll("#d-routes .card.open .decisions > li")[1].querySelector('.seg[data-v="fix"]').click();`);
+	await press("Take over");
+	ok("the server queues take_over with the decisions", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-14" && a.action === "take_over" && a.status === "queued" && a.params.decisions?.map((d) => d.decision).join() === "fix,fix")));
+	ok("the take_over card reads as requested", await until(`/Requested\\. The agent has it on its list\\./.test(${openCardText})`, 8000));
+	await closeItem();
+
+	// "Not this": dismissing suggested routes
+	writeFileSync(itemFile("issue-26"), JSON.stringify(probe("issue", 26, "https://github.com/acme/widgets/issues/26", {
+		hint: "Close: feature request out of scope",
+		routes: [
+			{ id: "r1", type: "close", as: "me", title: "Close: feature request out of scope", params: { reason: "not_planned" }, recommended: true },
+			{ id: "r2", type: "reply", as: "me", title: "Reply: ask for a use case", text: "Can you describe your use case?" },
+		],
+	})));
+	writeFileSync(itemFile("issue-27"), JSON.stringify(probe("issue", 27, "https://github.com/acme/widgets/issues/27", {
+		hint: "Close: answered", routes: [{ id: "r1", type: "close", as: "me", title: "Close: answered", params: { reason: "completed" }, recommended: true }],
+	})));
+	await until(`!!state.items.get("issue-27")`);
+	await openItem("issue-26");
+	await ev(`document.querySelectorAll("#d-routes .card")[0].querySelector(".card-x").click();`);
+	await ev(`const i = document.querySelectorAll("#d-routes .card")[0].querySelector(".dismiss-box input"); i.value = "I asked for this feature"; i.dispatchEvent(new Event("input"));`);
+	await ev(`[...document.querySelectorAll("#d-routes .card")[0].querySelectorAll(".dismiss-box button")].find((b) => b.textContent === "Dismiss suggestion").click();`);
+	ok("dismiss_route removes the route and promotes the next", await fileUntil(() => { const d = json(itemFile("issue-26")); return d.routes.length === 1 && d.routes[0].id === "r2" && d.routes[0].recommended === true && d.dismissedRoutes?.[0]?.reason === "I asked for this feature"; }));
+	ok("the dialog shows the remaining card, now recommended and open", await until(`document.querySelectorAll("#d-routes .card").length === 1 && /ask for a use case/.test(${openCardText})`, 8000));
+	ok("the dismissal is in the decision log", decisions().some((e) => e.type === "dismissed_route" && e.itemId === "issue-26" && e.wasRecommended === true && e.reason === "I asked for this feature"));
+	await openItem("issue-27");
+	await ev(`document.querySelectorAll("#d-routes .card")[0].querySelector(".card-x").click();`);
+	await ev(`[...document.querySelectorAll("#d-routes .card")[0].querySelectorAll(".dismiss-box button")].find((b) => b.textContent === "Dismiss suggestion").click();`);
+	ok("after the last route the dialog says the agent proposes something else", await until(`/Suggestion dismissed\\. The agent will propose something else\\./.test(document.getElementById("d-routes").textContent)`));
+	ok("the server queues a re-analysis and the item leaves the board", await fileUntil(() => actionFiles().some((a) => a.itemId === "issue-27" && a.action === "reanalyze" && a.status === "queued")) && await until(`!document.querySelector('.row[data-id="issue-27"]')`));
+	ok("the dialog closes after a moment", await until(`!document.getElementById("detail").open`, 6000));
+
+	// Rule proposals: accept appends to the profile file, dismiss records the reason
+	const proposal = (id, extra) => ({ id, createdAt: new Date().toISOString(), why: "You did this three times.", evidence: [{ at: new Date().toISOString(), itemId: "issue-26", type: "dismissed_route", gist: "Dismissed closing a feature request." }], target: "profile", file: "rules/voice.md", heading: "", status: "open", decidedAt: null, reason: "", ...extra });
+	mkdirSync(join(BOARD, "proposals"), { recursive: true });
+	writeFileSync(join(BOARD, "proposals", "learn-2026-11-18-no-thanks.json"), JSON.stringify(proposal("learn-2026-11-18-no-thanks", { title: "Drop the opening thanks in log requests", text: "Start log requests with the request itself." })));
+	writeFileSync(join(BOARD, "proposals", "learn-2026-11-18-keep-asked.json"), JSON.stringify(proposal("learn-2026-11-18-keep-asked", { title: "Keep feature requests the maintainer asked for", text: "Do not close requests a maintainer asked for." })));
+	ok("open proposals show the lightbulb with their count", await until(`!document.getElementById("learn").hidden && document.getElementById("learn").textContent === "2"`, 8000));
+	await ev(`document.getElementById("learn").click();`);
+	const pcard = (title) => `[...document.querySelectorAll("#learn-dialog .pcard")].find((c) => c.textContent.includes(${JSON.stringify(title)}))`;
+	ok("the proposals dialog lists both", await until(`document.querySelectorAll("#learn-dialog .pcard").length === 2`));
+	await ev(`const ta = ${pcard("Drop the opening thanks")}.querySelector("textarea"); ta.value = "Start log requests with the request itself. Skip the thanks."; ta.dispatchEvent(new Event("input"));`);
+	await ev(`[...${pcard("Drop the opening thanks")}.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Add rule").click();`);
+	ok("Add rule appends the edited text to the profile file", await fileUntil(() => readFileSync(join(PROFILE_COPY, "rules", "voice.md"), "utf8").includes("Start log requests with the request itself. Skip the thanks.")));
+	ok("the proposal is accepted on disk", json(join(BOARD, "proposals", "learn-2026-11-18-no-thanks.json")).status === "accepted");
+	ok("the card says where the rule went", await until(`/Added to rules\\/voice\\.md/.test(${pcard("Drop the opening thanks")}?.textContent ?? "")`));
+	await ev(`[...${pcard("Keep feature requests")}.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Not this").click();`);
+	await ev(`const i = ${pcard("Keep feature requests")}.querySelector(".dismiss-box input"); i.value = "Too broad"; i.dispatchEvent(new Event("input"));`);
+	await ev(`[...${pcard("Keep feature requests")}.querySelectorAll(".dismiss-box button")].find((b) => b.textContent === "Dismiss suggestion").click();`);
+	ok("Not this dismisses the proposal with the reason", await fileUntil(() => { const p = json(join(BOARD, "proposals", "learn-2026-11-18-keep-asked.json")); return p.status === "dismissed" && p.reason === "Too broad"; }));
+	ok("the dismissed card leaves the dialog", await until(`document.querySelectorAll("#learn-dialog .pcard").length === 1`));
+	await ev(`document.getElementById("learn-close").click();`);
+	ok("with nothing open the lightbulb hides", await until(`document.getElementById("learn").hidden`));
 
 	// Typed drafts survive a reload, and a rewritten draft drops them
 	writeProbes();

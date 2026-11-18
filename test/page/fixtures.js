@@ -131,4 +131,30 @@ window.makeRouteFixtures = (iso) => {
     }),
   ];
 };
+// Rule proposals the server derives from his deviations
+window.makeProposalFixtures = (iso) => [
+  ["p1", {
+    title: "Do not suggest closing feature requests the maintainer asked for",
+    why: "Three times the agent suggested closing a feature request you had invited yourself, and three times you dismissed it.",
+    evidence: [
+      { at: iso(6 * 86400000), itemId: "issue-9471", type: "dismissed", gist: "Close: not planned, on a request you asked the reporter to write up." },
+      { at: iso(4 * 86400000), itemId: "issue-9302", type: "dismissed", gist: "Close: stale, on the bulk QR import request." },
+      { at: iso(2 * 86400000), itemId: "issue-9288", type: "dismissed", gist: "Close: not planned. Your reason: \"I asked for this one.\"" },
+    ],
+    target: "profile", file: "rules/classification.md", heading: "## Feature requests",
+    text: "Never suggest closing a feature request when a maintainer asked for it in the thread. Classify it as `later` instead.",
+  }],
+  ["p2", {
+    title: "Drop the opening thanks in log requests",
+    why: "You removed the opening \"Thanks for the report!\" from the last four debug log requests before posting them.",
+    evidence: [
+      { at: iso(9 * 86400000), itemId: "issue-9472", type: "edited", gist: "Removed \"Thanks for the report!\" before posting." },
+      { at: iso(7 * 86400000), itemId: "issue-9260", type: "edited", gist: "Removed the opening thanks and shortened the link sentence." },
+      { at: iso(3 * 86400000), itemId: "issue-9311", type: "edited", gist: "Removed \"Thanks for the report!\" before posting." },
+      { at: iso(1 * 86400000), itemId: "issue-9330", type: "edited", gist: "Removed the opening thanks." },
+    ],
+    target: "personal", file: "personal.md", heading: "Voice",
+    text: "In log requests, start with the request itself. No opening thanks.",
+  }],
+];
 </script>
