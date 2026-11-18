@@ -444,6 +444,39 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await wait(5);
   ok("fallback: the list row shows a quiet icon with the same tooltip", !!document.querySelector('.row[data-id="issue-9483"] .r-meta svg[aria-label="' + FALLBACK + '"]') && !document.querySelector('.row[data-id="issue-9471"] .r-meta svg[aria-label="' + FALLBACK + '"]'));
 
+  // Review suggestions render as diffs
+  {
+    const hdr = "@@ -10,6 +10,6 @@ export function parse(input) {\n \tconst parts = input.split(\",\");\n \tconst out = [];\n \tfor (const p of parts) {\n-\t\tout.push(p);\n+\t\tout.push(p.trim());\n \t}\n \treturn out;";
+    const noHdr = " \tconst parts = input.split(\",\");\n \tconst out = [];\n \tfor (const p of parts) {\n+\t\tout.push(p.trim());\n \t}\n \treturn out;";
+    items([...F, ["pr-9490", { kind: "pr", number: 9490, title: "Trim parsed parts", url: "https://github.com/acme/widgets/pull/9490", author: "someone", authorType: "contributor", section: "easy", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full",
+      routes: [{ id: "r1", type: "review", as: "bot", title: "Request changes: three suggestions", recommended: true, draftHash: "h1", text: "Three small things.", params: { event: "request_changes", comments: [
+        { id: "e1", path: "src/parse.ts", line: 13, startLine: 13, text: "Trim before pushing.", original: "\t\tout.push(p.trim());", suggestion: "\t\tout.push(p.trim().toLowerCase());", diffHunk: hdr },
+        { id: "e2", path: "src/parse.ts", line: 13, text: "Lower-case it too.\n```suggestion\n\t\tout.push(p.trim().toLowerCase());\n```", diffHunk: hdr },
+        { id: "e3", path: "src/parse.ts", line: 13, text: "Same here.\n```suggestion\n\t\tout.push(p.trim().toLowerCase());\n```", diffHunk: noHdr },
+      ] } }] }]]); await wait(10);
+    await openItem("pr-9490");
+    const bodies = [...openCard().querySelectorAll(".checklist .c-body")];
+    const rows = (b) => [...b.querySelectorAll(".hunk span")].map((s) => s.className + ":" + s.textContent.trimEnd());
+    ok("explicit fields: original red, suggestion green, hunk lines above as dimmed context, prose without a fence",
+      rows(bodies[0]).join("|") === ["h-ctx: \tconst parts = input.split(\",\");", "h-ctx: \tconst out = [];", "h-ctx: \tfor (const p of parts) {", "h-del:-\t\tout.push(p.trim());", "h-add:+\t\tout.push(p.trim().toLowerCase());"].join("|")
+      && bodies[0].querySelector(".c-text").textContent === "Trim before pushing." && !/```/.test(bodies[0].textContent));
+    ok("fenced fallback: the commented line red, the replacement green, context around it", rows(bodies[1]).includes("h-del:-\t\tout.push(p.trim());") && rows(bodies[1]).includes("h-add:+\t\tout.push(p.trim().toLowerCase());")
+      && rows(bodies[1]).filter((r) => r.startsWith("h-ctx")).length >= 2 && bodies[1].querySelector(".c-text").textContent === "Lower-case it too." && !bodies[1].querySelector("code.ic"));
+    ok("a hunk without a header still shows the replacement as an addition", rows(bodies[2]).some((r) => r === "h-add:+\t\tout.push(p.trim().toLowerCase());") && !/```/.test(bodies[2].textContent));
+    ok("context lines are muted", getComputedStyle(bodies[0].querySelector(".hunk .h-ctx")).color !== getComputedStyle(bodies[0].querySelector(".hunk .h-add")).color);
+    items(F); await wait(10);
+  }
+
+  // The rounds selector: label and buttons share one vertical center
+  await openItem("pr-9475");
+  {
+    const row = [...openCard().querySelectorAll(".seg-row")].find((r) => /Rounds/.test(r.textContent));
+    const mid = (el) => { const b = el.getBoundingClientRect(); return b.top + b.height / 2; };
+    const label = row.querySelector(".card-label"), group = row.querySelector(".seg-group");
+    ok("rounds row: label and buttons centered within 1px", Math.abs(mid(label) - mid(group)) <= 1 && [...group.querySelectorAll(".seg")].every((s) => Math.abs(mid(s) - mid(group)) <= 1));
+  }
+  document.getElementById("d-close").click(); await wait(5);
+
   // ---------- accounts and projects come from the server ----------
   const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
   const ZW = window.__board;

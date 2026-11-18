@@ -643,6 +643,8 @@ textarea.short { min-height: 5.4em; }
 .foot-status { flex-basis: 100%; font-size: 12.5px; }
 .foot-status:empty { display: none; }
 .reload-btn { margin-left: auto; font-size: 12.5px; }
+.bar-reload { margin-left: auto; font-size: 12.5px; padding: 4px 10px; }
+.bar-reload:not([hidden]) + .iconbtn { margin-left: 8px; }
 .reload-btn:not([hidden]) + .conn { margin-left: 0; }
 /* Suggested rules: a quiet header entry, never part of the plan */
 .learn-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--act-think); font: 600 12.5px/1 var(--font-body); cursor: pointer; }
@@ -860,6 +862,7 @@ textarea {
 <dialog class="detail" id="detail" aria-labelledby="detail-title">
   <div class="d-bar">
     <span class="d-ref" id="d-ref"></span>
+    <button class="btn quiet bar-reload" type="button" data-focus-key="bar-reload" hidden>Updated, reload</button>
     <button class="iconbtn" type="button" id="d-close" data-focus-key="close" aria-label="Close" title="Close"></button>
   </div>
   <div class="d-body" id="d-body" tabindex="-1">
@@ -889,6 +892,7 @@ textarea {
 <dialog class="detail learn" id="learn-dialog" aria-labelledby="learn-title">
   <div class="d-bar">
     <span class="d-ref">Suggested rules</span>
+    <button class="btn quiet bar-reload" type="button" hidden>Updated, reload</button>
     <button class="iconbtn" type="button" id="learn-close" aria-label="Close" title="Close"></button>
   </div>
   <div class="d-body">
@@ -970,6 +974,7 @@ const state = {
   slow: false,
   loaded: { items: false, actions: false, meta: false },
   items: new Map(),
+  metas: new Map(),
   proposals: [],
   tab: loadTab(),
   latestAction: new Map(),
@@ -1308,8 +1313,16 @@ const els = {
   board: document.getElementById("board"),
 };
 
+// The run that matters for the current tab: its instance's, or in the combined tab the most recent of all
+function currentMeta() {
+  if (multiInstance() && state.tab !== "all") return state.metas.get(state.tab) || null;
+  let best = null;
+  for (const m of state.metas.values()) if (m && (!best || parseTime(m.lastRunAt) > parseTime(best.lastRunAt))) best = m;
+  return best;
+}
+
 function renderHeader() {
-  const m = state.meta;
+  const m = currentMeta();
   if (m && parseTime(m.lastRunAt)) {
     els.runInfo.replaceChildren(timeEl(m.lastRunAt, "Last run ") || "");
   } else {
@@ -1845,7 +1858,7 @@ function hintGroup(verb) {
 // Who acts on a step, shown inside its button: the bot's avatar, the maintainer's avatar, or the agent icon
 function actorMark(actor, inst) {
   if (actor === "agent") return icon("sparkles", null, "actor-icon");
-  const account = actor === "bot" ? inst && inst.bot : boardInfo.me;
+  const account = actor === "bot" ? inst && inst.bot : (inst && inst.me) || boardInfo.me;
   if (!account || !str(account.login)) return icon(actor === "bot" ? "bot" : "user", null, "actor-icon");
   return avatarEl(str(account.login), account.avatarUrl);
 }
@@ -2685,6 +2698,21 @@ function hunkRow(cls, sign, text) {
 // A suggestion shows as a diff: the commented lines removed, the replacement added.
 // Without line numbers in the hunk it shows the hunk as context and the replacement below.
 function commentBody(c) {
+  // Newer docs carry the commented lines and the replacement as fields, so nothing has to be parsed
+  if (typeof c.original === "string" && typeof c.suggestion === "string") {
+    const end = Number.isInteger(c.line) ? c.line : null;
+    const start = Number.isInteger(c.startLine) ? c.startLine : end;
+    const mapped = end === null ? null : hunkLines(c.diffHunk);
+    const before = mapped ? mapped.filter((l) => l.line !== null && l.line < start).slice(-3) : [];
+    const prose = str(c.text).trim();
+    return [
+      prose ? h("span", { class: "c-text" }, richText(prose)) : null,
+      h("pre", { class: "hunk" },
+        ...before.map((l) => hunkRow("h-ctx", " ", l.text)),
+        ...c.original.replace(/\n$/, "").split("\n").map((t) => hunkRow("h-del", "-", t)),
+        ...c.suggestion.replace(/\n$/, "").split("\n").map((t) => hunkRow("h-add", "+", t))),
+    ].filter(Boolean);
+  }
   const { prose, suggestions } = splitSuggestions(c.text);
   const parts = [];
   if (prose) parts.push(h("span", { class: "c-text" }, richText(prose)));
@@ -3565,6 +3593,7 @@ function setupLearn() {
 
 // Added cards stay until the dialog closes, so he sees the result, then they make room
 function forgetDecided() {
+  if (reloadPending && !detail.el.open) location.reload();
   for (const id of learn.added.keys()) learn.gone.add(id);
   learn.recs.clear();
   renderLearn();
@@ -3580,17 +3609,19 @@ function closeLearn() {
 let reloadPending = false;
 
 // The local server announces a new board page. Typed step texts are saved, so only an open dialog defers the reload.
+// Whether it came from the server's reload event or from a version check, a new page waits only for open dialogs
 function requestReload() {
-  if (!detail.el.open) {
+  if (!detail.el.open && !learn.el.open) {
     location.reload();
     return;
   }
   reloadPending = true;
-  document.getElementById("reload").hidden = false;
+  // The open dialog covers the header, so its own top bar says it too
+  for (const b of document.querySelectorAll("#reload, .bar-reload")) b.hidden = false;
 }
 
 window.addEventListener("board:reload", requestReload);
-document.getElementById("reload").addEventListener("click", () => location.reload());
+for (const b of document.querySelectorAll("#reload, .bar-reload")) b.addEventListener("click", () => location.reload());
 
 function finishDetail() {
   const id = detail.id;
@@ -3668,7 +3699,7 @@ function renderNotice() {
       h("strong", { text: "The board data stopped loading." }),
       state.loadError + " Reload the page to reconnect.");
   } else if (state.loaded.items && state.items.size === 0) {
-    el = state.meta
+    el = currentMeta()
       ? h("div", { class: "notice" }, h("strong", { text: "Nothing open needs attention." }),
           "The last run found no items to brief.")
       : h("div", { class: "notice" }, h("strong", { text: "The triage routine has not run yet." }),
@@ -3854,11 +3885,24 @@ function subscribe(db) {
     state.proposals = [];
   }
 
-  db.doc("meta/status").onSnapshot((snap) => {
-    state.meta = snap.exists ? snap.data() : null;
-    markLoaded("meta", snap.metadata);
-    render();
-  }, onDbError);
+  subscribeMetas();
+}
+
+// One meta doc per instance. New instances can arrive with a board event, so this runs again then.
+const metaSubs = new Set();
+function subscribeMetas() {
+  if (!state.db) return;
+  const names = boardInfo.instances.map((x) => x.name);
+  if (!names.length) markLoaded("meta", { fromCache: false });
+  for (const name of names) {
+    if (metaSubs.has(name)) continue;
+    metaSubs.add(name);
+    state.db.doc("meta/" + name).onSnapshot((snap) => {
+      state.metas.set(name, snap.exists ? snap.data() : null);
+      if (boardInfo.instances.every((x) => state.metas.has(x.name))) markLoaded("meta", snap.metadata);
+      render();
+    }, onDbError);
+  }
 }
 
 async function checkServer() {
@@ -3882,6 +3926,7 @@ async function boot() {
   // The shim updates the board object in place when the pause switch changes, then tells the page
   window.addEventListener("board:info", () => {
     applyBoardInfo(boardApi);
+    subscribeMetas();
     renderMarkers();
     for (const rec of detail.cards.values()) rec.sig = null;
     render();

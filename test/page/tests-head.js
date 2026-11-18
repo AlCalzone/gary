@@ -16,7 +16,7 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
   const laterIds = () => [...document.querySelectorAll("#not-today .row")].map((r) => r.dataset.id);
   const spentText = () => document.querySelector("#plan .sum").textContent;
   const todayBtn = () => document.querySelector("#today .show-all");
-  window.__subs["meta/status"]({ exists: true, data: () => ({ lastRunAt: iso(3e6), staleIssues: 240 }) });
+  window.__subs["meta/widgets"]({ exists: true, data: () => ({ lastRunAt: iso(3e6), staleIssues: 240 }) });
   actions([]);
 
   const ids = (g) => [...document.querySelectorAll("#group-" + g + " .row")].map((r) => r.dataset.id);
