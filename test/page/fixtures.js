@@ -107,6 +107,30 @@ window.makeRouteFixtures = (iso) => {
         { id: "r2", type: "review", as: "bot", title: "Comment: ask the contributor", params: { event: "comment", comments: [] }, text: "Thanks! Could you rename parameter 2 to match the manual?", draftHash: "h2" },
       ],
     }),
+    pr(9484, {
+      title: "Support the Gadget Mini in the device list",
+      author: "someone",
+      story: "A device config from a first-time contributor. The content is right, but the file is not formatted and one lint rule fails.",
+      state: "Only formatting and lint are left.",
+      autofix: { changes: true, files: 3, lines: 41, tools: ["prettier", "eslint --fix"] },
+      routes: [
+        { id: "r1", type: "format", as: "agent", title: "Format: fix formatting and lint", recommended: true, draftHash: "h1" },
+        { id: "r2", type: "merge", as: "me", title: "Merge: after the formatting", draftHash: "h2" },
+      ],
+    }),
+    pr(9485, {
+      title: "Clean config for the Gadget Max",
+      author: "someone",
+      autofix: { changes: false, files: 0, lines: 0, tools: ["prettier"] },
+      routes: [{ id: "r1", type: "merge", as: "me", title: "Merge: clean", recommended: true, draftHash: "h1" }],
+    }),
+    issue(9486, {
+      title: "Hub loses the network key after a power cut",
+      author: "someone",
+      story: "The agent read the attached log and found the cause.",
+      routes: [{ id: "r1", type: "reply", as: "bot", title: "Post analysis: the key is written after the reboot", recommended: true, draftHash: "h1",
+        text: "## What happened\n\nThe hub rebooted while it wrote the network key, so the key on disk is empty.\n\n## Why\n\nThe write is not atomic. A power cut between truncate and write leaves an empty file.\n\n## What you can do\n\n1. Restore the key from your backup.\n2. Update to 4.2, which writes the key atomically.\n\n## What we change\n\nWe add a check at startup that warns about an empty key file." }],
+    }),
     issue(9481, {
       title: "Hub crashes when a sensor reports a negative temperature",
       author: "someone",

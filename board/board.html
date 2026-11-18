@@ -183,6 +183,16 @@ header { display: flex; flex-direction: column; gap: 14px; }
 h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .dry { font-size: 11.5px; font-weight: 600; color: var(--warn); padding: 1px 7px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--warn); }
 .dry[hidden] { display: none; }
+/* Invalid settings: calm, clear, with the exact problem in monospace */
+#settings-notes { display: flex; flex-direction: column; gap: 10px; }
+#settings-notes:not(:empty) { margin-bottom: 18px; }
+.settings-banner { padding: 12px 16px; border-radius: 10px; background: var(--warn-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 40%, transparent); color: var(--fg); }
+.settings-banner p { display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 14px; line-height: 1.5; }
+.settings-banner p .i { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--warn); }
+.settings-error { margin: 8px 0 0 24px; padding: 8px 10px; border-radius: 6px; background: var(--surface); font: 12.5px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+.settings-warnings { font-size: 12.5px; color: var(--muted); }
+.settings-warnings summary { cursor: pointer; }
+.settings-warnings ul { margin: 6px 0 0; padding-left: 18px; }
 /* Project tabs: quiet text, the current one underlined in ink. No counts, the plan says enough. */
 .tabs { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 14px; border-bottom: 1px solid var(--line); }
 .tabs[hidden] { display: none; }
@@ -600,6 +610,8 @@ button.card-head:hover .chev { color: var(--fg); }
 .card textarea, .card .field { background: var(--surface); }
 .z-status:empty { display: none; }
 textarea.tall { min-height: 13em; }
+textarea.tall.long { min-height: 19.5em; }
+.compact-note { margin: -4px 14px 10px; }
 textarea.short { min-height: 5.4em; }
 /* Analyze again opens above the footer, quiet like the footer itself */
 .d-analyze { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
@@ -855,6 +867,7 @@ textarea {
     </div>
     <nav class="tabs" id="tabs" role="tablist" aria-label="Projects" hidden></nav>
   </header>
+  <div id="settings-notes"></div>
   <div id="notice"></div>
   <main id="board"></main>
 </div>
@@ -1034,6 +1047,7 @@ const ICONS = {
   alert: [p("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), p("M12 9v4"), p("M12 17h.01")],
   shield: [p("M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z")],
   sparkleSmall: [p("M12 6.5l1.4 4.1 4.1 1.4-4.1 1.4-1.4 4.1-1.4-4.1-4.1-1.4 4.1-1.4z")],
+  wand: [p("M15 4V2"), p("M15 16v-2"), p("M8 9h2"), p("M20 9h2"), p("M17.8 11.8 19 13"), p("M17.8 6.2 19 5"), p("m3 21 9-9"), p("M12.2 6.2 11 5")],
   pause: [["rect", { x: 6, y: 4, width: 4, height: 16, rx: 1 }], ["rect", { x: 14, y: 4, width: 4, height: 16, rx: 1 }]],
   sparklesOff: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"), p("M3 3l18 18")],
   sparkles: [p("M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z")],
@@ -1840,7 +1854,7 @@ const INTENTS = [
   ["talk", ["comment", "review_comment", "react", "answer_discussion"], ["Reply", "Ask", "React"]],
   ["push", ["request_changes"], ["Request changes"]],
   ["think", [], ["Decide", "Review"]],
-  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Address review", "Apply fixes", "Start fix", "Drive", "Analyze"]],
+  ["agent", ["apply_fixes", "start_fix", "full_review", "reanalyze"], ["Take over", "Address review", "Apply fixes", "Start fix", "Drive", "Format", "Analyze"]],
   ["away", ["snooze", "dismiss"], ["Snooze", "Dismiss"]],
 ];
 
@@ -2019,6 +2033,16 @@ function itemRef(d) {
   return str(d.ref) || (str(d.repo) ? str(d.repo) + "#" + str(d.number) : "#" + str(d.number));
 }
 
+// What the project's formatter and lint autofix would change on this PR, from the agent's dry run
+function autofixBadge(d) {
+  const a = d.kind === "pr" && d.autofix && typeof d.autofix === "object" ? d.autofix : null;
+  if (!a || a.changes !== true) return null;
+  const files = Number.isInteger(a.files) ? a.files : 0;
+  const lines = Number.isInteger(a.lines) ? a.lines : 0;
+  const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+  return stateBadge(["wand", "muted", "The formatter and lint autofix would change " + plural(files, "file") + ", " + plural(lines, "line") + ".", null, "Autofix: " + plural(files, "file")]);
+}
+
 function renderDetailHead(d, dim) {
   const ref = ghLink(d.url, combinedView() ? itemRef(d) : "#" + str(d.number), "ref");
   ref.dataset.focusKey = "head:link";
@@ -2041,6 +2065,7 @@ function renderDetailHead(d, dim) {
     authorEl(d, "d-author", false),
     type ? stateBadge([type[0], "muted", type[1], null, type[1]]) : null,
     badges,
+    autofixBadge(d),
     labels.map((l) => h("span", { class: "tag label", text: str(l) })),
     timeEl(d.updatedAt, "updated "),
   ].flat().filter(Boolean);
@@ -2161,6 +2186,7 @@ const ROUTE_ACTORS = {
   move: ["bot", "me"],
   chore: ["bot"],
   open: ["me"],
+  format: ["agent"],
 };
 const CHORE_LABELS = {
   label: "Change labels", assign: "Assign", ready: "Mark ready", answer_discussion: "Mark as answer",
@@ -2234,7 +2260,8 @@ function routeIntent(r) {
     case "request_logs": return "talk";
     case "address_review":
     case "take_over":
-    case "drive": return "agent";
+    case "drive":
+    case "format": return "agent";
     case "follow_up": return actorOf(r) === "agent" ? "agent" : "talk";
     case "chore": return intentOf(str(p.action));
     case "open": return "away";
@@ -2246,7 +2273,8 @@ function routeIntent(r) {
 function routeCompact(r) {
   switch (r.type) {
     case "chore":
-    case "open": return true;
+    case "open":
+    case "format": return true;
     case "merge":
     case "close":
     case "reopen": return !hasText(r);
@@ -2284,6 +2312,8 @@ function editorLabel(r) {
 
 function editorRows(r) {
   if (r.type === "request_logs") return 8;
+  // A posted analysis runs over several sections, so its editor starts tall
+  if (r.type === "reply" && /^post analysis\b/i.test(str(r.title))) return 12;
   const label = editorLabel(r);
   return label && label.endsWith("(optional)") ? 3 : 6;
 }
@@ -2323,6 +2353,7 @@ function routeButtons(d, r) {
       return out;
     }
     case "open": return [me("Open on GitHub", { copy: null })];
+    case "format": return [{ id: "main", actor: "agent", label: "Format & fix lint" }];
     case "chore": {
       const label = CHORE_LABELS[p.action] || str(p.action) || "Run";
       return [run(p.action === "react" ? (REACTION_EMOJI[p.content] || REACTION_EMOJI.THUMBS_UP) + " " + label : label)];
@@ -2532,7 +2563,38 @@ function setupTabs() {
   });
 }
 
+// Broken settings stop GitHub writes for that instance, so the page says so plainly where its items are shown
+function renderSettings() {
+  const scope = state.tab === "all" || !multiInstance() ? boardInfo.instances : boardInfo.instances.filter((x) => x.name === state.tab);
+  const out = [];
+  for (const inst of scope) {
+    const error = str(inst.settingsError).trim();
+    if (error) {
+      out.push(h("section", { class: "settings-banner", role: "status" },
+        h("p", null, icon("alert"), h("span", { text: "The settings of " + (inst.title || inst.name) + " are invalid. Gary keeps the last valid ones and sends nothing to GitHub until this is fixed." })),
+        h("pre", { class: "settings-error", text: error })));
+    }
+  }
+  // Warnings only on the instance's own tab: they are housekeeping, not a reason to stop
+  const own = multiInstance() ? (state.tab === "all" ? [] : scope) : scope;
+  for (const inst of own) {
+    const warnings = (Array.isArray(inst.settingsWarnings) ? inst.settingsWarnings : []).map(str).filter(Boolean);
+    if (!warnings.length) continue;
+    out.push(h("details", { class: "settings-warnings" },
+      h("summary", null, warnings.length === 1 ? "1 note about the settings" : warnings.length + " notes about the settings"),
+      h("ul", null, warnings.map((w) => h("li", { text: w })))));
+  }
+  const box = document.getElementById("settings-notes");
+  // Keep an open warnings list open across re-renders
+  const sig = JSON.stringify(out.map((x) => x.textContent));
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    box.replaceChildren(...out);
+  }
+}
+
 function renderMarkers() {
+  renderSettings();
   const one = boardInfo.instances.length === 1 ? boardInfo.instances[0] : null;
   const title = one ? one.title + " triage" : "Gary";
   document.title = title;
@@ -2559,6 +2621,18 @@ function refusalPayload(e) {
   const env = e.result;
   const t = env && Array.isArray(env.content) ? env.content.find((c) => c && c.type === "text") : null;
   return parseToolPayload(t && t.text);
+}
+
+// Refusals that are a state of the instance, not an error of this click, show as information
+function refusalNote(e, key) {
+  const p = refusalPayload(e);
+  if (!p) return null;
+  if (p.paused === true) return { kind: "info", text: str(p.result) || "Nothing was sent." };
+  if (p.settingsError) {
+    const inst = instOf(state.items.get(key));
+    return { kind: "info", text: "Nothing was sent. The settings of " + (inst.title || inst.name || "this project") + " are invalid, see the note at the top." };
+  }
+  return null;
 }
 
 function routeFailure(e, r) {
@@ -2596,7 +2670,7 @@ async function runRoute(id, r, payload) {
     dropSavedDraft(id, r.id);
     detail.openRoute = r.id;
   } catch (e) {
-    state.notes.set(id, refusalPayload(e)?.paused === true ? { kind: "info", text: refusalPayload(e).result || "Nothing was sent." } : { kind: "failed", text: routeFailure(e, r) });
+    state.notes.set(id, refusalNote(e, id) || { kind: "failed", text: routeFailure(e, r) });
   } finally {
     state.busy.delete(id);
     render();
@@ -2619,7 +2693,7 @@ function textEditor(id, r, key, label, value, rows) {
   }
   const field = h(rows ? "textarea" : "input", {
     id: "ed-" + id + "-" + key.replace(/[^A-Za-z0-9_-]/g, "_"), "data-focus-key": dk,
-    class: rows ? (rows >= 8 ? "tall" : rows <= 3 ? "short" : null) : "field", type: rows ? null : "text", rows: rows ? String(rows) : null,
+    class: rows ? (rows >= 12 ? "tall long" : rows >= 8 ? "tall" : rows <= 3 ? "short" : null) : "field", type: rows ? null : "text", rows: rows ? String(rows) : null,
     "aria-label": label || "Text", value: getDraft(id, key, value),
   });
   field.addEventListener("input", () => {
@@ -3044,7 +3118,11 @@ function buildCard(id, d, r, rec) {
     // Opening the thread is all that is left when the agent could not analyze it, so there is nothing to dismiss
     rec.head = h("div", { class: "card-head" }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.actions, r.type === "open" ? null : dismissX);
     rec.body = null;
-    rec.card.replaceChildren(...[rec.head, rec.dismissBox, callout, rec.status].filter(Boolean));
+    // Formatting pushes to the contributor's branch, so the row says who commits and that he keeps the PR
+    const note = r.type === "format"
+      ? h("p", { class: "quiet-line compact-note", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") + ". Does not take over the PR." })
+      : null;
+    rec.card.replaceChildren(...[rec.head, note, rec.dismissBox, callout, rec.status].filter(Boolean));
     return;
   }
   const actor = cardActor(d, r);
@@ -3114,7 +3192,7 @@ async function dismissRoute(id, r, reason) {
       }, 2500);
     }
   } catch (e) {
-    state.notes.set(id, refusalPayload(e)?.paused === true ? { kind: "info", text: refusalPayload(e).result || "Nothing was sent." } : { kind: "failed", text: routeFailure(e, r) });
+    state.notes.set(id, refusalNote(e, id) || { kind: "failed", text: routeFailure(e, r) });
   } finally {
     state.busy.delete(id);
     render();
