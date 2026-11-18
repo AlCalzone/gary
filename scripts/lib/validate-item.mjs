@@ -120,6 +120,11 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 		if (isObject(f) && f.routeId !== undefined && !routeIds.has(f.routeId)) {
 			err("finding-route", `findings[${i}].routeId "${f.routeId}" names no route of this item`);
 		}
+		// A certain finding may go out in an automatic review, so it has to show its case
+		if (isObject(f) && f.certain !== undefined && typeof f.certain !== "boolean") err("finding-certain", `findings[${i}].certain must be true or false`);
+		if (isObject(f) && f.evidence !== undefined && !(isString(f.evidence) && f.evidence.length <= 400)) err("finding-evidence", `findings[${i}].evidence must name the concrete case in at most 400 characters`);
+		if (isObject(f) && f.certain === true && !isString(f.evidence)) err("finding-evidence", `findings[${i}] is certain, so it needs evidence: the concrete case that shows the problem, in one sentence`);
+		if (isObject(f) && f.certain === true && ["question", "idea"].includes(f.severity)) err("finding-certain", `findings[${i}]: a ${f.severity} is never certain`);
 	});
 
 	// An item without routes is hidden on the board and needs no hint
@@ -279,7 +284,7 @@ const SUGGESTION_FENCE = /```suggestion\b/;
  * A comment that proposes a change carries the exact lines it replaces in `original` and the new text in `suggestion`,
  * so the page and the GitHub body show both. A fence inside `text` is the old form.
  */
-function checkSuggestion(c, where, err, warn) {
+export function checkSuggestion(c, where, err, warn) {
 	if (c.suggestion === undefined) {
 		if (typeof c.text === "string" && SUGGESTION_FENCE.test(c.text)) {
 			warn("suggestion-fence", `${where}: text holds a suggestion fence. Put the replacement in suggestion and the replaced lines in original`);

@@ -13,13 +13,14 @@ import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
+import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
-import { CHORE_ACTIONS, MOVE_MODES, actorOf, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
+import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
 const MAX_BODY = 256 * 1024;
@@ -227,18 +228,7 @@ export function partHash(part, route, item) {
 }
 export const labelHash = (route, item) => partHash("label", route, item);
 
-/**
- * The body GitHub gets for one inline review comment: its text, then a suggestion block when it has `suggestion`.
- * The fence is one backtick longer than the longest backtick run that starts a line of the suggestion, and at least three.
- */
-export function commentBody(comment) {
-	const text = typeof comment?.text === "string" ? comment.text : "";
-	if (typeof comment?.suggestion !== "string") return text;
-	const longest = Math.max(0, ...comment.suggestion.split("\n").map((l) => /^`*/.exec(l)[0].length));
-	const fence = "`".repeat(Math.max(3, longest + 1));
-	const block = `${fence}suggestion\n${comment.suggestion}\n${fence}`;
-	return text ? `${text}\n\n${block}` : block;
-}
+export { commentBody };
 
 /**
  * Maps a clicked route to what the server does: queue one agent request, or run one or more bot actions.
@@ -917,9 +907,12 @@ export async function startBoardServer({
 			// A pending fix of the routine counts toward its limit, so the page can show "N of 10"
 			return fix && fix.startedBy === "routine" && BLOCKING_FIX_STATES.includes(fix.state) ? { ...fix, limit: autoFixes } : fix;
 		};
+		const autoReviews = await readAutoReviews(name);
+		const autoReviewOf = (id, data) => (data.kind === "pr" ? autoReviewState(data, autoReviews[id], fixSources.snapshot[id]) : null);
 		return items.map(({ id, data }) => ({
 			...data,
 			liveState: liveStates.get(`${name}/${id}`),
+			...(autoReviewOf(id, data) && { autoReview: autoReviewOf(id, data) }),
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),
 			...(typeof data.hint === "string" && { hint: servedHint(data) }),
@@ -1034,7 +1027,8 @@ export async function startBoardServer({
 		addWatch(w, i.state, (_type, file) => {
 			if (file === "control.json") schedulePush(name, "board");
 			// A recorded fix PR, its ready mark and a new snapshot change item.fix
-			if (file === "fixes.json" || file === "snapshot.json" || file === "snapshot.pending.json") schedulePush(name, "items");
+			// An automatic review and the answer to its format offer change item.autoReview
+			if (file === "fixes.json" || file === "auto-reviews.json" || file === "snapshot.json" || file === "snapshot.pending.json") schedulePush(name, "items");
 		});
 		// A round of a drive changes item.working and the stage of item.fix
 		mkdirSync(driveDir(name), { recursive: true });

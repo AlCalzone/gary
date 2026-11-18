@@ -75,6 +75,25 @@ export function speakerFacts(timeline, now = Date.now()) {
 	};
 }
 
+/**
+ * The requests for a review by `login` on a PR, oldest first, as `[{ at, by }]`. GitHub's "Re-request review" button
+ * creates one. `node.reviewRequestEvents` holds the PR's last review_requested timeline events.
+ */
+export function reviewRequestsFor(node, login) {
+	const wanted = (login ?? "").toLowerCase();
+	if (!wanted) return [];
+	return (node.reviewRequestEvents?.nodes ?? [])
+		.filter((e) => e?.createdAt && (e.requestedReviewer?.login ?? "").toLowerCase() === wanted)
+		.map((e) => ({ at: e.createdAt, by: e.actor?.login ?? "ghost" }))
+		.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+/** When `author` last commented, replied or reviewed in the timeline, or null. The opening post does not count. */
+export function lastEventBy(timeline, author) {
+	const login = (author ?? "").toLowerCase();
+	return timeline.filter((e) => e.kind !== "opened" && String(e.author).toLowerCase() === login).at(-1)?.at ?? null;
+}
+
 /** The facts of a PR entry from the snapshot. */
 export function prFacts(entry) {
 	const approvedBy = (entry.reviewSummary ?? []).filter((r) => r.state === "approved").map((r) => r.author);

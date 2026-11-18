@@ -2,7 +2,7 @@
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { PROFILE, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
+import { PROFILE, ROOT, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 
 const t = runner("config");
 const T = tempDir();
@@ -117,6 +117,38 @@ t.check("fixReview refuses values outside its lists", frErrors.length === 4 && f
 t.check("fixReview must be an object", c.validateConfig({ ...base, fixReview: "copilot" }).some((e) => /"fixReview" must be/.test(e)));
 const frCheck = c.checkConfig({ ...base, fixReview: { reviewer: "copilot", waitMinutes: 10 } });
 t.check("an unknown fixReview field is only a warning at run time", frCheck.errors.length === 0 && frCheck.unknown.includes('unknown field "fixReview.waitMinutes"'), frCheck);
+
+// autoReview and the profile fields it reads
+const paths = { autoReviewPaths: { config: ["config/devices/**"] } };
+t.check("autoReview is off without the field", c.autoReviewOf(withBot, paths).enabled === false && c.autoReviewOf(withBot, paths).reason === null && c.loadInstance("widgets").config.autoReview === undefined);
+t.check("autoReview on takes the defaults for the rest", JSON.stringify(c.autoReviewOf({ ...withBot, autoReview: { enabled: true } }, paths)) === '{"enabled":true,"kinds":["config"],"maxPerRun":3,"reason":null}');
+t.check("autoReview works with allowOwnTokenPushes", c.autoReviewOf({ ...base, allowOwnTokenPushes: true, autoReview: { enabled: true } }, paths).enabled === true);
+t.check("autoReview is off without an account that may post", /no account may post/.test(c.autoReviewOf({ ...base, autoReview: { enabled: true } }, paths).reason));
+t.check("autoReview is off when the profile names no paths for its kinds", /names no autoReviewPaths for config/.test(c.autoReviewOf({ ...withBot, autoReview: { enabled: true } }, { autoReviewPaths: {} }).reason) && c.autoReviewOf({ ...withBot, autoReview: { enabled: true } }, { autoReviewPaths: { config: [] } }).enabled === false);
+t.check("autoReview with maxPerRun 0 or no kinds is off", c.autoReviewOf({ ...withBot, autoReview: { enabled: true, maxPerRun: 0 } }, paths).enabled === false && c.autoReviewOf({ ...withBot, autoReview: { enabled: true, kinds: [] } }, paths).enabled === false);
+t.check("a full autoReview is valid", c.validateConfig({ ...base, autoReview: { enabled: true, kinds: ["config"], maxPerRun: 5 } }).length === 0);
+const arErrors = c.validateConfig({ ...base, autoReview: { enabled: "yes", kinds: ["config", "docs"], maxPerRun: 51 } });
+t.check("autoReview refuses values outside its lists", arErrors.length === 3 && arErrors.some((e) => /"autoReview.enabled" must be true or false/.test(e)) && arErrors.some((e) => /"autoReview.kinds" must be a list with only config/.test(e)) && arErrors.some((e) => /"autoReview.maxPerRun"/.test(e)), arErrors);
+t.check("autoReview must be an object", c.validateConfig({ ...base, autoReview: true }).some((e) => /"autoReview" must be/.test(e)));
+const arCheck = c.checkConfig({ ...base, autoReview: { enabled: true, onlyFirstTimers: true } });
+t.check("an unknown autoReview field is only a warning at run time", arCheck.errors.length === 0 && arCheck.unknown.includes('unknown field "autoReview.onlyFirstTimers"'), arCheck);
+t.check("autoReviewPaths maps a kind to globs", c.validateProfile({ ...gprofile, ...paths }).length === 0 && c.validateProfile({ ...gprofile, autoReviewPaths: ["config/**"] }).some((e) => /"autoReviewPaths" must map/.test(e)) && c.validateProfile({ ...gprofile, autoReviewPaths: { config: "config/**" } }).some((e) => /"autoReviewPaths.config" must be a list of globs/.test(e)));
+const kindCheck = c.checkProfile({ ...gprofile, autoReviewPaths: { docs: ["docs/**"] } });
+t.check("paths for a kind this version does not know are only a warning", kindCheck.errors.length === 0 && kindCheck.unknown.includes('unknown field "autoReviewPaths.docs"'), kindCheck);
+t.check("formatCommand is one line without backticks", c.validateProfile({ ...gprofile, formatCommand: "npm run fmt" }).length === 0 && c.validateProfile({ ...gprofile, formatCommand: null }).length === 0 && ["`rm -rf`", "a\nb", "", 5, "x".repeat(201)].every((v) => c.validateProfile({ ...gprofile, formatCommand: v }).some((e) => /"formatCommand" must be/.test(e))));
+t.check("the template profile is valid and carries the new fields", (() => {
+	const tpl = JSON.parse(readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8"));
+	return c.validateProfile(tpl).length === 0 && JSON.stringify(tpl.autoReviewPaths) === '{"config":[]}' && tpl.formatCommand === null;
+})());
+// A broken autoReview keeps the last valid settings, like every other field
+const wfile = join(root, "instances", "widgets", "config.json");
+const wgood = readFileSync(wfile, "utf8");
+writeFileSync(wfile, JSON.stringify({ ...JSON.parse(wgood), autoReview: { enabled: true } }));
+t.check("a valid autoReview loads", c.loadInstance("widgets").config.autoReview.enabled === true);
+writeFileSync(wfile, JSON.stringify({ ...JSON.parse(wgood), autoReview: { enabled: true, kinds: ["everything"] }, maxFullReviewsPerRun: 4 }));
+const kept = c.loadInstance("widgets");
+t.check("an autoReview with an unknown kind keeps the last valid settings and names the error", JSON.stringify(kept.config.autoReview) === '{"enabled":true}' && /"autoReview.kinds" must be a list with only config/.test(kept.settingsError), kept.settingsError);
+writeFileSync(wfile, wgood + "\n");
 let error = "";
 
 // Root config rules
