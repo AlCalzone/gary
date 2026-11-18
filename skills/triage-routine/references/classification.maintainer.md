@@ -4,15 +4,19 @@ Read this file, then `<profile>/rules/classification.md`, then the `<personal>` 
 
 Draft PRs never reach the routine. `gary snapshot` leaves them out, so they get no review, no board item and no label changes. A draft that is marked ready appears as a new item. The draft fix PRs the routine opens itself are reachable through the link on their issue's item.
 
-Quick classification uses the snapshot data: author and author type, labels, draft flag, head SHA, CI rollup, review decision, changed file paths, the last 5 comments with author and association, their `replies` and `replyCount`, comment count and `updatedAt`. It decides the section and the routes.
+Quick classification uses the snapshot data: author and author type, labels, draft flag, head SHA, CI rollup, review decision, changed file paths, the last 5 comments with author and association, their `replies` and `replyCount`, comment count, `updatedAt`, and `facts` (see "Facts first"). It decides the section and the routes.
 
-## The timeline
+## Facts first
 
-Who spoke last and whether someone answered is decided on one timeline: every top-level comment and every reply of a discussion, sorted by time. A reply inside a comment's thread is part of the conversation, often the most recent part. PR review threads go into the same timeline. A statement like "nobody replied since" or "the reporter has not answered" is only allowed after checking that timeline.
+Every snapshot entry carries `facts`, computed in code. Use them as given and never re-derive them from the thread:
 
-A discussion comment carries only its last 2 replies inline. When `replyCount` is larger than the replies in the snapshot entry, fetch the thread before deciding, with the discussion query from the `triage-issue` skill. That is required for every discussion you want to label, mark as waiting, or call unanswered. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
+- `facts.timeline`: comments, replies and reviews as one time-sorted list, each with `side`: `us`, `them`, `automated` or `bot`. Who spoke last is `facts.lastSpeaker`, with `facts.lastUsAt` and `facts.lastThemAt`. Who we wait on is `facts.waitingOn`, and for how long `facts.waitingDays`.
+- PRs: `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
+- Issues and discussions: `facts.hasClosingPr`, `facts.isAnswered`, `facts.authorIsUs`.
 
-Who counts as "us" is in `accounts.md`, including the automated bot comments that do not count. Every other human is a reporter or contributor. Dependency update bots and CI bots count as neither side.
+Read the thread text only for what was said: what was asked, what was answered, what is open. A statement like "nobody replied since" comes from `facts.lastSpeaker` and `facts.timeline`, never from reading the top-level comments. When a discussion's `replyCount` is larger than the replies in the snapshot entry and you need the wording of a reply, fetch the thread with the discussion query from the `triage-issue` skill. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
+
+`side: "automated"` marks comments the bot posted from workflows, matched by the profile's `automatedComments`. They count neither as our request nor as our reply. Who counts as "us" is in `accounts.md`. Dependency update bots and CI bots count as neither side.
 
 ## Solved and closed threads
 
@@ -40,9 +44,9 @@ Check the rules top to bottom. The first match wins. The section values are the 
 
 ### `active`: someone waits for our reply, and the conversation is live
 
-Every rule in this section also needs the waiting comment to be at most `activeMaxWaitDays` days old (config, 14 by default). While it is, `active` wins over `easy` and over "Open review feedback". A question that sat longer is no longer active communication. Classify such an item by the remaining rules below as if the question were not there, set `waitingDays`, and name the open question in `state`. The reply stays as an alternative route.
+Every rule in this section also needs `facts.waitingDays` to be at most `activeMaxWaitDays` (config, 14 by default). While it is, `active` wins over `easy` and over "Open review feedback". A question that sat longer is no longer active communication. Classify such an item by the remaining rules below as if the question were not there, set `waitingDays`, and name the open question in `state`. The reply stays as an alternative route.
 
-- The last human comment is from outside our side, is newer than our last comment, and asks something. Signals: it ends in a question mark, mentions the maintainer (`@<me>`), or asks "can you", "should I", "any update".
+- `facts.lastSpeaker` is `them`, and that last message asks something. Signals: it ends in a question mark, mentions the maintainer (`@<me>`), or asks "can you", "should I", "any update".
 - A reporter answered a request for info: the reporter commented after our request. A contributor who answered our question on a PR counts the same. The profile may name a label that marks such requests.
 - A new issue or discussion in a support category has no comment from our side yet.
 - A contributor asks for a re-review after pushing changes ("addressed", "updated", "PTAL") and also asks a question. Without a question, the re-review goes to `review` or `almost` after the full review.
@@ -51,8 +55,8 @@ Every rule in this section also needs the waiting comment to be at most `activeM
 
 The section follows his effort to decide, not the number of steps after his click. `easy` means the decision is obvious and the expected change is small: a reorder, a missing field, a typo-level fix, one or two `valid` review comments with clear fixes. That holds for `take_over`, `address_review` and `drive` too. `effortMinutes` is 1 or 2.
 
-- A PR with review decision `APPROVED`, CI `passing`, and no open review feedback (see "Open review feedback" below). Recommended route: `merge` as `me`.
-- A clean PR by the bot or a dependency bot, with CI `passing`, that lacks his approval: recommended `merge` as `me`, with a `why` that says he approves on the PR page. Never a bot approval on a bot PR. For a dependency update, say in `state` which package and version range it changes. A major version bump goes to `review` instead.
+- A PR with `facts.isClean`: approved, `facts.ciGreen`, no open review feedback (see "Open review feedback" below). Recommended route: `merge` as `me`.
+- A clean PR by the bot or a dependency bot (`facts.dependencyOnly` or a bot author, `facts.ciGreen`), that lacks his approval: recommended `merge` as `me`, with a `why` that says he approves on the PR page. Never a bot approval on a bot PR. For a dependency update, say in `state` which package and version range it changes. A major version bump goes to `review` instead.
 - The maintainer's own PR, clean, CI passing, no open threads: recommended `merge` as `me`. With a bot, add a `review` with `event: "approve"` as the bot as the alternative, because he cannot approve his own PR.
 - An issue whose fix is merged. Signals: a comment links a merged PR, "Fixed by #…", or the snapshot shows a closing PR. Recommended route: `close` with reason `completed` and a short text naming the fix and the release.
 - A question with a direct answer from the docs or the changelog: a `reply` route. A discussion with a correct answer that is not marked: a `chore` route with `answer_discussion` and `params.commentId`.
@@ -72,14 +76,14 @@ He has to think about whether to act or about the content: a behavior change, se
 ### `review`: a human must read the code
 
 - A contributor or bot PR with substantial code changes where the agent review is done. The agent review lowers the effort. It does not replace the maintainer's reading.
-- Any PR that touches a path in the profile's `sensitivePaths`. Say which paths in `state`.
+- Any PR with `facts.touchesSensitive`, a path in the profile's `sensitivePaths`. Say which paths in `state`.
 - A PR with `blocker` or `major` findings that need the maintainer's judgment before the contributor gets feedback.
 - A dependency PR with failing CI or a major version bump.
 - PRs by the bot or with `authorType: "copilot"`, until the maintainer approved them. Agents wrote them and he has to review them himself.
 
 ### `deferred`: waiting on others, or large
 
-- We wait on the reporter: our last message on the timeline asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. Nobody outside our side wrote since. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
+- We wait on the reporter: `facts.waitingOn` is the reporter, because our last message asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
 - Changes requested, and no new commits since that review.
 - The maintainer's own PR that his own account has not finished: merge conflicts, failing CI his change caused, or a stacked PR waiting on its base. No routes.
 - Feature requests and enhancements that need design work or a large effort. The profile may name labels for that.
@@ -113,7 +117,7 @@ Some items need nothing from the maintainer right now. They get no routes, and t
 - Answered discussions where no reply is owed.
 - Items that need analysis first. They get `reviewDepth: "pending"`, and the routine reviews them without a click.
 
-- An issue whose decision lives on an open PR, because the PR is in `closedByPullRequestsReferences` or is clearly its companion. `state` names the PR item, like `Decided with pr-412.` The decision appears once on the board, on the PR.
+- An issue whose decision lives on an open PR, because `facts.hasClosingPr` is true or a PR is clearly its companion. `state` names the PR item, like `Decided with pr-412.` The decision appears once on the board, on the PR.
 
 Such an item comes back when it changes on GitHub. The one exception is a close that becomes due: after `activeMaxWaitDays` of waiting on a reporter, the recommended route is `close` with reason `not_planned`.
 
@@ -143,7 +147,7 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 ## Autonomous labels and assignments
 
-Apply these without a click, with `gary action --autonomous <file>` (`label` with `params.add` or `params.remove`, `assign` with `params.assignees`). `--autonomous` makes the code refuse labels outside `autoLabels`. Only labels in the profile's `autoLabels` qualify, and only under the conditions the profile's rules state. Each change records a fact that is already true on GitHub. A label that states a judgment becomes a `chore` route with `action: "label"`, and only when the label is the whole job.
+Write these into the item's `wants` with a `wantsReason` (`item-doc.md`). The routine applies them every run with `gary action --autonomous <file>` (`label` with `params.add` or `params.remove`, `assign` with `params.assignees`) until the snapshot shows them. `--autonomous` makes the code refuse labels outside `autoLabels`. Only labels in the profile's `autoLabels` qualify, and only under the conditions the profile's rules state. Each change records a fact that is already true on GitHub. A label that states a judgment becomes a `chore` route with `action: "label"`, and only when the label is the whole job.
 
 A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before. "Waiting on the reporter" also covers a message that asked them to try something and report back.
 

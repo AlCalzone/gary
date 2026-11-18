@@ -26,7 +26,7 @@ The briefing in the detail dialog. Assume the maintainer has not read the thread
 
 1. Who wants or reports what, with the concrete symptom or change. Name the component, the versions, the file, whatever anchors it.
 2. What happened since: what was tried, what the logs showed, what was asked and answered, what a review found.
-3. Where it stands now and who it waits on. Describe the last exchange correctly: who asked what, who answered, what is open now. Read it from the timeline of all comments and replies (`classification.maintainer.md`, "The timeline"), never from the top-level comments alone.
+3. Where it stands now and who it waits on. Describe the last exchange correctly: who asked what, who answered, what is open now. Who spoke last comes from `facts.lastSpeaker` and `facts.timeline` (classification file, "Facts first"). Read the text only for what was said.
 
 Do not recite every comment. Leave out greetings, pleasantries and anything that changed nothing. Keep numbers and identifiers. Write past events in past tense. The story explains, `state` gives the verdict, and they do not repeat each other. Every item doc has a story, quick ones too. For a quick classification, build it from the body and the last comments in the snapshot, and say less when you know less.
 
@@ -55,7 +55,18 @@ The action you suggest, for the overview list. It is also the `title` of the rec
 - Bad: `Maybe reply and say that we accept PRs` (wordy)
 - Bad: `URGENT: reply now` (pressure)
 
-Start with one of these verbs: Reply, Decide, Ask, Close, Reopen, Merge, Approve, Request changes, Comment, Address review, Drive, Implement, Start fix, File issue, Take over, Transfer, Convert, Escalate, Label, Assign, React, Rerun CI, Update branch, Mark ready, Mark answer. Use `Decide` for a `reply` that carries the maintainer's decision on an open question. The hint does not repeat the title of the thread. An item without routes has no hint.
+Start with one of these verbs: Reply, Decide, Ask, Close, Reopen, Merge, Approve, Request changes, Comment, Address review, Drive, Implement, Start fix, Post analysis, File issue, Take over, Transfer, Convert, Escalate, Label, Assign, React, Rerun CI, Update branch, Mark ready, Mark answer. Use `Decide` for a `reply` that carries the maintainer's decision on an open question. The hint does not repeat the title of the thread. An item without routes has no hint.
+
+## `wants` and `wantsReason`
+
+What the agent wants changed on GitHub without a click, as labels and assignees:
+
+```json
+"wants": { "labels": { "add": ["waiting for info ⏳"], "remove": [] }, "assignees": [] },
+"wantsReason": "The maintainer asked the reporter to upgrade and report back, which is still open."
+```
+
+Write it at classification time, only for changes the classification file and the profile allow without a click, and only with labels from the profile's `autoLabels`. `wantsReason` is one sentence that states the last exchange correctly. Both are agent-owned and replaced with the doc. Leave both out when nothing is wanted. The routine compares `wants` with the item's current labels and assignees every run and applies what is missing.
 
 ## `solved`
 
@@ -141,7 +152,7 @@ General rules:
 
 Per type:
 
-- **`reply`**: an answer to a person. `as: "me"` by default. Use `as: "bot"` only for a neutral, factual note that does not need his name, like pointing to the release that contains a fix.
+- **`reply`**: an answer to a person. `as: "me"` by default. Use `as: "bot"` only for a neutral, factual note that does not need his name, like pointing to the release that contains a fix, or posting a local log analysis for the reporter (`Post analysis: <gist>`, when the profile's issue rules describe it). Without a bot, such a route becomes a prefill reply as `me` (`accounts.md`). A text built from logs or attachments quotes only what the reader needs and never contains secrets from them, like keys or tokens.
 - **`request_logs`**: a request for a log, posted by the bot. `text` comes from `<profile>/templates/request-logs.md`. Replace only the bracketed line with what to reproduce while the log runs. Write this route only when the profile has that template.
 - **`close`**: always `as: "me"`. `params.reason` is `completed`, `not_planned` or `duplicate`. With `duplicate`, set `params.duplicateOf` to the original's number and write `text` as a short reply that links it, like `Duplicate of #431, which has the details and the fix.` For a PR, leave `reason` out. `text` is optional: a solved thread whose last comment only says thanks closes without text.
 - **`reopen`**: `as: "bot"` by default, with a `text` that says why. Use `as: "me"` when the reason should carry his name.
@@ -207,6 +218,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 11a. No route has a type listed in the item's `dismissedRoutes`. A `close` with reason `not_planned` on a feature request is not the only route.
 12. An `address_review` route, or a `take_over` route on an item with threads, appears only when `threads` is non-empty and no thread is `unjudged`. Its title counts the `valid` threads, the only ones that default to fix, like `Address review: 3 of 4 threads` or `Take over: fix 1 review comment`.
 12b. `analyzedBy` is absent or `"fallback"`. With `"fallback"`, `findings` has the `question` entry about the safety-filter stop.
+12c. `wants`, when present, is `{ labels: { add: [string], remove: [string] }, assignees: [string] }` with every label in the profile's `autoLabels`, and comes with a non-empty one-sentence `wantsReason`.
 13. `rounds`, when present, is an array of `{ n, fixed, dismissed, open }`: `n` a number, `fixed` and `open` arrays of strings, `dismissed` an array of `{ summary, reason }`. `takenOver`, when present, is `true`.
 14. `links`, when present, is an array of `{label, url}` with `https://` URLs.
 15. Strings are plain text or Markdown. The board renders them as text, so HTML in them shows up literally.

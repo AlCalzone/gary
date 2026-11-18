@@ -69,12 +69,12 @@ Read the config and the profile.
 
 Check `<state>/control.json`. When Gary is paused (`gary pause`), the run still does the whole read-only triage: snapshot, classification, full reviews, item docs, priorities. It changes nothing on GitHub:
 
-- Every autonomous label or assign still goes through `gary action --autonomous`. Take the refusal ("Gary is paused. Nothing was sent.") and record the intended action in `<run>/would-have.json` as `[{ itemId, action, params, reason }]`.
-- Step 7 starts no fix agent and pushes nothing. Each fix it would attempt goes into `would-have.json` with `action: "start_fix"`.
+- Every autonomous label or assign from step 4a still goes through `gary action --autonomous`. Take the refusal ("Gary is paused. Nothing was sent.") and record the intended action in `<run>/would-have.json` as `[{ itemId, action, params, reason }]`.
+- Step 7 starts no fix agent and pushes nothing. Each fix it would attempt goes into `would-have.json` with `action: "start_fix"`, `params: { routeId }` and the route's `why` as `reason`.
 - Queued agent requests stay queued and unclaimed.
 - Line 1 of the run summary says `Paused.` and counts the would-have actions per kind, like `Paused. Would have: 4 label, 1 assign, 1 start_fix.`
 
-After `gary resume`, nothing from `would-have.json` is replayed. The next run decides again from the current state.
+After `gary resume`, nothing from `would-have.json` is replayed. The next run decides again from the current state: steps 4a and 7 look at every stored item, so wanted labels and pending fixes are attempted again without the item changing on GitHub.
 
 Check `<state>/run.lock`. If it exists and holds a timestamp less than 90 minutes old, another run is active. Write `Another run is active.` to `summary.txt` and stop. The lock applies to the hourly job only. Request jobs do not take it, because the claim in the action file keeps a request from running twice. Otherwise write the current timestamp into it. Two runs at once would process the same queued action twice.
 
@@ -111,9 +111,32 @@ The item files in `<state>/board/items/` hold the previous review results and th
 
 Delete the item for every id in `closed` with `gary put items <id> --delete`.
 
+### 4a. Wanted labels and assignees
+
+Every hourly run, independent of what changed: for every stored item with `wants`, compare it with the item's current labels and assignees in the snapshot. Read them from the staged snapshot, which holds every open item. The `unchanged` list only names ids, so look the entry up there. Whatever is still missing is attempted with `gary action --autonomous`, one input file per label or assignee, with `wantsReason` as the reason. A label in `wants.labels.remove` that is still set is removed the same way. When the snapshot shows the change applied, nothing happens. This needs no extra GitHub read.
+
+While paused, each attempt is refused and recorded in `would-have.json`. A refusal for another reason, like a label outside `autoLabels`, goes into the run summary.
+
+### 4b. Rule changes
+
+Compute one hash over the rule files you read: the core references for the instance's kind, the profile's `rules/*.md` and `templates/*.md`, and the `<personal>` files, in sorted path order, like `cat <files> | sha256sum`. Compare it with `rulesHash` in `meta.json` from the previous run. When it differs:
+
+- Re-run the quick classification of step 5 for every stored item with `reviewDepth: "quick"`, also unchanged ones.
+- Mark every item with `reviewDepth: "full"` as a full-review candidate, oldest `reviewedAt` first, within the normal `maxFullReviewsPerRun`. The rest waits for later runs, because their `rulesHash` in `meta.json` stays behind until they are reviewed. Keep the list of those items in `meta.json` as `rulesPending` and work it down first in later runs.
+
+The summary gets the line `Rules changed: re-classified N quick items, M full reviews queued.`
+
 ### 5. Classify and choose reviews
 
-Quick classification runs in subagents. Split `changed` into chunk files of at most 25 entries under `<run>/chunks/` with a small node script, without printing the entries. Start one subagent per chunk in a single message, model `sonnet`. Each one reads the classification file, `references/item-doc.md`, `references/voice.md` and `references/accounts.md` with their profile and personal layers, and SPEC.md. It writes one complete item doc per entry to `<run>/items/<id>.json`, validates them, and replies with one line per item: id, section, and whether it is a full-review candidate. The brief tells the classifier to read each comment's `replies` and `replyCount`, to build the timeline from comments and replies together, and to fetch a discussion's thread before it labels it, marks it as waiting or calls it unanswered when `replyCount` is larger than the inline replies (`classification.maintainer.md`, "The timeline"). The quick result is a complete item doc with `reviewDepth: "quick"`. Every item doc carries `hint` and `effortMinutes` (`references/item-doc.md`), the quick ones too. Copy `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
+Quick classification runs in subagents. Split `changed`, plus the items from step 4b, into chunk files of at most 25 entries under `<run>/chunks/` with a small node script, without printing the entries. Start one subagent per chunk in a single message, model `sonnet`. Each one reads the classification file, `references/item-doc.md`, `references/voice.md` and `references/accounts.md` with their profile and personal layers, and SPEC.md. It writes one complete item doc per entry to `<run>/items/<id>.json`, validates them, and replies with one line per item: id, section, and whether it is a full-review candidate. The brief tells the classifier to take who spoke last, who waits and for how long, CI and cleanliness from `facts`, and to read `replies` only for what was said (classification file, "Facts first"). The quick result is a complete item doc with `reviewDepth: "quick"`. It carries `wants` and `wantsReason` when the classification wants labels or assignees (`references/item-doc.md`). Every item doc carries `hint` and `effortMinutes` (`references/item-doc.md`), the quick ones too. Copy `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
+
+**Tiers.** The instance config's `fastTier` (`off`, `shadow` or `on`, default `off`) decides who classifies:
+
+- **Fast tier** (model `haiku`): gets the entries with their `facts` and the rules. It decides only cases the facts settle: a clean dependency-bot PR, an item waiting on its reporter with nothing new from them, an item whose decision lives on an open PR, an answered discussion where no reply is owed, an informational or bot-authored tracking issue. It returns `section`, routes that need no drafted text (a `merge` as `me`, no routes for a waiting item) and `wants`. For everything else it returns `{ "id", "handUp": true, "reason": "<one line>" }`. It never writes text a human would post, never judges code and never decides a close.
+- **Standard tier** (model `sonnet`): the classification described above, for every handed-up item and every item that needs drafted text.
+- Full reviews stay on the large model.
+
+With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board: record each pair with `gary shadow record` next to the standard tier's doc.
 
 Then build the full-review list:
 
@@ -160,19 +183,19 @@ A blocked item is left out of every later full-review list. It is retried only w
 
 ### 7. Auto-fixes
 
-A triage that found a bug a test can reproduce returns a `follow_up` route with `as: "agent"`. Pick up to `maxAutoFixesPerRun` of those, oldest issue first, plus every queued `start_fix` request outside that limit. Skip this step when the account setup allows no pushes. For each, start a subagent with the `triage-issue` skill in fix mode. Pass the item doc from step 6, the snapshot entry, the route's `text` and the paths. Fix subagents run in parallel, because each works in its own git worktree.
+Every hourly run considers all stored items that have a `follow_up` route with `as: "agent"` and no draft PR yet, not only the items classified in this run. A draft PR exists when `links` has an entry labeled `Draft fix`. Pick up to `maxAutoFixesPerRun` of them, oldest `reviewedAt` first, plus every queued `start_fix` request outside that limit. Skip this step when the account setup allows no pushes. For each, start a subagent with the `triage-issue` skill in fix mode. Pass the item doc from step 6, the snapshot entry, the route's `text` and the paths. Fix subagents run in parallel, because each works in its own git worktree.
 
 The fix subagent returns the updated item doc, with the draft PR in `links` when it opened one. Validate it like any other returned doc. Items whose fix was not attempted keep their `follow_up` route, so the maintainer can click it.
 
 ### 8. Write item files and autonomous changes
 
-Apply the autonomous label and assignment rules from the classification file and the profile with `gary action --autonomous <file>`, one input file per change. `--autonomous` refuses every label outside the profile's `autoLabels` and every action other than `label` and `assign`.
+Autonomous labels and assignments run in step 4a from each item's `wants`, after the items of this run are written. Run step 4a again for the items written in this run, so a new want is attempted right away. `--autonomous` refuses every label outside the profile's `autoLabels` and every action other than `label` and `assign`.
 
 Assign `priority` within each section once all docs of the run are in, over all items with routes, the unchanged ones included. Items without routes get none. Then write each item with `gary put items <id> <file>`, as described in `references/board-db.md`. The file is the complete doc and replaces the stored one. For each changed item, clear `hidden` afterwards with `gary put --merge items <id>` and the file `{ "hidden": false }`. Leave `unchanged` items alone unless they were reviewed in this run or their `priority` changed. An unchanged item whose `priority` changed gets only `{ "priority": <n> }` with `gary put --merge`. `gary put` validates every doc and refuses an invalid one with a list of problems. A refused doc counts as a failed write: keep the item at `pending`, note the problems in the run summary, and skip the commit in step 9.
 
 ### 9. Status, commit, reply
 
-Write `meta.json` with `gary put meta <file>`: `lastRunAt`, `lastRunSummary`, `pendingReviews` (count of items at `pending` after this run) and `staleIssues` and `staleDiscussions` from the snapshot.
+Write `meta.json` with `gary put meta <file>`: `lastRunAt`, `lastRunSummary`, `pendingReviews` (count of items at `pending` after this run), `staleIssues` and `staleDiscussions` from the snapshot, `rulesHash` from step 4b, and `rulesPending` while full reviews from a rule change remain.
 
 Run `gary snapshot --commit` only after all items are written. If any item write failed, skip the commit. The next run then sees the same items as changed and retries them. Delete `<state>/run.lock`.
 

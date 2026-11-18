@@ -205,6 +205,18 @@ Pause is per instance: `board.instances[].paused` is in `/api/state` and in `use
 
 When a safety filter stopped the agent, or its analysis failed three times, the item carries `blocked: { reason: "safety_filter" | "failed", at }` and exactly one route of type `open`: `as: "me"`, no text, no params. The click opens the thread on GitHub. The next full triage drops `blocked`, which happens only after "Analyze again".
 
+## Intent that outlives a run
+
+An item doc may carry `wants: { labels: { add: [], remove: [] }, assignees: [] }` with a one-sentence `wantsReason`. The classification writes it. Every hourly run compares it with the item's current labels and assignees in the snapshot and attempts what is missing with `gary action --autonomous`, whether or not the item changed. Every hourly run also considers all stored items with a `follow_up` route as agent and no `Draft fix` link, up to `maxAutoFixesPerRun`. While paused, both go into `runs/<run>/would-have.json` as `[{ itemId, action, params, reason }]`, and after `gary resume` the next run attempts them again from the current state.
+
+`meta.json` carries `rulesHash`, a hash over the rule files the routine read. When it changes, the routine re-classifies every quick item and queues the full ones for review within the normal budget, tracked in `rulesPending`.
+
+## Facts and tiers
+
+Every snapshot entry carries `facts`, computed in code: the time-sorted `timeline` of comments, replies and reviews with `side` (`us`, `them`, `automated`, `bot`), `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn`, `waitingDays`, for PRs `ciGreen`, `dependencyOnly`, `touchesSensitive`, `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`, for issues and discussions `hasClosingPr`, `isAnswered`, `authorIsUs`. The classification rules take these as given. The profile's `automatedComments` decides which bot comments are `automated`.
+
+Quick classification has two tiers, set by `fastTier` in the instance config. The fast tier (Haiku) settles only cases the facts decide and hands up everything else. The standard tier (Sonnet) does the rest. With `shadow`, both run and only the standard result is stored, while `gary shadow record` keeps the pairs and `gary shadow report` compares them. `triage-learn` proposes `on` once 40 pairs show at least 95 percent section agreement.
+
 ## State layout
 
 Everything under the instance's `state/` (`<home>/state/`):
