@@ -12,7 +12,7 @@ const DIR = tempDir();
 // Accepted rules are appended to the profile, so the test works on its own copy outside any git repo
 const PROFILE_COPY = join(DIR, "profile");
 cpSync(PROFILE, PROFILE_COPY, { recursive: true });
-const { home: HOME, env: ENV } = makeHome(DIR, { port: PORT, profile: PROFILE_COPY });
+const { home: HOME, root: ROOTDIR, env: ENV } = makeHome(DIR, { port: PORT, profile: PROFILE_COPY });
 const BOARD = join(HOME, "state", "board");
 const FIXTURE_ITEMS = JSON.parse(readFileSync(join(TEST_DIR, "fixtures", "board-items.json"), "utf8"));
 const writeFixtureItems = () => {
@@ -30,7 +30,7 @@ setStub({});
 function startServer() {
 	server = spawn(process.execPath, [join(ROOT, "server", "server.mjs"), "--dry-run", "--port", String(PORT), "--page-file", PAGE], { stdio: ["ignore", "pipe", "pipe"], env: { ...ENV, GARY_GUARD_STUB: STUB } });
 	return new Promise((r) => server.stderr.on("data", (d) => {
-		if (/Board of \S+ on/.test(d)) r();
+		if (/Board on/.test(d)) r();
 		else process.stderr.write("[server] " + d);
 	}));
 }
@@ -114,7 +114,7 @@ try {
 	touchPage();
 	ok("page reloads itself after a board.html change", await until(`window.__marker === undefined && document.querySelectorAll("#board .row").length > 0`, 8000));
 	await until(`document.getElementById("conn").dataset.state === "connected"`);
-	await ev(`openDetail("issue-9471"); window.__marker = 2;`);
+	await ev(`openDetail("widgets/issue-9471"); window.__marker = 2;`);
 	await until(`document.getElementById("detail").open`);
 	touchPage();
 	await sleep(1500);
@@ -126,7 +126,7 @@ try {
 	// Probe items with routes, written as files like the routine does
 	const PR = "https://github.com/acme/widgets/pull/12";
 	const ISSUE = "https://github.com/acme/widgets/issues/21";
-	const probe = (kind, number, url, extra) => ({ kind, number, title: "Probe " + number, url, author: "someone", authorType: "contributor", section: "easy", priority: 0, effortMinutes: 1, reviewDepth: "full", reviewedAt: new Date(Date.now() - 3600000).toISOString(), ...extra });
+	const probe = (kind, number, url, extra) => ({ kind, number, repo: "acme/widgets", title: "Probe " + number, url, author: "someone", authorType: "contributor", section: "easy", priority: 0, effortMinutes: 1, reviewDepth: "full", reviewedAt: new Date(Date.now() - 3600000).toISOString(), ...extra });
 	const writeProbes = () => {
 		writeFileSync(itemFile("pr-12"), JSON.stringify(probe("pr", 12, PR, {
 			// address_review needs a taken-over contributor PR
@@ -158,15 +158,15 @@ try {
 		writeFileSync(itemFile("issue-25"), JSON.stringify(probe("issue", 25, "https://github.com/acme/widgets/issues/25", { hint: "Reply: thanks", routes: simpleReply })));
 	};
 	writeProbes();
-	await until(`!!document.querySelector('.row[data-id="issue-25"]')`);
+	await until(`!!document.querySelector('.row[data-id="widgets/issue-25"]')`);
 	const revealAll = () => ev(`for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden) b.click();`);
 	await revealAll();
-	ok("served hint colors the action", await ev(`return document.querySelector('.row[data-id="pr-12"] .r-hint .h-act')?.textContent === "Request changes" && document.querySelector('.row[data-id="pr-12"] .r-hint').classList.contains("act-push");`));
+	ok("served hint colors the action", await ev(`return document.querySelector('.row[data-id="widgets/pr-12"] .r-hint .h-act')?.textContent === "Request changes" && document.querySelector('.row[data-id="widgets/pr-12"] .r-hint').classList.contains("act-push");`));
 	const openItem = async (id) => {
 		await ev(`if (document.getElementById("detail").open) document.getElementById("d-close").click();`);
 		await until(`!document.getElementById("detail").open`);
-		await ev(`openDetail(${JSON.stringify(id)});`);
-		return until(`document.getElementById("detail").open && detail.id === ${JSON.stringify(id)}`);
+		await ev(`openDetail(${JSON.stringify("widgets/" + id)});`);
+		return until(`document.getElementById("detail").open && detail.id === ${JSON.stringify("widgets/" + id)}`);
 	};
 	const closeItem = async () => { await ev(`document.getElementById("d-close").click();`); await until(`!document.getElementById("detail").open`); };
 	const openCardText = `(document.querySelector("#d-routes .card.open")?.textContent ?? "")`;
@@ -174,7 +174,7 @@ try {
 	const clickCard = (i) => ev(`document.querySelectorAll("#d-routes .card")[${i}].querySelector(".card-head").click();`).then(() => sleep(150));
 	const press = (label) => ev(`${cardButton(label)}.click();`);
 	const rowButton = (i, label) => `[...document.querySelectorAll("#d-routes .card")[${i}].querySelectorAll(".card-actions button")].find((b) => b.textContent === ${JSON.stringify(label)})`;
-	ok("items without routes are not on the board", await ev(`return !document.querySelector('.row[data-id="issue-23"]') && !!document.querySelector('.row[data-id="issue-25"]');`));
+	ok("items without routes are not on the board", await ev(`return !document.querySelector('.row[data-id="widgets/issue-23"]') && !!document.querySelector('.row[data-id="widgets/issue-25"]');`));
 
 	// review as the bot: the checklist, the second confirm and the action doc the server writes
 	ok("dialog opens", await openItem("pr-12"));
@@ -190,19 +190,19 @@ try {
 	ok("the card shows the result", await until(`/Done/.test(${openCardText}) && !${cardButton("Request changes")}`, 8000));
 
 	// Bound actions, repeats and refusals
-	const token = readFileSync(join(HOME, "state", "server-token"), "utf8").trim();
+	const token = readFileSync(join(ROOTDIR, "state", "server-token"), "utf8").trim();
 	const api = async (path, body) => {
 		const res = await fetch(`http://127.0.0.1:${PORT}${path}`, { method: body ? "POST" : "GET", headers: { "X-Board-Token": token, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
 		return [res.status, await res.json()];
 	};
-	const hashOf = async (itemId, routeId) => (await api("/api/state"))[1].items.find((i) => i.id === itemId).data.routes.find((r) => r.id === routeId).draftHash;
-	const [s1, r1] = await api("/api/action", { itemId: "pr-12", routeId: "nope", draftHash: "x" });
+	const hashOf = async (itemId, routeId) => (await api("/api/state"))[1].items.find((i) => i.instance === "widgets" && i.id === itemId).routes.find((r) => r.id === routeId).draftHash;
+	const [s1, r1] = await api("/api/action", { instance: "widgets", itemId: "pr-12", routeId: "nope", draftHash: "x" });
 	ok("unknown route refused: " + r1.result, s1 === 200 && r1.ok === false && r1.result === "The board is out of date, reload it.");
-	const [s2, r2] = await api("/api/action", { itemId: "pr-12", routeId: "r1", draftHash: "0000000000000000", text: "" });
+	const [s2, r2] = await api("/api/action", { instance: "widgets", itemId: "pr-12", routeId: "r1", draftHash: "0000000000000000", text: "" });
 	ok("draft hash mismatch refused", s2 === 200 && r2.result === "The board is out of date, reload it.");
-	const [s3, r3] = await api("/api/action", { itemId: "pr-12", routeId: "r1", draftHash: await hashOf("pr-12", "r1"), text: "again", input: {} });
+	const [s3, r3] = await api("/api/action", { instance: "widgets", itemId: "pr-12", routeId: "r1", draftHash: await hashOf("pr-12", "r1"), text: "again", input: {} });
 	ok("second identical review gets 409: " + r3.result, s3 === 409 && r3.ok === false);
-	const [, r6] = await api("/api/action", { itemId: "pr-12", routeId: "r2", draftHash: await hashOf("pr-12", "r2"), force: true, input: {} });
+	const [, r6] = await api("/api/action", { instance: "widgets", itemId: "pr-12", routeId: "r2", draftHash: await hashOf("pr-12", "r2"), force: true, input: {} });
 	ok("a route in the maintainer's name is never run by the server: " + r6.result, r6.ok === false && /yours to do on GitHub/.test(r6.result));
 
 	// address_review as the agent: decisions go into the queued doc, a repeat says already requested
@@ -245,7 +245,7 @@ try {
 	ok("closed thread refused on the card", await until(`/is closed/.test(${openCardText})`, 8000));
 	ok("close row shows Already closed", await until(`/Already closed/.test(document.querySelectorAll("#d-routes .card")[2].textContent) && !${rowButton(2, "Open GitHub to close")}`, 8000));
 	await revealAll();
-	ok("kind icon follows the live state", await until(`document.querySelector('.row[data-id="issue-21"] .r-kind svg')?.getAttribute("aria-label") === "Issue, closed as completed"`));
+	ok("kind icon follows the live state", await until(`document.querySelector('.row[data-id="widgets/issue-21"] .r-kind svg')?.getAttribute("aria-label") === "Issue, closed as completed"`));
 	await closeItem();
 	setStub({});
 
@@ -299,7 +299,7 @@ try {
 		],
 		routes: [{ id: "r1", type: "take_over", as: "agent", title: "Take over: fix the parameter name", params: { mode: "push" }, recommended: true }],
 	})));
-	await until(`!!state.items.get("pr-14")`);
+	await until(`!!state.items.get("widgets/pr-14")`);
 	await openItem("pr-14");
 	ok("take_over lists the judged threads", await until(`document.querySelectorAll("#d-routes .card.open .decisions > li").length === 3`));
 	ok("only the valid thread starts on Fix", await ev(`return [...document.querySelectorAll("#d-routes .card.open .decisions > li")].map((li) => li.querySelector('.seg[aria-pressed="true"]').textContent).join() === "Fix,Dismiss,Dismiss";`));
@@ -320,7 +320,7 @@ try {
 	writeFileSync(itemFile("issue-27"), JSON.stringify(probe("issue", 27, "https://github.com/acme/widgets/issues/27", {
 		hint: "Close: answered", routes: [{ id: "r1", type: "close", as: "me", title: "Close: answered", params: { reason: "completed" }, recommended: true }],
 	})));
-	await until(`!!state.items.get("issue-27")`);
+	await until(`!!state.items.get("widgets/issue-27")`);
 	await openItem("issue-26");
 	await ev(`document.querySelectorAll("#d-routes .card")[0].querySelector(".card-x").click();`);
 	await ev(`const i = document.querySelectorAll("#d-routes .card")[0].querySelector(".dismiss-box input"); i.value = "I asked for this feature"; i.dispatchEvent(new Event("input"));`);
@@ -332,7 +332,7 @@ try {
 	await ev(`document.querySelectorAll("#d-routes .card")[0].querySelector(".card-x").click();`);
 	await ev(`[...document.querySelectorAll("#d-routes .card")[0].querySelectorAll(".dismiss-box button")].find((b) => b.textContent === "Dismiss suggestion").click();`);
 	ok("after the last route the dialog says the agent proposes something else", await until(`/Suggestion dismissed\\. The agent will propose something else\\./.test(document.getElementById("d-routes").textContent)`));
-	ok("the server queues a re-analysis and the item leaves the board", await fileUntil(() => actionFiles().some((a) => a.itemId === "issue-27" && a.action === "reanalyze" && a.status === "queued")) && await until(`!document.querySelector('.row[data-id="issue-27"]')`));
+	ok("the server queues a re-analysis and the item leaves the board", await fileUntil(() => actionFiles().some((a) => a.itemId === "issue-27" && a.action === "reanalyze" && a.status === "queued")) && await until(`!document.querySelector('.row[data-id="widgets/issue-27"]')`));
 	ok("the dialog closes after a moment", await until(`!document.getElementById("detail").open`, 6000));
 
 	// Rule proposals: accept appends to the profile file, dismiss records the reason
@@ -362,9 +362,9 @@ try {
 		hint: "Open: read it yourself", blocked: { reason: "safety_filter", at: new Date().toISOString() },
 		routes: [{ id: "r1", type: "open", as: "me", title: "Open: read it yourself", recommended: true }],
 	})));
-	await until(`!!state.items.get("issue-28")`);
+	await until(`!!state.items.get("widgets/issue-28")`);
 	await revealAll();
-	ok("blocked: the row shows the not-analyzed icon", await until(`!!document.querySelector('.row[data-id="issue-28"] .r-meta svg[aria-label="Not analyzed by the agent"]')`));
+	ok("blocked: the row shows the not-analyzed icon", await until(`!!document.querySelector('.row[data-id="widgets/issue-28"] .r-meta svg[aria-label="Not analyzed by the agent"]')`));
 	await openItem("issue-28");
 	ok("blocked: the safety filter notice and one Open on GitHub row without dismiss", await ev(`return /safety filter/.test(document.querySelector("#d-routes .blocked-note")?.textContent ?? "") && document.querySelectorAll("#d-routes .card").length === 1 && !document.querySelector("#d-routes .card-x") && !!${rowButton(0, "Open on GitHub")};`));
 	await ev(`window.__apiCalls = 0; ${rowButton(0, "Open on GitHub")}.click();`);
@@ -375,9 +375,9 @@ try {
 	writeFileSync(itemFile("issue-30"), JSON.stringify(probe("issue", 30, "https://github.com/acme/widgets/issues/30", {
 		hint: "Reply: thanks", analyzedBy: "fallback", routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks", recommended: true, text: "Thanks!" }],
 	})));
-	await until(`!!state.items.get("issue-30")`);
+	await until(`!!state.items.get("widgets/issue-30")`);
 	await revealAll();
-	ok("fallback: the row shows the smaller-model icon", await until(`!!document.querySelector('.row[data-id="issue-30"] .r-meta svg[aria-label^="The full analysis was stopped"]')`));
+	ok("fallback: the row shows the smaller-model icon", await until(`!!document.querySelector('.row[data-id="widgets/issue-30"] .r-meta svg[aria-label^="The full analysis was stopped"]')`));
 	await openItem("issue-30");
 	ok("fallback: the dialog shows the Smaller model badge", await ev(`return [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Smaller model" && /Code-level conclusions need your check/.test(b.title));`));
 	await closeItem();
@@ -392,7 +392,7 @@ try {
 			{ id: "r2", type: "reply", as: "me", title: "Reply: thanks", text: "Thanks!" },
 		],
 	})));
-	await until(`!!state.items.get("issue-29")`);
+	await until(`!!state.items.get("widgets/issue-29")`);
 	await ev(`window.__marker = 3;`);
 	gary("pause");
 	ok("gary pause shows the marker without a reload", await until(`!document.getElementById("paused").hidden`, 8000) && await ev(`return window.__marker === 3;`));
@@ -464,7 +464,7 @@ try {
 		for (const n of readdirSync(join(BOARD, "actions"))) rmSync(join(BOARD, "actions", n));
 		for (const [id, d] of list) writeFileSync(join(BOARD, "actions", id + ".json"), JSON.stringify(d));
 	};
-	const ids = (g) => ev(`return [...document.querySelectorAll("#group-${g} .row")].map((r) => r.dataset.id).join(",");`);
+	const ids = (g) => ev(`return [...document.querySelectorAll("#group-${g} .row")].map((r) => r.dataset.id.replace("widgets/", "")).join(",");`);
 	const settle = () => sleep(700);
 	setActions([]);
 	const future = new Date(Date.now() + 3 * 86400000).toISOString();
@@ -494,8 +494,8 @@ try {
 	ok("afterwards shows the 6 planned rows", (await ids("after")).split(",").length === 6);
 	await ev(`document.querySelector("#group-after .show-all").click();`);
 	ok("show more reveals 10", (await ids("after")).split(",").length === 16);
-	ok("hint shown", await ev(`return document.querySelector('.row[data-id="issue-1"] .r-hint')?.textContent === "Maybe reply that a PR is welcome";`));
-	ok("no hint without hint", await ev(`return !document.querySelector('.row[data-id="issue-2"] .r-hint');`));
+	ok("hint shown", await ev(`return document.querySelector('.row[data-id="widgets/issue-1"] .r-hint')?.textContent === "Maybe reply that a PR is welcome";`));
+	ok("no hint without hint", await ev(`return !document.querySelector('.row[data-id="widgets/issue-2"] .r-hint');`));
 	ok("no duplicate rows", await ev(`const a = [...document.querySelectorAll("#board .row")].map((r) => r.dataset.id); return new Set(a).size === a.length;`));
 	await ev(`state.reveal.clear(); render();`);
 
@@ -514,7 +514,7 @@ try {
 	]);
 	await settle();
 	await ev(`for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden) b.click();`);
-	const labels = await ev(`const o = {}; for (const r of document.querySelectorAll("#board .row")) o[r.dataset.id] = [r.querySelector(".r-kind svg").getAttribute("aria-label"), r.querySelector(".r-rev svg")?.getAttribute("aria-label") ?? ""]; return o;`);
+	const labels = await ev(`const o = {}; for (const r of document.querySelectorAll("#board .row")) o[r.dataset.id.replace("widgets/", "")] = [r.querySelector(".r-kind svg").getAttribute("aria-label"), r.querySelector(".r-rev svg")?.getAttribute("aria-label") ?? ""]; return o;`);
 	const expect = {
 		"issue-1": ["Issue, open", ""], "issue-2": ["Issue, open", ""], "issue-4": ["Issue, closed as not planned", ""],
 		"pr-6": ["Pull request, ready", "Review approved"], "pr-7": ["Pull request, has conflicts", "Changes requested"], "pr-8": ["Pull request, open", "Review pending"],
