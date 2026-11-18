@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// Local board server: serves board/board.html on 127.0.0.1 and runs approved actions as the configured bot.
+// Local board server: serves board/board.html on 127.0.0.1 for every instance under the root and runs approved actions.
 // The gary MCP server starts it through startBoardServer(). `node server/server.mjs` runs it on its own.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, watch, writeSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, watch, writeSync } from "node:fs";
+import { appendFile, readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
-import { COLLECTIONS, PROPOSAL_ID, applyWrite, boardDir, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
+import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
-import { ROOT, instanceName, loadConfig, loadProfile, setInstance } from "../scripts/lib/config.mjs";
+import { INSTANCE_NAME, ROOT, allowedRepo, instancesDir, itemRef, listInstances, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
@@ -25,7 +25,8 @@ const HEARTBEAT_MS = 25000;
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 export const HEALTH = { ok: true, name: "gary" };
 const OUTDATED = "The board is out of date, reload it.";
-const ITEM_ID = /^(pr|issue|disc)-\d+$/;
+const UNKNOWN_INSTANCE = "Unknown instance.";
+const ITEM_ID = idPattern("items");
 const MAX_TEXT = 65536;
 const MAX_NOTE = 1000;
 const MAX_TITLE = 256;
@@ -212,12 +213,12 @@ export function planRoute(route, item, input, text, mode = "bot") {
 	throw new Refusal(`The route type "${route.type}" cannot run as "${base}".`);
 }
 
-/** The instance whose board server answers on `url`, or null when no board server answers there. */
-export async function boardInstance(url) {
+/** The instances the board server on `url` serves, or null when no board server answers there. */
+export async function boardInstances(url) {
 	try {
 		const res = await fetch(new URL("/api/health", url), { signal: AbortSignal.timeout(2000) });
 		const body = await res.json();
-		return res.status === 200 && body?.name === HEALTH.name ? body.instance ?? "" : null;
+		return res.status === 200 && body?.name === HEALTH.name && Array.isArray(body.instances) ? body.instances : null;
 	} catch {
 		return null;
 	}
@@ -308,25 +309,38 @@ function readBody(req) {
 	});
 }
 
-/** What the page needs to name the project and the accounts without hard-coding them. */
-export function boardInfo({ dryRun = false, stateDir } = {}) {
-	const config = loadConfig();
-	const profile = loadProfile();
-	const account = (login) => (login ? { login, avatarUrl: `https://github.com/${encodeURIComponent(login)}.png?size=80` } : null);
+const account = (login) => (login ? { login, avatarUrl: `https://github.com/${encodeURIComponent(login)}.png?size=80` } : null);
+
+/** What the page needs to name one instance's project and accounts without hard-coding them. */
+export function instanceInfo(name) {
+	const i = loadInstance(name);
 	return {
-		instance: instanceName(),
-		name: profile.name,
-		repo: profile.repo,
-		repoUrl: `https://github.com/${profile.repo}`,
-		me: account(config.me),
-		bot: account(config.bot?.login),
-		accountMode: accountMode(),
-		relatedRepos: profile.relatedRepos,
-		botCommands: profile.botCommands,
-		reviewBots: profile.reviewBots,
-		paused: isPaused(stateDir),
-		dryRun,
+		name,
+		title: i.title,
+		kind: i.kind,
+		repos: i.repos,
+		repoUrl: `https://github.com/${i.repos[0]}`,
+		me: account(i.config.me),
+		bot: account(i.config.bot?.login),
+		accountMode: withInstance(name, accountMode),
+		paused: i.paused,
+		relatedRepos: i.profile.relatedRepos,
+		botCommands: i.profile.botCommands,
+		reviewBots: i.profile.reviewBots,
 	};
+}
+
+/** The board object of /api/state: the maintainer, dry-run mode and one entry per instance. */
+export function boardInfo(names, { dryRun = false, log = () => {} } = {}) {
+	const instances = names.flatMap((name) => {
+		try {
+			return [instanceInfo(name)];
+		} catch (e) {
+			log(`Reading instance ${name} failed:`, e.message);
+			return [];
+		}
+	});
+	return { me: instances[0]?.me ?? null, dryRun, instances };
 }
 
 function shim(token, info) {
@@ -336,7 +350,9 @@ function shim(token, info) {
   const TOKEN = ${JSON.stringify(token).replace(/</g, "\\u003c")};
   const INFO = ${JSON.stringify(info).replace(/</g, "\\u003c")};
   const SERVER = "host:gary";
-  const cache = { items: null, actions: null, proposals: null, meta: undefined };
+  const NAMES = ["items", "actions", "proposals"];
+  // Per collection: instance name -> that instance's docs, as the server sent them last
+  const cache = { items: new Map(), actions: new Map(), proposals: new Map(), meta: new Map() };
   const subs = { items: new Set(), actions: new Set(), proposals: new Set(), meta: new Set() };
   let connected = false;
 
@@ -359,6 +375,10 @@ function shim(token, info) {
   }
 
   const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
+  const names = () => board.instances.map((i) => i.name);
+  // A collection is ready once every served instance sent it, so the first snapshot holds all of them
+  const ready = (name) => names().every((n) => cache[name].has(n));
+  const docsOf = (name) => names().flatMap((n) => (cache[name].get(n) || []).map((d) => ({ id: n + "/" + d.id, data: d })));
   const collectionSnap = (docs) => ({
     docs: docs.map((d) => ({ id: d.id, data: () => clone(d.data) })),
     metadata: { fromCache: false },
@@ -369,23 +389,51 @@ function shim(token, info) {
     for (const s of subs[name]) s();
   }
 
+  // Splits a key like "widgets/pr-12" into its instance and id, for pages that pass the collection key
+  function scoped(input) {
+    const out = { ...(input || {}) };
+    if (out.instance === undefined && typeof out.itemId === "string" && out.itemId.includes("/")) {
+      const at = out.itemId.indexOf("/");
+      out.instance = out.itemId.slice(0, at);
+      out.itemId = out.itemId.slice(at + 1);
+    }
+    return out;
+  }
+
   function connect() {
     const es = new EventSource("/api/events?token=" + encodeURIComponent(TOKEN));
-    for (const name of ["items", "actions", "proposals", "meta"]) {
+    for (const name of NAMES) {
       es.addEventListener(name, (e) => {
-        try { cache[name] = JSON.parse(e.data); } catch { return; }
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+        if (!msg || typeof msg.instance !== "string" || !Array.isArray(msg.docs)) return;
+        cache[name].set(msg.instance, msg.docs);
         emit(name);
       });
     }
+    es.addEventListener("meta", (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (!msg || typeof msg.instance !== "string") return;
+      cache.meta.set(msg.instance, msg.data);
+      emit("meta");
+    });
     es.addEventListener("board", (e) => {
-      try { Object.assign(board, JSON.parse(e.data)); } catch { return; }
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (!msg || !msg.board) return;
+      Object.assign(board, msg.board);
+      const served = new Set(names());
+      for (const name of [...NAMES, "meta"]) {
+        for (const n of [...cache[name].keys()]) if (!served.has(n)) cache[name].delete(n);
+      }
       window.dispatchEvent(new Event("board:info"));
+      for (const name of [...NAMES, "meta"]) emit(name);
     });
     es.addEventListener("open", () => setConnected(true));
     es.addEventListener("error", () => setConnected(false));
     // board.html decides whether it can reload right away
     es.addEventListener("reload", () => window.dispatchEvent(new Event("board:reload")));
-
   }
 
   function query(name) {
@@ -396,8 +444,8 @@ function shim(token, info) {
       limit(n) { max = n; return q; },
       onSnapshot(cb) {
         const fire = () => {
-          if (cache[name] == null) return;
-          let docs = cache[name].slice();
+          if (!ready(name)) return;
+          let docs = docsOf(name);
           if (order) {
             const [f, d] = order;
             docs.sort((a, b) => (String(a.data[f] ?? "") < String(b.data[f] ?? "") ? -d : String(a.data[f] ?? "") > String(b.data[f] ?? "") ? d : 0));
@@ -423,12 +471,17 @@ function shim(token, info) {
   }
 
   const db = {
-    collection: (name) => query(name),
+    collection(name) {
+      if (!NAMES.includes(name)) throw Object.assign(new Error("Unknown collection " + name), { code: "not_found" });
+      return query(name);
+    },
+    // Paths are "items/<instance>/<id>", "actions/<instance>/<id>" and "meta/<instance>"
     doc(path) {
       return {
         onSnapshot(cb) {
-          if (path !== "meta/status") return () => {};
-          const fire = () => { if (cache.meta !== undefined) cb(docSnap(cache.meta)); };
+          const m = /^meta\\/([^/]+)$/.exec(path);
+          if (!m) return () => {};
+          const fire = () => { if (cache.meta.has(m[1])) cb(docSnap(cache.meta.get(m[1]))); };
           subs.meta.add(fire);
           queueMicrotask(fire);
           return () => subs.meta.delete(fire);
@@ -449,9 +502,10 @@ function shim(token, info) {
     async callTool(server, tool, input) {
       if (server !== SERVER) throw Object.assign(new Error("Unknown server."), { code: "server_not_found" });
       if (!connected) throw Object.assign(new Error("The board server is not reachable."), { code: "server_not_connected" });
+      const { instance, ...rest } = scoped(input);
       let r;
       try {
-        r = await api("/api/action", { action: tool, ...input });
+        r = await api("/api/action", { instance, action: tool, ...rest });
       } catch {
         // The request may have reached the server, so the outcome stays open
         throw Object.assign(new Error("The board server did not answer."), { code: "server_unavailable" });
@@ -473,13 +527,12 @@ function shim(token, info) {
     },
   };
 
-  // Board-only helper of the local server: project name, repo and accounts
+  // Board-only helper of the local server: the maintainer, dry-run mode and the instances
   const board = {
     ...INFO,
-    maintainer: INFO.me.login,
     // Reports the use of a route he does on GitHub himself, for the decision log. Failures stay quiet
     async decision(body) {
-      try { await api("/api/decision", body); } catch { /* the log entry is lost, nothing else */ }
+      try { await api("/api/decision", scoped(body)); } catch { /* the log entry is lost, nothing else */ }
     },
   };
 
@@ -504,25 +557,31 @@ img { max-width: 100%; }
 [hidden] { display: none !important; }
 </style>`;
 
+// A page write names the instance in its path, like "items/widgets/pr-12". `gary put` names it in the body
+const SCOPED_PATH = /^(items|actions|proposals)\/([^/]+)\/([^/]+)$/;
+const SCOPED_META = /^meta\/([^/]+)$/;
 
 /**
- * Starts the board server on 127.0.0.1 and resolves once it listens.
+ * Starts the board server on 127.0.0.1 for every instance under the root and resolves once it listens.
  * Rejects with the listen error, like EADDRINUSE when another process holds the port.
  * With `keepAlive: false` the server never keeps the process running on its own.
  */
 export async function startBoardServer({
-	port = loadConfig().port,
-	dir = boardDir(),
+	port = rootConfig().port,
 	dryRun = process.env.GARY_DRY_RUN === "1",
 	keepAlive = true,
 	pageFile = PAGE_FILE,
-	log = (...a) => console.error("[board]", ...a),
+	log: print = (...a) => console.error("[board]", ...a),
 } = {}) {
 	if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`Invalid port ${port}`);
-	for (const c of COLLECTIONS) mkdirSync(join(dir, c), { recursive: true });
-	const TOKEN = loadToken(tokenFile(dir));
-	// A board server belongs to one instance. It resolves once, at start
-	const INSTANCE = instanceName();
+	mkdirSync(instancesDir(), { recursive: true });
+	mkdirSync(rootStateDir(), { recursive: true });
+	const TOKEN = loadToken(tokenFile());
+	const logFile = join(rootStateDir(), "server.log");
+	const log = (...a) => {
+		print(...a);
+		appendFile(logFile, `${new Date().toISOString()} ${a.map((x) => (typeof x === "string" ? x : String(x?.stack ?? x))).join(" ")}\n`).catch(() => {});
+	};
 	const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
 	const HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
 	const url = `http://127.0.0.1:${port}/`;
@@ -530,9 +589,12 @@ export async function startBoardServer({
 	const clients = new Set();
 	const pending = new Map();
 	const docLocks = new Map();
-	// Run GitHub actions one at a time per item, so a double click cannot merge twice
+	// Run GitHub actions one at a time per item of an instance, so a double click cannot merge twice
 	const actionLocks = new Map();
-	let watchers = [];
+	// The served instances: name -> { board, state, watchers }
+	const served = new Map();
+	// Watchers on <root>/instances and on each directory in it, which see a config.json appear
+	const rootWatchers = new Map();
 	let closed = false;
 	// Routes that ran in this process, so a repeat is refused even before the action file lands
 	const doneKeys = new Set();
@@ -541,10 +603,18 @@ export async function startBoardServer({
 	// Thread state from the latest guard read per item, so the page can show a thread that closed since the review
 	const liveStates = new Map();
 
-	async function readCollection(collection) {
-		const d = join(dir, collection);
-		const names = (await readdir(d)).filter((n) => n.endsWith(".json") && !n.startsWith("."));
-		const docs = await Promise.all(names.map(async (n) => {
+	const names = () => [...served.keys()].sort();
+	const boardNow = () => boardInfo(names(), { dryRun, log });
+
+	async function readCollection(name, collection) {
+		const d = join(served.get(name).board, collection);
+		let files = [];
+		try {
+			files = await readdir(d);
+		} catch (e) {
+			if (e.code !== "ENOENT") throw e;
+		}
+		const docs = await Promise.all(files.filter((n) => n.endsWith(".json") && !n.startsWith(".")).map(async (n) => {
 			const id = n.slice(0, -5);
 			const data = idPattern(collection).test(id) ? await readJson(join(d, n)) : null;
 			return data ? { id, data } : null;
@@ -552,14 +622,12 @@ export async function startBoardServer({
 		return docs.filter(Boolean);
 	}
 
-	const readMeta = () => readJson(join(dir, "meta.json"));
-
 	// Clicks that ran or were queued, keyed by item, route and draft
-	function clickedByKey(actions) {
+	function clickedByKey(name, actions) {
 		const out = new Map();
 		for (const { data: a } of actions) {
 			if ((a.status !== "done" && a.status !== "queued") || typeof a.routeId !== "string" || typeof a.draftHash !== "string") continue;
-			out.set(`${a.itemId}|${a.routeId}|${a.draftHash}`, {
+			out.set(`${name}|${a.itemId}|${a.routeId}|${a.draftHash}`, {
 				status: a.status,
 				result: typeof a.result === "string" ? a.result : "",
 				finishedAt: a.finishedAt ?? a.createdAt ?? null,
@@ -569,96 +637,196 @@ export async function startBoardServer({
 		return out;
 	}
 
+	const modeOf = (name) => withInstance(name, accountMode);
+
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
-	async function readItems() {
-		const mode = accountMode();
-		const [items, actions] = await Promise.all([readCollection("items"), readCollection("actions")]);
-		const clicked = clickedByKey(actions);
+	async function readItems(name) {
+		const mode = modeOf(name);
+		const [items, actions] = await Promise.all([readCollection(name, "items"), readCollection(name, "actions")]);
+		const clicked = clickedByKey(name, actions);
 		return items.map(({ id, data }) => ({
+			...data,
+			liveState: liveStates.get(`${name}/${id}`),
+			routes: routesOf(data).map((route) => {
+				const hash = draftHash(route, data);
+				const key = `${name}|${id}|${route.id}|${hash}`;
+				const ran = clicked.get(key) ?? (doneKeys.has(key) ? { status: "done", result: "", finishedAt: null } : undefined);
+				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key) };
+			}),
+			instance: name,
 			id,
-			data: {
-				...data,
-				liveState: liveStates.get(id),
-				routes: routesOf(data).map((route) => {
-					const hash = draftHash(route, data);
-					const key = `${id}|${route.id}|${hash}`;
-					const ran = clicked.get(key) ?? (doneKeys.has(key) ? { status: "done", result: "", finishedAt: null } : undefined);
-					return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key) };
-				}),
-			},
+			ref: typeof data.repo === "string" ? itemRef(data) : null,
+			repo: data.repo ?? null,
 		}));
 	}
 
-	const readOpenProposals = async () => (await readCollection("proposals")).filter((p) => p.data.status === "open");
-	const snapshotOf = (name) =>
-		name === "meta" ? readMeta()
-		: name === "items" ? readItems()
-		: name === "proposals" ? readOpenProposals()
-		: name === "board" ? boardInfo({ dryRun, stateDir: stateDirOf })
-		: readCollection(name);
-	const stateDirOf = dirname(dir);
-	const decisionsFile = join(stateDirOf, "decisions.jsonl");
-	const decide = (type, itemId, item, fields) =>
-		logDecision(type, itemId, item, fields, decisionsFile).catch((e) => log("Writing the decision log failed:", e.message));
+	const flat = (name, docs) => docs.map(({ id, data }) => ({ ...data, instance: name, id }));
+	const readActions = async (name) => flat(name, await readCollection(name, "actions"));
+	const readOpenProposals = async (name) => flat(name, (await readCollection(name, "proposals")).filter((p) => p.data.status === "open"));
+	const readMeta = (name) => readJson(join(served.get(name).board, "meta.json"));
+	const readers = { items: readItems, actions: readActions, proposals: readOpenProposals };
+
+	async function eventOf(name, event) {
+		if (event === "meta") return { instance: name, data: await readMeta(name) };
+		return { instance: name, docs: await readers[event](name) };
+	}
+
+	const decide = (name, type, itemId, item, fields) =>
+		logDecision(name, type, itemId, item, fields).catch((e) => log(`Writing the decision log of ${name} failed:`, e.message));
 
 	function send(res, event, data) {
 		res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 	}
 
-	function schedulePush(name) {
-		clearTimeout(pending.get(name));
+	/** Pushes one event to every open page. `name` is the instance, or null for the board and a page reload. */
+	function schedulePush(name, event) {
+		const key = `${name ?? ""}\u0000${event}`;
+		clearTimeout(pending.get(key));
 		const t = setTimeout(async () => {
-			pending.delete(name);
+			pending.delete(key);
 			if (!clients.size) return;
-			if (name === "reload") {
-				for (const res of clients) send(res, "reload", {});
-				return;
-			}
 			try {
-				const data = await snapshotOf(name);
-				for (const res of clients) send(res, name, data);
+				let data;
+				if (event === "reload") data = { instance: null };
+				else if (event === "board") data = { instance: name, board: boardNow() };
+				else if (!served.has(name)) return;
+				else data = await eventOf(name, event);
+				for (const res of clients) send(res, event, data);
 			} catch (e) {
-				log(`Reading ${name} failed:`, e.message);
+				log(`Reading ${event} of ${name} failed:`, e.message);
 			}
 		}, DEBOUNCE_MS);
 		t.unref();
-		pending.set(name, t);
+		pending.set(key, t);
 	}
 
-	function startWatching() {
-		const add = (path, fn) => {
-			try {
-				const w = watch(path, fn);
-				w.on("error", (e) => log(`Watching ${path} failed:`, e.message));
-				if (!keepAlive) w.unref();
-				watchers.push(w);
-			} catch (e) {
-				log(`Watching ${path} failed:`, e.message);
-			}
-		};
-		add(join(dir, "items"), () => schedulePush("items"));
-		add(join(dir, "proposals"), () => schedulePush("proposals"));
+	function addWatch(list, path, fn) {
+		try {
+			const w = watch(path, fn);
+			w.on("error", (e) => log(`Watching ${path} failed:`, e.message));
+			if (!keepAlive) w.unref();
+			list.push(w);
+		} catch (e) {
+			log(`Watching ${path} failed:`, e.message);
+		}
+	}
+
+	function serve(name) {
+		const i = loadInstance(name);
+		for (const c of COLLECTIONS) mkdirSync(join(i.board, c), { recursive: true });
+		const entry = { board: i.board, state: i.state, watchers: [] };
+		served.set(name, entry);
+		const w = entry.watchers;
+		addWatch(w, join(i.board, "items"), () => schedulePush(name, "items"));
+		addWatch(w, join(i.board, "proposals"), () => schedulePush(name, "proposals"));
 		// Action docs mark routes as done, so they change the served items too
-		add(join(dir, "actions"), () => {
-			schedulePush("actions");
-			schedulePush("items");
+		addWatch(w, join(i.board, "actions"), () => {
+			schedulePush(name, "actions");
+			schedulePush(name, "items");
 		});
-		add(dir, (_type, name) => {
-			if (name === "meta.json") schedulePush("meta");
+		addWatch(w, i.board, (_type, file) => {
+			if (file === "meta.json") schedulePush(name, "meta");
 		});
 		// gary pause and resume change control.json, and open pages show the switch at once
-		add(stateDirOf, (_type, name) => {
-			if (name === "control.json") schedulePush("board");
+		addWatch(w, i.state, (_type, file) => {
+			if (file === "control.json") schedulePush(name, "board");
 		});
+		log(`Serving instance ${name} (${i.repos.join(", ")}).`);
+	}
+
+	function unserve(name) {
+		for (const w of served.get(name).watchers) w.close();
+		served.delete(name);
+		log(`Stopped serving instance ${name}.`);
+	}
+
+	/** Matches the served instances to the instances under the root. Returns whether the list changed. */
+	function rescan() {
+		if (closed) return false;
+		let dirs = [];
+		try {
+			dirs = readdirSync(instancesDir(), { withFileTypes: true }).filter((d) => d.isDirectory() && INSTANCE_NAME.test(d.name)).map((d) => d.name);
+		} catch (e) {
+			log(`Reading ${instancesDir()} failed:`, e.message);
+		}
+		for (const [dir, w] of rootWatchers) {
+			if (dir !== "" && !dirs.includes(dir)) {
+				w.close();
+				rootWatchers.delete(dir);
+			}
+		}
+		for (const dir of dirs) {
+			if (rootWatchers.has(dir)) continue;
+			const list = [];
+			addWatch(list, join(instancesDir(), dir), (_type, file) => {
+				if (file === "config.json") scheduleRescan();
+			});
+			if (list[0]) rootWatchers.set(dir, list[0]);
+		}
+		const wanted = new Set(listInstances().map((i) => i.name));
+		const changed = [];
+		for (const name of [...served.keys()]) {
+			if (!wanted.has(name)) {
+				unserve(name);
+				changed.push(name);
+			}
+		}
+		for (const name of wanted) {
+			if (served.has(name)) continue;
+			try {
+				serve(name);
+				changed.push(name);
+			} catch (e) {
+				log(`Serving instance ${name} failed:`, e.message);
+			}
+		}
+		for (const name of changed) {
+			schedulePush(name, "board");
+			for (const event of ["items", "actions", "proposals", "meta"]) {
+				// A removed instance gets empty collections, so open pages drop its docs
+				if (served.has(name)) schedulePush(name, event);
+				else for (const res of clients) send(res, event, event === "meta" ? { instance: name, data: null } : { instance: name, docs: [] });
+			}
+		}
+		return changed.length > 0;
+	}
+
+	let rescanTimer = null;
+	function scheduleRescan() {
+		clearTimeout(rescanTimer);
+		rescanTimer = setTimeout(rescan, DEBOUNCE_MS);
+		rescanTimer.unref();
+	}
+
+	/** The served instance a request names, or null. A name the watcher has not seen yet triggers one rescan. */
+	function instanceOf(name) {
+		if (typeof name !== "string" || !INSTANCE_NAME.test(name)) return null;
+		if (!served.has(name)) rescan();
+		return served.has(name) ? name : null;
+	}
+
+	const pageWatchers = [];
+	function startWatching() {
+		const list = [];
+		addWatch(list, instancesDir(), () => scheduleRescan());
+		if (list[0]) rootWatchers.set("", list[0]);
+		rescan();
 		// Open pages reload themselves when the board page changes
-		add(dirname(pageFile), (_type, name) => {
-			if (name === basename(pageFile)) schedulePush("reload");
+		addWatch(pageWatchers, dirname(pageFile), (_type, name) => {
+			if (name === basename(pageFile)) schedulePush(null, "reload");
 		});
 	}
 
 	function stopWatching() {
-		for (const w of watchers) w.close();
-		watchers = [];
+		clearTimeout(rescanTimer);
+		for (const w of pageWatchers) w.close();
+		pageWatchers.length = 0;
+		for (const w of rootWatchers.values()) w.close();
+		rootWatchers.clear();
+		for (const name of [...served.keys()]) {
+			for (const w of served.get(name).watchers) w.close();
+			served.delete(name);
+		}
 	}
 
 	const heartbeat = setInterval(() => {
@@ -666,51 +834,56 @@ export async function startBoardServer({
 	}, HEARTBEAT_MS);
 	heartbeat.unref();
 
-	async function logClick(itemId, doc) {
+	async function logClick(name, itemId, doc) {
+		const dir = join(served.get(name).board, "actions");
 		let id = `${itemId}-${Date.now()}`;
-		while (await readJson(join(dir, "actions", id + ".json"))) id = `${itemId}-${Date.now() + 1}`;
-		const file = join(dir, "actions", id + ".json");
+		while (await readJson(join(dir, id + ".json"))) id = `${itemId}-${Date.now() + 1}`;
+		const file = join(dir, id + ".json");
 		await withLock(docLocks, file, () => writeAtomic(file, { itemId, ...doc }));
-		schedulePush("actions");
-		schedulePush("items");
+		schedulePush(name, "actions");
+		schedulePush(name, "items");
 		return id;
 	}
 
+	const itemFile = (name, itemId) => join(served.get(name).board, "items", itemId + ".json");
+
 	// Run only what the agent drafted: type, actor, params and the target come from the item file
 	async function handleAction(body) {
-		if (body.action === "dismiss_route") return handleDismissRoute(body);
-		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(body);
+		const name = instanceOf(body.instance);
+		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
+		if (body.action === "dismiss_route") return handleDismissRoute(name, body);
+		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(name, body);
 		const { itemId, routeId, text, force, input } = body;
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
 		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) {
 			return [400, { ok: false, result: `text must be a string of at most ${MAX_TEXT} characters.` }];
 		}
-		return withLock(actionLocks, itemId, async () => {
-			const item = await readJson(join(dir, "items", itemId + ".json"));
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const item = await readJson(itemFile(name, itemId));
 			const route = item && routesOf(item).find((r) => r.id === routeId);
 			if (!route) return outdated;
-			const prefix = { pr: "pr", issue: "issue", discussion: "disc" }[item.kind];
-			if (`${prefix}-${item.number}` !== itemId) return outdated;
+			if (!allowedRepo(name, item.repo)) {
+				return [200, { ok: false, result: typeof item.repo === "string" ? `${item.repo} is not a repository of instance ${name}. Nothing was sent.` : "The item names no repository. Nothing was sent." }];
+			}
 			const hash = draftHash(route, item);
 			if (body.draftHash !== hash) return outdated;
 
-			const key = `${itemId}|${routeId}|${hash}`;
-			if (doneKeys.has(key) || clickedByKey(await readCollection("actions")).has(key)) {
+			const key = `${name}|${itemId}|${routeId}|${hash}`;
+			if (doneKeys.has(key) || clickedByKey(name, await readCollection(name, "actions")).has(key)) {
 				return [409, { ok: false, result: "This route already ran. The board shows its result.", duplicate: true }];
 			}
 
 			const draft = typeof text === "string" ? text : typeof route.text === "string" ? route.text : "";
 			let plan;
 			try {
-				plan = planRoute(route, item, input, draft, accountMode());
+				plan = planRoute(route, item, input, draft, modeOf(name));
 			} catch (e) {
 				if (e instanceof Refusal) return [200, { ok: false, result: e.message }];
 				throw e;
 			}
-			const kind = item.kind;
-			const number = item.number;
-			const log = {
+			const { kind, number, repo } = item;
+			const entry = {
 				routeId,
 				route: route.type,
 				draftHash: hash,
@@ -719,9 +892,9 @@ export async function startBoardServer({
 			};
 
 			if (plan.agent) {
-				logRouteDecisions(itemId, item, route, draft, input, true);
-				await logClick(itemId, {
-					...log,
+				logRouteDecisions(name, itemId, item, route, draft, input, true);
+				await logClick(name, itemId, {
+					...entry,
 					action: plan.action,
 					params: plan.params,
 					text: plan.text,
@@ -734,31 +907,33 @@ export async function startBoardServer({
 				return [200, { ok: true, result: "Queued for the master session.", queued: true }];
 			}
 
-			if (isPaused(stateDirOf)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
+			if (isPaused(served.get(name).state)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
 
 			// The server never merges
 			if (plan.steps.some((s) => s.action === "merge" || !Object.hasOwn(ACTIONS, s.action))) {
 				return [200, { ok: false, result: "Merges happen on GitHub. The board only opens the PR for you." }];
 			}
 
-			const fresh = await checkFresh({ ...plan.guard, kind, number, item, force: force === true });
+			const fresh = await checkFresh({ instance: name, ...plan.guard, kind, number, item, force: force === true });
 			if (fresh.state) {
-				liveStates.set(itemId, { state: fresh.state, reason: fresh.stateReason ?? null });
-				schedulePush("items");
+				liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
+				schedulePush(name, "items");
 			}
 			if (!fresh.ok) {
 				refusals.set(key, { reason: fresh.reason, forceable: fresh.forceable });
-				schedulePush("items");
+				schedulePush(name, "items");
 				return [200, { ok: false, result: fresh.reason, stale: true, forceable: fresh.forceable }];
 			}
 
-			logRouteDecisions(itemId, item, route, draft, input, false);
+			logRouteDecisions(name, itemId, item, route, draft, input, false);
 			const [first] = plan.steps;
-			let outcome = await runAction({ ...first, kind, number, dryRun });
+			let outcome = await runAction({ instance: name, repo, ...first, kind, number, dryRun });
 			if (outcome.ok && plan.followUp) {
 				const issueUrl = dryRun ? null : outcome.result;
 				const issueNumber = /\/issues\/(\d+)$/.exec(issueUrl ?? "")?.[1];
 				const link = await runAction({
+					instance: name,
+					repo,
 					action: "comment",
 					kind,
 					number,
@@ -774,8 +949,8 @@ export async function startBoardServer({
 				}
 			}
 
-			await logClick(itemId, {
-				...log,
+			await logClick(name, itemId, {
+				...entry,
 				action: first.action,
 				params: first.params,
 				text: first.text,
@@ -788,22 +963,22 @@ export async function startBoardServer({
 				doneKeys.add(key);
 				refusals.delete(key);
 			}
-			schedulePush("items");
+			schedulePush(name, "items");
 			return [200, outcome];
 		});
 	}
 
 	/** Logs where a clicked route deviates from the agent's proposal. Call only after the click passed every check. */
-	function logRouteDecisions(itemId, item, route, draft, input, agent) {
+	function logRouteDecisions(name, itemId, item, route, draft, input, agent) {
 		const routes = routesOf(item);
 		const recommended = routes.find((r) => r.recommended === true);
 		const brief = (r) => ({ type: r.type, title: r.title ?? "" });
-		if (recommended && recommended !== route) decide("chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
+		if (recommended && recommended !== route) decide(name, "chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
 		const drafted = typeof route.text === "string" ? route.text : "";
 		if (draft !== drafted) {
 			if (agent) {
-				if (draft.trim()) decide("agent_note", itemId, item, { text: cut(draft) });
-			} else decide("edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(draft) });
+				if (draft.trim()) decide(name, "agent_note", itemId, item, { text: cut(draft) });
+			} else decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(draft) });
 		}
 		let chosen = {};
 		try {
@@ -817,7 +992,7 @@ export async function startBoardServer({
 			// Only a thread the agent judged valid starts on fix
 			const byVerdict = thread.verdict === "valid" ? "fix" : "dismiss";
 			if (d.decision !== byVerdict || d.note) {
-				decide("thread_override", itemId, item, {
+				decide(name, "thread_override", itemId, item, {
 					route: { type: route.type },
 					thread: { summary: thread.summary ?? "", verdict: thread.verdict ?? null },
 					decision: d.decision,
@@ -827,31 +1002,33 @@ export async function startBoardServer({
 		}
 		if (route.type === "review" && Array.isArray(chosen.commentIds)) {
 			for (const c of Array.isArray(route.params?.comments) ? route.params.comments : []) {
-				if (!chosen.commentIds.includes(c?.id)) decide("unchecked_comment", itemId, item, { comment: { path: c?.path ?? "", text: cut(c?.text ?? "") } });
+				if (!chosen.commentIds.includes(c?.id)) decide(name, "unchecked_comment", itemId, item, { comment: { path: c?.path ?? "", text: cut(c?.text ?? "") } });
 			}
 		}
 	}
 
 	// The page reports the use of a route he does on GitHub himself. Nothing goes to GitHub and no action doc is written
 	async function handleDecision(body) {
+		const name = instanceOf(body.instance);
+		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
 		const { itemId, routeId, text } = body;
 		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return [400, { ok: false, result: "itemId and routeId are required." }];
 		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) {
 			return [400, { ok: false, result: `text must be a string of at most ${MAX_TEXT} characters.` }];
 		}
-		const item = await readJson(join(dir, "items", itemId + ".json"));
+		const item = await readJson(itemFile(name, itemId));
 		const route = item && routesOf(item).find((r) => r.id === routeId);
 		if (!route) return [200, { ok: false, result: OUTDATED, outdated: true }];
 		const recommended = routesOf(item).find((r) => r.recommended === true);
 		const brief = (r) => ({ type: r.type, title: r.title ?? "" });
-		if (recommended && recommended !== route) await decide("chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
+		if (recommended && recommended !== route) await decide(name, "chose_alternative", itemId, item, { recommended: brief(recommended), chosen: brief(route) });
 		const drafted = typeof route.text === "string" ? route.text : "";
-		if (typeof text === "string" && text !== drafted) await decide("edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
+		if (typeof text === "string" && text !== drafted) await decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
 		return [200, { ok: true, result: "Logged." }];
 	}
 
 	// Removes one suggested route the maintainer does not want and remembers it on the item
-	async function handleDismissRoute(body) {
+	async function handleDismissRoute(name, body) {
 		const { itemId, routeId } = body;
 		const reason = body.text ?? "";
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
@@ -859,8 +1036,8 @@ export async function startBoardServer({
 		if (typeof reason !== "string" || reason.length > MAX_REASON) {
 			return [400, { ok: false, result: `The reason must be a string of at most ${MAX_REASON} characters.` }];
 		}
-		return withLock(actionLocks, itemId, async () => {
-			const file = join(dir, "items", itemId + ".json");
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const file = itemFile(name, itemId);
 			const done = await withLock(docLocks, file, async () => {
 				const item = await readJson(file);
 				const route = item && routesOf(item).find((r) => r.id === routeId);
@@ -885,9 +1062,9 @@ export async function startBoardServer({
 			});
 			if (!done) return outdated;
 			const { item, route, remaining, at } = done;
-			await logClick(itemId, { routeId, route: route.type, action: "dismiss_route", params: {}, text: reason.trim(), status: "done", via: "board", createdAt: at, finishedAt: at, result: "" });
+			await logClick(name, itemId, { routeId, route: route.type, action: "dismiss_route", params: {}, text: reason.trim(), status: "done", via: "board", createdAt: at, finishedAt: at, result: "" });
 			if (!remaining.length) {
-				await logClick(itemId, {
+				await logClick(name, itemId, {
 					action: "reanalyze",
 					params: {},
 					text: `The maintainer dismissed the ${route.type} route "${route.title ?? ""}". Reason: ${reason.trim() || "none given"}. Propose a different route.`,
@@ -898,14 +1075,14 @@ export async function startBoardServer({
 					result: "",
 				});
 			}
-			await decide("dismissed_route", itemId, item, { route: { type: route.type, title: route.title ?? "" }, wasRecommended: route.recommended === true, reason: reason.trim() });
-			schedulePush("items");
+			await decide(name, "dismissed_route", itemId, item, { route: { type: route.type, title: route.title ?? "" }, wasRecommended: route.recommended === true, reason: reason.trim() });
+			schedulePush(name, "items");
 			return [200, { ok: true, result: "Route dismissed.", reanalyze: !remaining.length }];
 		});
 	}
 
 	// Accepting appends the rule to its file. Both run in dry-run mode too, because they change only local files
-	async function handleProposal(body) {
+	async function handleProposal(name, body) {
 		const { proposalId, text } = body;
 		if (typeof proposalId !== "string" || !PROPOSAL_ID.test(proposalId)) return [400, { ok: false, result: "proposalId is invalid." }];
 		const accept = body.action === "accept_proposal";
@@ -913,7 +1090,7 @@ export async function startBoardServer({
 		if (text !== undefined && (typeof text !== "string" || text.length > max)) {
 			return [400, { ok: false, result: `text must be a string of at most ${max} characters.` }];
 		}
-		const file = join(dir, "proposals", proposalId + ".json");
+		const file = join(served.get(name).board, "proposals", proposalId + ".json");
 		const reply = await withLock(docLocks, file, async () => {
 			const p = await readJson(file);
 			if (!p) return [200, { ok: false, result: "This proposal no longer exists. Reload the board." }];
@@ -921,50 +1098,79 @@ export async function startBoardServer({
 			const decidedAt = new Date().toISOString();
 			if (!accept) {
 				await writeAtomic(file, { ...p, status: "dismissed", decidedAt, reason: (text ?? "").trim() });
-				await decide("dismissed_proposal", null, null, { proposal: { id: p.id, title: p.title, target: p.target, file: p.file }, reason: (text ?? "").trim() });
+				await decide(name, "dismissed_proposal", null, null, { proposal: { id: p.id, title: p.title, target: p.target, file: p.file }, reason: (text ?? "").trim() });
 				return [200, { ok: true, result: "Proposal dismissed." }];
 			}
 			const rule = typeof text === "string" && text.trim() ? text : p.text;
 			let applied;
 			try {
-				applied = await applyProposal(p, rule);
+				applied = await applyProposal(p, rule, name);
 			} catch (e) {
 				return [200, { ok: false, result: e.message }];
 			}
 			await writeAtomic(file, { ...p, text: rule, status: "accepted", decidedAt });
 			return [200, { ok: true, result: applied.file, committed: applied.committed, ...(applied.warning && { warning: applied.warning }) }];
 		});
-		schedulePush("proposals");
+		schedulePush(name, "proposals");
 		return reply;
 	}
 
 	// The page snoozes, hides and asks to analyze again through plain document writes
-	async function logPageWrite({ op, path, data }) {
+	async function logPageWrite(name, { op, path, data }) {
 		if (!["update", "set"].includes(op) || !data || typeof data !== "object") return;
 		const m = /^(items|actions)\/(.+)$/.exec(path ?? "");
 		if (!m) return;
 		if (m[1] === "items") {
-			const item = await readJson(join(dir, "items", m[2] + ".json"));
+			const item = await readJson(itemFile(name, m[2]));
 			if (typeof data.snoozedUntil === "string" && Number.isFinite(Date.parse(data.snoozedUntil))) {
-				decide("snoozed", m[2], item, { days: Math.max(0, Math.round((Date.parse(data.snoozedUntil) - Date.now()) / 86400000)) });
-			} else if (data.hidden === true) decide("snoozed", m[2], item, { untilActivity: true });
-		} else if (data.action === "reanalyze" && typeof data.text === "string" && data.text.trim() && typeof data.itemId === "string") {
-			decide("agent_note", data.itemId, await readJson(join(dir, "items", data.itemId + ".json")), { text: cut(data.text) });
+				decide(name, "snoozed", m[2], item, { days: Math.max(0, Math.round((Date.parse(data.snoozedUntil) - Date.now()) / 86400000)) });
+			} else if (data.hidden === true) decide(name, "snoozed", m[2], item, { untilActivity: true });
+		} else if (data.action === "reanalyze" && typeof data.text === "string" && data.text.trim() && typeof data.itemId === "string" && ITEM_ID.test(data.itemId)) {
+			decide(name, "agent_note", data.itemId, await readJson(itemFile(name, data.itemId)), { text: cut(data.text) });
 		}
+	}
+
+	/** Splits a write into its instance and the path inside that instance's board store, or returns null. */
+	function scopeWrite(body) {
+		if (typeof body.path !== "string") return null;
+		let name = body.instance;
+		let path = body.path;
+		const doc = SCOPED_PATH.exec(path);
+		const meta = SCOPED_META.exec(path);
+		if (doc || meta) {
+			const given = doc ? doc[2] : meta[1];
+			if (name !== undefined && name !== given) return null;
+			name = given;
+			path = doc ? `${doc[1]}/${doc[3]}` : "meta";
+		}
+		name = instanceOf(name);
+		return name ? { name, path } : null;
 	}
 
 	// Serialize writes per file, so a merge never reads a file that another write is replacing
 	async function handleDb(body) {
-		const file = docPath(dir, body.path);
+		const scope = scopeWrite(body);
+		if (!scope) return [400, { error: "The write names no known instance." }];
+		const { name, path } = scope;
+		const file = docPath(name, path);
 		if (!file) return [400, { error: "Only items/<id>, actions/<id>, proposals/<id> and meta can be written." }];
+		let data = body.data;
+		if (isObject(data)) {
+			// Served items carry instance and ref, which are not part of the stored doc
+			const { instance: _i, ref: _r, ...rest } = data;
+			data = rest;
+			if (path.startsWith("actions/") && typeof data.itemId === "string" && data.itemId.startsWith(`${name}/`)) data.itemId = data.itemId.slice(name.length + 1);
+		}
+		const write = { op: body.op, path, data };
 		return withLock(docLocks, file, async () => {
-			const reply = await applyWrite(dir, body);
-			if (reply[0] === 200) await logPageWrite(body);
-			if (reply[0] === 200) schedulePush(body.path === "meta" ? "meta" : body.path.split("/")[0]);
+			const reply = await applyWrite(name, write);
+			if (reply[0] === 200) {
+				await logPageWrite(name, write);
+				schedulePush(name, path === "meta" ? "meta" : path.split("/")[0]);
+			}
 			return reply;
 		});
 	}
-
 
 	function tokenOk(given) {
 		if (typeof given !== "string" || given.length !== TOKEN.length) return false;
@@ -983,7 +1189,7 @@ export async function startBoardServer({
 	<meta name="referrer" content="no-referrer">
 	${RESET}
 	${board.slice(0, split)}
-	${shim(TOKEN, boardInfo({ dryRun, stateDir: stateDirOf }))}
+	${shim(TOKEN, boardNow())}
 	</head>
 	<body>
 	${board.slice(split)}
@@ -1015,7 +1221,7 @@ export async function startBoardServer({
 		}
 
 		if (!url.pathname.startsWith("/api/")) return json(res, 404, { error: "Not found." });
-		if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { ...HEALTH, instance: INSTANCE });
+		if (req.method === "GET" && url.pathname === "/api/health") return json(res, 200, { ...HEALTH, instances: names() });
 
 		const given = url.pathname === "/api/events" ? url.searchParams.get("token") : req.headers["x-board-token"];
 		if (!tokenOk(given)) return json(res, 401, { error: "Missing or wrong token." });
@@ -1030,16 +1236,20 @@ export async function startBoardServer({
 			res.write("retry: 3000\n\n");
 			clients.add(res);
 			req.on("close", () => clients.delete(res));
-			const [items, actions, proposals, meta] = await Promise.all([readItems(), readCollection("actions"), readOpenProposals(), readMeta()]);
-			send(res, "items", items);
-			send(res, "actions", actions);
-			send(res, "proposals", proposals);
-			send(res, "meta", meta);
+			send(res, "board", { instance: null, board: boardNow() });
+			for (const name of names()) {
+				const events = await Promise.all(["items", "actions", "proposals", "meta"].map(async (event) => [event, await eventOf(name, event)]));
+				for (const [event, data] of events) send(res, event, data);
+			}
 			return;
 		}
 		if (req.method === "GET" && url.pathname === "/api/state") {
-			const [items, actions, proposals, meta] = await Promise.all([readItems(), readCollection("actions"), readOpenProposals(), readMeta()]);
-			return json(res, 200, { board: boardInfo({ dryRun, stateDir: stateDirOf }), items, actions, proposals, meta });
+			const list = names();
+			const [items, proposals] = await Promise.all([
+				Promise.all(list.map(readItems)).then((a) => a.flat()),
+				Promise.all(list.map(readOpenProposals)).then((a) => a.flat()),
+			]);
+			return json(res, 200, { board: boardNow(), items, proposals });
 		}
 		if (req.method === "GET" && url.pathname === "/api/tools") {
 			return json(res, 200, { tools: Object.keys(ACTIONS), dryRun });
@@ -1049,11 +1259,8 @@ export async function startBoardServer({
 				return json(res, 415, { error: "Send JSON." });
 			}
 			const body = await readBody(req);
-			if (url.pathname === "/api/db") {
-				const [status, data] = await handleDb(body);
-				return json(res, status, data);
-			}
-			const [status, data] = url.pathname === "/api/decision" ? await handleDecision(body) : await handleAction(body);
+			const handler = { "/api/db": handleDb, "/api/action": handleAction, "/api/decision": handleDecision }[url.pathname];
+			const [status, data] = await handler(body);
 			return json(res, status, data);
 		}
 		return json(res, 404, { error: "Not found." });
@@ -1082,11 +1289,12 @@ export async function startBoardServer({
 	server.on("error", (e) => log("Server error:", e.message));
 	if (!keepAlive) server.unref();
 	startWatching();
-	log(`Board of ${INSTANCE} on ${url}${dryRun ? " (dry run, no GitHub writes)" : ""}, data in ${dir}`);
+	log(`Board on ${url} for ${names().join(", ") || "no instance yet"}${dryRun ? " (dry run, no GitHub writes)" : ""}, root ${dirname(instancesDir())}`);
 
 	return {
 		url,
 		port,
+		instances: names,
 		close() {
 			if (closed) return Promise.resolve();
 			closed = true;
@@ -1109,13 +1317,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 		options: {
 			"dry-run": { type: "boolean", default: false },
 			port: { type: "string" },
-			"board-dir": { type: "string" },
 			"page-file": { type: "string" },
-			instance: { type: "string" },
 			watch: { type: "boolean", default: false },
 		},
 	});
-	if (args.instance) setInstance(args.instance);
 	if (args.watch && process.env.GARY_WATCH_CHILD !== "1") {
 		supervise(process.argv.slice(2).filter((a) => a !== "--watch"));
 	} else {
@@ -1188,7 +1393,6 @@ function supervise(childArgs) {
 async function runStandalone(args) {
 	const options = {
 		port: args.port ? Number(args.port) : undefined,
-		dir: args["board-dir"],
 		pageFile: args["page-file"],
 		dryRun: args["dry-run"] || process.env.GARY_DRY_RUN === "1",
 	};
