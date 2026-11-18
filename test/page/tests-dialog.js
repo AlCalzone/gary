@@ -16,7 +16,7 @@
   items([["pr-9488", item("First", "Hello", { story: "A user reported a timeout.\n\nThe PR retries the block." })], ["issue-1", simple(1, "active", 5, 1, { authorType: "bot" })]]);
   await wait(10);
   const storyEl = document.getElementById("d-story");
-  ok("story under the title, before the verdict, in paragraphs", !storyEl.hidden && storyEl.querySelectorAll("p").length === 2 && storyEl.querySelector("p").textContent === "A user reported a timeout." && storyEl.previousElementSibling.id === "d-meta" && !!(storyEl.compareDocumentPosition(document.getElementById("d-verdict")) & Node.DOCUMENT_POSITION_FOLLOWING));
+  ok("story under the title, before the verdict, in paragraphs", !storyEl.hidden && storyEl.querySelectorAll("p").length === 2 && storyEl.querySelector("p").textContent === "A user reported a timeout." && !!(document.getElementById("d-meta").compareDocumentPosition(storyEl) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(storyEl.compareDocumentPosition(document.getElementById("d-verdict")) & Node.DOCUMENT_POSITION_FOLLOWING));
   ok("reading face for story and verdict, sans for controls", /Literata/.test(getComputedStyle(storyEl).fontFamily) && /Literata/.test(getComputedStyle(document.getElementById("d-verdict")).fontFamily) && !/Literata/.test(getComputedStyle(document.querySelector("#d-foot button")).fontFamily) && parseFloat(getComputedStyle(storyEl).fontSize) >= 16);
   ok("story never in rows", !/user reported a timeout/.test(document.getElementById("board").textContent));
   items([["pr-9488", item("First", "Hello")], ["issue-1", simple(1, "active", 5, 1, { authorType: "bot" })]]);

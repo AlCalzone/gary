@@ -207,34 +207,73 @@
     document.getElementById("d-close").click(); await wait(5);
   }
 
-  // The agent is working on an item
+  // A fix or a push in flight: obvious, and nothing starts it twice
   {
     items(F); await wait(5);
-    await openItem("pr-9493");
-    const wl = document.getElementById("d-working");
-    ok("working: a calm line above the cards with the time", !wl.hidden && /^The agent is pushing to this PR/.test(wl.textContent) && /12m|12 min/.test(wl.textContent) && !!(wl.compareDocumentPosition(document.getElementById("d-routes")) & Node.DOCUMENT_POSITION_FOLLOWING));
-    const db = cardBtn("Drive this PR");
-    ok("working: the matching agent button is disabled with already running", db?.disabled === true && /already running/.test(openCard().querySelector(".card-actions").textContent));
-    await openItem("issue-9494");
-    ok("working on a fix: its Start fix is disabled", /working on a fix/.test(document.getElementById("d-working").textContent) && cardBtn("Start fix")?.disabled === true);
-    items(routeMap("issue-9494", "r1", (r) => r)); await wait(5);
-    items(F.map(([k, d]) => [k, k === "issue-9494" ? { ...d, working: undefined } : d])); await wait(10);
-    await openItem("issue-9494");
-    window.__reply = () => ({ ok: false, result: "The agent is already working on this.", duplicate: true });
-    cardBtn("Start fix").click(); await wait(20);
-    ok("a 409 already working shows as information", /The agent is already working on this\./.test(openCard().querySelector(".status.info")?.textContent ?? "") && !openCard().querySelector(".status.failed"));
-    window.__reply = () => ({ ok: true, result: { dryRun: true } });
-    await openItem("issue-9471");
-    ok("no working line without working", document.getElementById("d-working").hidden);
-    items(F.map(([k, d]) => [k, k === "issue-9471" ? { ...d, working: { kind: "review", since: iso(60000) } } : d])); await wait(10);
-    ok("working on a review: Analyze again reads Analyzing…", document.querySelector("#d-foot .foot-analyze").textContent === "Analyzing…" && /reviewing this/.test(document.getElementById("d-working").textContent));
-    document.getElementById("d-close").click(); await wait(5);
-    items(F); await wait(5);
+    localHandled.clear();
     for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
     await wait(5);
-    const icon = document.querySelector('.row[data-id="pr-9493"] .r-meta svg[aria-label="The agent is pushing to this PR"]');
-    ok("working: a quiet icon on the row with the same tooltip, no animation", !!icon && getComputedStyle(icon).animationName === "none" && !document.querySelector('.row[data-id="issue-9471"] .r-meta svg[aria-label^="The agent is"]'));
+    const chipOf = (k) => document.querySelector('.row[data-id="' + k + '"] .r-titleline .agent-chip');
+    const filled = (el) => getComputedStyle(el).backgroundColor !== "rgba(0, 0, 0, 0)" && !el.classList.contains("quiet");
+    ok("row chip: Fix running, filled teal on the title line", chipOf("issue-9494")?.textContent === "Fix running" && filled(chipOf("issue-9494")));
+    ok("row chip: Fix: #9496 draft with a CI dot", chipOf("issue-9495")?.textContent === "Fix: #9496 draft" && chipOf("issue-9495").querySelector(".ci-dot.ci-pending") && filled(chipOf("issue-9495")));
+    ok("row chip: Fix: #9498 open with a failing CI dot", chipOf("issue-9497")?.textContent === "Fix: #9498 open" && !!chipOf("issue-9497").querySelector(".ci-dot.ci-failing"));
+    ok("row chip: a quiet Fixed by #9500", chipOf("issue-9499")?.textContent === "Fixed by #9500" && chipOf("issue-9499").classList.contains("quiet"));
+    ok("row chip: Agent working on a PR the agent is changing", chipOf("pr-9493")?.textContent === "Agent working" && filled(chipOf("pr-9493")));
+    ok("the row hint does not point at a hidden fix route", !/Start fix/.test(document.querySelector('.row[data-id="issue-9495"] .r-hint')?.textContent ?? ""));
     state.reveal.clear(); render();
+    // Dialog banners
+    await openItem("issue-9494");
+    const ban = document.getElementById("d-fix");
+    ok("fix running: teal banner under the meta row, above the story", !ban.hidden && /^A fix is running\. The agent started it at \d\d:\d\d\.$/.test(ban.textContent)
+      && document.getElementById("d-meta").nextElementSibling === ban && !!(ban.compareDocumentPosition(document.getElementById("d-story")) & Node.DOCUMENT_POSITION_FOLLOWING));
+    ok("fix running: no Start fix card at all, the rest stays", !cards().some((c) => /Start fix/.test(c.textContent)) && cards().length === 1 && /Reply/.test(cards()[0].textContent));
+    await openItem("issue-9495");
+    ok("draft fix: the banner names the PR, its title and CI", /^Draft fix #9496 is open: fix: stop retrying on a 413\. CI running\./.test(ban.textContent)
+      && ban.querySelector("a.btn")?.href === "https://github.com/acme/widgets/pull/9496" && ban.querySelector("a.btn").textContent === "Open PR");
+    ok("draft fix: no fix route", !cards().some((c) => /Start fix/.test(c.textContent)));
+    [...ban.querySelectorAll("button")].find((b) => b.textContent === "Open on board").click(); await wait(20);
+    ok("Open on board switches to the fix PR's dialog", dlgR.open && detail.id === "pr-9496");
+    const ff = document.getElementById("d-fix-for");
+    ok("the fix PR says what it fixes, with the source title", !ff.hidden && ff.textContent.startsWith("Fix for acme/widgets#9495: Uploader retries forever on a 413"));
+    [...ff.querySelectorAll("button")].find((b) => b.textContent === "Open on board").click(); await wait(20);
+    ok("and back to the issue", dlgR.open && detail.id === "issue-9495");
+    await openItem("issue-9497");
+    ok("open fix: the banner with CI failing", /^Fix #9498 is open: fix: store the theme\. CI failing\./.test(ban.textContent) && !ban.querySelector("button"));
+    await openItem("issue-9499");
+    ok("merged: a quiet line, and fixing again is possible", ban.textContent === "Fixed by #9500" && ban.classList.contains("quiet") && cards().some((c) => /Start fix/.test(c.textContent)));
+    // A race: the server already has a fix
+    items(F.map(([k, d]) => [k, k === "issue-9494" ? { ...d, fix: undefined } : d])); await wait(10);
+    await openItem("issue-9494");
+    window.__reply = () => ({ ok: false, result: "A fix is already running for this item.", duplicate: true });
+    cardBtn("Start fix").click(); await wait(20);
+    ok("a fix 409 shows the server's message as information", /A fix is already running for this item\./.test(openCard().querySelector(".status.info")?.textContent ?? "") && !openCard().querySelector(".status.failed"));
+    window.__reply = () => ({ ok: true, result: { dryRun: true } });
+    items(F); await wait(5);
+    // The agent is changing a PR
+    await openItem("pr-9493");
+    ok("push: the banner says what runs and to decide after", /^The agent is changing this PR \(take over, started \d\d:\d\d\)\. Decide after it is done\.$/.test(ban.textContent));
+    const titles = cards().map((c) => c.querySelector(".card-head .r-hint").textContent);
+    for (const hidden of ["Approve", "Merge", "Close", "Mark ready", "Take over", "Address review", "Drive", "Format"]) {
+      ok("push: hides " + hidden, !titles.some((t) => t.startsWith(hidden)));
+    }
+    ok("push: reply and label stay", titles.some((t) => t.startsWith("Reply")) && titles.some((t) => t.startsWith("Label")));
+    ok("push: Snooze and Analyze again stay", !document.querySelector('#d-foot [aria-label="Snooze 1 day"]').disabled && !!document.querySelector("#d-foot .foot-analyze"));
+    items(F.map(([k, d]) => [k, k === "pr-9493" ? { ...d, working: undefined } : d])); await wait(10);
+    await openItem("pr-9493");
+    window.__reply = () => ({ ok: false, result: "The agent is changing this PR. Decide after it is done.", duplicate: true });
+    cardBtn("Approve").click(); await wait(5);
+    [...openCard().querySelectorAll(".card-actions button")].find((b) => /^Confirm/.test(b.textContent)).click(); await wait(20);
+    ok("push 409 shows as information", /The agent is changing this PR\. Decide after it is done\./.test(openCard().querySelector(".status.info")?.textContent ?? ""));
+    window.__reply = () => ({ ok: true, result: { dryRun: true } });
+    items(F.map(([k, d]) => [k, k === "pr-9493" ? { ...d, working: undefined, reviewedAt: new Date().toISOString() } : d])); await wait(10);
+    ok("when the job finishes the item arrives rewritten with the update line", !document.getElementById("d-updated").hidden && ban.hidden);
+    // A review in progress keeps the quiet line and Analyzing…
+    items(F.map(([k, d]) => [k, k === "issue-9471" ? { ...d, working: { kind: "review", since: iso(60000) } } : d])); await wait(10);
+    await openItem("issue-9471");
+    ok("review running: quiet line and Analyzing…", /reviewing this/.test(document.getElementById("d-working").textContent) && document.querySelector("#d-foot .foot-analyze").textContent === "Analyzing…");
+    document.getElementById("d-close").click(); await wait(5);
+    items(F); await wait(5);
   }
 
   // Order comes from the stored priority only, never from the author

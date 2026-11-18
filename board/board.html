@@ -223,7 +223,21 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .working-line { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 13.5px; color: var(--muted); }
 .working-line[hidden] { display: none; }
 .working-line .i { width: 15px; height: 15px; color: var(--act-agent); }
-.running-hint { font-size: 11.5px; color: var(--muted); }
+/* A fix or a push in progress: filled teal, readable at a glance on the title line */
+.r-titleline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.agent-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; background: var(--act-agent); color: var(--surface); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.agent-chip.quiet { background: color-mix(in srgb, var(--act-agent) 14%, var(--surface)); color: var(--act-agent); }
+.ci-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 1.5px var(--surface); }
+.ci-dot.ci-passing { background: var(--ok); }
+.ci-dot.ci-failing { background: var(--bad); }
+.ci-dot.ci-pending { background: var(--warn); }
+.agent-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 2px 0 0; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--act-agent) 14%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--act-agent) 45%, transparent); color: var(--fg); font-size: 14px; line-height: 1.5; }
+.agent-banner[hidden] { display: none; }
+.agent-banner .i { width: 16px; height: 16px; color: var(--act-agent); flex: none; }
+.agent-banner .ab-text { flex: 1; min-width: 14em; }
+.agent-banner.quiet { background: transparent; box-shadow: none; padding: 0; color: var(--muted); font-size: 13.5px; }
+.fix-for { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; color: var(--muted); }
+.fix-for[hidden] { display: none; }
 .opened-mark { display: inline-flex; align-items: center; }
 .part-btn .avatar, .part-btn .actor-icon { width: 16px; height: 16px; }
 .status.soft-warn { color: var(--warn); flex-basis: 100%; }
@@ -922,6 +936,8 @@ textarea {
     <div class="d-head">
       <h2 class="d-title" id="detail-title"></h2>
       <div class="meta" id="d-meta"></div>
+      <div class="agent-banner" id="d-fix" role="status" hidden></div>
+      <p class="fix-for" id="d-fix-for" hidden></p>
       <div class="story" id="d-story" hidden></div>
       <div class="reviews" id="d-reviews" hidden></div>
       <div class="d-sec" id="d-threads" hidden></div>
@@ -1792,9 +1808,103 @@ function statusLine(id) {
 // Icons that describe an item's state, most important first. Each entry is [icon, class, label, text]
 const FALLBACK_NOTE = "The full analysis was stopped by the safety filter. Code-level conclusions need your check.";
 
-const WORKING_TEXT = { fix: "The agent is working on a fix", review: "The agent is reviewing this", push: "The agent is pushing to this PR" };
-// Agent routes that would start the same kind of work the agent is already doing
-const WORKING_ROUTES = { fix: ["follow_up"], push: ["address_review", "take_over", "drive", "format"], review: [] };
+const WORKING_TEXT = { review: "The agent is reviewing this", push: "The agent is changing this PR" };
+
+// A fix in flight on an issue or discussion: the agent works on it, or its PR is a draft or open
+function fixOf(d) {
+  const f = d && d.fix && typeof d.fix === "object" ? d.fix : null;
+  return f && ["working", "draft", "open", "merged", "closed"].includes(f.state) ? f : null;
+}
+const fixActive = (d) => ["working", "draft", "open"].includes(fixOf(d)?.state);
+const pushActive = (d) => workingOf(d)?.kind === "push";
+
+// Routes that would start a second fix, or decide a PR the agent is still changing, are not offered at all
+const PUSH_HIDDEN = new Set(["review", "merge", "close", "take_over", "address_review", "drive", "format"]);
+function blockedRoute(d, r) {
+  if (fixActive(d) && r.type === "follow_up" && actorOf(r) === "agent") return true;
+  if (pushActive(d) && (PUSH_HIDDEN.has(r.type) || (r.type === "chore" && paramsOf(r).action === "ready"))) return true;
+  return false;
+}
+
+function visibleRoutes(d) {
+  return routesOf(d).filter((r) => !blockedRoute(d, r));
+}
+
+const hhmm = (iso) => new Date(parseTime(iso)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+function ciDot(ci) {
+  return ["passing", "failing", "pending"].includes(ci) ? h("span", { class: "ci-dot ci-" + ci, role: "img", "aria-label": "CI " + ci, title: "CI " + ci }) : null;
+}
+
+// The chip on the title line of a row
+function agentChip(d) {
+  const f = fixOf(d);
+  if (f && f.state === "working") return h("span", { class: "agent-chip", title: "The agent is working on a fix" }, "Fix running");
+  if (f && (f.state === "draft" || f.state === "open") && f.pr) {
+    return h("span", { class: "agent-chip", title: (f.state === "draft" ? "Draft fix" : "Fix") + " #" + f.pr.number + " is open on GitHub" }, "Fix: #" + f.pr.number + " " + f.state, ciDot(str(f.pr.ci)));
+  }
+  if (f && f.state === "merged" && f.pr) return h("span", { class: "agent-chip quiet", text: "Fixed by #" + f.pr.number });
+  if (pushActive(d)) return h("span", { class: "agent-chip", title: "The agent is changing this PR" }, "Agent working");
+  return null;
+}
+
+// The board item of a PR number in the same instance, for "Open on board"
+function prKeyOf(d, number) {
+  for (const [key, x] of state.items) if (x.kind === "pr" && x.number === number && str(x.instance) === str(d.instance)) return key;
+  return null;
+}
+
+function switchDialog(key) {
+  closeDetail();
+  openDetail(key);
+}
+
+const PUSH_JOBS = { take_over: "take over", address_review: "addressing the review", drive: "driving the review rounds", format: "formatting" };
+
+// The banner under the meta row: what the agent is doing, so nothing here starts it twice
+function renderAgentBanner(d) {
+  const el = document.getElementById("d-fix");
+  const forEl = document.getElementById("d-fix-for");
+  const f = fixOf(d);
+  const w = workingOf(d);
+  let parts = null;
+  let quiet = false;
+  if (f && f.state === "working") {
+    const who = f.startedBy === "maintainer" ? "You started it" : f.startedBy === "routine" ? "The agent started it" : "It was started";
+    parts = [icon("wrench"), h("span", { class: "ab-text", text: "A fix is running. " + who + (parseTime(f.since) ? " at " + hhmm(f.since) : "") + "." })];
+  } else if (f && (f.state === "draft" || f.state === "open") && f.pr) {
+    const ci = str(f.pr.ci);
+    const ciText = { pending: "running", passing: "passing", failing: "failing" }[ci];
+    const board = prKeyOf(d, f.pr.number);
+    parts = [icon("wrench"), h("span", { class: "ab-text" }, (f.state === "draft" ? "Draft fix #" : "Fix #") + f.pr.number + " is open: ", richText(str(f.pr.title)), "." + (ciText ? " CI " + ciText + "." : "")),
+      isGithubUrl(str(f.pr.url)) ? h("a", { class: "btn small", href: str(f.pr.url), target: "_blank", rel: "noopener noreferrer", text: "Open PR", "data-focus-key": "fix:pr" }) : null,
+      board ? h("button", { class: "btn small", type: "button", text: "Open on board", "data-focus-key": "fix:board", onclick: () => switchDialog(board) }) : null];
+  } else if (f && f.state === "merged" && f.pr) {
+    quiet = true;
+    parts = [h("span", { class: "ab-text", text: "Fixed by #" + f.pr.number })];
+  } else if (w && w.kind === "push") {
+    const job = PUSH_JOBS[str(w.route || w.action)];
+    const at = parseTime(w.since) ? "started " + hhmm(w.since) : "";
+    const paren = [job, at].filter(Boolean).join(", ");
+    parts = [icon("wrench"), h("span", { class: "ab-text", text: "The agent is changing this PR" + (paren ? " (" + paren + ")" : "") + ". Decide after it is done." })];
+  }
+  el.hidden = !parts;
+  el.classList.toggle("quiet", quiet);
+  const sig = JSON.stringify([d.fix, d.working, parts ? parts.length : 0, [...state.items.keys()].length]);
+  if (el.dataset.sig !== sig) {
+    el.dataset.sig = sig;
+    el.replaceChildren(...(parts || []).filter(Boolean));
+  }
+  // A PR that is Gary's fix for another item points back to it
+  const ff = d.fixFor && typeof d.fixFor === "object" ? d.fixFor : null;
+  forEl.hidden = !ff;
+  if (ff) {
+    const src = itemKeyOf(str(d.instance), str(ff.itemId));
+    const srcTitle = src ? str(state.items.get(src).title) : "";
+    forEl.replaceChildren(h("span", { text: "Fix for " + str(ff.ref) + (srcTitle ? ": " + srcTitle : "") }),
+      src ? h("button", { class: "btn small", type: "button", text: "Open on board", "data-focus-key": "fixfor:board", onclick: () => switchDialog(src) }) : null);
+  }
+}
 
 function workingOf(d) {
   const w = d && d.working && typeof d.working === "object" ? d.working : null;
@@ -1821,7 +1931,7 @@ function stateIcons(id, d, dim, withPassing) {
   if (open && d.solved === true && !(d.kind === "discussion" && d.isAnswered === true)) out.push(["solved", "muted", "Looks solved, still open", null, "Looks solved"]);
   if (d.reviewDepth === "pending") out.push(["eye", "muted", "Not analyzed yet", null, "Not analyzed yet"]);
   const w = workingOf(d);
-  if (w) out.push(["wrench", "muted", WORKING_TEXT[w.kind], null, "Agent working"]);
+  if (w && w.kind === "review") out.push(["wrench", "muted", WORKING_TEXT.review, null, "Agent reviewing"]);
   if (d.analyzedBy === "fallback") out.push(["sparkleSmall", "muted", FALLBACK_NOTE, null, "Smaller model"]);
   if (d.blocked && typeof d.blocked === "object") out.push(["sparklesOff", "muted", "Not analyzed by the agent", null, "Not analyzed"]);
   if (d.hidden === true) out.push(["archive", "muted", "Dismissed"]);
@@ -1963,7 +2073,10 @@ function effortEl(d) {
 
 function buildRow(id, d, dim, slot) {
   const title = str(d.title) || "(no title)";
-  const hint = str(d.hint).trim() || str(recommendedRoute(d)?.title).trim();
+  // A hint that points at a route that is not offered now would contradict the chip
+  const rec = recommendedRoute(d);
+  const hint = rec && blockedRoute(d, rec) ? str((visibleRoutes(d).find((r) => r.recommended) || visibleRoutes(d)[0])?.title).trim() : str(d.hint).trim() || str(rec?.title).trim();
+  const chip = agentChip(d);
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
   const type = AUTHOR_ICONS[authorTypeOf(d)];
@@ -1980,7 +2093,7 @@ function buildRow(id, d, dim, slot) {
     h("span", { class: "r-main" },
       // The combined tab names the repo, so the full ref gets its own quiet line above the title
       combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
-      h("span", { class: "r-title", title, text: title }),
+      chip ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), chip) : h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
     meta,
@@ -2829,7 +2942,8 @@ function refusalNote(e, key) {
   const p = refusalPayload(e);
   if (!p) return null;
   if (p.paused === true) return { kind: "info", text: str(p.result) || "Nothing was sent." };
-  if (/already working on this/i.test(str(p.result))) return { kind: "info", text: str(p.result) };
+  // Races with work already in flight: the server's reason is the information
+  if (p.working === true || p.fix || /already working on this|is changing this PR|fix is (already )?(running|open)|already (has )?a fix/i.test(str(p.result))) return { kind: "info", text: str(p.result) };
   if (p.settingsError) {
     const inst = instOf(state.items.get(key));
     return { kind: "info", text: "Nothing was sent. The settings of " + (inst.title || inst.name || "this project") + " are invalid, see the note at the top." };
@@ -3185,8 +3299,6 @@ function extraParts(d, r) {
 }
 
 // Who runs such a step: the bot, or he himself in own mode. Null when nobody may.
-const b0IsAgent = (buttons) => buttons.some((b) => b.actor === "agent");
-
 function partActor(d) {
   const inst = instOf(d);
   if (inst.bot) return "bot";
@@ -3335,14 +3447,9 @@ function buildCardActions(id, d, r, rec, locked) {
     ];
   }
   const refused = r.refused && typeof r.refused === "object" ? r.refused : null;
-  const w = workingOf(d);
-  const running = w && b0IsAgent(buttons) && WORKING_ROUTES[w.kind].includes(r.type);
   const out = buttons.map((b, i) => {
     const key = "r:" + r.id + ":" + b.id;
     if (b.actor === "me") return meButton(id, d, r, rec, b, intent, locked);
-    if (running && b.actor === "agent") {
-      return h("button", { class: "btn intent-" + intent, type: "button", disabled: true, "data-focus-key": key, title: WORKING_TEXT[w.kind] }, actorMark(b.actor, instOf(d)), b.label);
-    }
     return h("button", {
       class: "btn intent-" + intent + (r.recommended === true && i === 0 ? " primary" : ""), type: "button", disabled: locked,
       "data-focus-key": key, "data-focus-alt": key + ":confirm", title: buttonTip(b, instOf(d)),
@@ -3377,7 +3484,6 @@ function buildCardActions(id, d, r, rec, locked) {
   if (instOf(d).paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
     out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
   }
-  if (running) out.push(h("span", { class: "running-hint", title: WORKING_TEXT[w.kind], text: "already running" }));
   if (r.type === "take_over") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   const ownButtons = buttons.filter((b) => b.actor === "own");
@@ -3517,7 +3623,7 @@ function renderRoutes(id, d, locked) {
     placeChildren(detail.routes, [h("p", { class: "farewell", text: "Suggestion dismissed. The agent will propose something else." })]);
     return;
   }
-  const routes = routesOf(d).filter((r) => !detail.dismissed.has(r.id));
+  const routes = visibleRoutes(d).filter((r) => !detail.dismissed.has(r.id));
   if (detail.openRoute === undefined || (detail.openRoute !== null && !routes.some((r) => r.id === detail.openRoute))) {
     const done = routes.find((r) => r.done && !routeCompact(r));
     // Pick among the cards on screen, so a dismissed recommendation hands its place to the next card
@@ -3621,7 +3727,9 @@ function renderRounds(d) {
 }
 
 function renderWorking(d) {
-  const w = workingOf(d);
+  renderAgentBanner(d);
+  // The push banner says it already; the quiet line is for a running review
+  const w = workingOf(d)?.kind === "review" ? workingOf(d) : null;
   detail.workingEl.hidden = !w;
   if (!w) return;
   const sig = w.kind + "|" + str(w.since);
