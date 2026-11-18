@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
-    <img src="logo.svg" alt="Gary" width="360">
-  </picture>
+  <img src="logo-outlined.svg" alt="Gary" width="360">
 </p>
 
 <p align="center"><em>Get Anything Ready for You</em></p>
