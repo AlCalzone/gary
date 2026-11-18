@@ -6,6 +6,7 @@ import { get } from "node:http";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { PROFILE, ROOT, freePort, makeHome, removeDir, tempDir } from "./lib.mjs";
+import { commentBody, planRoute } from "../server/server.mjs";
 
 const T = tempDir();
 const PORT = await freePort();
@@ -261,6 +262,22 @@ const after = Object.fromEntries((await api("/api/state")).data.items.filter((i)
 const r1 = after["pr-12"].routes.find((r) => r.id === "r1");
 check("state marks a ran route as done", r1.done?.status === "done", r1);
 check("state marks a queued route", after["pr-12"].routes.find((r) => r.id === "r2").done?.status === "queued");
+
+
+// Suggestions in inline review comments
+check("a suggestion follows the text after a blank line", commentBody({ text: "Use const", suggestion: "const a = 1;" }) === "Use const\n\n```suggestion\nconst a = 1;\n```", commentBody({ text: "Use const", suggestion: "const a = 1;" }));
+const fenced = commentBody({ text: "x", suggestion: "```js\ny\n```" });
+check("a suggestion with a fence line gets a longer fence", fenced === "x\n\n````suggestion\n```js\ny\n```\n````", fenced);
+check("a longer backtick run gets a fence one longer", commentBody({ text: "x", suggestion: "`````\n" }).startsWith("x\n\n``````suggestion\n"));
+check("an old doc with the fence in its text is sent unchanged", commentBody({ text: "Old\n```suggestion\ny\n```" }) === "Old\n```suggestion\ny\n```");
+const suggested = planRoute(
+	{ id: "r1", type: "review", as: "bot", params: { event: "comment", comments: [{ id: "c1", path: "a.ts", line: 3, text: "Rename", original: "let a = 1;", suggestion: "const a = 1;", diffHunk: "@@ -1 +1 @@" }] } },
+	{ kind: "pr", number: 12 },
+	{},
+	"Body",
+);
+const sent = suggested.steps[0].params.comments[0];
+check("original, suggestion and diffHunk are never sent", JSON.stringify(Object.keys(sent).sort()) === '["line","path","text"]' && sent.text === "Rename\n\n```suggestion\nconst a = 1;\n```", sent);
 
 // Two instances in one server
 async function openEvents() {

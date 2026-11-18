@@ -139,6 +139,19 @@ export function validateInput(route, item, input) {
 }
 
 /**
+ * The body GitHub gets for one inline review comment: its text, then a suggestion block when it has `suggestion`.
+ * The fence is one backtick longer than the longest backtick run that starts a line of the suggestion, and at least three.
+ */
+export function commentBody(comment) {
+	const text = typeof comment?.text === "string" ? comment.text : "";
+	if (typeof comment?.suggestion !== "string") return text;
+	const longest = Math.max(0, ...comment.suggestion.split("\n").map((l) => /^`*/.exec(l)[0].length));
+	const fence = "`".repeat(Math.max(3, longest + 1));
+	const block = `${fence}suggestion\n${comment.suggestion}\n${fence}`;
+	return text ? `${text}\n\n${block}` : block;
+}
+
+/**
  * Maps a clicked route to what the server does: queue one agent request, or run one or more bot actions.
  * Throws a Refusal when the route cannot run through the server.
  */
@@ -184,7 +197,7 @@ export function planRoute(route, item, input, text, mode = "bot") {
 		case "review": {
 			const comments = (Array.isArray(params.comments) ? params.comments : [])
 				.filter((c) => chosen.commentIds.includes(c.id))
-				.map(({ path, line, startLine, text: body }) => ({ path, line, ...(startLine !== undefined && { startLine }), text: body }));
+				.map((c) => ({ path: c.path, line: c.line, ...(c.startLine !== undefined && { startLine: c.startLine }), text: commentBody(c) }));
 			const reviewParams = { event: params.event, ...(comments.length && { comments }) };
 			if (!Object.hasOwn(REVIEW_EVENTS, params.event ?? "")) throw new Refusal("The review route has no valid event.");
 			if (typeof item.reviewedSha === "string") reviewParams.sha = item.reviewedSha;
@@ -343,11 +356,14 @@ export function boardInfo(names, { dryRun = false, log = () => {} } = {}) {
 	return { me: instances[0]?.me ?? null, dryRun, instances };
 }
 
-function shim(token, info) {
+function shim(token, info, version) {
 	return `<script>
 "use strict";
 (() => {
   const TOKEN = ${JSON.stringify(token).replace(/</g, "\\u003c")};
+  const VERSION = ${JSON.stringify(version)};
+  const MIN_RETRY_MS = 2000;
+  const MAX_RETRY_MS = 30000;
   const INFO = ${JSON.stringify(info).replace(/</g, "\\u003c")};
   const SERVER = "host:gary";
   const NAMES = ["items", "actions", "proposals"];
@@ -400,10 +416,66 @@ function shim(token, info) {
     return out;
   }
 
+  const askReload = () => window.dispatchEvent(new Event("board:reload"));
+
+  function applyBoard(next) {
+    Object.assign(board, next);
+    const served = new Set(names());
+    for (const name of [...NAMES, "meta"]) {
+      for (const n of [...cache[name].keys()]) if (!served.has(n)) cache[name].delete(n);
+    }
+    window.dispatchEvent(new Event("board:info"));
+    for (const name of [...NAMES, "meta"]) emit(name);
+  }
+
+  // Puts a fresh /api/state into the collections it covers, so nothing that changed while disconnected is missed
+  function replay(state) {
+    applyBoard(state.board);
+    for (const name of ["items", "proposals"]) {
+      const by = new Map(names().map((n) => [n, []]));
+      for (const d of state[name] || []) if (by.has(d.instance)) by.get(d.instance).push(d);
+      for (const [n, docs] of by) cache[name].set(n, docs);
+      emit(name);
+    }
+  }
+
+  let es = null;
+  let delay = MIN_RETRY_MS;
+
+  // A browser's EventSource gives up for good after an HTTP error, so the shim reconnects on its own
+  function retry() {
+    if (es) es.close();
+    es = null;
+    setConnected(false);
+    const wait = delay;
+    delay = Math.min(delay * 2, MAX_RETRY_MS);
+    setTimeout(reconnect, wait);
+  }
+
+  async function reconnect() {
+    let r;
+    try {
+      r = await api("/api/state");
+    } catch {
+      return retry();
+    }
+    // The server restarted with a new token, and only a reload of the page gets it
+    if (r.status === 401) askReload();
+    if (r.status !== 200 || !r.data) return retry();
+    replay(r.data);
+    connect();
+  }
+
   function connect() {
-    const es = new EventSource("/api/events?token=" + encodeURIComponent(TOKEN));
+    const source = new EventSource("/api/events?token=" + encodeURIComponent(TOKEN));
+    es = source;
+    source.addEventListener("hello", (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg && msg.version !== VERSION) askReload();
+    });
     for (const name of NAMES) {
-      es.addEventListener(name, (e) => {
+      source.addEventListener(name, (e) => {
         let msg;
         try { msg = JSON.parse(e.data); } catch { return; }
         if (!msg || typeof msg.instance !== "string" || !Array.isArray(msg.docs)) return;
@@ -411,29 +483,27 @@ function shim(token, info) {
         emit(name);
       });
     }
-    es.addEventListener("meta", (e) => {
+    source.addEventListener("meta", (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
       if (!msg || typeof msg.instance !== "string") return;
       cache.meta.set(msg.instance, msg.data);
       emit("meta");
     });
-    es.addEventListener("board", (e) => {
+    source.addEventListener("board", (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
-      if (!msg || !msg.board) return;
-      Object.assign(board, msg.board);
-      const served = new Set(names());
-      for (const name of [...NAMES, "meta"]) {
-        for (const n of [...cache[name].keys()]) if (!served.has(n)) cache[name].delete(n);
-      }
-      window.dispatchEvent(new Event("board:info"));
-      for (const name of [...NAMES, "meta"]) emit(name);
+      if (msg && msg.board) applyBoard(msg.board);
     });
-    es.addEventListener("open", () => setConnected(true));
-    es.addEventListener("error", () => setConnected(false));
+    source.addEventListener("open", () => {
+      delay = MIN_RETRY_MS;
+      setConnected(true);
+    });
+    source.addEventListener("error", () => {
+      if (source === es) retry();
+    });
     // board.html decides whether it can reload right away
-    es.addEventListener("reload", () => window.dispatchEvent(new Event("board:reload")));
+    source.addEventListener("reload", askReload);
   }
 
   function query(name) {
@@ -547,6 +617,11 @@ function shim(token, info) {
   connect();
 })();
 </script>`;
+}
+
+/** Fingerprint of the served page: the page file and the shim code. A page that loaded another version reloads. */
+export function pageVersion(pageText) {
+	return createHash("sha256").update(pageText + "\u0000" + shim.toString()).digest("hex").slice(0, 16);
 }
 
 const RESET = `<style>
@@ -1189,7 +1264,7 @@ export async function startBoardServer({
 	<meta name="referrer" content="no-referrer">
 	${RESET}
 	${board.slice(0, split)}
-	${shim(TOKEN, boardNow())}
+	${shim(TOKEN, boardNow(), pageVersion(board))}
 	</head>
 	<body>
 	${board.slice(split)}
@@ -1227,6 +1302,7 @@ export async function startBoardServer({
 		if (!tokenOk(given)) return json(res, 401, { error: "Missing or wrong token." });
 
 		if (req.method === "GET" && url.pathname === "/api/events") {
+			const version = pageVersion(await readFile(pageFile, "utf8"));
 			res.writeHead(200, {
 				"Content-Type": "text/event-stream; charset=utf-8",
 				"Cache-Control": "no-store",
@@ -1236,6 +1312,7 @@ export async function startBoardServer({
 			res.write("retry: 3000\n\n");
 			clients.add(res);
 			req.on("close", () => clients.delete(res));
+			send(res, "hello", { version });
 			send(res, "board", { instance: null, board: boardNow() });
 			for (const name of names()) {
 				const events = await Promise.all(["items", "actions", "proposals", "meta"].map(async (event) => [event, await eventOf(name, event)]));
