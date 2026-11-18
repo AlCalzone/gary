@@ -130,6 +130,15 @@ expect "validate counts" 1 "2 items checked, 1 fail" node $B validate
 expect "validate one id" 1 "1 items checked, 1 fail" node $B validate pr-12
 expect "validate --json" 1 '"failed": 1' node $B validate --json
 
+# gary action takes kind, number and repo from the stored item
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
+expect "action with an itemId uses the stored doc" 0 '"id": "PR_12"' zsh -c "print '{\"itemId\":\"pr-12\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
+mk case "{${BASE/acme\/widgets/acme\/other},\"routes\":[]}"
+node $B put --no-validate items foreign.1 $H/case.json > /dev/null 2>&1
+expect "action refuses an item of a foreign repo" 1 "acme/other is not a repository of instance widgets" zsh -c "print '{\"itemId\":\"foreign.1\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
+expect "action refuses an unknown itemId" 1 "is not on the board" zsh -c "print '{\"itemId\":\"nope\",\"action\":\"comment\",\"text\":\"x\"}' | node $B action --dry-run"
+node $B put items foreign.1 --delete > /dev/null 2>&1
+
 # gary action --autonomous
 act() { print -r -- "$1" | node $B action --dry-run $2 }
 expect "autonomous: a label from autoLabels" 0 "addLabelsToLabelable" act '{"action":"label","kind":"issue","number":21,"params":{"add":["needs-info"]}}' --autonomous
