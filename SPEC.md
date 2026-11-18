@@ -154,8 +154,9 @@ Two older layouts are moved by commands, never silently:
 - `gary pause [--all]`, `gary resume [--all]`: set and clear the pause switch of the instance, or of every instance, see Pause.
 - `gary instances [--json]`: list every instance with `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `valid`, `served` (the board server lists it) and `current` (the working directory resolves to it), plus `settingsError` and `settingsWarnings` when there are any.
 - `gary wants [--json]`: list, per item with `wants`, the labels to add, the labels to remove and the assignees to add that GitHub does not show yet, with `wantsReason`. GitHub's state comes from the labels and assignees in the staged snapshot, or in the baseline when nothing is staged. Items without a snapshot entry are listed as `unknown`. Read-only.
-- `gary shadow record <file>`: append shadow comparison entries, one object or a list, to `<state>/shadow.jsonl`. Each is `{ at, run, itemId, repo, tier: "fast" | "standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be null when the fast tier handed up, and only the fast tier hands up. An invalid entry refuses the whole file.
-- `gary shadow report [--since <ISO>] [--json]`: pair the latest fast and standard entry per run and item, and print the number of pairs, how often the fast tier handed up, the agreement on section and on the recommended route type over the pairs the fast tier answered, and every disagreement with both answers.
+- `gary shadow record <file>`: append shadow comparison entries, one object or a list, to `<state>/shadow.jsonl`. Each is `{ at, run, itemId, repo, tier: "fast" | "standard", model, section, hasRoutes, recommendedType, handedUp, reason, sampled }`. `sampled` is optional, true for a pair the routine sampled in `on` mode. `section` and `recommendedType` may be null when the fast tier handed up, and only the fast tier hands up. An invalid entry refuses the whole file.
+- `gary shadow report [--since <ISO> | --week] [--json]`: pair the latest fast and standard entry per run and item, and print the number of pairs and how many came from sampling, how often the fast tier handed up, the agreement on section and on the recommended route type over the pairs the fast tier answered, and every disagreement with both answers. It warns when the section agreement over the last 40 pairs the fast tier answered is below 95 percent. `--week` means `--since` 7 days ago.
+  The second part, "Your decisions by tier", counts per `classifiedBy` value the items of that tier: board items reviewed since `--since` plus the items the decision log names with that tier since then. For each tier it counts the items with a `dismissed_route` of the recommended route, a `chose_alternative`, an `edited_text`, and any of the three, with rates. It says when a tier has fewer than 20 items. `--json` adds the item ids, under `decisions.<tier>`: `{ items, itemIds, tooFew, dismissedRecommended, choseAlternative, editedText, any }`, each count as `{ count, rate, itemIds }`. The pair counts are `sampledPairs` and `recentSectionAgreement: { pairs, same, share, warning }`.
 - `gary decisions [--since <ISO>] [--json]`: print the decision log, see Learning. `--since` is exclusive.
 - `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
 - `gary put proposals <id> <file>`: write one rule proposal, validated. `gary put learn <file>`: write the learn cursor.
@@ -302,7 +303,7 @@ The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`
 
 `gary put` and `gary validate` check an item against these rules. A broken rule refuses the write and lists every problem.
 
-- The required fields are present and every enum holds one of its values: `kind`, `number`, `title`, `url`, `author`, `authorType`, `section`, `priority`, `effortMinutes`, `reviewDepth`, `state`, and where present `ci`, `mergeable`, `reviewDecision`, thread verdicts and finding severities. `repo` is present and one of the instance's repos. The id matches the opaque id pattern.
+- The required fields are present and every enum holds one of its values: `kind`, `number`, `title`, `url`, `author`, `authorType`, `section`, `priority`, `effortMinutes`, `reviewDepth`, `state`, and where present `ci`, `mergeable`, `reviewDecision`, `classifiedBy`, thread verdicts and finding severities. `repo` is present and one of the instance's repos. The id matches the opaque id pattern.
 - 0 to 4 routes with the ids `r1` to `r4`, each id once. With routes, exactly one is `recommended`, and `hint` equals its title and has at most 60 characters. An item without routes needs no hint.
 - No routes while a thread is `unjudged`.
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
@@ -368,6 +369,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   ],
   "routes": [ … ],                // see Routes
   "takenOver": false,              // PRs: true after a take_over ran. Allows `drive` on a contributor PR
+  "classifiedBy": "fast",          // optional, the agent's: fast | standard | full, the tier that wrote this item
   "analyzedBy": "fallback",        // optional: a safety filter stopped the full model's triage and a smaller model did it. Only value "fallback"
   "blocked": { "reason": "safety_filter", "at": "ISO" },   // optional: the agent could not analyze the item. reason: safety_filter | failed. A successful triage writes the item without it
   "rounds": [                      // PRs: written when a drive ended
@@ -480,10 +482,10 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 ```jsonc
 { "at": "ISO", "instance": "widgets", "instanceKind": "maintainer", "repo": "acme/widgets",
   "type": "chose_alternative", "itemId": "pr-512",
-  "item": { "kind": "pr", "authorType": "contributor", "section": "easy", "labels": ["bug"], "title": "…" } }
+  "item": { "kind": "pr", "authorType": "contributor", "section": "easy", "labels": ["bug"], "title": "…", "classifiedBy": "fast", "reviewDepth": "quick" } }
 ```
 
-`repo` is the item's repo, `null` for entries without an item, like `dismissed_proposal`. The server writes every entry through `logDecision(instance, type, itemId, item, fields)`.
+`item` holds the item's fields at the time of the entry. `classifiedBy` and `reviewDepth` are `null` when the item has none. `repo` is the item's repo, `null` for entries without an item, like `dismissed_proposal`. The server writes every entry through `logDecision(instance, type, itemId, item, fields)`.
 
 | type | fields | written when |
 | --- | --- | --- |

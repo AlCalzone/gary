@@ -27,6 +27,9 @@ export function itemSummary(item) {
 		section: item?.section,
 		labels: Array.isArray(item?.labels) ? item.labels : [],
 		title: item?.title ?? "",
+		// `gary shadow report` groups the maintainer's decisions by the tier that classified the item
+		classifiedBy: item?.classifiedBy ?? null,
+		reviewDepth: item?.reviewDepth ?? null,
 	};
 }
 

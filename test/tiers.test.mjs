@@ -132,5 +132,72 @@ t.check("the plain report prints the counts and the disagreements", /^4 pairs/m.
 r = gary("shadow", "report", "--since", "yesterday");
 t.check("shadow report refuses a bad --since", r.status !== 0 && /--since needs an ISO time/.test(r.stderr + r.stdout), r.stderr);
 
+// classifiedBy on items
+r = gary("put", "items", "pr-12", file({ ...BASE, classifiedBy: "fast" }));
+t.check("an item takes classifiedBy", r.status === 0, r.stdout + r.stderr);
+r = gary("put", "items", "pr-12", file({ ...BASE, classifiedBy: "haiku" }));
+t.check("classifiedBy is fast, standard or full", r.status === 1 && /classifiedBy must be one of fast, standard, full/.test(r.stdout), r.stdout);
+
+// Sampling, the recent agreement warning and --week, in a fresh instance
+const second = makeHome(join(T, "second"));
+const g2 = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: second.env, encoding: "utf8" });
+const ago = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+const pairsOf = (count, { days, sameSection = () => true, sampled = false, prefix = "x" }) => Array.from({ length: count }, (_, k) => [
+	entry({ at: ago(days), run: `run-${prefix}`, itemId: `pr-${prefix}${k}`, section: sameSection(k) ? "easy" : "active", ...(sampled && { sampled: true }) }),
+	entry({ at: ago(days), run: `run-${prefix}`, itemId: `pr-${prefix}${k}`, tier: "standard", model: "big" }),
+]).flat();
+r = g2("shadow", "record", file(entry({ sampled: "yes" })));
+t.check("sampled must be a boolean", r.status === 1 && /sampled must be true or false/.test(r.stdout), r.stdout);
+r = g2("shadow", "record", file([...pairsOf(10, { days: 20, prefix: "old" }), ...pairsOf(40, { days: 2, sameSection: (k) => k % 10 !== 0, sampled: true, prefix: "new" })]));
+t.check("sampled entries are recorded", r.status === 0 && readFileSync(join(second.home, "state", "shadow.jsonl"), "utf8").includes('"sampled":true'), r.stdout);
+rep = json(g2("shadow", "report", "--json"));
+t.check("the report counts the sampled pairs", rep.pairs === 50 && rep.sampledPairs === 40, rep);
+t.check("the recent agreement covers the last 40 pairs the fast tier decided", rep.recentSectionAgreement?.pairs === 40 && rep.recentSectionAgreement.same === 36 && rep.recentSectionAgreement.share === 0.9 && rep.recentSectionAgreement.warning === true, rep.recentSectionAgreement);
+r = g2("shadow", "report");
+t.check("the plain report says how many pairs came from sampling and warns", /^50 pairs, 40 of them from sampling/m.test(r.stdout) && /Warning: the fast tier picked the standard tier's section in only 36 of the last 40 pairs it decided itself \(90%, below 95%\)/.test(r.stdout), r.stdout);
+rep = json(g2("shadow", "report", "--week", "--json"));
+t.check("--week keeps the last 7 days", rep.pairs === 40 && Date.parse(rep.since) > Date.now() - 8 * 24 * 60 * 60 * 1000 && Date.parse(rep.since) < Date.now() - 6 * 24 * 60 * 60 * 1000, { pairs: rep.pairs, since: rep.since });
+t.check("no warning at 95 percent or more", (() => {
+	const third = makeHome(join(T, "third"));
+	const g3 = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: third.env, encoding: "utf8" });
+	g3("shadow", "record", file(pairsOf(40, { days: 1, sameSection: (k) => k !== 0, prefix: "ok" })));
+	const recent = json(g3("shadow", "report", "--json")).recentSectionAgreement;
+	return recent.share === 0.975 && recent.warning === false && !/Warning/.test(g3("shadow", "report").stdout);
+})());
+r = g2("shadow", "report", "--week", "--since", ago(3));
+t.check("--week and --since do not go together", r.status !== 0 && /not both/.test(r.stderr + r.stdout), r.stderr);
+
+// Your decisions by tier: board items plus items the decision log names
+const items2 = join(second.home, "state", "board", "items");
+const stored = (id, classifiedBy, reviewedAt) => writeFileSync(join(items2, `${id}.json`), JSON.stringify({ ...BASE, classifiedBy, reviewedAt }));
+for (let k = 0; k < 18; k++) stored(`issue-${k}`, "fast", ago(1));
+stored("issue-90", "fast", ago(30));
+stored("issue-91", "standard", ago(1));
+stored("issue-92", undefined, ago(1));
+const logEntry = (days, type, itemId, classifiedBy, extra = {}) => JSON.stringify({ at: ago(days), instance: "widgets", type, itemId, item: { kind: "issue", classifiedBy, reviewDepth: "quick" }, ...extra });
+writeFileSync(join(second.home, "state", "decisions.jsonl"), [
+	logEntry(1, "dismissed_route", "issue-1", "fast", { wasRecommended: true, route: { type: "reply" } }),
+	logEntry(1, "dismissed_route", "issue-2", "fast", { wasRecommended: false, route: { type: "close" } }),
+	logEntry(1, "chose_alternative", "issue-3", "fast"),
+	logEntry(1, "edited_text", "issue-3", "fast"),
+	logEntry(1, "edited_text", "pr-50", "fast"),
+	logEntry(1, "chose_alternative", "issue-91", "standard"),
+	logEntry(1, "snoozed", "issue-60", "full", { days: 3 }),
+	logEntry(20, "chose_alternative", "issue-70", "fast"),
+	logEntry(1, "agent_note", "issue-92", null, { text: "x" }),
+].join("\n") + "\n");
+rep = json(g2("shadow", "report", "--week", "--json"));
+const fast = rep.decisions?.fast;
+t.check("items per tier count board items reviewed in the window and items in the log", fast?.items === 19 && fast.itemIds.includes("pr-50") && !fast.itemIds.includes("issue-90") && !fast.itemIds.includes("issue-70"), fast);
+t.check("decisions per tier count distinct items", fast?.dismissedRecommended.count === 1 && JSON.stringify(fast.dismissedRecommended.itemIds) === '["issue-1"]' && fast.choseAlternative.count === 1 && fast.editedText.count === 2 && JSON.stringify(fast.any.itemIds) === '["issue-1","issue-3","pr-50"]', fast);
+t.check("rates are shares of the tier's items", fast?.any.rate === Math.round((3 / 19) * 1000) / 1000 && fast.tooFew === true, fast);
+t.check("other tiers are counted apart", rep.decisions.standard.items === 1 && rep.decisions.standard.choseAlternative.count === 1 && rep.decisions.full.items === 1 && rep.decisions.full.any.count === 0, rep.decisions);
+stored("issue-19", "fast", ago(1));
+rep = json(g2("shadow", "report", "--week", "--json"));
+t.check("20 items are enough", rep.decisions.fast.items === 20 && rep.decisions.fast.tooFew === false, rep.decisions.fast);
+r = g2("shadow", "report", "--week");
+t.check("the plain report prints the decisions by tier", /Your decisions by tier/.test(r.stdout) && /fast\s+20 items: dismissed the recommended route 1 \(5%\), chose another route 1 \(5%\), edited the text 2 \(10%\), any of these 3 \(15%\)/.test(r.stdout) && /standard\s+1 items/.test(r.stdout), r.stdout);
+t.check("the plain report says when a tier has too few items", /standard .*\n\s+fewer than 20 items, too few to mean anything/.test(r.stdout) && !/fast .*\n\s+fewer than 20/.test(r.stdout), r.stdout);
+
 removeDir(T);
 t.done();

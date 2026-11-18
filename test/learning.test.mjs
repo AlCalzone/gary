@@ -27,7 +27,7 @@ const reviewedAt = "2026-11-17T14:00:00Z";
 const base = (kind, number, extra) => ({ kind, repo: "acme/widgets", number, title: `Item ${number}`, url: `https://github.com/acme/widgets/${kind === "pr" ? "pull" : "issues"}/${number}`, author: "hubot", authorType: "contributor", section: "easy", priority: 1, effortMinutes: 5, reviewDepth: "full", state: "Decide.", reviewedAt, labels: ["bug"], ...extra });
 const items = {
 	"pr-12": base("pr", 12, {
-		authorType: "maintainer", reviewedSha: "944d5aca1b70af1d87ca805b08639f3e17b83dcd", hint: "Reply: thanks",
+		authorType: "maintainer", reviewedSha: "944d5aca1b70af1d87ca805b08639f3e17b83dcd", hint: "Reply: thanks", classifiedBy: "fast",
 		threads: [{ id: "PRRT_1", verdict: "valid", summary: "Restart the watchdog" }, { id: "PRRT_2", verdict: "wrong", summary: "Rename it" }, { id: "PRRT_3", verdict: "optional", summary: "Add a test" }, { id: "PRRT_4", verdict: "optional", summary: "Shorter name" }],
 		routes: [
 			{ id: "r1", type: "reply", as: "bot", title: "Reply: thanks", text: "Thanks", recommended: true },
@@ -132,6 +132,7 @@ try {
 	t.check("edited_text is logged with draft and final", logOf("edited_text").some((e) => e.itemId === "pr-12" && e.draft === "Notes" && e.final === "Edited notes"), log());
 	t.check("unchecked_comment is logged for the unchecked comment only", logOf("unchecked_comment").length === 1 && logOf("unchecked_comment")[0].comment.path === "src/a.ts", logOf("unchecked_comment"));
 	t.check("every entry carries the item facts", log().every((e) => e.at && e.item && e.item.kind && Array.isArray(e.item.labels)), log());
+	t.check("entries carry classifiedBy and reviewDepth of the item", log().filter((e) => e.itemId === "pr-12").every((e) => e.item.classifiedBy === "fast" && e.item.reviewDepth === "full") && log().filter((e) => e.itemId === "pr-14").every((e) => e.item.classifiedBy === null && e.item.reviewDepth === "full"), log().map((e) => [e.itemId, e.item]));
 	t.check("every entry names the instance, its kind and the repo", log().every((e) => e.instance === "widgets" && e.instanceKind === "maintainer" && e.repo === "acme/widgets"), log());
 	r = await click("pr-12", "r3", { text: "Keep it small", input: { decisions: [{ threadId: "PRRT_1", decision: "fix" }, { threadId: "PRRT_2", decision: "dismiss" }, { threadId: "PRRT_3", decision: "fix" }, { threadId: "PRRT_4", decision: "dismiss" }] } });
 	t.check("address_review on a maintainer PR is queued", r.data.ok && r.data.queued, r);
