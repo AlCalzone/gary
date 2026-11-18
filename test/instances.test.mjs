@@ -37,7 +37,6 @@ const plain = join(T, "plain");
 mkdirSync(plain);
 
 const portA = await freePort();
-const portB = await freePort();
 
 // The layout from before instances, moved by setup only
 mkdirSync(join(root, "state", "board", "items"), { recursive: true });
@@ -46,10 +45,14 @@ writeFileSync(join(root, "state", "board", "items", "issue-21.json"), "{}");
 writeFileSync(join(root, "personal.md"), "# shared\n");
 let r = gary(["paths"]);
 t.check("other commands print the one-line migration hint", r.status === 2 && /layout from before instances. Run `gary setup` once/.test(r.stdout + r.stderr), r.stdout + r.stderr);
-r = gary(["setup", "--profile", gadgets, "--me", "octocat", "--bot-login", "widgets-bot", "--bot-token-file", token, "--no-links", "--port", String(portB)]);
-t.check("setup moves the old layout into instances/widgets", r.status === 0 && /Moved the old layout into instance widgets\./.test(r.stderr) && existsSync(join(root, "instances", "widgets", "state", "board", "items", "issue-21.json")) && !existsSync(join(root, "config.json")), r.stdout + r.stderr);
+r = gary(["setup", "--profile", gadgets, "--me", "octocat", "--bot-login", "widgets-bot", "--bot-token-file", token, "--no-links"]);
+t.check("setup moves the old layout into instances/widgets", r.status === 0 && /Moved the old layout into instance widgets\./.test(r.stderr) && existsSync(join(root, "instances", "widgets", "state", "board", "items", "issue-21.json")) && !("profile" in JSON.parse(readFileSync(join(root, "config.json"), "utf8"))), r.stdout + r.stderr);
 t.check("setup names the new instance after the repo in lower case", /Created instance gadgets\./.test(r.stderr) && existsSync(join(root, "instances", "gadgets", "config.json")), r.stderr);
 t.check("the shared personal.md stays in the root", readFileSync(join(root, "personal.md"), "utf8") === "# shared\n");
+const rootCfg = () => JSON.parse(readFileSync(join(root, "config.json"), "utf8"));
+const instCfg = (name) => JSON.parse(readFileSync(join(root, "instances", name, "config.json"), "utf8"));
+t.check("the old instance's port moves to the root config", rootCfg().port === portA && !("port" in instCfg("widgets")) && instCfg("widgets").kind === "maintainer", { root: rootCfg(), widgets: instCfg("widgets") });
+t.check("a new instance gets kind and no port", instCfg("gadgets").kind === "maintainer" && !("port" in instCfg("gadgets")), instCfg("gadgets"));
 
 // Setup refusals and the free port
 r = gary(["setup", "--profile", PROFILE, "--me", "octocat", "--no-bot", "--no-links", "--instance", "other"]);
@@ -59,15 +62,12 @@ cpSync(PROFILE, third, { recursive: true });
 writeFileSync(join(third, "profile.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(PROFILE, "profile.json"), "utf8")), name: "third", repo: "acme/third" }));
 r = gary(["setup", "--profile", third, "--me", "octocat", "--no-bot", "--no-links", "--checkout", widgetsCheckout]);
 t.check("setup refuses a checkout another instance uses", r.status === 1 && /already uses the checkout/.test(r.stderr), r.stderr);
-r = gary(["setup", "--profile", third, "--me", "octocat", "--no-bot", "--no-links", "--port", String(portA)]);
-t.check("setup refuses a port another instance uses", r.status === 1 && new RegExp(`already uses port ${portA}`).test(r.stderr), r.stderr);
 r = gary(["setup", "--profile", third, "--me", "octocat", "--no-bot", "--no-links", "--instance", "Bad_Name"]);
 t.check("setup refuses a bad instance name", r.status === 1 && /not a valid instance name/.test(r.stderr), r.stderr);
 r = gary(["setup", "--profile", gadgets, "--me", "octocat", "--no-bot", "--no-links"]);
 t.check("setup refuses an existing instance without --force", r.status === 1 && /Instance gadgets already exists/.test(r.stderr), r.stderr);
 r = gary(["--instance", "third", "setup", "--profile", third, "--me", "octocat", "--no-bot", "--no-links"]);
-const thirdPort = JSON.parse(readFileSync(join(root, "instances", "third", "config.json"), "utf8")).port;
-t.check("setup picks the next free port from 7878", r.status === 0 && thirdPort >= 7878 && thirdPort !== portA && thirdPort !== portB, { thirdPort, err: r.stderr });
+t.check("setup adds a third instance without touching the root port", r.status === 0 && rootCfg().port === portA && !("port" in instCfg("third")), { root: rootCfg(), err: r.stderr });
 
 // Resolution order
 const which = (args, opts) => {
@@ -125,46 +125,36 @@ t.check("gary --instance <name> watch-queue reads that instance's queue", r.stat
 r = gary(["--instance", "widgets", "watch-queue", "--once"], { cwd: plain });
 t.check("the other instance's queue stays apart", r.status === 0 && !/issue-22/.test(r.stdout), r.stdout);
 
-// Two board servers side by side
-const servers = [];
-const start = (name) => {
-	const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), "--dry-run", "--instance", name], { cwd: plain, env, stdio: ["ignore", "ignore", "pipe"] });
-	let err = "";
-	child.stderr.on("data", (d) => (err += d));
-	servers.push(child);
-	return async () => {
-		for (let i = 0; i < 50 && !err.includes("Board of"); i++) await sleep(100);
-		return err;
-	};
-};
-const readyA = start("widgets");
-const readyB = start("gadgets");
-const [logA, logB] = [await readyA(), await readyB()];
-try {
-	t.check("each server names its instance", /Board of widgets on/.test(logA) && /Board of gadgets on/.test(logB), { logA, logB });
-	const health = async (port) => (await (await fetch(`http://127.0.0.1:${port}/api/health`)).json());
-	t.check("/api/health carries the instance", (await health(portA)).instance === "widgets" && (await health(portB)).instance === "gadgets");
-	const tokenOf = (name) => readFileSync(join(root, "instances", name, "state", "server-token"), "utf8").trim();
-	t.check("each instance has its own server token", tokenOf("widgets") !== tokenOf("gadgets"));
-	const state = async (port, name) => (await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: { "X-Board-Token": tokenOf(name) } })).json());
-	const sA = await state(portA, "widgets");
-	const sB = await state(portB, "gadgets");
-	t.check("board info carries the instance", sA.board.instance === "widgets" && sB.board.instance === "gadgets" && sB.board.repo === "acme/Gadgets", { a: sA.board, b: sB.board });
-	t.check("the states stay separate", sA.items.some((i) => i.id === "issue-21") && !sB.items.some((i) => i.id === "issue-21"));
-	gary(["pause"], { cwd: gadgetsClone });
-	await sleep(300);
-	t.check("pausing gadgets shows only on its board", (await state(portB, "gadgets")).board.paused === true && (await state(portA, "widgets")).board.paused === false);
-	gary(["resume"], { cwd: gadgetsClone });
+// watch-queue --all and paths --root from any directory
+r = gary(["watch-queue", "--all", "--once"], { cwd: plain });
+const lines = r.stdout.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+t.check("watch-queue --all prints the requests of every instance with the instance", r.status === 0 && lines.length === 1 && lines[0].instance === "gadgets" && lines[0].itemId === "issue-22" && lines[0].id === "issue-22-1", lines);
+gary(["pause"], { cwd: gadgetsClone });
+r = gary(["watch-queue", "--all", "--once"], { cwd: plain });
+t.check("watch-queue --all skips a paused instance", r.status === 0 && r.stdout.trim() === "", r.stdout);
+gary(["resume"], { cwd: gadgetsClone });
+r = gary(["paths", "--root"], { cwd: plain });
+t.check("paths --root works without an instance", r.status === 0 && JSON.parse(r.stdout).root === root && JSON.parse(r.stdout).core === ROOT, r.stdout + r.stderr);
+r = gary(["paths"], { cwd: plain });
+t.check("paths without an instance still names core and root", r.status === 2 && JSON.parse(r.stdout).core === ROOT && JSON.parse(r.stdout).root === root, r.stdout);
 
+// A stand-in for the one board server in its own process, so these checks do not depend on server.mjs.
+// It must not run in this process, because spawnSync blocks this event loop
+const fake = spawn(process.execPath, ["-e", `require("node:http").createServer((q, s) => { s.writeHead(200, { "Content-Type": "application/json" }); s.end(JSON.stringify(q.url === "/api/health" ? { ok: true, name: "gary", instances: ["widgets"] } : {})); }).listen(${portA}, "127.0.0.1", () => console.log("up"))`], { stdio: ["ignore", "pipe", "inherit"] });
+await new Promise((resolve) => fake.stdout.once("data", resolve));
+try {
 	r = gary(["instances", "--json"], { cwd: worktree });
 	const rows = JSON.parse(r.stdout);
-	t.check("gary instances lists both with port and server", rows.length === 2 && rows.every((x) => x.serverAnswers) && rows.find((x) => x.name === "widgets").port === portA, rows);
+	t.check("gary instances --json lists name, kind, repos, checkout and paused", rows.length === 2 && rows.every((x) => x.kind === "maintainer" && Array.isArray(x.repos) && "checkout" in x && typeof x.paused === "boolean"), rows);
+	t.check("gary instances says which ones the board serves", rows.find((x) => x.name === "widgets").served === true && rows.find((x) => x.name === "gadgets").served === false, rows);
 	t.check("gary instances marks the current one", rows.find((x) => x.current)?.name === "widgets", rows);
 	r = gary(["instances"], { cwd: worktree });
-	t.check("the plain list marks it with a star", /^\* widgets/m.test(r.stdout) && /^ {2}gadgets/m.test(r.stdout), r.stdout);
+	t.check("the plain list marks it with a star", /^\* widgets/m.test(r.stdout) && /^ {2}gadgets/m.test(r.stdout) && new RegExp(`port ${portA}: up`).test(r.stdout), r.stdout);
 
 	r = gary(["doctor"], { cwd: widgetsCheckout });
-	t.check("doctor checks the resolved instance and its own board", /instance\s+widgets, from the working directory/.test(r.stdout) && /runs this instance's board server/.test(r.stdout), r.stdout);
+	t.check("doctor sees that the board serves the resolved instance", /instance\s+widgets, from the working directory/.test(r.stdout) && /it serves this instance/.test(r.stdout), r.stdout);
+	r = gary(["doctor"], { cwd: gadgetsClone });
+	t.check("doctor warns when the board does not list the instance", /does not list this instance yet/.test(r.stdout), r.stdout);
 	r = gary(["doctor", "--all"], { cwd: plain });
 	t.check("doctor --all checks every instance", /== gadgets/.test(r.stdout) && /== widgets/.test(r.stdout), r.stdout);
 	r = gary(["doctor"], { cwd: plain });
@@ -189,13 +179,15 @@ try {
 	});
 	let m = await mcp(worktree);
 	const status = JSON.parse(m[2].content[0].text);
-	t.check("MCP board_status names the instance from the directory", status.instance === "widgets" && status.portAnswers === true, status);
+	t.check("MCP board_status lists the served instances and the session's instance", status.portAnswers === true && JSON.stringify(status.instances) === '["widgets"]' && status.sessionInstance === "widgets", status);
 	const started = JSON.parse(m[4].content[0].text);
-	t.check("MCP board_start finds that instance's running board", started.running === true && started.owner === false && started.instance === "widgets", started);
+	t.check("MCP board_start finds the running board", started.running === true && started.owner === false && JSON.stringify(started.instances) === '["widgets"]', started);
 	m = await mcp(plain);
-	t.check("MCP tools fail clearly without an instance", m[2].isError && /belongs to no instance/.test(m[2].content[0].text) && m[3].isError && /belongs to no instance/.test(m[3].content[0].text), m);
+	const plainStatus = JSON.parse(m[2].content[0].text);
+	t.check("MCP board tools work from any directory", !m[2].isError && plainStatus.portAnswers === true && plainStatus.sessionInstance === null && /belongs to no instance/.test(plainStatus.sessionInstanceError), plainStatus);
+	t.check("MCP action tools fail clearly without an instance", m[3].isError && /belongs to no instance/.test(m[3].content[0].text), m[3]);
 } finally {
-	for (const s of servers) s.kill("SIGTERM");
+	fake.kill();
 }
 await sleep(300);
 removeDir(T);
