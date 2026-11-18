@@ -316,6 +316,7 @@ The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
+- `lastEventUrl`, when present, starts with the item's own `url` followed by `#`.
 - `params.alsoLabel` only on `reply` and `request_logs`, as `{ add?, remove? }` with at least one label, every label in `autoLabels`, and no label in both lists.
 - `autofix`, only on PRs, is `{ changes, files, lines, tools }` with `changes` true exactly when `files` is above 0. A `format` route needs `autofix.changes: true` and a `reviewedSha`, and has no text and no params.
 - `wants` is `{ labels?: { add?, remove? }, assignees? }`. Every label in it is one of the profile's `autoLabels`, no label is both added and removed, and `wantsReason` is required with `wants` and refused without it.
@@ -374,6 +375,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   ],
   "routes": [ … ],                // see Routes
   "takenOver": false,              // PRs: true after a take_over ran. Allows `drive` on a contributor PR
+  "lastEventUrl": "https://github.com/…/issues/12#issuecomment-123",   // optional, copied from the snapshot's facts.lastEventUrl. The board opens the thread there, at its bottom
   "classifiedBy": "fast",          // optional, the agent's: fast | standard | full, the tier that wrote this item
   "analyzedBy": "fallback",        // optional: a safety filter stopped the full model's triage and a smaller model did it. Only value "fallback"
   "blocked": { "reason": "safety_filter", "at": "ISO" },   // optional: the agent could not analyze the item. reason: safety_filter | failed. A successful triage writes the item without it
@@ -565,6 +567,7 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
 "facts": {
   "timeline": [ { "at": "ISO", "author": "login", "side": "us", "kind": "comment" } ],   // oldest first, at most 200, the newest kept
   "timelineTruncated": true,       // only when events are missing: more than 200, or more than a page holds
+  "lastEventUrl": "https://github.com/acme/widgets/issues/12#issuecomment-123",   // GitHub's url of the newest comment, reply, review or review-thread comment, automated ones included. Absent without one
   "lastSpeaker": "them",           // side of the last event that is not automated, or null
   "lastUsAt": "ISO", "lastThemAt": "ISO",   // or null
   "waitingOn": "us",               // us when they spoke last, them when we did, nobody without a person in the timeline

@@ -57,6 +57,9 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);
 	}
 	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
+	if (item.lastEventUrl !== undefined && !(typeof item.lastEventUrl === "string" && typeof item.url === "string" && item.lastEventUrl.startsWith(item.url + "#"))) {
+		err("lastEventUrl", "lastEventUrl must be a URL of the item's own thread, its url followed by #anchor");
+	}
 	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
 		err("labels", "labels must be a list of strings");

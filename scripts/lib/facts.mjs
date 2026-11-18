@@ -44,11 +44,17 @@ export function sideOf(author, body, { us, patterns }) {
 	return "them";
 }
 
-/** Sorts raw events `{ at, author, body, kind }` into the timeline, newest kept when there are more than the cap. */
+/**
+ * Sorts raw events `{ at, author, body, kind, url }` into the timeline, newest kept when there are more than the cap.
+ * `lastEventUrl` is the `url` of the newest event after the opening post, or null.
+ */
 export function buildTimeline(events, ctx, { truncated = false } = {}) {
 	const sorted = events.filter((e) => e.at).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 	const kept = sorted.slice(-MAX_TIMELINE);
+	// Automated comments count here, because the board opens the thread at its newest node
+	const lastEventUrl = sorted.filter((e) => e.kind !== "opened" && typeof e.url === "string" && e.url).at(-1)?.url ?? null;
 	return {
+		lastEventUrl,
 		timeline: kept.map((e) => ({ at: e.at, author: e.author?.login ?? "ghost", side: sideOf(e.author, e.body, ctx), kind: e.kind })),
 		timelineTruncated: truncated || sorted.length > kept.length,
 	};

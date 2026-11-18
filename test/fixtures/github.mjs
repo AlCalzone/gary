@@ -47,7 +47,7 @@ export const nodes = {
 		replies: { totalCount: 3, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
 			{ author: user("hubot"), createdAt: iso(5), body: "Did not help" },
 			{ author: user(ME), createdAt: iso(6), body: "Try the reset pin" },
-			{ author: user("hubot"), createdAt: iso(7), body: "That worked, but now the LED blinks" },
+			{ author: user("hubot"), createdAt: iso(7), body: "That worked, but now the LED blinks", url: `${URL}/discussions/35#discussioncomment-507` },
 		] },
 	},
 };
@@ -129,7 +129,7 @@ export const issueNodes = {
 		timelineComments: { totalCount: 3, nodes: [
 			{ author: user(ME), createdAt: iso(1), body: "Please attach a log" },
 			{ author: user("hubot"), createdAt: iso(2), body: "Here it is" },
-			{ author: user(BOT), createdAt: iso(3), body: "<!-- LOGFILE_COMMENT_TAG -->\nThanks for the log" },
+			{ author: user(BOT), createdAt: iso(3), body: "<!-- LOGFILE_COMMENT_TAG -->\nThanks for the log", url: `${URL}/issues/23#issuecomment-333` },
 		] },
 		closedByPullRequestsReferences: { nodes: [] },
 	},
