@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { commentNode } from "./actions.mjs";
-import { botLogins, repoParts } from "./config.mjs";
+import { allowedRepo, botLogins, instanceName, loadProfile, repoParts, withInstance } from "./config.mjs";
 import { graphql } from "./gh.mjs";
 
 /** Actions that post text, merge, review, close, reopen or transfer. They run only on a thread that has not moved since the review. */
@@ -35,16 +35,15 @@ function readStub() {
 
 /**
  * Reads what the guard needs about one thread: state, the last comments, and for PRs the head and the latest reviews.
- * `GARY_GUARD_STUB` names a JSON file that replaces this read in tests. Keys are like "pr-9101" or "*".
+ * `GARY_GUARD_STUB` names a JSON file that replaces this read in tests. Keys are a ref like "acme/widgets#12", the legacy "pr-12", or "*".
  */
-export async function readThread(kind, number) {
+export async function readThread(kind, number, repo = loadProfile().repo) {
 	const stub = readStub();
 	if (stub) {
-		const key = `${kind === "discussion" ? "disc" : kind}-${number}`;
-		const thread = stub[key] ?? stub["*"];
+		const thread = stub[`${repo}#${number}`] ?? stub[`${kind === "discussion" ? "disc" : kind}-${number}`] ?? stub["*"];
 		if (thread) return { state: "OPEN", stateReason: null, comments: [], reviews: [], headSha: null, ...thread };
 	}
-	const { owner, name } = repoParts();
+	const { owner, name } = repoParts(repo);
 	if (kind === "pr") {
 		const { repository } = await graphql(
 			`query($owner: String!, $name: String!, $number: Int!) {
@@ -117,11 +116,15 @@ async function commentExists(commentId) {
  * Returns `{ ok: true, state, stateReason }`, or `{ ok: false, reason, forceable, state, stateReason }`.
  * `force` skips every refusal except a moved head for merge, an approval or a review with inline comments. Never throws: a failed read refuses without force.
  */
-export async function checkFresh({ action, kind, number, item, params, force = false }) {
+export async function checkFresh({ instance, ...request }) {
+	if (instance) return withInstance(instance, () => checkFresh(request));
+	const { action, kind, number, item, params, force = false } = request;
 	if (!GUARDED_ACTIONS.has(action) && action !== "react") return { ok: true };
+	const repo = item?.repo ?? loadProfile().repo;
+	if (!allowedRepo(instanceName(), repo)) return { ok: false, reason: `${repo} is not a repository of instance ${instanceName()}`, forceable: false };
 	let thread;
 	try {
-		thread = await readThread(kind, number);
+		thread = await readThread(kind, number, repo);
 	} catch (e) {
 		return { ok: false, reason: `Could not check the thread on GitHub: ${e.message}`, forceable: false };
 	}

@@ -4,6 +4,7 @@
 //   home:     the instance directory root/instances/<name>, holds config.json, an optional personal.md and state/
 //   profile:  the project directory named by `profile` in config.json, holds profile.json, rules/ and templates/
 // The instance comes from --instance, then GARY_INSTANCE, then the working directory, then the only instance.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -194,7 +195,14 @@ export function resolveInstance({ cwd = process.cwd() } = {}) {
 	throw new SettingsError(`The directory ${cwd} belongs to no instance. ${hint}`);
 }
 
-export const instanceName = () => resolveInstance().name;
+// One board server serves every instance, so code it calls runs inside withInstance
+const scope = new AsyncLocalStorage();
+
+/** Runs `fn` with `name` as the instance, for everything it calls, also across awaits. */
+export const withInstance = (name, fn) => scope.run(name, fn);
+
+/** The instance of the current scope, or the resolved one. */
+export const instanceName = () => scope.getStore() ?? resolveInstance().name;
 export function homeDir() {
 	return instanceDir(instanceName());
 }

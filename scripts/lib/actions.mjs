@@ -1,4 +1,4 @@
-import { loadProfile, repoParts } from "./config.mjs";
+import { allowedRepo, instanceName, loadProfile, repoParts, withInstance } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReviewAsMaintainer, verifyOwnLogin, writeLogin } from "./gh.mjs";
 
@@ -236,7 +236,7 @@ export const ACTIONS = {
 				throw new Error(`params.title must be a non-empty string of at most ${MAX_TITLE_LENGTH} characters`);
 			}
 			await resolveTarget(ctx);
-			const repositoryId = await resolveRepositoryId(repoParts().name);
+			const repositoryId = await resolveRepositoryId(ctx, repoParts(ctx.repo).name);
 			const data = await mutate(
 				ctx,
 				`mutation($repo: ID!, $title: String!, $body: String) {
@@ -256,7 +256,7 @@ export const ACTIONS = {
 			if (typeof repo !== "string" || !REPO_NAME_PATTERN.test(repo)) {
 				throw new Error("params.repo must be a repository name of the same owner");
 			}
-			if (repo.toLowerCase() === repoParts().name.toLowerCase()) {
+			if (repo.toLowerCase() === repoParts(ctx.repo).name.toLowerCase()) {
 				throw new Error("params.repo must be a different repository");
 			}
 			const related = loadProfile().relatedRepos;
@@ -266,7 +266,7 @@ export const ACTIONS = {
 			forbidText(ctx);
 			const target = await resolveTarget(ctx);
 			requireOpen(target);
-			const repositoryId = await resolveRepositoryId(repo);
+			const repositoryId = await resolveRepositoryId(ctx, repo);
 			const data = await mutate(
 				ctx,
 				`mutation($id: ID!, $repo: ID!) {
@@ -306,7 +306,7 @@ export const ACTIONS = {
 			forbidText(ctx);
 			const target = await resolveTarget(ctx);
 			requireOpen(target);
-			const { owner, name } = repoParts();
+			const { owner, name } = repoParts(ctx.repo);
 			const runs = await restGet(
 				`repos/${owner}/${name}/actions/runs?head_sha=${target.headRefOid}&per_page=100`,
 			);
@@ -335,7 +335,7 @@ export const ACTIONS = {
 			}
 			forbidText(ctx);
 			const target = await resolveTarget(ctx);
-			const ids = await resolveLabels([...add, ...remove]);
+			const ids = await resolveLabels(ctx, [...add, ...remove]);
 			if (add.length) {
 				await mutate(
 					ctx,
@@ -452,13 +452,19 @@ export const ACTIONS = {
 
 /**
  * Validates and runs one GitHub action as the bot. Never throws.
+ * `instance` scopes everything to that instance. `repo` is the item's repo and must be allowed for the instance.
  * With `dryRun`, read-only lookups still run and every write is returned in `result.invocations` instead.
  * With `autonomous`, the action counts as one nobody clicked, and only label and assign within the profile's rules may run.
  */
-export async function runAction({ action, kind, number, params, text, dryRun = false, autonomous = false } = {}) {
+export async function runAction({ instance, repo, ...request } = {}) {
+	if (instance) return withInstance(instance, () => runAction({ repo, ...request }));
+	const { action, kind, number, params, text, dryRun = false, autonomous = false } = request;
 	try {
 		if (isPaused()) return { ok: false, result: PAUSED_MESSAGE, paused: true };
 		const ctx = validate({ action, kind, number, params, text });
+		// The repo comes from the item. Without one the instance's own repo applies
+		ctx.repo = repo ?? loadProfile().repo;
+		if (!allowedRepo(instanceName(), ctx.repo)) throw new Error(`${ctx.repo} is not a repository of instance ${instanceName()}`);
 		forbidBotCommands(ctx);
 		if (autonomous) checkAutonomous(ctx);
 		ctx.dryRun = !!dryRun;
@@ -646,8 +652,8 @@ async function restPost(ctx, path) {
 	});
 }
 
-async function resolveRepositoryId(repo) {
-	const { owner } = repoParts();
+async function resolveRepositoryId(ctx, repo) {
+	const { owner } = repoParts(ctx.repo);
 	let data;
 	try {
 		data = await graphql(
@@ -664,7 +670,7 @@ async function resolveRepositoryId(repo) {
 
 /** Looks up the node id and state, and checks that `number` really is of the given kind. */
 async function resolveTarget(ctx) {
-	const { owner, name } = repoParts();
+	const { owner, name } = repoParts(ctx.repo);
 	if (ctx.kind === "discussion") {
 		const { repository } = await graphql(
 			`query($owner: String!, $name: String!, $number: Int!) {
@@ -757,8 +763,8 @@ export async function commentNode(commentId) {
 }
 
 /** Resolves label names to node ids. Rejects unknown labels so a typo never creates a new label. */
-async function resolveLabels(names) {
-	const { owner, name } = repoParts();
+async function resolveLabels(ctx, names) {
+	const { owner, name } = repoParts(ctx.repo);
 	const fields = names.map((_, i) => `l${i}: label(name: $n${i}) { id name }`).join("\n");
 	const decls = names.map((_, i) => `$n${i}: String!`).join(", ");
 	const variables = { owner, name };

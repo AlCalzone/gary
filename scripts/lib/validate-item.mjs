@@ -1,4 +1,5 @@
 // Checks a board item against the rules of SPEC.md before it is written.
+import { ID_PATTERN } from "./board-store.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, isObject, pushRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = { pr: "pr", issue: "issue", discussion: "disc" };
@@ -22,9 +23,10 @@ const isString = (v) => typeof v === "string" && v.trim().length > 0;
 
 /**
  * Returns `{ errors, warnings }` for one item. Each entry is `{ code, message }`.
- * `mode` is the account mode from accountMode(), `profile` the loaded profile.json.
+ * `mode` is the account mode from accountMode(), `profile` the loaded profile.json, `repos` the instance's allowed repos
+ * (default the profile's one repo).
  */
-export function validateItem(id, item, { mode, profile }) {
+export function validateItem(id, item, { mode, profile, repos: repoList }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
@@ -38,9 +40,10 @@ export function validateItem(id, item, { mode, profile }) {
 	// Fields and enums
 	if (!Object.hasOwn(KINDS, item.kind)) err("kind", `kind must be one of ${Object.keys(KINDS).join(", ")}`);
 	if (!Number.isSafeInteger(item.number) || item.number <= 0) err("number", "number must be a positive integer");
-	if (Object.hasOwn(KINDS, item.kind) && Number.isSafeInteger(item.number) && id && id !== `${KINDS[item.kind]}-${item.number}`) {
-		err("id", `the id ${id} does not match kind ${item.kind} and number ${item.number}`);
-	}
+	if (!ID_PATTERN.test(id ?? "")) err("id", `the id "${id}" must match ${ID_PATTERN}`);
+	const repos = repoList ?? [profile.repo];
+	if (typeof item.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(item.repo)) err("repo", 'repo is required, like "owner/name"');
+	else if (!repos.some((r) => r.toLowerCase() === item.repo.toLowerCase())) err("repo", `${item.repo} is not a repository of this instance (${repos.join(", ")})`);
 	for (const key of ["title", "url", "author", "state"]) if (!isString(item[key])) err(`missing-${key}`, `${key} is required`);
 	if (!AUTHOR_TYPES.includes(item.authorType)) err("authorType", `authorType must be one of ${AUTHOR_TYPES.join(", ")}`);
 	if (!SECTIONS.includes(item.section)) err("section", `section must be one of ${SECTIONS.join(", ")}`);
