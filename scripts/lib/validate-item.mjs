@@ -1,5 +1,6 @@
 // Checks a board item against the rules of SPEC.md before it is written.
 import { ID_PATTERN } from "./board-store.mjs";
+import { fixBlock } from "./fixes.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
@@ -26,9 +27,9 @@ const isString = (v) => typeof v === "string" && v.trim().length > 0;
 /**
  * Returns `{ errors, warnings }` for one item. Each entry is `{ code, message }`.
  * `mode` is the account mode from accountMode(), `profile` the loaded profile.json, `repos` the instance's allowed repos
- * (default the profile's one repo).
+ * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known.
  */
-export function validateItem(id, item, { mode, profile, repos: repoList }) {
+export function validateItem(id, item, { mode, profile, repos: repoList, fix = null }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
@@ -66,6 +67,12 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 		const h = item.handled;
 		const ok = isObject(h) && Object.keys(h).every((k) => ["at", "routeId", "routeType", "verified"].includes(k)) && Number.isFinite(Date.parse(h.at ?? "")) && isString(h.routeId) && isString(h.routeType) && (h.verified === null || HANDLED_VERIFIED.includes(h.verified));
 		if (!ok) err("handled", `handled must be { at, routeId, routeType, verified: null | ${HANDLED_VERIFIED.join(" | ")} }`);
+	}
+	if (item.fixFor !== undefined) {
+		const f = item.fixFor;
+		if (item.kind !== "pr" || !isObject(f) || Object.keys(f).some((k) => !["itemId", "ref"].includes(k)) || typeof f.itemId !== "string" || !ID_PATTERN.test(f.itemId) || typeof f.ref !== "string" || !/^[\w.-]+\/[\w.-]+#\d+$/.test(f.ref)) {
+			err("fixFor", 'fixFor is only for PRs, as { itemId, ref: "owner/name#number" }');
+		}
 	}
 	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);
 	if (item.labels !== undefined && !(Array.isArray(item.labels) && item.labels.every((l) => typeof l === "string"))) {
@@ -147,6 +154,9 @@ export function validateItem(id, item, { mode, profile, repos: repoList }) {
 
 		if (params.alsoLabel !== undefined) checkAlsoLabel(route, params.alsoLabel, profile, where, err);
 		if (params.alsoAnswer !== undefined) checkAlsoAnswer(item, route, params.alsoAnswer, where, err);
+
+		// No second fix while one runs or its PR is a draft or open
+		if (route.type === "follow_up" && route.as === "agent" && fixBlock(fix)) err("fix-running", `${where}: ${fixBlock(fix)}`);
 
 		switch (route.type) {
 			case "review": {

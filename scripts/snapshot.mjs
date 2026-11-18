@@ -7,6 +7,7 @@ import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
 import { aiFacts, buildTimeline, issueFacts, prFacts, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { graphql } from "./lib/gh.mjs";
+import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
 const PENDING = () => join(stateDir(), "snapshot.pending.json");
@@ -106,7 +107,7 @@ const ISSUE_FIELDS = `
 				assignees(first: 10) { nodes { login } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
-				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft } }
+				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft title author { login } } }
 `;
 
 const ISSUE_QUERY = `query($owner: String!, $name: String!, $after: String) {
@@ -180,17 +181,19 @@ export async function main(argv = []) {
 		fetchAll(DISCUSSION_QUERY, "discussions", cutoff),
 	]);
 
-	// Drafts are ignored entirely. A draft that becomes ready shows up as a new item
-	const readyPrs = prs.nodes.filter((n) => !n.isDraft);
+	// Drafts are ignored, except Gary's own fix PRs, which the board must show. A draft that becomes ready shows up as a new item
+	const fixFor = fixPrNumbers(await readFixRecords());
+	const readyPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number));
 	await Promise.all([
 		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
 		...discussions.nodes.map(fetchRemainingReplies),
 	]);
+	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
 	const items = [
-		...readyPrs.map((n) => withFacts("pr", n, toPr(n, classify, sensitive), ctx)),
+		...readyPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }) }, ctx)),
 		...issues.nodes.map((n) => withFacts("issue", n, toIssue(n, classify), ctx)),
-		...discussions.nodes.map((n) => withFacts("discussion", n, toDiscussion(n, classify), ctx)),
+		...discussions.nodes.map((n) => withFacts("discussion", n, { ...toDiscussion(n, classify), ...(references.has(n.number) && { referencingPrs: references.get(n.number) }) }, ctx)),
 	];
 
 	const baseline = readJson(BASELINE())?.items ?? {};
@@ -306,7 +309,49 @@ function baselineEntry(item) {
 		assignees: item.assignees ?? [],
 		// `gary handled` compares it with the time the maintainer handled the item
 		lastEventAt: item.facts?.timeline?.at(-1)?.at ?? null,
+		// The fix state of issues and discussions reads these
+		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
+		...(item.closingPrs && { closingPrs: item.closingPrs }),
+		...(item.referencingPrs && { referencingPrs: item.referencingPrs }),
 	};
+}
+
+const SEARCH_PRS = 100;
+
+/**
+ * PRs that name an active discussion by URL or as #<number> in their title or body, by discussion number.
+ * Discussions have no cross-reference events in the API, so one search reads the repo's 100 most recently updated PRs.
+ */
+async function fetchDiscussionReferences(numbers) {
+	const { owner, name } = repoParts();
+	const wanted = new Set(numbers);
+	const data = await withRetry(() =>
+		graphql(
+			`query($q: String!) {
+				search(query: $q, type: ISSUE, first: ${SEARCH_PRS}) {
+					nodes { ... on PullRequest { number url title body state isDraft author { login } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } }
+				}
+			}`,
+			{ q: `repo:${owner}/${name} is:pr sort:updated-desc` },
+		),
+	);
+	const out = new Map();
+	const urlRef = new RegExp(`github\\.com/${owner}/${name}/discussions/(\\d+)`, "gi");
+	for (const pr of data.search?.nodes ?? []) {
+		if (!pr?.number) continue;
+		const text = `${pr.title ?? ""}\n${pr.body ?? ""}`;
+		const refs = new Set([...text.matchAll(urlRef)].map((m) => Number(m[1])));
+		for (const m of text.matchAll(/(?:^|[^\w/&])#(\d+)\b/g)) refs.add(Number(m[1]));
+		for (const n of refs) {
+			if (!wanted.has(n)) continue;
+			const ref = {
+				number: pr.number, url: pr.url, title: pr.title, author: pr.author?.login ?? "ghost", isDraft: pr.isDraft,
+				state: pr.state.toLowerCase(), ci: CI_STATES[pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state] ?? "none",
+			};
+			out.set(n, [...(out.get(n) ?? []), ref]);
+		}
+	}
+	return out;
 }
 
 /** Who counts as us, and the profile's patterns for automated comments. */
@@ -621,6 +666,8 @@ function closingPrs(n) {
 		url: p.url,
 		state: p.state.toLowerCase(),
 		isDraft: p.isDraft,
+		...(p.title !== undefined && { title: p.title }),
+		...(p.author !== undefined && { author: p.author?.login ?? "ghost" }),
 	}));
 	return prs.length ? { closingPrs: prs } : {};
 }

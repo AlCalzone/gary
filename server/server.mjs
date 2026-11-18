@@ -13,6 +13,7 @@ import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
+import { fixBlock, fixStateOf, loadFixSources } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
@@ -886,10 +887,13 @@ export async function startBoardServer({
 		const clicked = clickedByKey(name, actions);
 		const partDone = Object.fromEntries(Object.keys(PARTS).map((p) => [p, partsByKey(name, actions, p)]));
 		const working = await workingByItem(name, actions);
+		const fixSources = await withInstance(name, () => loadFixSources(name));
+		const fixOf = (id, data) => (data.kind === "issue" || data.kind === "discussion" ? fixStateOf(id, fixSources) : null);
 		return items.map(({ id, data }) => ({
 			...data,
 			liveState: liveStates.get(`${name}/${id}`),
 			...(working.has(id) && { working: working.get(id) }),
+			...(fixOf(id, data) && { fix: fixOf(id, data) }),
 			routes: routesOf(data).map((route) => {
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
@@ -1161,6 +1165,11 @@ export async function startBoardServer({
 				return [409, { ok: false, result: "This route already ran. The board shows its result.", duplicate: true }];
 			}
 
+			// No second fix while one runs or its PR is a draft or open, also when the item file still offers one
+			if (route.type === "follow_up" && route.as === "agent" && (item.kind === "issue" || item.kind === "discussion")) {
+				const block = fixBlock(fixStateOf(itemId, await withInstance(name, () => loadFixSources(name))));
+				if (block) return [409, { ok: false, result: block, fixRunning: true }];
+			}
 			// While the agent pushes to the PR, nothing may decide it on its current state
 			if (PUSH_BLOCKED(route) && (await busyWith(name, itemId, "push"))) {
 				return [409, { ok: false, result: "The agent is changing this PR. Decide after it is done.", working: true }];

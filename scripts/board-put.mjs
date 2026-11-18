@@ -14,6 +14,7 @@ import { instanceName, loadInstance, loadProfile, rootConfig } from "./lib/confi
 import { accountMode } from "./lib/gh.mjs";
 import { validateProposal, writeLearn } from "./lib/learning.mjs";
 import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
+import { fixPrNumbers, fixStateOf, loadFixSources } from "./lib/fixes.mjs";
 
 function fail(message, problems) {
 	console.log(JSON.stringify({ ok: false, error: message, ...(problems && { problems }) }));
@@ -26,8 +27,16 @@ async function check(instance, write) {
 	if (write.op === "merge" && !VALIDATED_FIELDS.some((k) => Object.hasOwn(write.data, k))) return;
 	const id = write.path.slice("items/".length);
 	const cur = await readJson(docPath(instance, write.path));
+	const sources = await loadFixSources(instance);
+	// fixFor is code-owned: it comes from Gary's record of its fix PRs, whatever the doc says
+	if (write.op === "replace" && write.data.kind === "pr") {
+		const forItem = fixPrNumbers(sources.records).get(write.data.number);
+		if (forItem) write.data.fixFor = { itemId: forItem, ref: `${write.data.repo}#${write.data.number}` };
+		else delete write.data.fixFor;
+	}
 	const merged = write.op === "merge" ? mergeFields(cur ?? {}, write.data) : replaceFields(cur, write.data);
-	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos });
+	const fix = merged.kind === "issue" || merged.kind === "discussion" ? fixStateOf(id, sources) : null;
+	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos, fix });
 	for (const w of warnings) console.error(`warning: ${id}: ${w.message}`);
 	if (errors.length) fail(`${id} breaks ${errors.length} rule${errors.length === 1 ? "" : "s"}, nothing was written`, errors.map((e) => e.message));
 }

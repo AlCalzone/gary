@@ -111,6 +111,23 @@ export const prNodes = {
 		reviewRequests: { nodes: [] },
 		reviewThreads: { totalCount: 0, pageInfo: { hasPreviousPage: false, startCursor: null }, nodes: [] },
 	},
+	// Gary's draft fix PR for issue 23. Drafts stay out of the snapshot unless Gary recorded them as its fix
+	19: {
+		number: 19, title: "Fix the red LED", url: `${URL}/pull/19`, body: "Fixes #23", createdAt: iso(4), updatedAt: iso(5), isDraft: true,
+		author: user(BOT), authorAssociation: "NONE", labels: { nodes: [] }, assignees: { nodes: [] },
+		headRefOid: "9".repeat(40), headRefName: "gary/fix-issue-23", baseRefName: "main", reviewDecision: null, mergeable: "MERGEABLE", additions: 10, deletions: 2,
+		commits: { nodes: [{ commit: { statusCheckRollup: { state: "PENDING" } } }] },
+		allCommits: { totalCount: 1, nodes: [] },
+		files: { totalCount: 1, nodes: [{ path: "src/led.ts", additions: 10, deletions: 2 }] },
+		comments: { totalCount: 0, nodes: [] },
+		timelineComments: { totalCount: 0, nodes: [] },
+		reviews: { nodes: [] },
+		allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+		reviewRequests: { nodes: [] },
+		reviewThreads: { totalCount: 0, pageInfo: { hasPreviousPage: false, startCursor: null }, nodes: [] },
+	},
+	// A draft nobody recorded, which the snapshot skips
+	24: { number: 24, isDraft: true, title: "WIP", url: `${URL}/pull/24` },
 	// A dependency update from Renovate, clean and green
 	17: {
 		number: 17, title: "chore(deps): update dependency typescript to v6", url: `${URL}/pull/17`, body: "This PR contains the following updates", createdAt: iso(2), updatedAt: iso(3), isDraft: false,
@@ -170,5 +187,13 @@ export const discussionNodes = {
 		] },
 	},
 };
+
+// The answer of the PR search the snapshot runs for discussion references, newest first
+export const searchPrs = [
+	{ number: 19, url: `${URL}/pull/19`, title: "Fix the red LED", body: "Fixes #23", state: "OPEN", isDraft: true, author: bot(BOT), commits: { nodes: [{ commit: { statusCheckRollup: { state: "PENDING" } } }] } },
+	{ number: 21, url: `${URL}/pull/21`, title: "Make the reset pin work", body: "As reported in https://github.com/acme/widgets/discussions/35", state: "OPEN", isDraft: false, author: user("hubot"), commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] } },
+	{ number: 40, url: `${URL}/pull/40`, title: "Old attempt for #31", body: "", state: "CLOSED", isDraft: false, author: user("hubot"), commits: { nodes: [] } },
+	{ number: 41, url: `${URL}/pull/41`, title: "Unrelated", body: "See https://github.com/other/repo/discussions/31 and acme/widgets#31x", state: "OPEN", isDraft: false, author: user("hubot"), commits: { nodes: [] } },
+];
 
 export const openTotals = { pullRequests: 1, issues: 3, discussions: 2 };

@@ -14,6 +14,8 @@ const COMMANDS = {
 	proposals: ["../scripts/learn-cli.mjs", "proposalsMain", "List the rule proposals with their status. --json"],
 	wants: ["../scripts/wants.mjs", "main", "List the labels and assignees items want that the last snapshot does not show yet. --json. Read-only"],
 	handled: ["../scripts/handled.mjs", "main", "List the items handled on the board, with the last check and whether GitHub changed since. --json"],
+	fixes: ["../scripts/fixes-cli.mjs", "fixesMain", "The fix state of every issue and discussion: a running fix job or a fix PR. --json"],
+	"fix-record": ["../scripts/fixes-cli.mjs", "recordMain", "Record a fix PR: fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer"],
 	claim: ["../scripts/claims-cli.mjs", "claimMain", "Claim work on an item: claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>]. Exit 3 when another run holds it"],
 	release: ["../scripts/claims-cli.mjs", "releaseMain", "Release a claim: release <itemId> <fix|review|push> --run <run>"],
 	claims: ["../scripts/claims-cli.mjs", "claimsMain", "List the claims of the instance. --json"],

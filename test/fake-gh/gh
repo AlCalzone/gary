@@ -91,15 +91,19 @@ if (query.includes("node(id: $id)")) {
 	if (!node) fail(`Could not resolve to a node with the global id of '${v.id}'`, { node: null });
 	out({ data: { node } });
 }
+if (query.includes("search(query: $q, type: ISSUE")) {
+	if (!/^repo:acme\/widgets is:pr\b/.test(v.q ?? "")) fail(`fake gh only searches PRs of acme/widgets, not "${v.q}"`, undefined);
+	out({ data: { search: { nodes: overrides.searchPrs ?? gh.searchPrs } } });
+}
 if (query.includes("pullRequests(states: OPEN")) {
-	repository({ pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: Object.values(gh.prNodes) } });
+	repository({ pullRequests: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: Object.values(gh.prNodes).map((n) => withOverride(`pr-${n.number}`, n)) } });
 }
 if (query.includes("issues(states: OPEN")) {
-	const nodes = Object.values(gh.issueNodes);
+	const nodes = Object.values(gh.issueNodes).map((n) => withOverride(`issue-${n.number}`, n));
 	repository({ issues: { totalCount: gh.openTotals.issues, pageInfo: { hasNextPage: false, endCursor: null }, nodes } });
 }
 if (query.includes("discussions(states: OPEN")) {
-	const nodes = Object.values(gh.discussionNodes);
+	const nodes = Object.values(gh.discussionNodes).map((n) => withOverride(`disc-${n.number}`, n));
 	repository({ discussions: { totalCount: gh.openTotals.discussions, pageInfo: { hasNextPage: false, endCursor: null }, nodes } });
 }
 if (query.includes("pullRequest(number: $number)")) {
