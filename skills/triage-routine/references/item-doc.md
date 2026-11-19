@@ -57,7 +57,7 @@ The action you suggest, for the overview list. It is also the `title` of the rec
 - Bad: `Maybe reply and say that we accept PRs` (wordy)
 - Bad: `URGENT: reply now` (pressure)
 
-Start with one of these verbs: Reply, Decide, Ask, Close, Reopen, Merge, Approve, Request changes, Comment, Address review, Drive, Format, Change, Implement, Start fix, Post analysis, File issue, Take over, Transfer, Convert, Escalate, Label, Assign, React, Rerun CI, Update branch, Mark ready, Mark answer. Use `Decide` for a `reply` that carries the maintainer's decision on an open question. The hint does not repeat the title of the thread. An item without routes has no hint.
+Start with one of these verbs: Reply, Decide, Ask, Close, Reopen, Merge, Approve, Request changes, Comment, Address review, Drive, Format, Change, Implement, Start fix, Post analysis, File issue, Take over, Transfer, Convert, Escalate, Move, Accept, Label, Assign, React, Rerun CI, Update branch, Mark ready, Mark answer. Use `Decide` for a `reply` that carries the maintainer's decision on an open question. The hint does not repeat the title of the thread. An item without routes has no hint.
 
 ## `wants` and `wantsReason`
 
@@ -148,7 +148,7 @@ Backlog by the bot or an agent: an issue or discussion authored by the bot or an
 
 An item that describes work somebody could do, like a feature, a bug, a docs gap or missing data, gets a `follow_up` route with `as: "agent"` as an alternative. Add it whenever an agent could plausibly attempt the work and the account setup allows pushing, even when the recommended route is a reply or a close. The title starts with `Implement:` for new work or `Start fix:` for a bug, like `Implement: brute-force search for a missing PIN`. Its `why` says in one sentence what the agent would build and what is uncertain. Leave it out only when the work needs real hardware, needs a design decision the maintainer has not made, or is clearly too large for one draft PR. Then say so in the `why` of the recommended route.
 
-The agent cannot know what was agreed outside the thread. A `close` with reason `not_planned` on a feature request is therefore never the only route. Pair it with the delegate route, a `reply` that asks, or, for a discussion that describes a concrete feature, a `move` to an issue.
+The agent cannot know what was agreed outside the thread. A `close` with reason `not_planned` on a feature request is therefore never the only route. Pair it with the delegate route, a `reply` that asks, or, for a discussion that describes a concrete feature, a `move` to an issue (`Accept: track as an enhancement issue`, see `move` below).
 
 ### Choosing routes
 
@@ -195,7 +195,12 @@ Per type:
 - **`move`**: three targets.
   - A repo from `relatedRepos`, on an issue, with `as: "bot"`. The card has two bot buttons: transfer the issue, or close it with `text` that asks to reopen there. Write `text` from `<profile>/templates/reopen-elsewhere.md` for the second button, with the target repo and what the new issue needs. Say in `why` which button fits: transfer when the issue already has what the other repo needs, like versions and steps, close when it lacks it.
   - `discussion`, on an issue, with `as: "me"`: he converts it on GitHub. No `text`.
-  - `issue`, on a discussion, with `as: "me"`, only when `botCommands.escalate` exists: for a confirmed bug. The board copies the command for him to post. No `text`. The bot never posts that command.
+  - `issue`, on a discussion, with `as: "me"`, only when `botCommands.escalate` exists. The discussion becomes an issue: he posts the command, and the repo's own workflow creates the issue and closes the discussion. No `text`. The bot never posts that command. Two cases:
+    - A confirmed bug: the recommended route, titled `Move: escalate to a bug issue`, with `params.issueKind: "bug"`.
+    - A feature request or an idea that is concrete and plausible enough that he may want to track it. Judge that by the entry's `category` and by the content, because a request also lands in other categories. Title it `Accept: track as an enhancement issue`, with `params.issueKind: "enhancement"`. Offer it as an alternative next to the recommended `reply` or `close`. Make it the recommended route only when the request is clearly good: small, well described and in line with what the project already does. Its `why` says in one sentence what the issue would track.
+    `issueKind` only words the card ("becomes an enhancement issue"). Gary sets no label. The repo's workflow picks it, and the profile's rules say how. Leave `issueKind` out when neither word fits.
+    Never offer it on a discussion that is closed or already escalated, and never on a vague wish that names no concrete change.
+    The card copies the command for him to post. With `escalateAs: "me"` in the instance config it has a button that posts exactly the command under his own login, after his click and a confirm. No agent and no `gary action` call can post it.
   Reports for projects outside the org get a `close` with a redirect reply.
 - **`drive`**: the agent drives the PR on its own for up to `params.maxRounds` rounds (1 to 3, default 3): it judges and addresses the open review comments, pushes, requests a review from the profile's review bot and repeats. Leave `text` out.
 
@@ -245,7 +250,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
     - `revise`: no `params`. `text` is non-empty. The same authors as `drive`, or `takenOver: true`. A contributor PR without `takenOver: true` gets `take_over` instead.
     - `drive`: `maxRounds` is 1, 2 or 3. The profile's `reviewBots` is not empty. The PR's author is the maintainer, the bot or has `authorType: "copilot"`, or the item has `takenOver: true`.
     - `address_review`: the same authors as `drive`, or `takenOver: true`. A contributor PR without `takenOver: true` gets `take_over` instead.
-    - `move`: on an issue, `to` is a repo from `relatedRepos` with `as: "bot"` and a non-empty `text`, or `discussion` with `as: "me"`. On a discussion, `to` is `issue` with `as: "me"`, and `botCommands.escalate` exists.
+    - `move`: on an issue, `to` is a repo from `relatedRepos` with `as: "bot"` and a non-empty `text`, or `discussion` with `as: "me"`. On a discussion, `to` is `issue` with `as: "me"`, `botCommands.escalate` exists, the discussion is open, and `issueKind` is `bug`, `enhancement` or absent.
     - `chore`: `action` is `label`, `assign`, `ready`, `answer_discussion`, `react`, `update_branch` or `rerun_ci`, and the other keys are that action's params.
 11. `reply`, `request_logs`, `follow_up` and `revise` routes have a non-empty `text`. A `review` has a `text` or at least one comment. No `text` contains a command from the profile's `botCommands`.
 11a. No route has a type listed in the item's `dismissedRoutes`. A `close` with reason `not_planned` on a feature request is not the only route.

@@ -68,8 +68,8 @@ cp -r $H/nobot $H/badprofile; sed -i "s|\"profile\": \"[^\"]*\"|\"profile\": \"$
 for pat in '"repo" must look like' '"maintainers" must be' '"reviewBots" may only contain' '"relatedRepos" must be' '"botCommands" must map'; do
 	expect "profile validation: $pat" 2 "$pat" env GARY_HOME=$H/badprofile node $B snapshot
 done
-mkdir -p $H/badconfig/instances/widgets; print '{"profile":"x","me":"octocat","bot":{"login":"octocat"},"port":0,"typo":1}' > $H/badconfig/instances/widgets/config.json
-for pat in 'must be null or' 'belongs in the root config'; do
+mkdir -p $H/badconfig/instances/widgets; print '{"profile":"x","me":"octocat","bot":{"login":"octocat"},"port":0,"typo":1,"escalateAs":"bot"}' > $H/badconfig/instances/widgets/config.json
+for pat in 'must be null or' 'belongs in the root config' 'must be one of me, prefill'; do
 	expect "config validation: $pat" 2 "$pat" env GARY_HOME=$H/badconfig node $B paths
 done
 # Unknown fields only warn at run time, so a newer profile or config does not stop an older Gary. Doctor refuses them
@@ -112,6 +112,10 @@ expect "unknown command" 2 "Unknown command" node $B frobnicate
 callers=$(grep -rln "requestCopilotReview" $W/scripts $W/server $W/mcp-server/index.mjs $W/bin | sort | tr '\n' ' ')
 [[ $callers == "$W/scripts/lib/actions.mjs $W/scripts/lib/gh.mjs " ]] && ok || bad "helper callers" "$callers"
 [[ $(grep -c "requestCopilotReview(" $W/scripts/lib/actions.mjs) == 1 ]] && ok || bad "one call site" ""
+# Only the board server posts the escalate command, from one place
+callers=$(grep -rln "postEscalateCommand" $W/scripts $W/server $W/mcp-server/index.mjs $W/bin | sort | tr '\n' ' ')
+[[ $callers == "$W/scripts/lib/gh.mjs $W/server/server.mjs " ]] && ok || bad "escalate helper callers" "$callers"
+[[ $(grep -c "postEscalateCommand(" $W/server/server.mjs) == 1 ]] && ok || bad "one escalate call site" ""
 expect "gh() in bot mode uses the bot token" 0 "widgets-bot" env GARY_HOME=$H/bot node -e "import('$W/scripts/lib/gh.mjs').then(async (m) => console.log((await m.gh(['api','user','--jq','.login'])).trim()))"
 
 rm -rf $H

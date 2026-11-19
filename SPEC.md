@@ -91,11 +91,12 @@ The core contains no repo name, no account name and no absolute path. It works a
   "maxPendingAutoFixes": 10,       // how many fixes the routine started on its own may be pending at a time. 0 turns automatic fixes off
   "fixReview": { "reviewer": "copilot", "requestAs": "me", "maxRounds": 3, "markReady": true },   // the review rounds a fix PR of Gary gets on its own, see "Fix review rounds"
   "fastTier": "off",               // off | shadow | on: whether simple items get a smaller model. shadow runs both and records them for `gary shadow report`
+  "escalateAs": "prefill",         // prefill | me: who posts the profile's escalate command on a discussion, see "Escalate"
   "autoReview": { "enabled": false, "kinds": ["config"], "maxPerRun": 3 }   // the one review a contributor PR gets without a click, see "Automatic first review"
 }
 ```
 
-`profile` and `me` are required. The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `reviewer` is `copilot` or `off`, `requestAs` is `me` or `bot`, `maxRounds` is 1 to 3, and fields left out take their default. A value outside these lists is an error. It is also off when the profile's `reviewBots` does not list `copilot`, or when `requestAs` is `bot` without a bot. `gary doctor` says which case holds. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
+`profile` and `me` are required. The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `reviewer` is `copilot` or `off`, `requestAs` is `me` or `bot`, `maxRounds` is 1 to 3, and fields left out take their default. A value outside these lists is an error. It is also off when the profile's `reviewBots` does not list `copilot`, or when `requestAs` is `bot` without a bot. `gary doctor` says which case holds. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. `escalateAs` is `prefill` or `me`, another value is an error, and `gary doctor` shows it and warns when it is `me` and the profile has no `botCommands.escalate`. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
 
 Code looks up an instance through `loadInstance(name)`. Its allowed repos are the profile's one `repo`, and `allowedRepo(instance, repo)`, `checkoutFor(instance, repo)` and `rulesFor(instance, repo, topic)` answer per repo. For `maintainer` they return the configured checkout and the profile's `rules/<topic>.md`. The skills read that file directly.
 
@@ -111,7 +112,7 @@ Code looks up an instance through `loadInstance(name)`. Its allowed repos are th
   "relatedRepos": ["widgets-desktop"],   // targets of `move`, repositories of the same owner
   "sensitivePaths": [".github/**", "**/package.json"],   // globs. A PR that touches one carries `sensitiveFiles`
   "autoLabels": ["needs-info"],    // labels the routine may set without a click
-  "botCommands": { "escalate": "@widgets-bot escalate" },   // commands the maintainer posts himself. No bot-posted text may contain any of them. Only `escalate` has a route
+  "botCommands": { "escalate": "@widgets-bot escalate" },   // commands the maintainer posts himself. No bot-posted text may contain any of them. Only `escalate` has a route, and with `escalateAs: "me"` the board posts it under his login after his click
   "requiredTools": ["mcp__widgets-logs__loadLogFile"],   // checked at the start of a run
   "automatedComments": [           // comments a workflow posts on its own. They do not count as anyone's turn in the snapshot facts
     { "name": "logfile feedback", "pattern": "<!-- LOGFILE_COMMENT_TAG -->", "origin": "the workflow that posts it" }
@@ -195,8 +196,9 @@ Rules:
 
 - Without a bot, every route that would run as the bot becomes prefill for the maintainer where a prefill exists: reply, request_logs, reopen, a follow-up issue, a review body, the close of a move. Routes without a prefill (inline review comments, transfer, chores) are offered only in `own` mode, and the card shows his avatar.
 - Agent routes that push (`address_review`, `take_over`, `revise`, `drive`, `format`, a fix) need the `bot` or `own` mode. Otherwise the routine does not offer them and the server refuses them.
-- `request_review` with `reviewer: "copilot"` runs under the maintainer's login in every mode, after the check that the login is `me`. With a bot configured, this is the only way any code reaches his login: the helper in `scripts/lib/gh.mjs` sends only that one mutation.
-- No text the bot posts may contain a command from `botCommands`.
+- `request_review` with `reviewer: "copilot"` runs under the maintainer's login in every mode, after the check that the login is `me`. The helper in `scripts/lib/gh.mjs` sends only that one mutation.
+- With `escalateAs: "me"`, a click on the escalate button of a `move` to `issue` route posts the profile's `botCommands.escalate` on the discussion under the maintainer's login, in every mode, after the same login check. See "Escalate". With a bot configured, these two helpers are the only code that reaches his login.
+- No text the bot posts may contain a command from `botCommands`. The escalate button is the only place a command is posted, and it posts as the maintainer.
 
 ## Pause
 
@@ -278,7 +280,7 @@ Rules:
 | `revise` | `agent` | | the card and its button are called "Change". The agent changes a PR we already control by the instructions in `text` and pushes to the PR branch, as the bot or, with `allowOwnTokenPushes`, under the maintainer's login. `text` is required: it holds the agent's proposal, and the maintainer can edit it on the card. No params and no `mode`. It never opens a replacement PR and never sets `takenOver`. Offered exactly where `drive` is: on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true`. It carries no thread decisions: open review threads stay with `address_review` and `drive`. Like a take-over it never merges, approves, closes or marks the PR ready, and it may set the PR title |
 | `drive` | `agent` | `maxRounds`: 1 to 3, default 3 | the agent drives the PR on its own: address the open review comments by its own verdicts, push, request a Copilot review, wait for it, repeat. It stops when no valid comment is left, after `maxRounds`, or when it is stuck. Offered only on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true` |
 | `format` | `agent` | | no text, no params, no input. Applies the project's autofix to the PR branch and pushes the result, as the bot or, with `allowOwnTokenPushes`, under the maintainer's login. Offered on any open PR whose `autofix` has `changes: true`, also on a contributor PR that is not taken over: running the project's own formatter is not a take-over, so neither `takenOver` nor the push rule of `address_review` and `drive` applies, and it never sets `takenOver`. Without a bot and without `allowOwnTokenPushes` it is unavailable |
-| `move` | per button | `to`: a name from `relatedRepos`, `discussion`, or `issue` | Repo name, on an issue: two buttons, both bot. "Transfer" moves the issue. "Close, ask to reopen there" posts `text` (template `reopen-elsewhere`) and closes as not planned, for issues that lack the info the other repo needs. `discussion`, on an issue: `me`, opens the issue, he converts it there. GitHub has no API for it and it needs no reply. `issue`, on a discussion: `me`, copies `botCommands.escalate` and opens the discussion. Without that command there is no such route |
+| `move` | per button | `to`: a name from `relatedRepos`, `discussion`, or `issue` | Repo name, on an issue: two buttons, both bot. "Transfer" moves the issue. "Close, ask to reopen there" posts `text` (template `reopen-elsewhere`) and closes as not planned, for issues that lack the info the other repo needs. `discussion`, on an issue: `me`, opens the issue, he converts it there. GitHub has no API for it and it needs no reply. `issue`, on a discussion: `me`, copies `botCommands.escalate` and opens the discussion. With `escalateAs: "me"` a primary button posts the command under his login, see "Escalate". Optional `issueKind`: `bug` or `enhancement`. Without that command there is no such route |
 | `open` | `me` | | no text, no params. Opens the thread on GitHub. For items the agent could not analyze, see `blocked` |
 | `chore` | `bot` | `action`: `label`, `assign`, `ready`, `answer_discussion`, `react`, `update_branch`, `rerun_ci`, plus that action's params | run the action |
 
@@ -291,12 +293,32 @@ The click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/ac
 - `follow_up`: `{ title }` when the maintainer edited it. With `as: "agent"`: `{ askReporter: true | false }` from the card's switch "Ask the reporter to test". It is off by default. The route may preset it with `params.askReporter: true` and a `params.askReporterWhy` of at most 200 characters, shown next to the switch. The server stores the boolean as `params.askReporter` on the `start_fix` action doc, false when the input has none. Both params are valid on this route only.
 - `drive`: `{ maxRounds }`, 1 to 3, when the maintainer changed it.
 - `move` to a repo: `{ mode: "transfer" | "close" }`. Required. `close` needs a non-empty `text`. The two buttons share one route, so after one ran the other is refused.
+- `move` to `issue`, the escalate button: `{ mode: "escalate" }` and nothing else, with an empty `text`.
 - `reply` and `request_logs` with `alsoLabel`, run as the bot: `{ alsoLabel: true | false }`, default true. True sets the labels right after the post succeeded, in the same click.
 - The label button of a `reply` or `request_logs` route with `alsoLabel`: `{ part: "label" }` and nothing else, sent without `text` and `draftHash`.
 
 `alsoLabel` holds the labels a reply or log request also sets, like `{ "add": ["needs-info"] }`. Every label is one of the profile's `autoLabels`, at least one is named, and none is in both lists. When the maintainer posts the text himself, the card shows a second button next to the copy button. That button runs the `label` action with exactly the route's `alsoLabel`, as the bot, or under his own login in `own` mode. It is refused without a bot and without `allowOwnTokenPushes`, while paused, when the settings are invalid, and when the thread is closed or merged. Newer comments do not block it. It has its own done state: the served route carries `labelDone: { status, result }` next to `done`, and a repeat answers 409. Its key is the labels and the item's `reviewedAt`. Its action doc has `part: "label"`, `labelHash`, `action: "label"` and the labels as `params`, and no `draftHash`. The button logs no decision. A bot route that also set labels records them in its action doc as `label: { params, status, result }`. A label failure after a successful post keeps the click done and answers `{ ok: true, result, warning: "Posted. The label could not be set: …" }`.
 
 `alsoAnswer` names the comment a discussion close also marks as the answer: `commentId` is its node id, `url` its URL in the discussion, `gist` at most 200 characters of what it says. The card shows a second button next to the copy button, sent as `{ input: { part: "answer" } }` without `text` and `draftHash`. It runs `answer_discussion` with exactly the route's `commentId`, as the bot or under his own login in `own` mode, and has the same rules as the label button, except that a closed discussion does not block it. The served route carries `answerDone: { status, result }`, its action doc has `part: "answer"` and `answerHash`.
+
+### Escalate
+
+A discussion becomes an issue when the maintainer comments the profile's `botCommands.escalate` there. The repo's own workflow then creates the issue and closes the discussion. Such a workflow ignores comments by the bot account, so the comment has to come from his own login.
+
+The `move` route with `to: "issue"` is for two cases. A confirmed bug in a discussion gets it as the recommended route, titled like `Move: escalate to a bug issue`. A feature request or an idea that is concrete and plausible enough to track gets it titled like `Accept: track as an enhancement issue`, as an alternative next to the recommended reply or close, or as the recommended route when the request is clearly good. `params.issueKind` is `bug` or `enhancement` and only words the card: "The discussion becomes an enhancement issue". Gary sets no label. The repo's workflow picks it. The route is never written for a closed or already escalated discussion, and never without `botCommands.escalate`.
+
+The card is a compact row. With `escalateAs: "prefill"`, the default, it has one button, "Copy escalate command, open GitHub", and nothing reaches GitHub through the server. With `escalateAs: "me"` it has a primary button, "Accept as an issue" for an enhancement and "Escalate to an issue" otherwise, and a secondary "Copy command, open GitHub". The primary button asks for a second confirm that names the command, like "Confirm: post @widgets-bot escalate as you". It then sends `{ itemId, routeId, draftHash, force, input: { mode: "escalate" } }` to `/api/action`.
+
+This is the one exception to "replies in his name are prefill only". The server posts the comment under the maintainer's stored `gh` login, and these rules hold:
+
+- Only this click posts a command. `escalate` is no action of `gary action` or the MCP server, so no agent and no `--autonomous` call can run it. `postEscalateCommand` in `scripts/lib/gh.mjs` is the only code that posts a bot command, and the server calls it from one place.
+- The text is exactly `botCommands.escalate` from the profile, read on the server. Nothing from the request or the item goes into it. A click with a non-empty `text` or with another input field is refused.
+- The server refuses the click when `escalateAs` is not `me`, when the profile has no escalate command, when the item is no discussion, while the instance is paused, when the settings are invalid, when the draft is outdated, and when the route already ran (409).
+- Before the post the server reads the discussion from GitHub. A closed discussion is refused, also with `force`. A comment by a person after `reviewedAt` is refused with "Post anyway", like for a bot reply.
+- The helper checks that the stored login is `me` and that the discussion is open, then sends one `addDiscussionComment` mutation. When GitHub refuses the comment because the login lacks the permission, the refusal says so and names the copy button, which keeps working.
+- With `--dry-run` the helper runs the checks and the reads, and the result shows the invocation it would send.
+
+A post that ran writes an action doc with `action: "escalate"`, `route: "move"`, `text` (the command), `as` (the login), `params: { to: "issue", issueKind }` and the comment's URL as `result`. A failed post writes it with `status: "failed"`, and the button works again. A successful one logs an `escalated` decision, sets `handled` with `verified: "commented"` and serves `done` on the route, so the row shows "Done · view on GitHub" and the item moves to "Handled, waiting for the next run". The next snapshot drops the discussion once the workflow closed it.
 
 While a pushing agent job runs on a PR (`take_over`, `revise`, `address_review`, `drive`, also a drive that waits for a review bot between rounds, `format`), every route that decides the PR on its current state answers 409 "The agent is changing this PR. Decide after it is done.": `review`, `merge`, `close`, a `chore` with `action: "ready"`, and the pushing routes `address_review`, `take_over`, `revise`, `drive` and `format`. Replies, request_logs, labels and other chores stay allowed. The block ends when the job's action doc is `done` or `failed` and no `push` claim is left. A click on any agent route answers 409 "The agent is already working on this." while an unexpired claim of its kind or a queued or claimed request of the same kind exists for the item.
 
@@ -308,7 +330,7 @@ The server checks every id and value in `input` against the route and the item. 
 
 Before a bot route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends `force: true` after a second confirm. A moved head still blocks a merge, an approval and a review with inline comments.
 
-Routes with `as: "me"` never reach GitHub through the server and get no action doc. When the maintainer uses one, the page reports it to `POST /api/decision`, and the server writes a local entry in the decision log (see Learning).
+Routes with `as: "me"` never reach GitHub through the server and get no action doc. The one exception is the escalate button, see "Escalate". When the maintainer uses a prefill, the page reports it to `POST /api/decision`, and the server writes a local entry in the decision log (see Learning).
 
 The server also keeps every such click per item and route in `<state>/opened.json`: `{ <itemId>: { <routeId>: { at, draftHash, text } } }`, with the text he copied. A click on another route of the item adds to it, and a repeat on the same route replaces its entry. The server serves the mark on the route as `opened: { at }` while the stored `draftHash` equals the route's current draft hash. So a triage that rewrites the route or reviews the item again clears it, like `done`. A click also drops the item's stored marks whose draft is gone. The mark survives a reload and every other click on the item.
 
@@ -320,8 +342,8 @@ The card of a used `as: "me"` route says so in words where a bot card says "Done
 
 One page serves every instance. `GET /api/state` returns `{ board, items, proposals }`:
 
-- `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos, repoUrl, bot, accountMode, paused, relatedRepos, botCommands, reviewBots } ] }`. `title` is the profile's `name`, `bot` is `{ login, avatarUrl }` or `null`. The page takes links, avatars, bot names, bot commands and new-issue URLs from the item's own instance entry, never from one global repo.
-- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working` and `fix` when there are any. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
+- `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos, repoUrl, bot, accountMode, paused, relatedRepos, botCommands, escalateAs, reviewBots } ] }`. `title` is the profile's `name`, `bot` is `{ login, avatarUrl }` or `null`. The page takes links, avatars, bot names, bot commands and new-issue URLs from the item's own instance entry, never from one global repo.
+- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working` and `fix` when there are any. A PR whose snapshot entry has `sensitiveFiles` carries `sensitive: { files, total }`, with the first 5 paths and their full count. A discussion without a stored `category` gets the one from the snapshot. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
 - `proposals[]`: the open proposals, each with `instance`.
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
@@ -340,6 +362,10 @@ An issue or discussion whose served `fix` has `parked: true` is in no plan group
 
 A PR whose served `autoReview` has `waiting: true` is in no plan group and adds no minutes either. A third quiet line "Reviewed automatically, waiting: N" lists these PRs, each with an "Open" button. The dialog of a PR with an `autoReview` shows a tag in the meta row, "Reviewed automatically, waiting for the contributor" or "Reviewed automatically", and a block above the story: the same words, a link to the review, what it asked for, the state of the format offer, and once the wait ended what changed since, like "Since then the author pushed". The page keeps a parked item loaded also when it has no routes, so "Open on board" in the fix PR's dialog still opens it, and its dialog shows the fix banner.
 
+A discussion shows its GitHub category, like "Feature Requests", as a quiet outlined chip: after the title on its list row, and in the dialog's meta row before the labels. The board's search matches it.
+
+A PR with a served `sensitive` shows a warning block in the dialog above the verdict and the routes, in the callout colors: "Touches sensitive files: `.github/copilot-instructions.md`, `package.json` and 2 more. Gary does not push to this PR. It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets." It appears on contributor PRs and on PRs we control alike, because the push is refused on both. The meta row carries a warning badge "Sensitive files", and the list row a warning icon whose tooltip names the files.
+
 ## Validation
 
 `gary put` and `gary validate` check an item against these rules. A broken rule refuses the write and lists every problem.
@@ -352,7 +378,7 @@ A PR whose served `autoReview` has `waiting: true` is in no plan group and adds 
 - `address_review` only when every thread has an id and a verdict, and only where `drive` would be accepted. `drive`, `take_over` and `revise` only where the server would accept them: `take_over` only on a contributor PR that is not taken over, `revise` only where `drive` is allowed, with a non-empty `text` and no params.
 - `pushed` is `{ action, sha, at }` on a PR. While `pushed.sha` equals `reviewedSha`, the agent's push made the current head, and the item needs at least one route that decides the PR: `merge`, `review`, `revise`, `address_review` or `close`. A `reply` that reports the push is not one. This holds while CI still runs on the new head: the route then carries a callout that says so.
 - An item with `blocked` has exactly one route, of type `open`. An `open` route has no text and no params, and is allowed without `blocked` too.
-- No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. Chores name a chore action.
+- No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. A `move` to `issue` needs a discussion that the refresh did not find closed, the profile's `botCommands.escalate`, and an `issueKind` of `bug` or `enhancement` when it has one. `category` is a non-empty string and only on a discussion. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
 - `findings[].certain` is true or false. A finding with `certain: true` needs `evidence`, the concrete case that shows the problem, in at most 400 characters. A `question` or an `idea` is never certain.
@@ -413,6 +439,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   ],                               // verdict: valid | optional | wrong | unjudged
   "reviewDecision": "pending",     // PRs, from the snapshot: approved | changes_requested | pending
   "isAnswered": false,             // discussions, from the snapshot
+  "category": "Feature Requests",  // discussions, from the snapshot: the category's name on GitHub
   "solved": false,                 // issues and discussions: the agent thinks it is resolved
   "findings": [                    // optional, full reviews only
     { "severity": "blocker", "text": "…", "ref": "src/…:123", "routeId": "r2" },   // blocker | major | minor | idea | question. routeId is optional
@@ -587,7 +614,7 @@ All strings that originate on GitHub are untrusted. The page renders them with `
 }
 ```
 
-The server writes an action file for every bot or agent click. A GitHub action gets `status: "done"` or `"failed"` and `via: "server"`. A failed one stays failed: nothing retries it. Agent requests always get `status: "queued"` and `via: "queue"`. This gives the routine a log of what the maintainer decided.
+The server writes an action file for every bot or agent click, and for the escalate button, whose doc has `action: "escalate"` and `as` with the maintainer's login. A GitHub action gets `status: "done"` or `"failed"` and `via: "server"`. A failed one stays failed: nothing retries it. Agent requests always get `status: "queued"` and `via: "queue"`. This gives the routine a log of what the maintainer decided.
 
 The maintainer's fields in an item are `snoozedUntil`, `hidden` and `dismissedRoutes`. The routine keeps them when it rewrites an item, and `gary put` carries them over in replace mode. It clears `hidden` only when the item changed on GitHub since the last run, and it never clears `dismissedRoutes`.
 
@@ -679,9 +706,10 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `dismissed_proposal` | `proposal: { id, title, target, file }`, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
 | `changed_event` | `route: { type, title }`, `from`, `to` | a `review` ran with another event than the route's `params.event` |
 | `auto_review` | `review: { url, sha, event, reason, comments, offer }`, `findings: [{ severity, text, ref }]` | `gary auto-review post` posted an automatic review. It is the agent's work, never the maintainer's decision. `triage-learn` compares it with what he does on the item afterwards |
+| `escalated` | `route: { type, title }`, `issueKind`, `category` | the escalate button posted the profile's escalate command on a discussion. `issueKind` and `category` are `null` when the route or the item has none |
 | `skipped_label` | `route: { type, title }`, `labels: { add, remove }` | a bot `reply` or `request_logs` with `alsoLabel` ran with `input.alsoLabel: false` |
 
-The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", snooze and hide. Routes with `as: "me"` never reach `/api/action`. The page reports their use to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
+The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", snooze and hide. Routes with `as: "me"` never reach `/api/action`, except the escalate button. The page reports the use of a prefill to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
 
 `gary decisions [--since <ISO>] [--json]` prints the entries. `--since` is exclusive: it prints entries whose `at` is later than the value.
 
@@ -749,6 +777,7 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   "waitingDays": 3,                // whole days since the last event of us or them, 0 for nobody
   // PRs
   "ciGreen": true, "dependencyOnly": false, "touchesSensitive": false, "openThreadCount": 0,
+  "sensitiveFiles": [".github/workflows/ci.yml"], "sensitiveFileCount": 1,   // PRs that touch the profile's sensitivePaths: the first 5 matching paths and their full count. Absent otherwise
   "approvedBy": ["octocat"], "changesRequestedBy": [],
   "isClean": true,                 // mergeable, CI green, no open thread, no requested changes
   "changedFiles": 3, "changedLines": 120,   // PRs: additions plus deletions without lock files
@@ -760,7 +789,8 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   // issues and discussions
   "hasClosingPr": false, "isAnswered": false, "authorIsUs": false,
   // discussions
-  "answerable": true, "answerChosen": false
+  "answerable": true, "answerChosen": false,
+  "category": "Feature Requests"   // the category's name on GitHub
 }
 ```
 
@@ -831,7 +861,7 @@ All existing endpoints stay, with the instance added:
 
 - `GET /api/health` → `{ ok, name: "gary", instances: ["…"] }`.
 - `GET /api/state` → `{ board, items, proposals }`.
-  - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos: ["owner/name"], repoUrl, bot: { login, avatarUrl } | null, accountMode, paused, relatedRepos, botCommands, reviewBots } ] }`. `title` is the profile's `name`.
+  - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos: ["owner/name"], repoUrl, bot: { login, avatarUrl } | null, accountMode, paused, relatedRepos, botCommands, escalateAs, reviewBots } ] }`. `title` is the profile's `name`.
   - `items[]`: each with `instance`, `id`, `ref`, `repo` and the stored fields. Routes carry `actor`, `draftHash`, `done`, `refused` as today.
   - `proposals[]`: each with `instance`.
 - `POST /api/action`: the body gains `instance`. Route clicks: `{ instance, itemId, routeId, text, draftHash, force, input }`. Board actions likewise (`dismiss_route`, `accept_proposal`, `dismiss_proposal` with `{ instance, proposalId, … }`).

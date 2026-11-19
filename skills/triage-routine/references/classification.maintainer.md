@@ -11,8 +11,8 @@ Quick classification uses the snapshot data: author and author type, labels, dra
 Every snapshot entry carries `facts`, computed in code. Use them as given and never re-derive them from the thread:
 
 - `facts.timeline`: `[{ at, author, side, kind }]`, oldest first, the newest 200 events. `side` is `us`, `them`, `automated` or `bot`, and `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `facts.timelineTruncated` is set only when older events are missing. Who spoke last is `facts.lastSpeaker`, with `facts.lastUsAt` and `facts.lastThemAt`. Who we wait on is `facts.waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), and for how long `facts.waitingDays`.
-- PRs: `facts.aiAuthored` with `facts.aiSignals` (from the profile's `aiAuthors`), `facts.changedLines` (lock files excluded, generated files not detected), `facts.changedFiles`, `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
-- Issues and discussions: `facts.hasClosingPr` (an open or merged PR closes it), `facts.isAnswered`, `facts.authorIsUs`.
+- PRs: `facts.aiAuthored` with `facts.aiSignals` (from the profile's `aiAuthors`), `facts.changedLines` (lock files excluded, generated files not detected), `facts.changedFiles`, `facts.ciGreen`, `facts.dependencyOnly`, `facts.touchesSensitive` with `facts.sensitiveFiles` (the first 5 matching paths) and `facts.sensitiveFileCount`, `facts.openThreadCount`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.isClean`.
+- Issues and discussions: `facts.hasClosingPr` (an open or merged PR closes it), `facts.isAnswered`, `facts.authorIsUs`. Discussions also carry `facts.category`, the category name on GitHub, like `Feature Requests`. The profile's rules say what each category means for the routes.
 
 Read the thread text only for what was said: what was asked, what was answered, what is open. A statement like "nobody replied since" comes from `facts.lastSpeaker` and `facts.timeline`, never from reading the top-level comments. When a discussion's `replyCount` is larger than the replies in the snapshot entry and you need the wording of a reply, fetch the thread with the discussion query from the `triage-issue` skill. When the data is not enough for a confident call, pick the most likely section and make the item a full-review candidate.
 
@@ -78,7 +78,7 @@ He has to think about whether to act or about the content: a behavior change, se
 ### `review`: a human must read the code
 
 - A contributor or bot PR with substantial code changes where the agent review is done. The agent review lowers the effort. It does not replace the maintainer's reading.
-- Any PR with `facts.touchesSensitive`, a path in the profile's `sensitivePaths`. Say which paths in `state`.
+- Any PR with `facts.touchesSensitive`, a path in the profile's `sensitivePaths`. Say which paths in `state`, from `facts.sensitiveFiles`.
 - A PR with `blocker` or `major` findings that need the maintainer's judgment before the contributor gets feedback.
 - A dependency PR with failing CI or a major version bump.
 - PRs by the bot or with `authorType: "copilot"`, until the maintainer approved them. Agents wrote them and he has to review them himself.
@@ -128,6 +128,8 @@ Bot reviewers are often right about real bugs and often wrong about project conv
 ## Sensitive paths
 
 A PR changing a path in the profile's `sensitivePaths` gets the fact named in `state` and goes to `review`, at least. Such paths can run code with repo secrets, change what agents like this one do, or pull in new code. A contributor PR touching them deserves a closer look even when the change looks harmless.
+
+Gary pushes nothing to such a PR, whoever opened it. Write no `take_over`, `revise`, `address_review`, `drive` or `format` route for it. The board's dialog shows a warning with the matching files above the routes, taken from the snapshot. So `state` names the paths, and the routes need no extra explanation.
 
 ## No routes
 
@@ -183,4 +185,4 @@ The `reason` of every autonomous action describes the last exchange on the timel
 
 ## Bot commands
 
-The profile's `botCommands` lists commands that the repo's own automation reacts to. Such automation usually ignores comments by the bot itself, and board posts come from the bot. Never put a bot command into a route's `text`. When a command would solve the item, write it into a finding, so the maintainer can paste it himself. The `move` route with `to: "issue"` exists only when `botCommands.escalate` exists.
+The profile's `botCommands` lists commands that the repo's own automation reacts to. Such automation usually ignores comments by the bot itself, and board posts come from the bot. Never put a bot command into a route's `text`. When a command would solve the item, write it into a finding, so the maintainer can paste it himself. The `move` route with `to: "issue"` exists only when `botCommands.escalate` exists. It is for a confirmed bug in a discussion, and for a feature request or idea in a discussion that the maintainer may want to track (`item-doc.md`, `move`). He posts the command himself. With `escalateAs: "me"` in the instance config the board posts it under his login after his click. An agent never posts it.

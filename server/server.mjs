@@ -14,9 +14,10 @@ import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tok
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
+import { sensitiveFacts } from "../scripts/lib/facts.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
-import { accountMode } from "../scripts/lib/gh.mjs";
+import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
@@ -45,6 +46,8 @@ const VERIFIED_BY_ACTION = { comment: "commented", review: "commented", create_i
 // The routes a pushing agent job blocks on its PR
 export const PUSH_BLOCKED_TYPES = ["review", "merge", "close", "address_review", "take_over", "revise", "drive", "format"];
 const PUSH_BLOCKED = (route) => PUSH_BLOCKED_TYPES.includes(route.type) || (route.type === "chore" && route.params?.action === "ready");
+// The one input of the button that posts the profile's escalate command under the maintainer's login
+export const ESCALATE_MODE = "escalate";
 const MERGEABLE_STATES = { MERGEABLE: "mergeable", CONFLICTING: "conflicting", UNKNOWN: "unknown" };
 
 /** Fingerprint of a drafted route. It changes when the routine rewrites the route or reviews the item again. */
@@ -132,6 +135,12 @@ export function validateInput(route, item, input) {
 			return { threadId: d.threadId, decision: d.decision, ...(note && { note }) };
 		});
 		return { decisions };
+	}
+
+	if (route.type === "move" && params.to === "issue") {
+		checkKeys(input, ["mode"], "input");
+		if (input.mode !== ESCALATE_MODE) throw new Refusal(`input.mode must be "${ESCALATE_MODE}".`);
+		return { mode: input.mode };
 	}
 
 	if (route.type === "move") {
@@ -437,7 +446,7 @@ export function instanceInfo(name) {
 	const { instance: i, mode, error, warnings } = settingsOf(name);
 	const paused = isPaused(join(instanceDir(name), "state"));
 	if (!i) {
-		return { name, title: name, kind: null, repos: [], repoUrl: null, me: null, bot: null, accountMode: "none", paused, relatedRepos: [], botCommands: {}, reviewBots: [], settingsError: error };
+		return { name, title: name, kind: null, repos: [], repoUrl: null, me: null, bot: null, accountMode: "none", paused, relatedRepos: [], botCommands: {}, escalateAs: "prefill", reviewBots: [], settingsError: error };
 	}
 	return {
 		name,
@@ -451,6 +460,7 @@ export function instanceInfo(name) {
 		paused,
 		relatedRepos: i.profile.relatedRepos,
 		botCommands: i.profile.botCommands,
+		escalateAs: i.config.escalateAs,
 		reviewBots: i.profile.reviewBots,
 		...(error && { settingsError: error }),
 		...(warnings?.length && { settingsWarnings: warnings }),
@@ -909,8 +919,17 @@ export async function startBoardServer({
 		};
 		const autoReviews = await readAutoReviews(name);
 		const autoReviewOf = (id, data) => (data.kind === "pr" ? autoReviewState(data, autoReviews[id], fixSources.snapshot[id]) : null);
+		const categoryOf = (id, data) => (data.kind === "discussion" && typeof data.category !== "string" ? fixSources.snapshot[id]?.category : undefined);
+		// The changed files of a PR that match the profile's sensitivePaths, so the dialog can say why nothing pushes to it
+		const sensitiveOf = (id, data) => {
+			const { sensitiveFiles: files, sensitiveFileCount: total } = data.kind === "pr" ? sensitiveFacts(fixSources.snapshot[id]) : {};
+			return files ? { files, total } : null;
+		};
 		return items.map(({ id, data }) => ({
 			...data,
+			...(sensitiveOf(id, data) && { sensitive: sensitiveOf(id, data) }),
+			// An item written before the routine copied the category gets it from the snapshot
+			...(typeof categoryOf(id, data) === "string" && { category: categoryOf(id, data) }),
 			liveState: liveStates.get(`${name}/${id}`),
 			...(autoReviewOf(id, data) && { autoReview: autoReviewOf(id, data) }),
 			...(working.has(id) && { working: working.get(id) }),
@@ -1225,6 +1244,8 @@ export async function startBoardServer({
 				return [409, { ok: false, result: "The agent is changing this PR. Decide after it is done.", working: true }];
 			}
 
+			if (route.type === "move" && route.params?.to === "issue") return handleEscalate(name, itemId, item, route, body, key, hash);
+
 			const draft = typeof text === "string" ? text : typeof route.text === "string" ? route.text : "";
 			let plan;
 			try {
@@ -1337,6 +1358,80 @@ export async function startBoardServer({
 		});
 	}
 
+	/**
+	 * Runs the escalate button of a `move` to `issue` route: posts the profile's escalate command on the discussion
+	 * under the maintainer's own login. Call it inside the item's action lock, after the draft and repeat checks.
+	 * The text never comes from the request or the item.
+	 */
+	async function handleEscalate(name, itemId, item, route, body, key, hash) {
+		const refuse = (result, extra = {}) => [200, { ok: false, result, ...extra }];
+		const { instance } = settingsOf(name);
+		if (item.kind !== "discussion") return refuse("Only a discussion can become an issue.");
+		const command = instance.profile.botCommands?.escalate;
+		if (typeof command !== "string" || !command.trim()) return refuse("The profile has no escalate command, so there is nothing to post.");
+		if (instance.config.escalateAs !== "me") {
+			return refuse('This route is yours to do on GitHub. The board only copies the command and opens the discussion. With "escalateAs": "me" in config.json the board posts the command under your login.');
+		}
+		try {
+			validateInput(route, item, body.input);
+		} catch (e) {
+			if (e instanceof Refusal) return refuse(e.message);
+			throw e;
+		}
+		if (typeof body.text === "string" && body.text.trim()) return refuse("The escalate button sends no text. It posts only the command from the profile.");
+		if (isPaused(served.get(name).state)) return refuse(PAUSED_MESSAGE, { paused: true });
+
+		const { number, repo } = item;
+		const fresh = await checkFresh({ instance: name, action: "comment", params: {}, kind: "discussion", number, item, force: body.force === true });
+		if (fresh.state) {
+			liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
+			schedulePush(name, "items");
+		}
+		// "Post anyway" never applies to a closed discussion
+		if (fresh.state && fresh.state !== "OPEN") return refuse(`Discussion #${number} is closed. Nothing was posted.`, { stale: true, forceable: false });
+		if (!fresh.ok) {
+			refusals.set(key, { reason: fresh.reason, forceable: fresh.forceable });
+			schedulePush(name, "items");
+			return refuse(fresh.reason, { stale: true, forceable: fresh.forceable });
+		}
+
+		const createdAt = new Date().toISOString();
+		let outcome;
+		let login = instance.config.me;
+		try {
+			const posted = await withInstance(name, () => postEscalateCommand({ repo, number, dryRun }));
+			login = posted.login;
+			outcome = dryRun ? { ok: true, result: { dryRun: true, invocations: [posted.invocation] } } : { ok: true, result: posted.url };
+		} catch (e) {
+			outcome = { ok: false, result: `${e.message} Nothing was posted. "Copy command, open GitHub" still works.` };
+		}
+		const issueKind = route.params?.issueKind;
+		await logClick(name, itemId, {
+			routeId: route.id,
+			route: route.type,
+			draftHash: hash,
+			edited: false,
+			createdAt,
+			action: "escalate",
+			params: { to: "issue", ...(typeof issueKind === "string" && { issueKind }) },
+			text: command,
+			as: login,
+			status: outcome.ok ? "done" : "failed",
+			via: "server",
+			finishedAt: new Date().toISOString(),
+			result: typeof outcome.result === "string" ? outcome.result : JSON.stringify(outcome.result),
+		});
+		if (outcome.ok) {
+			logRouteDecisions(name, itemId, item, route, "", body.input, false);
+			decide(name, "escalated", itemId, item, { route: { type: route.type, title: route.title ?? "" }, issueKind: typeof issueKind === "string" ? issueKind : null, category: typeof item.category === "string" ? item.category : null });
+			doneKeys.add(key);
+			refusals.delete(key);
+			await setHandled(name, itemId, route, "commented");
+		}
+		schedulePush(name, "items");
+		return [200, outcome];
+	}
+
 	/** Marks the item as handled by the maintainer through `route`. The routine and the refresh read it. */
 	async function setHandled(name, itemId, route, verified) {
 		const file = itemFile(name, itemId);
@@ -1398,6 +1493,7 @@ export async function startBoardServer({
 			if (entry.mergeable !== undefined) next.mergeable = MERGEABLE_STATES[entry.mergeable] ?? "unknown";
 			if (entry.ci !== undefined) next.ci = entry.ci;
 			if (entry.facts?.lastEventUrl) next.lastEventUrl = entry.facts.lastEventUrl;
+			if (cur.kind === "discussion" && typeof entry.category === "string") next.category = entry.category;
 			if (isObject(cur.handled)) next.handled = { ...cur.handled, verified: verify(cur, cur.handled, entry, state) };
 			await writeAtomic(file, next);
 		});

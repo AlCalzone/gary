@@ -98,6 +98,13 @@ async function checkInstance() {
 			if (!ar.enabled) return [config.autoReview?.enabled === true ? "warn" : "ok", `off${ar.reason ? `: ${ar.reason}` : ""}. No review reaches a contributor without your click`];
 			return ["ok", `on for ${ar.kinds.join(", ")} PRs by outside contributors, at most ${ar.maxPerRun} per run. One review per PR goes out without your click`];
 		});
+		await attempt("escalate", async () => {
+			const command = loadProfile().botCommands?.escalate;
+			if (config.escalateAs !== "me") return ["ok", command ? "prefill: the board copies the escalate command and you post it on GitHub" : "the profile has no escalate command"];
+			// A warning only when config.json asks for the post and it cannot run
+			if (!command) return ["warn", 'escalateAs is "me", but the profile has no botCommands.escalate, so the board has nothing to post'];
+			return ["ok", `me: a click on the escalate button posts "${command}" on the discussion under your own gh login. Nothing else posts a bot command`];
+		});
 		add("pause", isPaused() ? "warn" : "ok", isPaused() ? "paused: nothing goes to GitHub and queued agent requests wait. `gary resume` ends it" : "not paused");
 		await attempt("checkout", async () => {
 			if (!config.checkout) return ["warn", "no checkout in config.json, fixes need a local clone"];

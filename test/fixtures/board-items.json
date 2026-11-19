@@ -448,14 +448,16 @@
 		"author": "memphi2",
 		"story": "Since firmware 3.3 the switch reports power in kW instead of W. Two other users confirmed it with the same firmware.",
 		"state": "This is a config problem and belongs in an issue.",
+		"category": "Request Support / Investigate Issue",
 		"routes": [
 			{
 				"id": "r1",
 				"type": "move",
 				"as": "me",
-				"title": "Move: escalate to an issue",
+				"title": "Move: escalate to a bug issue",
 				"params": {
-					"to": "issue"
+					"to": "issue",
+					"issueKind": "bug"
 				},
 				"recommended": true
 			},

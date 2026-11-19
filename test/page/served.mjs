@@ -12,7 +12,7 @@ const DIR = tempDir();
 // Accepted rules are appended to the profile, so the test works on its own copy outside any git repo
 const PROFILE_COPY = join(DIR, "profile");
 cpSync(PROFILE, PROFILE_COPY, { recursive: true });
-const { home: HOME, root: ROOTDIR, env: ENV } = makeHome(DIR, { port: PORT, profile: PROFILE_COPY });
+const { home: HOME, root: ROOTDIR, env: ENV } = makeHome(DIR, { port: PORT, profile: PROFILE_COPY, escalateAs: "me" });
 const BOARD = join(HOME, "state", "board");
 const FIXTURE_ITEMS = JSON.parse(readFileSync(join(TEST_DIR, "fixtures", "board-items.json"), "utf8"));
 const writeFixtureItems = () => {
@@ -568,6 +568,41 @@ try {
 	if (snapBefore === null) rmSync(snapFile);
 	else writeFileSync(snapFile, snapBefore);
 	ok("auto review: without the record the item carries no state", await until(`!state.items.get("widgets/${autoId}")?.autoReview`, 8000));
+
+	// The category and the sensitive files come from the snapshot, and the escalate button posts through the server
+	{
+		const before = existsSync(snapFile) ? readFileSync(snapFile, "utf8") : null;
+		writeFileSync(itemFile("disc-32"), JSON.stringify(probe("discussion", 32, "https://github.com/acme/widgets/discussions/32", {
+			hint: "Accept: track as an enhancement issue",
+			routes: [{ id: "r1", type: "move", as: "me", title: "Accept: track as an enhancement issue", recommended: true, params: { to: "issue", issueKind: "enhancement" } }],
+		})));
+		writeFileSync(itemFile("pr-25"), JSON.stringify(probe("pr", 25, "https://github.com/acme/widgets/pull/25", { hint: "Merge: ready", routes: [{ id: "r1", type: "merge", as: "me", title: "Merge: ready", recommended: true }] })));
+		writeFileSync(snapFile, JSON.stringify({ fetchedAt: new Date().toISOString(), items: {
+			...(before ? JSON.parse(before).items : {}),
+			"disc-32": { kind: "discussion", number: 32, category: "Feature Requests" },
+			"pr-25": { kind: "pr", number: 25, sensitiveFiles: [".github/copilot-instructions.md", "a/package.json", "b/package.json", "c/package.json", "d/package.json", "e/package.json"] },
+		} }));
+		ok("category: the server serves it from the snapshot", await until(`state.items.get("widgets/disc-32")?.category === "Feature Requests"`, 8000));
+		await openItem("disc-32");
+		const escBtn = (text) => `[...document.querySelectorAll("#d-routes .card .card-actions button")].find((b) => b.textContent === ${JSON.stringify(text)})`;
+		ok("category: the dialog shows it", await ev(`return document.querySelector("#d-meta .tag.category")?.textContent === "Feature Requests";`));
+		ok("escalate: with escalateAs me the card has the post button and the copy button", await until(`!!${escBtn("Accept as an issue")} && !!${escBtn("Copy command, open GitHub")}`));
+		await ev(`${escBtn("Accept as an issue")}.click();`);
+		ok("escalate: the click asks to confirm the exact command", await until(`!!${escBtn("Confirm: post @widgets-bot escalate as you")}`));
+		await ev(`${escBtn("Confirm: post @widgets-bot escalate as you")}.click();`);
+		ok("escalate: the server records the post of the profile's command", await fileUntil(() => actionFiles().some((a) => a.itemId === "disc-32" && a.action === "escalate" && a.status === "done" && a.text === "@widgets-bot escalate" && a.as === "octocat")));
+		ok("escalate: the card says Done and has no buttons left", await until(`/Done/.test(document.querySelector("#d-routes .card")?.textContent ?? "") && !document.querySelector("#d-routes .card .card-actions button")`, 8000));
+		await closeItem();
+		ok("escalate: the discussion leaves the plan", await until(`!document.querySelector('#board .group .row[data-id="widgets/disc-32"]')`, 8000));
+		ok("sensitive: the server serves the first five files and the count", await until(`state.items.get("widgets/pr-25")?.sensitive?.files?.length === 5 && state.items.get("widgets/pr-25").sensitive.total === 6`, 8000));
+		await openItem("pr-25");
+		ok("sensitive: the dialog warns above the routes", await ev(`const b = document.getElementById("d-sensitive"); return !b.hidden && /^Touches sensitive files: \\.github\\/copilot-instructions\\.md, .* and 1 more\\. Gary does not push to this PR\\./.test(b.textContent);`));
+		await closeItem();
+		rmSync(itemFile("disc-32"));
+		rmSync(itemFile("pr-25"));
+		if (before === null) rmSync(snapFile);
+		else writeFileSync(snapFile, before);
+	}
 
 	// The review rounds of a recorded fix PR show on the issue as each stage is written, without a triage run
 	const fixesFile = join(HOME, "state", "fixes.json");

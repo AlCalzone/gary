@@ -72,6 +72,10 @@ t.check("a PR whose file list is cut short is not dependency-only", !f.prFacts({
 t.check("nested manifests and requirements files count", f.prFacts({ ...pr, files: ["packages/core/package.json", "docs/requirements-docs.txt", "go.sum"], changedFileCount: 3 }).dependencyOnly);
 p = f.prFacts({ ...pr, openThreadCount: 2, reviewSummary: [{ author: "hubot", state: "changes_requested" }], sensitiveFiles: ["package.json"] });
 t.check("open threads or requested changes make a PR unclean", !p.isClean && p.openThreadCount === 2 && JSON.stringify(p.changesRequestedBy) === '["hubot"]' && p.touchesSensitive, p);
+t.check("a PR names the sensitive files it touches", JSON.stringify(p.sensitiveFiles) === '["package.json"]' && p.sensitiveFileCount === 1 && f.prFacts(pr).sensitiveFiles === undefined && f.prFacts(pr).sensitiveFileCount === undefined, p);
+p = f.prFacts({ ...pr, sensitiveFiles: Array.from({ length: 8 }, (_, i) => `.github/workflows/w${i}.yml`) });
+t.check("the fact lists at most five sensitive files and counts all", p.sensitiveFiles.length === 5 && p.sensitiveFiles[0] === ".github/workflows/w0.yml" && p.sensitiveFileCount === 8 && p.touchesSensitive, p);
+t.check("a discussion's category is a fact", f.issueFacts({ category: "Feature Requests" }, []).category === "Feature Requests" && !("category" in f.issueFacts({}, [])));
 t.check("red CI or a conflict make a PR unclean", !f.prFacts({ ...pr, ci: "failing" }).isClean && !f.prFacts({ ...pr, mergeable: "CONFLICTING" }).isClean);
 const opened = f.buildTimeline([ev(0, ME, "opened")], ctx).timeline;
 t.check("issue facts", JSON.stringify(f.issueFacts({ closingPrs: [{ state: "closed" }, { state: "open" }], isAnswered: true }, opened)) === '{"hasClosingPr":true,"isAnswered":true,"authorIsUs":true}' && f.issueFacts({ closingPrs: [{ state: "closed" }] }, []).hasClosingPr === false);
@@ -97,6 +101,7 @@ const pr12 = item("pr", "12");
 t.check("a PR without AI signals is not AI authored", pr12.facts?.aiAuthored === false && JSON.stringify(pr12.facts.aiSignals) === "[]", pr12.facts);
 const kinds = pr12.facts?.timeline.map((e) => e.kind) ?? [];
 t.check("a PR timeline holds reviews and thread comments", kinds.includes("opened") && kinds.includes("comment") && kinds.includes("review") && kinds.includes("thread_comment"), pr12.facts);
+t.check("the snapshot entry's facts name its sensitive files", Array.isArray(pr12.facts?.sensitiveFiles) && pr12.facts.sensitiveFiles.length > 0 && pr12.facts.sensitiveFiles.every((x) => pr12.sensitiveFiles.includes(x)) && pr12.facts.sensitiveFileCount === pr12.sensitiveFiles.length, pr12.facts);
 t.check("PR facts come from the entry", pr12.facts?.touchesSensitive === true && pr12.facts.openThreadCount === 3 && pr12.facts.dependencyOnly === false && JSON.stringify(pr12.facts.approvedBy) === `["${ME}"]`, pr12.facts);
 const issue = item("issue", "23");
 t.check("the bot's log feedback does not count as our turn", issue.facts?.lastSpeaker === "them" && issue.facts.waitingOn === "us" && issue.facts.timeline.at(-1).side === "automated" && issue.facts.authorIsUs === false, issue.facts);

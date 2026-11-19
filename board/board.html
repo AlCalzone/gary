@@ -226,6 +226,7 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 /* A fix or a push in progress: filled teal, readable at a glance on the title line */
 .r-titleline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .agent-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; background: var(--act-agent); color: var(--surface); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.r-dcat { padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; }
 .agent-chip.quiet { background: color-mix(in srgb, var(--act-agent) 14%, var(--surface)); color: var(--act-agent); }
 .ci-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 1.5px var(--surface); }
 .ci-dot.ci-passing { background: var(--ok); }
@@ -587,6 +588,9 @@ button.card-head:hover .chev { color: var(--fg); }
 .callout { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--fg); font-size: 13.5px; line-height: 1.5; }
 .callout .i { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--warn); }
 .callout.strong { box-shadow: inset 0 0 0 1px var(--warn); font-weight: 500; }
+.sensitive-banner { margin: 0 0 12px; font-weight: 400; }
+.sensitive-banner[hidden] { display: none; }
+.sensitive-banner code { overflow-wrap: anywhere; }
 .reason { align-self: flex-start; }
 .card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .editor-tools { display: flex; justify-content: flex-end; margin-top: -6px; }
@@ -956,6 +960,7 @@ textarea {
       <div class="d-sec rounds" id="d-rounds" hidden></div>
     </div>
     <section class="ways" aria-label="Ways forward">
+      <div class="callout strong sensitive-banner" id="d-sensitive" role="note" hidden></div>
       <p class="working-line" id="d-working" role="status" hidden></p>
       <p class="state" id="d-verdict"></p>
       <div class="routes" id="d-routes"></div>
@@ -1317,7 +1322,7 @@ function matchesFilters(d) {
   const q = f.text.trim().toLowerCase();
   if (q) {
     const labels = Array.isArray(d.labels) ? d.labels.map(str).join(" ") : "";
-    const hay = [str(d.title), str(d.author), "#" + str(d.number), str(d.number), labels, str(d.state)]
+    const hay = [str(d.title), str(d.author), "#" + str(d.number), str(d.number), labels, discussionCategory(d), str(d.state)]
       .join(" ").toLowerCase();
     if (!hay.includes(q)) return false;
   }
@@ -2047,6 +2052,7 @@ function stateIcons(id, d, dim, withPassing) {
     else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
     else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", doneName(a), null, doneName(a)]);
   }
+  if (sensitiveOf(d)) out.push(["alert", "warn", sensitiveSummary(sensitiveOf(d)) + ". Gary does not push to this PR.", null, "Sensitive files"]);
   const open = !isClosedThread(id, d);
   if (d.kind === "pr" && d.ci === "failing") out.push(["ciFail", "bad", "CI failing"]);
   const openThreads = Array.isArray(d.threads) ? d.threads.filter((t) => t && typeof t === "object").length : 0;
@@ -2202,6 +2208,7 @@ function buildRow(id, d, dim, slot) {
   const rec = recommendedRoute(d);
   const hint = rec && blockedRoute(d, rec) ? str((visibleRoutes(d).find((r) => r.recommended) || visibleRoutes(d)[0])?.title).trim() : str(d.hint).trim() || str(rec?.title).trim();
   const chip = agentChip(d);
+  const dcat = discussionCategory(d) ? h("span", { class: "r-dcat", title: "Discussion category", text: discussionCategory(d) }) : null;
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
   const type = AUTHOR_ICONS[authorTypeOf(d)];
@@ -2218,7 +2225,7 @@ function buildRow(id, d, dim, slot) {
     h("span", { class: "r-main" },
       // The combined tab names the repo, so the full ref gets its own quiet line above the title
       combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
-      chip ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), chip) : h("span", { class: "r-title", title, text: title }),
+      chip || dcat ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), dcat, chip) : h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
     meta,
@@ -2228,7 +2235,7 @@ function buildRow(id, d, dim, slot) {
 
 const HINT_ACTIONS = [
   "Request changes", "Start fix", "Take over", "Change", "Apply fixes",
-  "Merge", "Reply", "Approve", "Close", "Decide", "Review", "Ask", "React", "Snooze", "Dismiss",
+  "Merge", "Reply", "Approve", "Close", "Decide", "Review", "Ask", "React", "Snooze", "Dismiss", "Accept", "Move",
 ];
 
 // Split a hint into its action and the rest, so the action can be bold
@@ -2537,6 +2544,7 @@ function renderDetailHead(d, dim) {
     badges,
     autofixBadge(d),
     autoReviewOf(d) ? h("span", { class: "tag auto-review-tag", text: autoWaiting(d) ? AUTO_WAITING_TEXT : "Reviewed automatically" }) : null,
+    discussionCategory(d) ? h("span", { class: "tag label category", title: "Discussion category", text: discussionCategory(d) }) : null,
     labels.map((l) => h("span", { class: "tag label", text: str(l) })),
     timeEl(d.updatedAt, "updated "),
   ].flat().filter(Boolean);
@@ -2552,6 +2560,7 @@ function renderDetailInfo(d) {
   detail.story.hidden = !story;
   detail.verdict.hidden = !verdict;
   renderAutoReview(d);
+  renderSensitive(d);
   renderRounds(d);
 
   const badges = reviewBadges(d);
@@ -2696,6 +2705,55 @@ function escalateCommand(inst) {
   return str(inst && inst.botCommands && inst.botCommands.escalate).trim();
 }
 
+// A discussion that becomes an issue through the profile's escalate command
+function escalateRoute(r) {
+  return r.type === "move" && str(paramsOf(r).to) === "issue";
+}
+
+// With `escalateAs: "me"` the server posts the command under his login after a click
+function escalatePosts(d) {
+  return instOf(d).escalateAs === "me";
+}
+
+const ISSUE_KIND_WORDS = { bug: "a bug issue", enhancement: "an enhancement issue" };
+
+function escalateNote(d, r) {
+  const becomes = "The discussion becomes " + (ISSUE_KIND_WORDS[str(paramsOf(r).issueKind)] || "an issue");
+  const command = "`" + escalateCommand(instOf(d)) + "`";
+  return escalatePosts(d) ? becomes + ". The button posts " + command + " under your GitHub login." : becomes + " once you post " + command + " there.";
+}
+
+// The changed files of a PR that match the profile's sensitive paths: `{ files, total }`, or null
+function sensitiveOf(d) {
+  const s = d.kind === "pr" && d.sensitive && typeof d.sensitive === "object" ? d.sensitive : null;
+  const files = s && Array.isArray(s.files) ? s.files.map(str).filter(Boolean) : [];
+  if (!files.length) return null;
+  return { files, total: Number.isInteger(s.total) && s.total > files.length ? s.total : files.length };
+}
+
+function sensitiveSummary(s) {
+  const more = s.total - s.files.length;
+  return "Touches sensitive files: " + s.files.join(", ") + (more > 0 ? " and " + more + " more" : "");
+}
+
+// The warning above the routes. It explains why the PR has no card that pushes
+function renderSensitive(d) {
+  const el = document.getElementById("d-sensitive");
+  const s = sensitiveOf(d);
+  el.hidden = !s;
+  if (!s) return el.replaceChildren();
+  const more = s.total - s.files.length;
+  const files = s.files.flatMap((f, i) => [i ? ", " : "", h("code", { text: f })]);
+  el.replaceChildren(icon("alert"), h("span", null,
+    h("strong", { text: "Touches sensitive files: " }), ...files, more > 0 ? " and " + more + " more" : "", ". ",
+    "Gary does not push to this PR. It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets."));
+}
+
+// The discussion's category on GitHub, like "Feature Requests"
+function discussionCategory(d) {
+  return d.kind === "discussion" ? str(d.category).trim() : "";
+}
+
 function recommendedRoute(d) {
   const routes = routesOf(d);
   return routes.find((r) => r.recommended === true) || routes[0] || null;
@@ -2835,7 +2893,13 @@ function routeButtons(d, r) {
     case "drive": return [{ id: "main", actor: "agent", label: "Drive this PR" }];
     case "move": {
       if (str(p.to) === "discussion") return [me("Open GitHub to convert", { copy: null })];
-      if (str(p.to) === "issue") return [me("Copy escalate command, open GitHub", { copy: "escalate" })];
+      if (str(p.to) === "issue") {
+        if (!escalatePosts(d)) return [me("Copy escalate command, open GitHub", { copy: "escalate" })];
+        return [
+          { id: "escalate", actor: "own", label: str(p.issueKind) === "enhancement" ? "Accept as an issue" : "Escalate to an issue", confirm: true, confirmVerb: "post " + escalateCommand(instOf(d)), input: { mode: "escalate" } },
+          me("Copy command, open GitHub", { copy: "escalate", secondary: true }),
+        ];
+      }
       const out = [];
       const ta = moveActor(r, "transfer");
       if (ta) out.push({ id: "transfer", actor: ta, label: "Transfer to " + str(p.to), confirm: true, input: { mode: "transfer" } });
@@ -2899,7 +2963,7 @@ function routeTarget(d, r, title, body, b) {
 
 // The board server serves every instance. Accounts, repos, bot commands and the pause switch belong to each instance.
 let boardInfo = { me: null, dryRun: false, instances: [] };
-const EMPTY_INSTANCE = { name: "", title: "", kind: "maintainer", repos: [], repoUrl: "", bot: null, accountMode: "bot", paused: false, relatedRepos: [], botCommands: {}, reviewBots: [] };
+const EMPTY_INSTANCE = { name: "", title: "", kind: "maintainer", repos: [], repoUrl: "", bot: null, accountMode: "bot", paused: false, relatedRepos: [], botCommands: {}, escalateAs: "prefill", reviewBots: [] };
 
 function instanceByName(name) {
   return boardInfo.instances.find((x) => x.name === name) || null;
@@ -2933,6 +2997,7 @@ function normalizeInstance(x) {
     name: str(o.name), title: str(o.title) || str(o.name),
     repos: Array.isArray(o.repos) ? o.repos.map(str) : [],
     botCommands: o.botCommands && typeof o.botCommands === "object" ? o.botCommands : {},
+    escalateAs: o.escalateAs === "me" ? "me" : "prefill",
     paused: o.paused === true,
   };
 }
@@ -3532,8 +3597,8 @@ function routePayload(d, r, rec, b) {
   if (r.type === "follow_up" && rec.titleInput && rec.titleInput.value !== str(paramsOf(r).title)) input.title = rec.titleInput.value;
   if (r.type === "drive") input.maxRounds = rec.rounds;
   if (labelPart(r) && actorOf(r) !== "me") input.alsoLabel = rec.alsoLabel !== false;
-  // A transfer moves the issue as it is, so no draft text goes along
-  const text = b && b.input && b.input.mode === "transfer" ? "" : rec.ta ? rec.ta.value : str(r.text);
+  // A transfer moves the issue as it is, and the server takes the escalate command from the profile, so no draft text goes along
+  const text = b && b.input && (b.input.mode === "transfer" || b.input.mode === "escalate") ? "" : rec.ta ? rec.ta.value : str(r.text);
   return { text, input };
 }
 
@@ -3553,7 +3618,7 @@ function meButton(id, d, r, rec, b, intent, locked) {
   const key = "r:" + r.id + ":" + b.id;
   const again = !!openedOf(id, r);
   return h("button", {
-    class: "btn me-btn intent-" + intent + (again ? " quiet" : r.recommended === true ? " primary" : ""), type: "button",
+    class: "btn me-btn intent-" + intent + (again || b.secondary ? " quiet" : r.recommended === true ? " primary" : ""), type: "button",
     disabled: locked || !isGithubUrl(str(d.url)), "data-focus-key": key, title: buttonTip(b, instOf(d)),
     onclick: async () => {
       if (!isGithubUrl(str(d.url))) return;
@@ -3615,6 +3680,9 @@ function buildCardActions(id, d, r, rec, locked) {
   }
   if (r.type === "close" && isClosedThread(id, d)) {
     return [h("span", { class: "status done step-done" }, icon("check"), h("span", { text: "Already closed" }))];
+  }
+  if (escalateRoute(r) && isClosedThread(id, d)) {
+    return [h("span", { class: "status opened" }, icon("check"), h("span", { text: "The discussion is closed" }))];
   }
 
   if (buttons.every((b) => b.actor === "me")) {
@@ -3682,7 +3750,8 @@ function buildCardActions(id, d, r, rec, locked) {
   }
   if (r.type === "take_over" || r.type === "revise") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
-  const ownButtons = buttons.filter((b) => b.actor === "own");
+  // The escalate row says under its title who posts
+  const ownButtons = escalateRoute(r) ? [] : buttons.filter((b) => b.actor === "own");
   if (ownButtons.length) {
     out.push(h("span", { class: "quiet-line", text: (ownButtons.length < buttons.length ? ownButtons[0].label + " runs" : "Runs") + " right away under your GitHub login" }));
   }
@@ -3698,7 +3767,10 @@ function buildCardActions(id, d, r, rec, locked) {
       },
     }));
   }
-  return out;
+  if (buttons.some((b) => b.actor === "me")) {
+    out.push(openedLine(id, r, rec, buttons), detail.meNotes.has(r.id) ? h("span", { class: "me-note", text: detail.meNotes.get(r.id) }) : null);
+  }
+  return out.filter(Boolean);
 }
 
 // The one actor of a card, or null when its buttons act as different people
@@ -3735,6 +3807,7 @@ function buildCard(id, d, r, rec) {
     // Formatting pushes to the contributor's branch, so the row says who commits and that he keeps the PR
     const note = r.type === "format"
       ? h("p", { class: "quiet-line compact-note", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") + ". Does not take over the PR." })
+      : escalateRoute(r) ? h("p", { class: "quiet-line compact-note escalate-note" }, richText(escalateNote(d, r)))
       : null;
     rec.card.replaceChildren(...[rec.head, note, rec.dismissBox, callout, rec.status].filter(Boolean));
     return;
@@ -3777,7 +3850,7 @@ function settledOf(id, d, r, rec) {
   if (detail.lastRoute === r.id && note && note.kind === "done") return { text: agent ? "Requested" : "Done", url: "", marks, pending: false };
   const o = openedOf(id, r);
   const buttons = routeButtons(d, r);
-  if (!o || !buttons.every((b) => b.actor === "me")) return null;
+  if (!o || !buttons.some((b) => b.actor === "me")) return null;
   const copies = buttons.some((b) => b.copy === "escalate" || (b.copy === "draft" && routeHasEditor(r)));
   return { text: (copies ? "Copied and opened" : "Opened") + ", " + hhmm(o.at), url: "", marks, pending: !!partActor(d) && parts.some((part) => !partDone(part)) };
 }

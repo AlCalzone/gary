@@ -142,8 +142,9 @@ It writes `config.json`, an empty `personal.md` and `state/` into the home direc
 
 - With a bot, every GitHub write runs as the bot with its token in `GH_TOKEN`. No `gh` shell function or alias plays a part.
 - Without a bot, routes without a text, like a transfer, a chore or inline review comments, run only when `allowOwnTokenPushes` is true. They then run under the maintainer's stored `gh` login, after a check that this login is `me`.
-- `request_review` with `reviewer: "copilot"` always runs under his stored login, after the same check. With a bot configured, the helper in `scripts/lib/gh.mjs` that does this is the only way to that login, and it sends only that one mutation.
-- No text the bot posts may contain a command from the profile's `botCommands`.
+- `request_review` with `reviewer: "copilot"` always runs under his stored login, after the same check. The helper in `scripts/lib/gh.mjs` that does this sends only that one mutation.
+- With `escalateAs: "me"` in the instance config, the escalate button of a `move` to `issue` route posts the profile's `botCommands.escalate` on the discussion under his stored login. `postEscalateCommand` in `scripts/lib/gh.mjs` reads the command from the profile, checks the login and the open discussion, and sends one `addDiscussionComment` mutation. Only `handleEscalate` in `server/server.mjs` calls it, and `test/sharing.test.zsh` checks that. With a bot configured, these two helpers are the only way to his login.
+- No text the bot posts may contain a command from the profile's `botCommands`. `escalate` is no entry of `ACTIONS`, so `gary action` and the MCP server cannot post it.
 
 ## MCP server
 
@@ -165,7 +166,7 @@ node server/server.mjs --watch      # restart on edits in server/ and scripts/li
 
 It listens on `127.0.0.1` at the `port` from the root `config.json`, for all instances. `GARY_DRY_RUN=1` turns on dry-run mode for the MCP server too. `--port` and `--board-dir` override the port and the data directory for tests.
 
-`GET /api/state` returns `board` next to the items: the project `name`, `repo` and `repoUrl`, `me` and `bot` with login and avatar URL (`bot` is `null` without one), `accountMode` (`bot`, `own` or `none`), `relatedRepos`, `botCommands`, `reviewBots` and `paused`. The page gets the same object from `window.claude.use("board")`. Every served route carries `actor`, who acts after a click: `me`, `bot`, `own`, `agent` or `unavailable`. A move to a repository carries `actors` with one entry per button.
+`GET /api/state` returns `board` next to the items: the project `name`, `repo` and `repoUrl`, `me` and `bot` with login and avatar URL (`bot` is `null` without one), `accountMode` (`bot`, `own` or `none`), `relatedRepos`, `botCommands`, `escalateAs` (`prefill` or `me`), `reviewBots` and `paused`. The page gets the same object from `window.claude.use("board")`. Every served route carries `actor`, who acts after a click: `me`, `bot`, `own`, `agent` or `unavailable`. A move to a repository carries `actors` with one entry per button.
 
 Edits reach open pages without a manual reload. When `board/board.html` changes, the server tells open pages to reload. A page with an open dialog or typed text waits and shows "Updated, reload" instead. After `board_start`, the MCP server watches `server/server.mjs` and `scripts/lib/*.mjs` and restarts the board server with the new code. When the new code fails to load, the old server keeps running.
 
@@ -183,7 +184,7 @@ The page cannot send an arbitrary action. A click sends `{ itemId, routeId, text
 
 - The draft hash covers the route's stored text, its params and the item's `reviewedAt`. When the routine rewrote the route after the page showed it, the server answers "The board is out of date, reload it."
 - A route that already ran or was queued with the same draft is refused with 409.
-- A route whose actor is `me` never reaches GitHub through the server: the page copies its text and opens the thread, and the maintainer acts there. That covers replies to people, every close and every merge. The one close the server runs is a `move` with `input.mode: "close"`, which posts the route's text and closes as not planned.
+- A route whose actor is `me` never reaches GitHub through the server: the page copies its text and opens the thread, and the maintainer acts there. That covers replies to people, every close and every merge. The one close the server runs is a `move` with `input.mode: "close"`, which posts the route's text and closes as not planned. The one comment the server posts in his name is the escalate command: a `move` to `issue` with `input.mode: "escalate"`, only with `escalateAs: "me"`. The spec's "Escalate" section lists its checks.
 - A bot route runs after the click as the bot, or under the maintainer's login in `own` mode. An `unavailable` route is refused.
 - An agent route writes a queued action doc. `drive` and `address_review` are refused unless the PR is by a maintainer, a bot or Copilot, or carries `takenOver: true`. Pushing our commits to a contributor's PR is always a take-over, so a `take_over` route carries the per-thread decisions there. `take_over` is refused on every PR where `drive` is allowed. A change to such a PR is a `revise` route: the agent follows the route's text, which the maintainer can edit on the "Change" card, and pushes to the PR branch. A stored `take_over` with mode `push` on such a PR is served and run as `revise` (`servedRoute` in `scripts/lib/routes.mjs`), so the board is right before the next triage rewrites the item.
 - `dismiss_route` removes one suggested route and remembers it with the reason. When it was the last route, a `reanalyze` request is queued so the agent proposes something else.
@@ -217,8 +218,10 @@ Every snapshot entry carries `facts`, computed in code:
 
 - `timeline: [{ at, author, side, kind }]`, oldest first, the newest 200 events kept. `side` is `us`, `them`, `automated` or `bot`. `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `timelineTruncated` is set only when events are missing.
 - `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), `waitingDays`.
-- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
-- Issues and discussions: `hasClosingPr` (an open or merged PR), `isAnswered`, `authorIsUs`.
+- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `sensitiveFiles` (the first 5 paths that match the profile's `sensitivePaths`) with `sensitiveFileCount`, `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
+- Issues and discussions: `hasClosingPr` (an open or merged PR), `isAnswered`, `authorIsUs`. Discussions also carry `category`, the category's name.
+
+The server reads two things for the page from the snapshot, with `sensitiveFacts` and the entry's `category`: a PR's `sensitive: { files, total }` for the warning in the dialog, and the `category` of a discussion whose item has none yet. The routine copies `category` into the item like `isAnswered`.
 
 The classification rules take these as given. The profile's `automatedComments` decides which bot comments are `automated`. Its entries are `{ name, pattern, origin? }`, where `pattern` is a regex without flags, tested against the start of the comment body.
 

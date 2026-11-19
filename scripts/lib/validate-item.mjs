@@ -1,7 +1,7 @@
 // Checks a board item against the rules of SPEC.md before it is written.
 import { ID_PATTERN } from "./board-store.mjs";
 import { fixBlock } from "./fixes.mjs";
-import { MOVE_MODES, CHORE_ACTIONS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, takeOverRefusal } from "./routes.mjs";
+import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
 const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
@@ -62,6 +62,7 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 	if (item.reviewDecision !== undefined && !DECISIONS.includes(item.reviewDecision)) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);
 	}
+	if (item.category !== undefined && !(item.kind === "discussion" && isString(item.category))) err("category", "category is the discussion's category name, from the snapshot, and only discussions have one");
 	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
 	if (item.lastEventUrl !== undefined && !(typeof item.lastEventUrl === "string" && typeof item.url === "string" && item.lastEventUrl.startsWith(item.url + "#"))) {
 		err("lastEventUrl", "lastEventUrl must be a URL of the item's own thread, its url followed by #anchor");
@@ -245,6 +246,8 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 				} else if (params.to === "issue") {
 					if (item.kind !== "discussion") err("move-target", `${where}: only a discussion can become an issue`);
 					if (!isString(profile.botCommands?.escalate)) err("move-escalate", `${where}: the profile has no escalate command`);
+					if (item.live?.state === "closed") err("move-closed", `${where}: the discussion is closed, so it cannot become an issue`);
+					if (params.issueKind !== undefined && !ISSUE_KINDS.includes(params.issueKind)) err("move-issue-kind", `${where}: params.issueKind must be one of ${ISSUE_KINDS.join(", ")}`);
 				} else if (!isString(params.to)) {
 					err("move-target", `${where}: params.to is required`);
 				} else {

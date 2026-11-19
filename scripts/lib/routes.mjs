@@ -23,6 +23,8 @@ export const DRIVE_AUTHORS = new Set(["maintainer", "bot", "copilot"]);
 export const PREFILL_TYPES = new Set(["reply", "request_logs", "reopen", "follow_up"]);
 export const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "revise", "drive", "follow_up", "format"]);
 export const MOVE_MODES = ["transfer", "close"];
+// What a discussion becomes after the escalate command. It only words the card, the repo's workflow picks the label
+export const ISSUE_KINDS = ["bug", "enhancement"];
 export const CHORE_ACTIONS = new Set(["label", "assign", "ready", "answer_discussion", "react", "update_branch", "rerun_ci"]);
 
 /** The route's actor, or undefined when the type is unknown or the given `as` is not allowed for it. */

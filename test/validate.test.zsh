@@ -244,6 +244,16 @@ expect "alsoAnswer is refused on issues" 1 "only for close routes of discussions
 expect "alsoAnswer is refused on other routes" 1 "only for close routes of discussions" answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/31#x","gist":"x"}' "$DBASE" reply
 node $B put items disc-31 --delete > /dev/null 2>&1
 
+# A discussion that becomes an issue
+escalate() { mk esc "{${2:-$DBASE}${3:-},\"hint\":\"Accept: track as an enhancement issue\",\"routes\":[{\"id\":\"r1\",\"type\":\"move\",\"title\":\"Accept: track as an enhancement issue\",\"as\":\"me\",\"recommended\":true,\"params\":$1}]}"; node $B put items disc-31 $H/esc.json }
+expect "move to issue with issueKind and a category" 0 '"ok":true' escalate '{"to":"issue","issueKind":"enhancement"}' "$DBASE" ',"category":"Feature Requests"'
+expect "move to issue without issueKind" 0 '"ok":true' escalate '{"to":"issue"}'
+expect "issueKind is bug or enhancement" 1 "params.issueKind must be one of bug, enhancement" escalate '{"to":"issue","issueKind":"feature"}'
+expect "no escalation of a closed discussion" 1 "the discussion is closed" escalate '{"to":"issue"}' "$DBASE" ',"live":{"state":"closed","checkedAt":"2026-11-17T14:00:00Z"}'
+expect "only a discussion becomes an issue" 1 "only a discussion can become an issue" escalate '{"to":"issue"}' "${DBASE/discussion/issue}"
+expect "only a discussion has a category" 1 "only discussions have one" escalate '{"to":"issue"}' "${DBASE/discussion/issue}" ',"category":"Ideas"'
+node $B put items disc-31 --delete > /dev/null 2>&1
+
 # gary action --autonomous
 act() { print -r -- "$1" | node $B action --dry-run $2 }
 expect "autonomous: a label from autoLabels" 0 "addLabelsToLabelable" act '{"action":"label","kind":"issue","number":21,"params":{"add":["needs-info"]}}' --autonomous

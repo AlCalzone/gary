@@ -47,6 +47,7 @@ Group the entries by what they say about his preferences. Use the `item` context
 - `unchecked_comment`: he unchecks the same kind of inline comment, like style nits in generated files.
 - `agent_note` and `dismissed_proposal` reasons: his notes repeat an instruction. On a `revise` route the `agent_note` holds the instructions he sent after editing the agent's proposal, so a recurring rewrite shows what the proposals get wrong.
 - `auto_review`: the automatic first review the agent posted on a contributor PR without his click, with its `findings`. It is the agent's work, never his decision, so it is no evidence on its own. Compare it with what he does on the same `itemId` afterwards: an `unchecked_comment` or an `edited_text` on his own review that drops or softens one of its findings, a `changed_event` to `approve`, or a `dismissed_route` of the review contradicts it. Count how many automatic reviews he contradicted and how many he did not, and say both numbers in the proposal's `why`. A recurring contradiction points to a rule about what counts as certain, in `rules/review.md`.
+- `escalated`: he had the board post the escalate command on a discussion. `category` and `issueKind` say which kind of discussion he turns into an issue, like feature requests for one device family. Use it to tune when the `move` to `issue` route is recommended.
 - `snoozed`: he puts off the same kind of item. Use it only as support for another signal, never alone.
 
 ## 3. Evidence bar

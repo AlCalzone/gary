@@ -2,7 +2,8 @@
 // A stand-in for the gh binary in tests. It answers the reads Gary makes from test/fixtures/github.mjs
 // and refuses every write, so no test can reach GitHub.
 //   FAKE_GH_WRITES         a file. With it the fake accepts the two mutations of the fix review rounds, a Copilot
-//                          review request and marking a PR ready, and a PR review, and appends one line per accepted write
+//                          review request and marking a PR ready, a PR review and a discussion comment, and appends
+//                          one line per accepted write. A `writeError` in FAKE_GH_OVERRIDES makes such a write fail with that message
 //   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
 //   FAKE_GH_LOGIN          the stored login without GH_TOKEN, default octocat. Empty means not logged in
 //   FAKE_GH_LOG            a file that gets one line per call, for tests that check what ran
@@ -58,8 +59,16 @@ if (/^\s*mutation\b/.test(query)) {
 		["requestCopilotCodeReview", { requestCopilotCodeReview: { success: true, failureReason: null } }],
 		["markPullRequestReadyForReview", { markPullRequestReadyForReview: { pullRequest: { url: `${gh.URL}/pull/0` } } }],
 		["addPullRequestReview", { addPullRequestReview: { pullRequestReview: { url: `${gh.URL}/pull/${String(v.id).replace("PR_", "")}#pullrequestreview-777` } } }],
+		["addDiscussionComment", { addDiscussionComment: { comment: { url: `${gh.URL}/discussions/${String(v.id).replace("D_", "")}#discussioncomment-900` } } }],
 	].find(([name]) => query.includes(name));
 	if (!process.env.FAKE_GH_WRITES || !accepted) fail("fake gh refuses every write", undefined);
+	let writeError;
+	try {
+		writeError = JSON.parse(readFileSync(process.env.FAKE_GH_OVERRIDES, "utf8")).writeError;
+	} catch {
+		// No overrides
+	}
+	if (writeError) fail(writeError, { [accepted[0]]: null });
 	appendFileSync(process.env.FAKE_GH_WRITES, JSON.stringify({ mutation: accepted[0], variables: v, as: process.env.GH_TOKEN ? (process.env.GH_TOKEN === gh.BOT_TOKEN ? gh.BOT : "someone-else") : (process.env.FAKE_GH_LOGIN ?? gh.ME) }) + "\n");
 	out({ data: accepted[1] });
 }

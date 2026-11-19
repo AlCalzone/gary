@@ -30,7 +30,11 @@ export const CONFIG_DEFAULTS = {
 	maxAutoFixesPerRun: 2,
 	maxPendingAutoFixes: 10,
 	fastTier: "off",
+	escalateAs: "prefill",
 };
+
+// Who posts the profile's escalate command on a discussion: the server under the maintainer's login, or he himself after a copy
+export const ESCALATE_AS = ["me", "prefill"];
 
 export const FIX_REVIEWERS = ["copilot", "off"];
 export const FIX_REVIEW_REQUESTERS = ["me", "bot"];
@@ -322,6 +326,7 @@ export function checkConfig(data) {
 		check(errors, data[key] === undefined || isInt(data[key], 0, 3650), `"${key}" must be a whole number`);
 	}
 	check(errors, data.fastTier === undefined || FAST_TIERS.includes(data.fastTier), `"fastTier" must be one of ${FAST_TIERS.join(", ")}`);
+	check(errors, data.escalateAs === undefined || ESCALATE_AS.includes(data.escalateAs), `"escalateAs" must be one of ${ESCALATE_AS.join(", ")}`);
 	const fr = data.fixReview;
 	if (fr !== undefined) {
 		if (!fr || typeof fr !== "object" || Array.isArray(fr)) {

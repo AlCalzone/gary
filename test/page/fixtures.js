@@ -237,6 +237,7 @@ window.makeRouteFixtures = (iso) => {
       author: "memphi2",
       story: "Since firmware 3.3 the switch reports power in kW instead of W. Two other users confirmed it with the same firmware.",
       state: "This is a config problem and belongs in an issue.",
+      category: "Request Support / Investigate Issue",
       routes: [
         { id: "r1", type: "move", as: "me", title: "Move: escalate to an issue", params: { to: "issue" }, recommended: true, draftHash: "h1" },
         { id: "r2", type: "reply", as: "me", title: "Reply: ask for the firmware version", text: "Which firmware version does your switch report in the node info? Please post a screenshot of the device page.", draftHash: "h2" },

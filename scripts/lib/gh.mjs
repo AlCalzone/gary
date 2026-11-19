@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { homePath, loadConfig } from "./config.mjs";
+import { homePath, loadConfig, loadProfile, repoParts } from "./config.mjs";
 
 const GH_TIMEOUT_MS = 60000;
 const STDERR_TAIL = 500;
@@ -124,7 +124,7 @@ export async function gh(args, { input } = {}) {
 
 /**
  * Requests a Copilot review on a PR. By default it runs under your own stored `gh` login. With a bot configured
- * this is the only way to reach that login: it runs only this fixed mutation, after checking that the login is `me`.
+ * only this helper and `postEscalateCommand` reach that login. It runs only this fixed mutation, after checking that the login is `me`.
  * With `as: "bot"` the bot's token sends the same mutation.
  * With `dryRun` it runs only the login check and returns the invocation it would send.
  */
@@ -150,6 +150,66 @@ export async function requestCopilotReview(pullRequestId, { dryRun = false, as =
 	const response = JSON.parse(stdout);
 	if (response.errors?.length) throw new Error(response.errors.map((e) => e.message).join("; "));
 	return { login, ...response.data.requestCopilotCodeReview };
+}
+
+/** Runs one GraphQL request under the stored gh login and returns `data`. */
+async function ownGraphql(body) {
+	let stdout;
+	try {
+		stdout = await run(GRAPHQL_ARGS, JSON.stringify(body), storedLoginEnv());
+	} catch (e) {
+		stdout = e.stdout;
+		if (!stdout || e.timedOut) throw new Error(e.message);
+	}
+	let response;
+	try {
+		response = JSON.parse(stdout);
+	} catch {
+		throw new Error(`gh returned non-JSON output: ${stdout.slice(0, 500)}`);
+	}
+	if (response.errors?.length) throw new Error(response.errors.map((e) => e.message).join("; "));
+	return response.data;
+}
+
+const MISSING_PERMISSION = /required scopes|not been granted|not accessible by|must have .*access|insufficient/i;
+
+/**
+ * Posts the profile's `botCommands.escalate` as a comment on a discussion, under your own stored `gh` login.
+ * This is the only code that posts a bot command. The text comes from the profile and from nowhere else.
+ * Call it only for a click on the board's escalate button.
+ * Throws when the instance has no `escalateAs: "me"`, when the profile has no escalate command, when the stored
+ * login is not `me`, when the discussion is closed, and when GitHub refuses the comment.
+ * With `dryRun` it runs the checks and the reads, and returns the invocation it would send.
+ */
+export async function postEscalateCommand({ repo, number, dryRun = false }) {
+	if (loadConfig().escalateAs !== "me") throw new Error('Posting the escalate command needs "escalateAs": "me" in config.json.');
+	const command = loadProfile().botCommands?.escalate;
+	if (typeof command !== "string" || !command.trim()) throw new Error("The profile has no escalate command.");
+	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
+	const login = await verifyOwnLogin();
+	const { owner, name } = repoParts(repo);
+	const found = await ownGraphql({
+		query: `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { discussion(number: $number) { id url closed category { name } } } }`,
+		variables: { owner, name, number },
+	});
+	const discussion = found?.repository?.discussion;
+	if (!discussion) throw new Error(`Discussion #${number} not found`);
+	if (discussion.closed) throw new Error(`Discussion #${number} is closed.`);
+	const body = {
+		query: `mutation($id: ID!, $body: String!) { addDiscussionComment(input: { discussionId: $id, body: $body }) { comment { url } } }`,
+		variables: { id: discussion.id, body: command },
+	};
+	if (dryRun) return { dryRun: true, login, command, invocation: { command: ["gh", ...GRAPHQL_ARGS], as: login, stdin: body } };
+	let data;
+	try {
+		data = await ownGraphql(body);
+	} catch (e) {
+		if (MISSING_PERMISSION.test(e.message)) {
+			throw new Error(`Your gh login ${login} may not comment on discussions of ${owner}/${name}. GitHub says: ${e.message}`);
+		}
+		throw e;
+	}
+	return { login, command, url: data?.addDiscussionComment?.comment?.url ?? discussion.url };
 }
 
 function run(args, input, env) {

@@ -94,6 +94,14 @@ export function lastEventBy(timeline, author) {
 	return timeline.filter((e) => e.kind !== "opened" && String(e.author).toLowerCase() === login).at(-1)?.at ?? null;
 }
 
+export const MAX_SENSITIVE_FILES = 5;
+
+/** The first changed files of a PR entry that match the profile's `sensitivePaths`, with their full count. Empty without a match. */
+export function sensitiveFacts(entry) {
+	const files = (Array.isArray(entry?.sensitiveFiles) ? entry.sensitiveFiles : []).filter((f) => typeof f === "string" && f);
+	return files.length ? { sensitiveFiles: files.slice(0, MAX_SENSITIVE_FILES), sensitiveFileCount: files.length } : {};
+}
+
 /** The facts of a PR entry from the snapshot. */
 export function prFacts(entry) {
 	const approvedBy = (entry.reviewSummary ?? []).filter((r) => r.state === "approved").map((r) => r.author);
@@ -106,6 +114,7 @@ export function prFacts(entry) {
 		// Only a complete file list can prove a PR changes dependencies only
 		dependencyOnly: files.length > 0 && files.length >= (entry.changedFileCount ?? files.length) && files.every(isDependencyFile),
 		touchesSensitive: (entry.sensitiveFiles ?? []).length > 0,
+		...sensitiveFacts(entry),
 		openThreadCount,
 		approvedBy,
 		changesRequestedBy,
@@ -176,6 +185,7 @@ export function issueFacts(entry, timeline) {
 	return {
 		hasClosingPr: (entry.closingPrs ?? []).some((p) => p.state !== "closed"),
 		isAnswered: entry.isAnswered === true,
+		...(typeof entry.category === "string" && { category: entry.category }),
 		authorIsUs: timeline.find((e) => e.kind === "opened")?.side === "us",
 	};
 }
