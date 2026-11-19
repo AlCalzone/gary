@@ -2817,7 +2817,9 @@ function routeIntent(r) {
 }
 
 // A route without text or choices is one row with its button. Everything else is a card that expands.
-function routeCompact(r) {
+// A card with two buttons needs the room of an expandable card
+function routeCompact(r, d) {
+  if (routeButtons(d, r).length > 1) return false;
   switch (r.type) {
     case "chore":
     case "open":
@@ -3782,7 +3784,7 @@ function cardActor(d, r) {
 function buildCard(id, d, r, rec) {
   const p = paramsOf(r);
   const finding = (Array.isArray(d.findings) ? d.findings : []).find((f) => f && f.routeId === r.id) || null;
-  const compact = routeCompact(r);
+  const compact = routeCompact(r, d);
   rec.ta = null;
   rec.titleInput = null;
   rec.revealBox = null;
@@ -3828,6 +3830,7 @@ function buildCard(id, d, r, rec) {
     finding ? h("p", { class: "card-finding" }, h("span", { class: "vlabel sev-" + severityClass(finding.severity), text: str(finding.severity) || "note" }), " ", richText(finding.text)) : null,
     r.type === "take_over" && p.mode !== "replace" ? h("p", { class: "quiet-line", text: "Continues in the contributor's PR" }) : null,
     callout,
+    escalateRoute(r) ? h("p", { class: "quiet-line escalate-note" }, richText(escalateNote(d, r))) : null,
     r.type === "close" ? closeReasonBadge(d, r) : null,
     ...buildCardInputs(id, d, r, rec),
     rec.actions,
@@ -3915,12 +3918,12 @@ function renderRoutes(id, d, locked) {
   }
   const routes = visibleRoutes(d).filter((r) => !detail.dismissed.has(r.id));
   if (detail.openRoute === undefined || (detail.openRoute !== null && !routes.some((r) => r.id === detail.openRoute))) {
-    const done = routes.find((r) => r.done && !routeCompact(r));
+    const done = routes.find((r) => r.done && !routeCompact(r, d));
     // Pick among the cards on screen, so a dismissed recommendation hands its place to the next card
     const rec = routes.find((r) => r.recommended === true) || routes[0];
     // A card whose action is done starts collapsed, with its confirmation in the header row
     const settled = rec ? settledOf(id, d, rec, detail.cards.get(rec.id)) : null;
-    detail.openRoute = rec && !routeCompact(rec) && !(settled && !settled.pending) ? rec.id : null;
+    detail.openRoute = rec && !routeCompact(rec, d) && !(settled && !settled.pending) ? rec.id : null;
   }
   const keep = new Set(routes.map((r) => r.id));
   for (const k of [...detail.cards.keys()]) if (!keep.has(k)) detail.cards.delete(k);
