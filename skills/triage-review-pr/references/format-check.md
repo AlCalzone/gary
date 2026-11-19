@@ -8,6 +8,7 @@ The profile's `rules/review.md` names the autofix commands per file type, with a
 
 - Tools, their versions and every configuration come from `<checkout>` at the base branch, never from the PR. Lint configs are code, and the PR's code is never executed.
 - The PR's files are data. Copy them in as text. Never copy a file that a tool loads as configuration or code, like a lint or formatter config, a plugin or a `package.json`. Such files match the profile's `sensitivePaths`, and a PR touching them gets no format check.
+- A PR with `facts.sensitiveOurs` gets the check for its other files. Leave out every changed file that matches `sensitivePaths`: do not copy it and do not pass it to a command. The tools and configs still come from the base branch, also when the PR is ours. When one of the PR's sensitive files is a config of the formatter or the linter itself, skip the check and leave `autofix` out, because the base branch's config would judge the files by rules the PR changes.
 - Run the commands on exactly the files the PR changed and still has (added or modified, not deleted).
 
 ## Steps

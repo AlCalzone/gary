@@ -32,9 +32,10 @@ const isString = (v) => typeof v === "string" && v.trim().length > 0;
  * Returns `{ errors, warnings }` for one item. Each entry is `{ code, message }`.
  * `mode` is the account mode from accountMode(), `profile` the loaded profile.json, `repos` the instance's allowed repos
  * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known. `sensitive` says whether
- * the PR's snapshot entry lists sensitive files: true, false, or undefined without an entry.
+ * the PR's snapshot entry lists sensitive files: true, false, or undefined without an entry. `sensitiveOurs` says
+ * that the entry also marks the PR as ours alone.
  */
-export function validateItem(id, item, { mode, profile, repos: repoList, fix = null, sensitive }) {
+export function validateItem(id, item, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
@@ -188,9 +189,10 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 		// No second fix while one runs or its PR is a draft or open
 		if (route.type === "follow_up" && route.as === "agent" && fixBlock(fix)) err("fix-running", `${where}: ${fixBlock(fix)}`);
 
-		// A PR with sensitive files gets no agent in its checkout
-		if (sensitiveRefusal(route, sensitive)) err("sensitive-push", `${where}: ${sensitiveRefusal(route, sensitive)}`);
-		if (isApiEdit(route)) checkApiEdit(item, route, profile, sensitive, where, err);
+		// A PR with sensitive files gets no agent in its checkout, unless only we committed to it
+		const refusal = sensitiveRefusal(route, sensitive, sensitiveOurs);
+		if (refusal) err("sensitive-push", `${where}: ${refusal}`);
+		if (isApiEdit(route)) checkApiEdit(item, route, profile, { sensitive, sensitiveOurs }, where, err);
 		else if (params.via !== undefined) err("api-edit", `${where}: params.via is only for take_over and revise routes, with the value "api"`);
 
 		switch (route.type) {
@@ -296,8 +298,9 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 }
 
 // The server commits the edits of an API edit exactly as the route holds them
-function checkApiEdit(item, route, profile, sensitive, where, err) {
+function checkApiEdit(item, route, profile, { sensitive, sensitiveOurs }, where, err) {
 	if (sensitive === false) err("api-edit-plain-pr", `${where}: this PR changes no sensitive files, so it gets the normal ${route.type} and no API edit`);
+	if (sensitive === true && sensitiveOurs) err("api-edit-our-pr", `${where}: only the maintainer and the bot committed to this PR, so it gets the normal ${route.type} and no API edit`);
 	if (typeof item.reviewedSha !== "string" || !/^[0-9a-f]{40}$/.test(item.reviewedSha)) err("api-edit-sha", `${where}: an API edit needs the item's reviewedSha as a full 40-character SHA`);
 	for (const problem of apiEditProblems(route.params, profile)) err("api-edit", `${where}: ${problem}`);
 }

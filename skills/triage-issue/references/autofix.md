@@ -104,6 +104,7 @@ Return the issue's item doc as one JSON object and nothing else:
 - `section`: `review`, because the maintainer has to read the draft PR.
 - `state`: what the fix changes and that the test failed before and passes after. Example: `Draft fix #431 stops the retry loop on a 413. The repro test failed on the default branch and passes with the fix.`
 - `links`: `{ "label": "Draft fix", "url": "<PR URL>" }`.
+- A fix that changed a file under the profile's `sensitivePaths`: `state` names the path and says to read that part of the diff with care, like `Draft fix #431 changes .github/bot-scripts/escalate.cjs. Read that diff with care.` Say nothing about the PR counting as sensitive or about limited pushes. The PR is ours alone while only the bot and the maintainer commit to it. `facts.sensitiveOurs` on its entry shows that.
 - `findings`: when the PR body names something you could not verify, the same sentence as a `question` finding, so the maintainer sees it on the board. The fix PR's own item carries it too, once the PR is reviewed for the board.
 - `routes`: none, and `"hint": null` and `"effortMinutes": null`. The `follow_up` route is gone, and no route announces the fix: the PR's "Fixes #N" link tells the reporter, and the board keeps the issue out of the plan while the fix PR is a draft or open. The draft PR's own item carries the work. The routine applies the profile's autonomous labels and assignments for an opened fix on its own.
 

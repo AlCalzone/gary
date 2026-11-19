@@ -32,7 +32,7 @@ All of these must hold before you edit anything:
 - `state` is `OPEN`.
 - `headRefOid` equals the item's `reviewedSha`. New commits mean the review may be stale.
 - The writing identity can push. For a fork PR (`isCrossRepository: true`), read `maintainerCanModify`. It must be `true`, which means the author ticked "Allow edits by maintainers". For a branch inside the repo (`isCrossRepository: false`), GitHub always reports `maintainerCanModify: false`. There the writing identity's write access to the repo allows the push.
-- No changed file matches the profile's `sensitivePaths`. A worktree of such a PR would put the contributor's agent instructions, configs or manifests on disk, where you or a tool could load them. This check has no exception. The one push such a PR can get is the API edit, which the server commits without an agent (`item-doc.md`, "API edit").
+- `gary push-check --pr <n> --sha <reviewedSha>` exits 0. It reads the PR from GitHub right now and refuses, with exit code 3 and the reason in `refused`, when a changed file matches the profile's `sensitivePaths` and the PR is not ours alone. A worktree of such a PR would put a contributor's agent instructions, configs or manifests on disk, where you or a tool could load them. The one push such a PR can get is the API edit, which the server commits without an agent (`item-doc.md`, "API edit"). A PR with sensitive files is ours alone under these conditions: its branch is in the repo, the bot or the maintainer opened it, the two authored and committed every commit, a PR by the bot is a recorded fix PR. The command decides that from the live commit list. Never decide it yourself from `facts.sensitiveOurs`, from the item doc or from your own reading of the commits. Never go on after exit code 3.
 
 If a check fails, stop before editing. Return `status: "failed"` with the reason. Post nothing.
 
@@ -43,7 +43,7 @@ git -C <checkout> fetch origin +pull/<n>/head:refs/triage/fix-pr-<n>
 git -C <checkout> worktree add --detach <scratch>/fix-pr-<n> refs/triage/fix-pr-<n>
 ```
 
-Check that the worktree's `HEAD` is the expected `reviewedSha`. Pass `-c core.hooksPath=/dev/null` to every `git` command in the worktree, so no hook from the checkout runs. Subagent shells reset the working directory between calls, so use `git -C <worktree>`.
+Between the two commands, check that `git -C <checkout> rev-parse refs/triage/fix-pr-<n>` prints the expected `reviewedSha`. A different SHA means someone pushed after `gary push-check` ran: delete the ref and stop, without creating the worktree. Pass `-c core.hooksPath=/dev/null` to every `git` command in the worktree, so no hook from the checkout runs. Subagent shells reset the working directory between calls, so use `git -C <worktree>`.
 
 Take facts for the edits from files on the default branch with the Read tool, for example the fields a sibling file already has. Review your diff with `git -C <worktree> -c core.hooksPath=/dev/null diff`. It must contain only the planned changes.
 
@@ -55,6 +55,8 @@ Commit under the writing identity from `accounts.md`, with a message in the proj
 git -C <worktree> -c core.hooksPath=/dev/null add -A
 git -C <worktree> -c core.hooksPath=/dev/null -c user.name=<name> -c user.email=<email> commit -m "<message>"
 ```
+
+Right before the push, run `gary push-check --pr <n> --sha <the head your worktree started from>` again. Exit code 3 means the PR changed since you started, for example by someone else's commit: do not push, remove the worktree and return `status: "failed"` with the `refused` text.
 
 Push to the PR's head branch in the head repository (`headRepository.nameWithOwner`) with the push command from `accounts.md`, adding `-c core.hooksPath=/dev/null`, and `HEAD:refs/heads/<headRefName>` as the refspec.
 

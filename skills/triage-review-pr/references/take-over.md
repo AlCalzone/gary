@@ -2,7 +2,7 @@
 
 The maintainer clicked `take_over` on a contributor PR that is not taken over yet. Finishing it ourselves is quicker than another round trip. On a PR we already control (by the maintainer, the bot, another bot or Copilot, or with `takenOver: true`), return `status: "failed"`: changes there are a `revise`, see `revise.md`. You get the action file (`params.mode`, optional `params.decisions` with one decision per open thread, optional `text` with instructions), the item doc with the review's findings and threads, and a scratch directory.
 
-A `take_over` route with `params.via: "api"` never reaches you. The server commits its text edits itself after the click, and it is the only take-over a PR with sensitive files can get. When an action for such a PR reaches you anyway, the precondition in `push-to-pr.md` refuses it.
+A `take_over` route with `params.via: "api"` never reaches you. The server commits its text edits itself after the click, and it is the only take-over a PR with sensitive files can get. When an action for such a PR reaches you anyway, `gary push-check` in the preconditions of `push-to-pr.md` refuses it. A contributor's PR is never ours alone.
 
 ## What a take-over never does
 
@@ -22,7 +22,7 @@ The normal mode. Continue in the contributor's PR with our commits, pushed under
 
 The exception. The route's `callout` said why pushing to the branch is not possible, usually because the contributor did not allow edits by maintainers.
 
-1. Check that the PR is open and touches no sensitive path.
+1. Check that `gary push-check --pr <n> --sha <reviewedSha>` exits 0. It refuses a PR that is not open and a contributor's PR that touches a sensitive path.
 2. Create a worktree on a new branch from the default branch:
    ```bash
    git -C <checkout> fetch origin <default branch>

@@ -15,7 +15,7 @@ import { applyProposal, applySetting, cut, isSettingProposal, logDecision } from
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
-import { sensitiveFacts, touchesSensitive } from "../scripts/lib/facts.mjs";
+import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
@@ -952,10 +952,10 @@ export async function startBoardServer({
 		const autoReviews = await readAutoReviews(name);
 		const autoReviewOf = (id, data) => (data.kind === "pr" ? autoReviewState(data, autoReviews[id], fixSources.snapshot[id]) : null);
 		const categoryOf = (id, data) => (data.kind === "discussion" && typeof data.category !== "string" ? fixSources.snapshot[id]?.category : undefined);
-		// The changed files of a PR that match the profile's sensitivePaths, so the dialog can say why nothing pushes to it
+		// The changed files of a PR that match the profile's sensitivePaths, so the dialog can say what may push to it
 		const sensitiveOf = (id, data) => {
 			const { sensitiveFiles: files, sensitiveFileCount: total } = data.kind === "pr" ? sensitiveFacts(fixSources.snapshot[id]) : {};
-			return files ? { files, total } : null;
+			return files ? { files, total, ...(sensitiveOurs(fixSources.snapshot[id]) && { ours: true }) } : null;
 		};
 		return items.map(({ id, data }) => ({
 			...data,
@@ -1278,10 +1278,10 @@ export async function startBoardServer({
 
 			if (route.type === "move" && route.params?.to === "issue") return handleEscalate(name, itemId, item, route, body, key, hash);
 
-			// A PR with sensitive files gets no agent in its checkout, also when the item file still offers one
+			// A PR with sensitive files that is not ours alone gets no agent in its checkout, also when the item file still offers one
 			if (item.kind === "pr") {
 				const snapshot = await withInstance(name, () => readSnapshotItems());
-				const refusal = sensitiveRefusal(route, touchesSensitive(snapshot[itemId]));
+				const refusal = sensitiveRefusal(route, touchesSensitive(snapshot[itemId]), sensitiveOurs(snapshot[itemId]));
 				if (refusal) return [200, { ok: false, result: refusal, sensitive: true }];
 			}
 

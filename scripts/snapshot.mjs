@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
-import { aiFacts, buildTimeline, issueFacts, lastEventBy, prFacts, reviewRequestsFor, sizeFacts, speakerFacts } from "./lib/facts.mjs";
+import { aiFacts, buildTimeline, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
 
@@ -59,10 +59,10 @@ const PR_FIELDS = `
 				${REVIEW_REQUEST_EVENTS}
 				labels(first: 30) { nodes { name } }
 				assignees(first: 10) { nodes { login } }
-				headRefOid headRefName baseRefName reviewDecision mergeable
+				headRefOid headRefName baseRefName isCrossRepository reviewDecision mergeable
 				additions deletions
 				commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-				allCommits: commits(first: ${MAX_COMMITS}) { totalCount nodes { commit { message author { name email user { login } } committer { name email user { login } } } } }
+				allCommits: commits(first: ${MAX_COMMITS}) { totalCount nodes { commit { message signature { isValid wasSignedByGitHub } author { name email user { login } } committer { name email user { login } } } } }
 				files(first: ${MAX_FILES}) { totalCount nodes { path additions deletions } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
@@ -103,6 +103,14 @@ const MORE_REVIEWS_QUERY = `query($owner: String!, $name: String!, $number: Int!
 	repository(owner: $owner, name: $name) {
 		pullRequest(number: $number) {
 			reviews(first: 100, after: $after) { ${REVIEW_STATE_FIELDS} }
+		}
+	}
+}`;
+
+const ALL_FILES_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $number) {
+			files(first: 100, after: $after) { totalCount pageInfo { hasNextPage endCursor } nodes { path additions deletions } }
 		}
 	}
 }`;
@@ -295,8 +303,9 @@ export async function main(argv = []) {
 /**
  * Fetches one item fresh from GitHub, with the same fields as the full snapshot. Writes no state.
  * `kind` is pr, issue or discussion. `repo` defaults to the instance's repo and must be one of its repos.
+ * With `allFiles`, a PR's entry lists every changed file, also beyond the snapshot's first page.
  */
-export async function fetchItem(kind, number, repo = loadProfile().repo) {
+export async function fetchItem(kind, number, repo = loadProfile().repo, { allFiles = false } = {}) {
 	if (!Object.hasOwn(ITEM_QUERIES, kind)) throw new Error(`kind must be one of ${Object.keys(ITEM_QUERIES).join(", ")}`);
 	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
 	if (!allowedRepo(instanceName(), repo)) throw new Error(`${repo} is not a repository of instance ${instanceName()}`);
@@ -321,7 +330,10 @@ export async function fetchItem(kind, number, repo = loadProfile().repo) {
 	const ctx = factsContext();
 	if (kind === "pr") {
 		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node), attachAutoReviews([node])]);
-		return withFacts("pr", node, toPr(node, classify, loadProfile().sensitivePaths), ctx);
+		if (allFiles && (node.files.totalCount ?? 0) > node.files.nodes.length) node.files = await fetchAllFiles(owner, name, number);
+		// Fix PRs are recorded by number for the instance's own repo
+		const fixItem = repo === loadProfile().repo ? fixPrNumbers(await readFixRecords()).get(number) : undefined;
+		return withFacts("pr", node, { ...toPr(node, classify, loadProfile().sensitivePaths), ...(fixItem && { garyFix: { itemId: fixItem } }) }, ctx);
 	}
 	if (kind === "issue") return withFacts("issue", node, toIssue(node, classify), ctx);
 	await fetchRemainingReplies(node);
@@ -366,6 +378,8 @@ function baselineEntry(item) {
 		lastThemAt: item.facts?.lastThemAt ?? null,
 		// The fix state of issues and discussions reads these
 		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
+		// The validator and the board server decide from these which routes may push to the PR
+		...(item.sensitiveFiles && { sensitiveFiles: item.sensitiveFiles, ...(item.facts?.sensitiveOurs && { sensitiveOurs: true }) }),
 		// The board reads these to tell whether a PR with an automatic review still waits for its contributor
 		...(item.autoReview && { autoReview: item.autoReview }),
 		...(item.closingPrs && { closingPrs: item.closingPrs }),
@@ -419,6 +433,7 @@ function factsContext() {
 		us: [...new Set([...maintainerLogins(), ...botLogins()])],
 		maintainers: maintainerLogins(),
 		writeLogin: writeLogin(),
+		me: loadConfig().me,
 		patterns: profile.automatedComments ?? [],
 		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [], own: bot ?? null },
 	};
@@ -456,6 +471,11 @@ function withFacts(kind, node, entry, ctx) {
 		...(kind === "discussion" && { answerable: node.category?.isAnswerable === true, answerChosen: node.isAnswered === true }),
 	};
 	if (kind !== "pr") return { ...entry, facts };
+	if (entry.sensitiveFiles) {
+		const { ours, reason } = oursAlone(node, { me: ctx.me, bot: ctx.ai.own, garyFix: !!entry.garyFix, ai: ctx.ai });
+		if (ours) facts.sensitiveOurs = true;
+		else facts.sensitiveNotOurs = reason;
+	}
 	facts.maintainerCanModify = node.maintainerCanModify === true;
 	facts.lastAuthorAt = lastEventBy(timeline, node.author?.login);
 	const requests = reviewRequestsFor(node, ctx.writeLogin);
@@ -547,6 +567,20 @@ async function fetchRemainingThreads(pr) {
 		);
 		page = data.repository.pullRequest.reviewThreads;
 		pr.reviewThreads.nodes.unshift(...page.nodes);
+	}
+}
+
+async function fetchAllFiles(owner, name, number) {
+	const nodes = [];
+	let totalCount;
+	let after = null;
+	while (true) {
+		const data = await withRetry(() => graphql(ALL_FILES_QUERY, { owner, name, number, after }));
+		const page = data.repository.pullRequest.files;
+		totalCount = page.totalCount;
+		nodes.push(...page.nodes);
+		if (!page.pageInfo.hasNextPage) return { totalCount, nodes };
+		after = page.pageInfo.endCursor;
 	}
 }
 

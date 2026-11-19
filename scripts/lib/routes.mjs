@@ -137,10 +137,10 @@ export function takeOverRefusal(route, item) {
  * Why this route may not run on a PR that changes sensitive files, or null. `sensitive` is true when the PR's
  * snapshot entry lists such files, false when it lists none, undefined when the entry is unknown.
  * Only the API edit may push there. An agent in a checkout of such a PR would load instructions or run code
- * the contributor wrote.
+ * the contributor wrote. `ours` says that only we committed to the PR. Then nothing is refused.
  */
-export function sensitiveRefusal(route, sensitive) {
-	if (sensitive !== true || !PUSHING_PR_TYPES.has(route?.type)) return null;
+export function sensitiveRefusal(route, sensitive, ours = false) {
+	if (sensitive !== true || ours === true || !PUSHING_PR_TYPES.has(route?.type)) return null;
 	if (isApiEdit(route)) return null;
 	if (API_EDIT_TYPES.has(route.type)) return `This PR changes sensitive files, so ${route.type} is only allowed as an API edit (params.via "api") with the exact text edits.`;
 	return `This PR changes sensitive files, so Gary does not run ${route.type} on it.`;

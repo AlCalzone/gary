@@ -73,7 +73,7 @@ The first command never touches the baseline in `state/snapshot.json`. `--commit
 }
 ```
 
-`closed` also lists issues and discussions that are still open but had no activity within `activeWindowDays`. Text fields are cut at 1500 characters and PRs list at most 50 changed files. A PR whose files match the profile's `sensitivePaths` carries them in `sensitiveFiles`. Authors count as `maintainer` when they are in the profile's `maintainers` or are `me`, and as `bot` when they are in `botLogins`, are the configured bot or are a GitHub App.
+`closed` also lists issues and discussions that are still open but had no activity within `activeWindowDays`. Text fields are cut at 1500 characters and PRs list at most 50 changed files. A PR whose files match the profile's `sensitivePaths` carries them in `sensitiveFiles`. The staged and the committed snapshot keep that list per PR, with `sensitiveOurs: true` when the PR is ours alone. Authors count as `maintainer` when they are in the profile's `maintainers` or are `me`, and as `bot` when they are in `botLogins`, are the configured bot or are a GitHub App.
 
 ### gary item
 
@@ -121,6 +121,10 @@ It sends the write through the board server, so it queues behind clicks on the s
 ### gary api-edit
 
 `gary api-edit --pr <n>` checks the API edit route of a stored PR item against GitHub and prints the commit and the comment the click would send, or the refusal. `--sha <head> --file <route.json>` checks a draft route before it is stored, which is how the reviewing agent finds out that its `original` matches the file exactly once. The command only reads. It has no mode that commits.
+
+### gary push-check
+
+`gary push-check --pr <n> --sha <head>` answers one question from GitHub's state right now: may an agent work in a checkout of this PR and push to it. It fetches the PR like `gary item`, reads every changed file and runs `oursAlone` from `scripts/lib/facts.mjs` on the live commit list. It prints one JSON object. It exits 3 in three cases: the PR is not open, its head is not `--sha`, or it changes sensitive files and is not ours alone. `refused` then holds the reason, like "commit 3 of 3 was authored by hubot". The push skills call it before they create a worktree and again right before `git push`, because the snapshot's `sensitiveOurs` can be an hour old. The command only reads.
 
 ### gary validate
 
@@ -192,6 +196,7 @@ The page cannot send an arbitrary action. A click sends `{ itemId, routeId, text
 - A bot route runs after the click as the bot, or under the maintainer's login in `own` mode. An `unavailable` route is refused.
 - An agent route writes a queued action doc. `drive` and `address_review` are refused unless the PR is by a maintainer, a bot or Copilot, or carries `takenOver: true`. Pushing our commits to a contributor's PR is always a take-over, so a `take_over` route carries the per-thread decisions there. `take_over` is refused on every PR where `drive` is allowed. A change to such a PR is a `revise` route: the agent follows the route's text, which the maintainer can edit on the "Change" card, and pushes to the PR branch. A stored `take_over` with mode `push` on such a PR is served and run as `revise` (`servedRoute` in `scripts/lib/routes.mjs`), so the board is right before the next triage rewrites the item.
 - On a PR whose snapshot entry lists `sensitiveFiles`, `address_review`, `drive`, `format` and the checkout forms of `take_over` and `revise` are refused (`sensitiveRefusal` in `scripts/lib/routes.mjs`). A `take_over` or `revise` with `params.via: "api"` is an API edit: its actor is the bot, the server runs it on the click through `runApiEdit` in `scripts/lib/api-edit.mjs`, and no agent is queued. It commits the route's `params.edits` with one `createCommitOnBranch` mutation that expects the reviewed head, comments on the PR, sets `pushed` and `takenOver` on the item and queues a `full_review` with `params.by: "api_edit"`. The spec's "API edit" section lists the limits and why they are checked in code.
+- A PR whose entry has `sensitiveFiles` and `sensitiveOurs` is ours alone. Its head branch is in the repo. The bot or `me` opened it and authored and committed every commit. A PR by the bot is in `fixes.json`. `oursAlone` in `scripts/lib/facts.mjs` decides it from the PR's GraphQL node. The spec's "PRs that are ours alone" lists the conditions. `sensitiveRefusal` then refuses nothing. The validator refuses the API form there. Validator and server read both fields from the stored snapshot through `touchesSensitive` and `sensitiveOurs`.
 - `dismiss_route` removes one suggested route and remembers it with the reason. When it was the last route, a `reanalyze` request is queued so the agent proposes something else.
 - Before a route that posts text, reviews, closes, reopens or transfers, the server reads the thread from GitHub. It refuses when the thread is in the wrong state, when a person commented or reviewed after `reviewedAt`, or when the PR head differs from `reviewedSha`. Bots do not count. "Post anyway" sends the click again past that check after a second confirm. A moved head still blocks an approval and a review with inline comments. The code is in `scripts/lib/guard.mjs`.
 - The server writes one action doc per bot or agent click with `routeId`, `route`, `draftHash`, `edited`, the action it ran and the result.
@@ -223,10 +228,10 @@ Every snapshot entry carries `facts`, computed in code:
 
 - `timeline: [{ at, author, side, kind }]`, oldest first, the newest 200 events kept. `side` is `us`, `them`, `automated` or `bot`. `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `timelineTruncated` is set only when events are missing.
 - `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), `waitingDays`.
-- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `sensitiveFiles` (the first 5 paths that match the profile's `sensitivePaths`) with `sensitiveFileCount`, `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
+- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `sensitiveFiles` (the first 5 paths that match the profile's `sensitivePaths`) with `sensitiveFileCount`, `sensitiveOurs` (true on a PR with sensitive files that is ours alone) or `sensitiveNotOurs` (the condition that failed), `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
 - Issues and discussions: `hasClosingPr` (an open or merged PR), `isAnswered`, `authorIsUs`. Discussions also carry `category`, the category's name.
 
-The server reads two things for the page from the snapshot, with `sensitiveFacts` and the entry's `category`: a PR's `sensitive: { files, total }` for the warning in the dialog, and the `category` of a discussion whose item has none yet. The routine copies `category` into the item like `isAnswered`.
+The server reads two things for the page from the snapshot, with `sensitiveFacts` and the entry's `category`: a PR's `sensitive: { files, total, ours }` for the warning in the dialog, and the `category` of a discussion whose item has none yet. The routine copies `category` into the item like `isAnswered`.
 
 The classification rules take these as given. The profile's `automatedComments` decides which bot comments are `automated`. Its entries are `{ name, pattern, origin? }`, where `pattern` is a regex without flags, tested against the start of the comment body.
 
@@ -307,7 +312,7 @@ A setting proposal (`kind: "setting"`) changes one value in the instance's `conf
 ## Tests
 
 ```sh
-npm test            # actions, server, accounts, learning, sharing, validate, api-edit. Needs node and zsh
+npm test            # actions, server, accounts, learning, sharing, validate, api-edit, ours. Needs node and zsh
 npm run test:page   # the board page, mocked and served. Needs Chrome or Chromium
 ```
 

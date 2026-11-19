@@ -24,6 +24,7 @@ const SUITES = [
 	["node", "auto-review.test.mjs"],
 	["node", "escalate.test.mjs"],
 	["node", "api-edit.test.mjs"],
+	["node", "ours.test.mjs"],
 	["zsh", "sharing.test.zsh"],
 	["zsh", "validate.test.zsh"],
 ];

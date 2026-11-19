@@ -36,6 +36,7 @@ Gary has three layers, one place for each kind of change.
     watch-queue.mjs      gary watch-queue
     auto-review.mjs      gary auto-review
     api-edit.mjs         gary api-edit
+    push-check.mjs       gary push-check
     setup.mjs            gary setup
     migrate.mjs          gary migrate
     serve.mjs            gary serve
@@ -179,6 +180,7 @@ Two older layouts are moved by commands, never silently:
 - `gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run]` and `gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--dry-run]`: start and end the review rounds of a fix PR Gary opened, see "Fix review rounds". Both refuse a PR that is not in `fixes.json`, and both exit 4 and write nothing while the instance is paused. `--dry-run` prints the GitHub writes and the docs it would write.
 - `gary auto-review check|post|accept|reply|rerequest|list`: the one automatic first review on a contributor PR and its format offer, see "Automatic first review". Exit 3 means a rule refused, exit 4 that the instance is paused.
 - `gary api-edit --pr <n> [--route <id>]` and `gary api-edit --pr <n> --sha <head sha> --file <route.json>`: check the API edit of a `take_over` or `revise` route against GitHub and print what the click would commit, see "API edit". The first form reads the route from the stored item, the second a draft route `{ params, text }` before it is stored. It prints `{ ok, dryRun, message, files, diff, invocations }` or the refusal as `{ ok: false, result }`, and exits 1 on a refusal and 4 while paused. It has no mode that commits: only the click on the board does.
+- `gary push-check --pr <n> [--sha <head sha>] [--repo <owner/name>]`: say from GitHub's state right now whether an agent may work in a checkout of the PR and push to it, see "PRs that are ours alone". It prints `{ ok, pr, repo, headSha, sensitiveFiles, sensitiveOurs, refused }`. The exit code is 0 when the push is allowed and 3 when it is refused. Three things are refused: a PR that is not open, a head other than `--sha`, and a PR with sensitive files that is not ours alone. It reads every changed file of the PR, also beyond the snapshot's first 50. It writes nothing.
 - `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
 - `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
 - `gary proposals [--json]`: list every proposal with its status and dismissal reason.
@@ -346,7 +348,7 @@ The card of a used `as: "me"` route says so in words where a bot card says "Done
 
 ### API edit
 
-A PR that changes a file matching the profile's `sensitivePaths` gets no agent in a checkout of its branch. Such files are agent instruction files, workflows, lint configs and manifests. An agent in that checkout would load instructions or run code the contributor wrote. So `address_review`, `drive`, `format` and the checkout forms of `take_over` and `revise` are refused there: by the validator, and by the server at the click when the item file still offers one.
+A PR that changes a file matching the profile's `sensitivePaths` gets no agent in a checkout of its branch. Such files are agent instruction files, workflows, lint configs and manifests. An agent in that checkout would load instructions or run code the contributor wrote. So `address_review`, `drive`, `format` and the checkout forms of `take_over` and `revise` are refused there: by the validator, and by the server at the click when the item file still offers one. The one exception is a PR that is ours alone, see "PRs that are ours alone" below.
 
 The API edit is the one push such a PR can get. It is a `take_over` (contributor PR that allows edits by maintainers) or a `revise` (PR we control) with `as: "bot"` and these params:
 
@@ -364,7 +366,7 @@ The API edit is the one push such a PR can get. It is a `take_over` (contributor
 }
 ```
 
-`original` is the exact text of whole lines of the file at `reviewedSha`, like the `original` of a review comment. `replacement` is their full replacement. Neither ends with a line break. The route exists only when every change we would make is such a replacement. It is offered only on PRs with sensitive files: every other PR keeps the checkout forms, and the validator refuses the API form there.
+`original` is the exact text of whole lines of the file at `reviewedSha`, like the `original` of a review comment. `replacement` is their full replacement. Neither ends with a line break. The route exists only when every change we would make is such a replacement. It is offered only on PRs with sensitive files that are not ours alone. Every other PR keeps the checkout forms. The validator refuses the API form there.
 
 Limits. The validator checks the ones that need no GitHub read. The code that commits checks all of them again:
 
@@ -408,12 +410,55 @@ What makes this safe on a PR with sensitive files:
 
 What it does not do: it does not make the PR's sensitive changes safe. Those still need the maintainer's own review before a merge. After the API edit no agent may check out the branch either. A PR can also add a symlink that points to a file the API edit changes. The edit then shows up under that name too, with the text he confirmed.
 
+### PRs that are ours alone
+
+The push refusal exists because of content from outside accounts. A PR that only the maintainer and the bot wrote has none. Example: Gary finds a bug in `.github/bot-scripts/escalate.cjs` and recommends the fix. Its agent opens the fix PR as the bot. That PR touches `.github/`. Every line on its branch is ours.
+
+A PR with sensitive files is ours alone when all of these hold. The snapshot computes them in code, in `oursAlone` in `scripts/lib/facts.mjs`. An agent's claim never counts.
+
+1. The head branch is in the base repository (`isCrossRepository` is false). A fork PR is never ours.
+2. The PR's author is the configured bot or the maintainer, the `me` of `config.json`. Other logins in the profile's `maintainers` do not count.
+3. The commit list is complete. The snapshot reads the first 100 commits. A PR with more is not ours.
+4. The bot or the maintainer authored every commit. The author is the account GitHub resolves for the commit.
+5. The bot or the maintainer committed every commit. GitHub itself also counts as the committer: `GitHub <noreply@github.com>` with a valid signature that GitHub made (`signature.wasSignedByGitHub`). GitHub commits that way for what its API and its web pages create. The author is then the account that asked.
+6. Every `Co-Authored-By` trailer names the maintainer, the bot, an AI agent or a bot. The test for an AI agent or a bot is the one of `facts.aiAuthored`. These are our own agents. Any other co-author makes the PR not ours. GitHub writes such a trailer when someone applies a contributor's suggestion.
+7. A PR by the bot is recorded in `fixes.json`. That makes it a fix PR Gary opened. A PR by the maintainer needs only 1 to 6.
+
+A trailer counts as the maintainer's or the bot's in three cases: its name is that login, its email is that login's GitHub noreply address, or a commit of this PR by that account carries its name or email.
+
+`fixes.json` is the only record of the PRs Gary opens. `gary fix-record` writes it for the automatic fixes and for the fixes a click on an Implement card started. A replacement PR of a take-over is not in it. It carries the contributor's work anyway.
+
+PRs by the Copilot coding agent and by dependency bots are not covered. Their content does not come from us. They keep the refusal and the API edit.
+
+The snapshot sets `facts.sensitiveOurs: true` on such a PR. The stored entry keeps `sensitiveOurs: true` next to `sensitiveFiles`. A PR with sensitive files that fails a condition carries `facts.sensitiveNotOurs` with the reason, like `commit 3 of 3 was authored by hubot`. What changes on a PR that is ours alone:
+
+- The push refusal does not apply. `sensitiveRefusal` returns null. The validator accepts `address_review`, `drive`, `format` and the checkout form of `revise`. The server accepts their clicks. The usual rules of each route still hold. `take_over` stays invalid, because we already control the PR.
+- The validator refuses the API edit there. The PR gets the checkout forms like every other PR we control. That keeps one way to change it. The server still runs the click on an API edit that an older item holds, because it is the narrower push.
+- Agents may work in a worktree of the PR's head, for the review and for the push.
+- The `format` route and the autofix inside a `revise` run. The format check still takes its tools and every config from the base checkout. It copies none of the PR's sensitive files. So it formats only the PR's other files.
+
+What stays as on every PR with sensitive files:
+
+- The item goes to `review` at least and names the paths in `state`.
+- The automatic first review skips it.
+- The dialog shows the banner with the files.
+- The maintainer reads the changes himself before he merges.
+
+The conditions are checked again each time. The next snapshot after a commit by someone else drops `sensitiveOurs`. From then on the validator and the server refuse the pushing routes again. The snapshot can be an hour old. So the worker asks GitHub right before it acts, with `gary push-check --pr <n> --sha <head>`. The command fetches the PR and runs the same `oursAlone` on the live commit list and the complete file list. It exits 3 when the PR is not ours alone or its head is not `--sha`. The skills run it before they create a worktree of the head and again right before `git push`. A commit that lands after the second check moves the branch. Git then rejects the push. The push is never forced.
+
+Why this is acceptable: the danger of a sensitive PR is an agent that loads instructions or runs code an outside account wrote. Here no outside account wrote anything on the branch. An agent in that checkout reads what our own agent or the maintainer wrote. It reads the same kind of content in the base checkout.
+
+The risks that remain:
+
+- A fix PR is derived from an issue or a discussion. That text is untrusted. It can lead the agent to write a harmful change to a workflow or an instruction file. So the maintainer's own review before the merge stays the guard. The rule for AI-written PRs already requires it: such a PR goes to `review`. Gary never merges or approves it.
+- Git lets whoever pushes choose a commit's author and committer. So conditions 4 to 6 rest on condition 1: only accounts with write access can push to a branch of the repository. A collaborator who forges the bot's identity could pass the check. An outside contributor cannot.
+
 ## Board page
 
 One page serves every instance. `GET /api/state` returns `{ board, items, proposals }`:
 
 - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos, repoUrl, bot, accountMode, paused, relatedRepos, botCommands, escalateAs, reviewBots } ] }`. `title` is the profile's `name`, `bot` is `{ login, avatarUrl }` or `null`. The page takes links, avatars, bot names, bot commands and new-issue URLs from the item's own instance entry, never from one global repo.
-- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working` and `fix` when there are any. A PR whose snapshot entry has `sensitiveFiles` carries `sensitive: { files, total }`, with the first 5 paths and their full count. A discussion without a stored `category` gets the one from the snapshot. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
+- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working` and `fix` when there are any. A PR whose snapshot entry has `sensitiveFiles` carries `sensitive: { files, total }`, with the first 5 paths and their full count, plus `ours: true` when the entry has `sensitiveOurs`. A discussion without a stored `category` gets the one from the snapshot. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
 - `proposals[]`: the open proposals, each with `instance`.
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
@@ -434,7 +479,7 @@ A PR whose served `autoReview` has `waiting: true` is in no plan group and adds 
 
 A discussion shows its GitHub category, like "Feature Requests", as a quiet outlined chip: after the title on its list row, and in the dialog's meta row before the labels. The board's search matches it.
 
-A PR with a served `sensitive` shows a warning block in the dialog above the verdict and the routes, in the callout colors: "Touches sensitive files: `.github/copilot-instructions.md`, `package.json` and 2 more. Gary does not push to this PR. It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets." It appears on contributor PRs and on PRs we control alike, because the push is refused on both. The meta row carries a warning badge "Sensitive files", and the list row a warning icon whose tooltip names the files. When the item has an API edit route, the second and third sentence are "Gary only commits the text edits shown below, outside these files. It checks out nothing and runs nothing from this PR.", and the tooltip changes the same way.
+A PR with a served `sensitive` shows a warning block in the dialog above the verdict and the routes, in the callout colors: "Touches sensitive files: `.github/copilot-instructions.md`, `package.json` and 2 more. Gary does not push to this PR. It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets." It appears on contributor PRs and on PRs we control alike. The push is refused on both, unless the PR is ours alone. The meta row carries a warning badge "Sensitive files", and the list row a warning icon whose tooltip names the files. When the item has an API edit route, the second and third sentence are "Gary only commits the text edits shown below, outside these files. It checks out nothing and runs nothing from this PR.", and the tooltip changes the same way. On a PR whose `sensitive` has `ours: true` they are "Only you and Gary have committed to this PR. Agents may push to it. Read the changes to these files with care.", followed by the same last sentence. The badge and the icon stay. The tooltip carries the first two of these sentences.
 
 The card of an API edit shows each edit as a diff under its path, rendered like the suggestion of a review comment: the `original` lines removed, the `replacement` lines added. Below them it shows the commit message and the line "Commits through the GitHub API, without checking out the branch". Its text field is "Note for the contributor, added to the comment about the commit (optional)". Its button is "Commit the text edit", or "Commit the text edits" for more than one, with the bot's avatar, and a second click confirms: "Confirm: commit to the contributor's PR as widgets-bot", or "commit to the PR" on a change. The card has no thread switches. A done card says "Done · view on GitHub" with the commit.
 
@@ -448,7 +493,7 @@ The card of an API edit shows each edit as a diff under its path, rendered like 
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
 - A `review` route with a preset `event: "comment"` is a warning, except on a PR by a bot: a review with something for the contributor is a change request.
 - `address_review` only when every thread has an id and a verdict, and only where `drive` would be accepted. `drive`, `take_over` and `revise` only where the server would accept them: `take_over` only on a contributor PR that is not taken over, `revise` only where `drive` is allowed, with a non-empty `text` and no params.
-- On a PR whose snapshot entry lists `sensitiveFiles`: no `address_review`, `drive` or `format`, and `take_over` and `revise` only as an API edit. On a PR whose entry lists none, no API edit. Without an entry neither is checked. An API edit passes the limits in "API edit" that need no GitHub read, has `as: "bot"`, and needs a 40-character `reviewedSha`. A `revise` as an API edit may have an empty `text`.
+- On a PR whose snapshot entry lists `sensitiveFiles` and no `sensitiveOurs`: no `address_review`, `drive` or `format`, and `take_over` and `revise` only as an API edit. On a PR whose entry lists no sensitive files, no API edit. The same holds when the entry lists them with `sensitiveOurs`: no API edit, with the checkout routes under their usual rules. Without an entry neither is checked. An API edit passes the limits in "API edit" that need no GitHub read, has `as: "bot"`, and needs a 40-character `reviewedSha`. A `revise` as an API edit may have an empty `text`.
 - `pushed` is `{ action, sha, at }` on a PR. While `pushed.sha` equals `reviewedSha`, the agent's push made the current head, and the item needs at least one route that decides the PR: `merge`, `review`, `revise`, `address_review` or `close`. A `reply` that reports the push is not one. This holds while CI still runs on the new head: the route then carries a callout that says so.
 - An item with `blocked` has exactly one route, of type `open`. An `open` route has no text and no params, and is allowed without `blocked` too.
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. A `move` to `issue` needs a discussion that the refresh did not find closed, the profile's `botCommands.escalate`, and an `issueKind` of `bug` or `enhancement` when it has one. `category` is a non-empty string and only on a discussion. Chores name a chore action.
@@ -881,7 +926,7 @@ gary snapshot            # prints JSON work list to stdout, stages <state>/snaps
 gary snapshot --commit   # after a successful run: save the staged snapshot as the new baseline
 ```
 
-Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too.
+Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, whether the head branch is in the repository, the first 100 commits with author, committer and signature, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too.
 
 Every entry of the full snapshot and of `gary item` carries `facts`, computed by code:
 
@@ -897,6 +942,8 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   // PRs
   "ciGreen": true, "dependencyOnly": false, "touchesSensitive": false, "openThreadCount": 0,
   "sensitiveFiles": [".github/workflows/ci.yml"], "sensitiveFileCount": 1,   // PRs that touch the profile's sensitivePaths: the first 5 matching paths and their full count. Absent otherwise
+  "sensitiveOurs": true,           // PRs with sensitive files that only the maintainer and the bot wrote, see "PRs that are ours alone". Absent otherwise
+  "sensitiveNotOurs": "commit 3 of 3 was authored by hubot",   // PRs with sensitive files that are not ours alone: the condition that failed. Absent otherwise
   "approvedBy": ["octocat"], "changesRequestedBy": [],
   "isClean": true,                 // mergeable, CI green, no open thread, no requested changes
   "changedFiles": 3, "changedLines": 120,   // PRs: additions plus deletions without lock files
@@ -917,7 +964,7 @@ Commits by the configured bot on a PR someone else opened are ours and are left 
 
 For a PR with an open format offer, the snapshot and `gary item` send one more query: the reactions on the review that made the offer, and the PR's last 30 comments. `acceptedByReaction` is true when the PR's author left a `THUMBS_UP`, `HEART`, `HOORAY` or `ROCKET` there. `replies` are his comments after the offer that nobody judged yet. A PR with a record in `auto-reviews.json` also carries `autoReview: { lastAuthorAt, maintainerAt, reRequestedAt }` on its entry, which the staged and committed snapshots keep for the board.
 
-Draft PRs stay out of the snapshot, except the ones in `fixes.json`, which carry `garyFix: { itemId }`. A discussion entry carries `referencingPrs` with the PRs that name it: the snapshot reads the 100 most recently updated PRs of the repo in one search, because discussions have no cross-reference events in the API. The staged and committed entries keep `lastEventAt` and `lastThemAt`, and for the fix state `title`, `author`, `isDraft`, `ci` and `garyFix` of PRs, `closingPrs` of issues and `referencingPrs` of discussions.
+Draft PRs stay out of the snapshot, except the ones in `fixes.json`, which carry `garyFix: { itemId }`. A discussion entry carries `referencingPrs` with the PRs that name it: the snapshot reads the 100 most recently updated PRs of the repo in one search, because discussions have no cross-reference events in the API. The staged and committed entries keep `lastEventAt` and `lastThemAt`, and for the fix state `title`, `author`, `isDraft`, `ci` and `garyFix` of PRs, `closingPrs` of issues and `referencingPrs` of discussions. A PR's entry also keeps `sensitiveFiles` and `sensitiveOurs`. The validator and the board server read both from there. `gary item` sets `garyFix` too, for a PR of the instance's own repo.
 
 `kind` is `opened`, `comment`, `reply` (discussion replies), `review` or `thread_comment`. `side` is `automated` when the body matches an `automatedComments` pattern, `us` for maintainers, `me` and the configured bot, `bot` for GitHub Apps, `[bot]` accounts and the Copilot agent, and `them` for everyone else. Only `us` and `them` decide `waitingOn`. The timeline reads the last 50 comments, the last 20 replies per discussion comment and the last 20 comments per review thread. A discussion comment with more replies gets them all, up to 300, through extra calls. `dependencyOnly` needs the complete file list and only manifests, lock files and version pin files in it. `hasClosingPr` counts closing PRs that are open or merged.
 

@@ -2786,12 +2786,13 @@ function buildApiEdits(r) {
   ];
 }
 
-// The changed files of a PR that match the profile's sensitive paths: `{ files, total }`, or null
+// The changed files of a PR that match the profile's sensitive paths: `{ files, total, ours }`, or null.
+// `ours` is true when the server found that only the maintainer and the bot committed to the PR
 function sensitiveOf(d) {
   const s = d.kind === "pr" && d.sensitive && typeof d.sensitive === "object" ? d.sensitive : null;
   const files = s && Array.isArray(s.files) ? s.files.map(str).filter(Boolean) : [];
   if (!files.length) return null;
-  return { files, total: Number.isInteger(s.total) && s.total > files.length ? s.total : files.length };
+  return { files, total: Number.isInteger(s.total) && s.total > files.length ? s.total : files.length, ours: s.ours === true };
 }
 
 function sensitiveSummary(s) {
@@ -2799,14 +2800,23 @@ function sensitiveSummary(s) {
   return "Touches sensitive files: " + s.files.join(", ") + (more > 0 ? " and " + more + " more" : "");
 }
 
-// What Gary pushes to a PR with sensitive files: only the text edits of an API edit card, when the item has one
+// What Gary pushes to a PR with sensitive files: everything on a PR that is ours alone,
+// otherwise only the text edits of an API edit card, when the item has one
 function sensitivePush(d) {
+  if (sensitiveOf(d).ours) return "Only you and Gary have committed to this PR. Agents may push to it.";
   return routesOf(d).some(apiEdit)
     ? "Gary only commits the text edits shown below, outside these files."
     : "Gary does not push to this PR.";
 }
 
-// The warning above the routes. It explains why the PR has no card that pushes from a checkout
+// What the banner says after `sensitivePush`
+function sensitiveAdvice(d) {
+  const risk = "These files can change what agents do or run code with repo secrets.";
+  if (sensitiveOf(d).ours) return "Read the changes to these files with care. " + risk;
+  return (routesOf(d).some(apiEdit) ? "It checks out nothing and runs nothing from this PR. " : "It gets no take-over, no change and no format run. ") + risk;
+}
+
+// The warning above the routes. It says what may push to the PR and why the files matter
 function renderSensitive(d) {
   const el = document.getElementById("d-sensitive");
   const s = sensitiveOf(d);
@@ -2816,9 +2826,7 @@ function renderSensitive(d) {
   const files = s.files.flatMap((f, i) => [i ? ", " : "", h("code", { text: f })]);
   el.replaceChildren(icon("alert"), h("span", null,
     h("strong", { text: "Touches sensitive files: " }), ...files, more > 0 ? " and " + more + " more" : "", ". ",
-    routesOf(d).some(apiEdit)
-      ? sensitivePush(d) + " It checks out nothing and runs nothing from this PR. These files can change what agents do or run code with repo secrets."
-      : sensitivePush(d) + " It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets."));
+    sensitivePush(d) + " " + sensitiveAdvice(d)));
 }
 
 // The discussion's category on GitHub, like "Feature Requests"

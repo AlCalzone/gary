@@ -25,7 +25,7 @@ The caller passes the action file, the item file, the state file path (it does n
    - `valid`: fix it.
    - `wrong`: dismiss it with a short reason.
    - `optional`: fix it when the change is small and mechanical. That is your own judgement here, because nobody chose per thread. Otherwise leave it open, and it goes into `open`.
-5. If a fix would touch a sensitive path, leave that thread open and stop after this round.
+5. If a fix would touch a sensitive path, leave that thread open and stop after this round. The one exception is a PR that is ours alone, as `gary push-check` in the preconditions confirmed. There a fix may change the sensitive files the PR already changes. A fix that needs another sensitive path still stays open.
 6. When nothing is left to fix or dismiss, stop without pushing.
 7. Make the fixes in the worktree, one commit per round, like `fix: address review feedback (round 2)` in the project's format. Push as `push-to-pr.md` describes. Reply in every handled thread and resolve it, as `address-review.md` describes, with your verdict's reason as the reply for dismissed ones.
 8. If rounds remain and this round fixed something, request a review from the review bot:
@@ -61,7 +61,7 @@ The drive ends when:
 - `maxRounds` rounds are done,
 - CI fails for a reason you cannot fix,
 - someone else pushed to the branch,
-- a needed change would touch a sensitive path,
+- a needed change would touch a sensitive path that step 5 does not allow,
 - the bot's review did not arrive within 30 minutes.
 
 ## Between rounds
@@ -79,13 +79,13 @@ The state file with `reviewRequestedAt` is all a waiting drive needs. `gary watc
 `gary fix-review start` begins these rounds right after a fix PR was recorded, without a click. The drive's action doc and state file carry `by: "fix"` and `fixFor`, the item the fix is for. The first review is already requested when the state file appears, so your first round starts with a review to address. Everything above holds, with these differences:
 
 - The PR has no board item, and the caller passes no item file. Take repo and number from the state file. The head must equal `lastPushedSha` in every round. Nothing here needs `reviewedSha`.
-- "Who may push to a PR" holds by construction: the PR is the bot's own. Check that `gary fixes --json` lists the PR for the `fixFor` item. Otherwise, stop and touch nothing.
+- "Who may push to a PR" holds by construction: the PR is the bot's own. Check that `gary fixes --json` lists the PR for the `fixFor` item. Otherwise, stop and touch nothing. The preconditions of `push-to-pr.md` hold here too, with `lastPushedSha` as the SHA for `gary push-check`. A fix PR that changes sensitive files passes while only the bot and the maintainer have committed to it.
 - A comment or a review by a person on the PR since `startedAt` ends the drive, like a push by someone else does. The review bot, the configured bot and automated comments do not count. Read them from `gary item pr <number>`: `facts.timeline` entries with side `them` or `us` whose author is not the bot.
 - You never return an item and never write routes. The drive ends through one command, in every case:
   ```bash
   gary fix-review finish --pr <number> --outcome done --reason "<why the rounds ended>"
   ```
-  Use `--outcome done` when the review bot has nothing open after a round, when its review brought no new threads, or when `maxRounds` rounds are done. The command marks the PR ready when the instance's `fixReview.markReady` is on. You never mark it ready yourself. Use `--outcome stopped` when the drive is stuck or failed: CI fails for a reason you cannot fix, the push was refused, a person commented or pushed, a needed change would touch a sensitive path, or the review did not arrive. The PR then stays a draft.
+  Use `--outcome done` when the review bot has nothing open after a round, when its review brought no new threads, or when `maxRounds` rounds are done. The command marks the PR ready when the instance's `fixReview.markReady` is on. You never mark it ready yourself. Use `--outcome stopped` when the drive is stuck or failed: CI fails for a reason you cannot fix, the push was refused, a person commented or pushed, `gary push-check` refused, a needed change would touch a sensitive path that step 5 does not allow, or the review did not arrive. The PR then stays a draft.
 - `--reason` is one or two plain sentences for the maintainer, like `Copilot found nothing new after round 2.` or `CI fails in the build step, which the fix cannot change.` Name the comments still open after the last round there, in words. Never put a node id into it.
 - The command queues the full review of the PR item and deletes the state file. The master starts that review within seconds, and its worker writes the item with the `rounds` and your reason. Return `{ "status": "done", "result": "<the reason>" }` without `item`.
 - Exit code 4 means the instance is paused: nothing was sent and the state file stays. Record the step in `<run>/would-have.json` and return `status: "waiting"`.

@@ -102,9 +102,65 @@ export function sensitiveFacts(entry) {
 	return files.length ? { sensitiveFiles: files.slice(0, MAX_SENSITIVE_FILES), sensitiveFileCount: files.length } : {};
 }
 
+const sameLogin = (a, b) => typeof a === "string" && typeof b === "string" && !!a && a.toLowerCase() === b.toLowerCase();
+const CO_AUTHOR = /^co-authored-by:\s*([^<\n]*?)\s*(?:<([^>\n]*)>)?\s*$/gim;
+const NOREPLY = /^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i;
+
+/**
+ * Whether only we wrote a PR, as `{ ours, reason }`. `reason` says which condition failed, or is null.
+ * `node` is the PR's GraphQL node. `me` is the maintainer's login and `bot` the configured bot's, or null without one.
+ * `garyFix` says that Gary recorded the PR in fixes.json. `ai` is the same as for `aiFacts`.
+ * All of these must hold: the head branch is in the base repository, the author is `me` or `bot`, a PR by `bot`
+ * is a recorded fix, the commit list is complete, and `me` or `bot` authored and committed every commit.
+ * A co-author must be `me`, `bot` or an AI agent.
+ */
+export function oursAlone(node, { me, bot = null, garyFix = false, ai } = {}) {
+	const no = (reason) => ({ ours: false, reason });
+	const isUs = (login) => sameLogin(login, me) || sameLogin(login, bot);
+	if (node.isCrossRepository !== false) return no("its head branch is not in this repository");
+	const author = node.author?.login ?? "ghost";
+	if (!isUs(author)) return no(`${author} opened it, who is neither the maintainer nor Gary's bot`);
+	if (sameLogin(author, bot) && !sameLogin(author, me) && !garyFix) return no("the bot opened it, but Gary has no record of it as its own fix PR");
+	const commits = node.allCommits?.nodes ?? [];
+	const total = node.allCommits?.totalCount;
+	if (!commits.length || !Number.isInteger(total) || total > commits.length) return no(`its commit list is incomplete: ${commits.length} of ${total ?? "an unknown number of"} commits read`);
+	const isAgent = agentMatcher(ai);
+	// `ourIds` holds the names and emails of our own commits on this PR, so a trailer with the maintainer's real name counts as his
+	const ourIds = new Set();
+	for (const { commit } of commits) {
+		for (const person of [commit?.author, commit?.committer]) {
+			if (isUs(person?.user?.login)) for (const id of [person.name, person.email]) if (id) ourIds.add(id.toLowerCase());
+		}
+	}
+	for (const [i, { commit }] of commits.entries()) {
+		const where = `commit ${i + 1} of ${commits.length}`;
+		const by = (person) => person?.user?.login ?? person?.name ?? "an unknown account";
+		if (!isUs(commit?.author?.user?.login)) return no(`${where} was authored by ${by(commit?.author)}`);
+		if (!isUs(commit?.committer?.user?.login) && !committedByGitHub(commit)) return no(`${where} was committed by ${by(commit?.committer)}`);
+		for (const m of (commit.message ?? "").matchAll(CO_AUTHOR)) {
+			const [name, email] = [m[1] ?? "", m[2] ?? ""];
+			const ours = isUs(name) || isUs(NOREPLY.exec(email)?.[1]) || ourIds.has(name.toLowerCase()) || ourIds.has(email.toLowerCase());
+			if (!ours && !isAgent(name) && !isAgent(email.split("@")[0])) return no(`${where} names the co-author ${name || email}`);
+		}
+	}
+	return { ours: true, reason: null };
+}
+
+// GitHub is the committer of what its API and its web pages create. It signs those commits with its own key,
+// which a pushed commit cannot carry. Their author is the account that asked for the commit
+function committedByGitHub(commit) {
+	const c = commit?.committer;
+	return !c?.user && c?.name === "GitHub" && c?.email === "noreply@github.com" && commit.signature?.isValid === true && commit.signature.wasSignedByGitHub === true;
+}
+
 /** Whether a PR's snapshot entry lists sensitive files: true or false, or undefined without an entry. */
 export function touchesSensitive(entry) {
 	return entry ? (entry.sensitiveFiles ?? []).length > 0 : undefined;
+}
+
+/** Whether a PR's snapshot entry lists sensitive files and says that only we committed to the PR. */
+export function sensitiveOurs(entry) {
+	return touchesSensitive(entry) === true && (entry.sensitiveOurs === true || entry.facts?.sensitiveOurs === true);
 }
 
 /** The facts of a PR entry from the snapshot. */
@@ -149,6 +205,18 @@ export function sizeFacts(node) {
 const AI_NAME = /\b(claude|copilot)\b/i;
 const AI_BRANCH = /^(claude|copilot)\//i;
 
+/** A test for a name or login that says whether it names an AI agent or a bot. `ai` is the same as for `aiFacts`. */
+function agentMatcher(ai = {}) {
+	const logins = new Set((ai.logins ?? []).map((l) => l.toLowerCase()));
+	const names = (ai.names ?? []).map((n) => n.toLowerCase()).filter(Boolean);
+	return (text) => {
+		const v = (text ?? "").trim();
+		if (!v) return false;
+		const low = v.toLowerCase();
+		return AI_NAME.test(v) || low.endsWith("[bot]") || logins.has(low) || names.some((n) => low.includes(n));
+	};
+}
+
 /**
  * Whether an AI agent or a bot wrote the PR, from its commits and head branch. `ai.logins` are the configured bot
  * and the profile's botLogins, `ai.names` the profile's aiAuthors, matched as case-insensitive parts of a name or login.
@@ -156,14 +224,7 @@ const AI_BRANCH = /^(claude|copilot)\//i;
  * They do not make the PR AI-written, and `ourCommits` counts them.
  */
 export function aiFacts(node, ai = { logins: [], names: [] }) {
-	const logins = new Set((ai.logins ?? []).map((l) => l.toLowerCase()));
-	const names = (ai.names ?? []).map((n) => n.toLowerCase()).filter(Boolean);
-	const isAgent = (text) => {
-		const v = (text ?? "").trim();
-		if (!v) return false;
-		const low = v.toLowerCase();
-		return AI_NAME.test(v) || low.endsWith("[bot]") || logins.has(low) || names.some((n) => low.includes(n));
-	};
+	const isAgent = agentMatcher(ai);
 	const signals = new Set();
 	if (AI_BRANCH.test(node.headRefName ?? "")) signals.add(`branch ${node.headRefName}`);
 	const own = (ai.own ?? "").toLowerCase();
@@ -178,7 +239,7 @@ export function aiFacts(node, ai = { logins: [], names: [] }) {
 			const who = person?.user?.login ?? person?.name;
 			if (isAgent(person?.user?.login) || isAgent(person?.name)) signals.add(`commit ${role} ${who}`);
 		}
-		for (const m of (commit?.message ?? "").matchAll(/^co-authored-by:\s*([^<\n]*?)\s*(?:<([^>\n]*)>)?\s*$/gim)) {
+		for (const m of (commit?.message ?? "").matchAll(CO_AUTHOR)) {
 			if (isAgent(m[1]) || isAgent(m[2]?.split("@")[0])) signals.add(`co-author ${m[1] || m[2]}`);
 		}
 	}

@@ -6,7 +6,7 @@ The maintainer clicked `revise` (the "Change" card) on a PR we already control: 
 
 The limits in `push-to-pr.md`, "What a take-over or a change never does", apply.
 
-A `revise` route with `params.via: "api"` never reaches you. The server commits its text edits itself after the click, and it is the only change a PR with sensitive files can get.
+A `revise` route with `params.via: "api"` never reaches you. The server commits its text edits itself after the click. It is the only change a PR with sensitive files can get, unless the PR is ours alone. A PR that is ours alone gets the normal revise. `gary push-check` in the preconditions of `push-to-pr.md` decides whether it still is.
 
 ## Steps
 

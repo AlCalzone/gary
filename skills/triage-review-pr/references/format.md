@@ -6,7 +6,7 @@ The maintainer clicked `format` on a PR, or the PR's author accepted the offer o
 
 ## Steps
 
-1. Check the preconditions in `push-to-pr.md`. The server does not check them for `format`. Refuse with `status: "failed"` when the PR is no longer open or its head moved since `reviewedSha`.
+1. Check the preconditions in `push-to-pr.md`. The server does not check them for `format`. Refuse with `status: "failed"` when the PR is no longer open or its head moved since `reviewedSha`. On a PR with sensitive files, `gary push-check` there passes only while the PR is ours alone. `format-check.md` then leaves the sensitive files out.
 2. Run the check in `format-check.md` again, against the current head, and keep the patch.
 3. Refuse when the patch touches a file the PR did not change, or when it is empty.
 4. Set up the PR worktree as `push-to-pr.md` describes and apply the patch: `git -C <worktree> -c core.hooksPath=/dev/null apply --index <scratch>/format.patch`. If it does not apply cleanly, refuse. Never resolve conflicts.

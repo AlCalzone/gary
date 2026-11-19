@@ -159,6 +159,14 @@ if (query.includes("pullRequest(number: $number)")) {
 		if (!node) fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null } });
 		repository({ pullRequest: { state: "OPEN", headRefOid: node.headRefOid, maintainerCanModify: node.maintainerCanModify ?? false, offerReviews: { nodes: [] }, offerComments: { nodes: [] }, reviewRequestEvents: { nodes: [] }, ...overrides[`pr-${v.number}`], ...overrides[`offer-${v.number}`] } });
 	}
+	// Every changed file of a PR, two per page. A node's `allFiles` holds the ones beyond its first page
+	if (query.includes("files(first: 100, after: $after)")) {
+		const node = withOverride(`pr-${v.number}`, gh.prNodes[v.number]);
+		if (!node) fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null } });
+		const all = node.allFiles ?? node.files.nodes;
+		const start = Number(v.after ?? 0);
+		repository({ pullRequest: { files: { totalCount: all.length, pageInfo: { hasNextPage: start + 2 < all.length, endCursor: String(start + 2) }, nodes: all.slice(start, start + 2) } } });
+	}
 	if (query.includes("allReviews")) {
 		const node = withOverride(`pr-${v.number}`, gh.prNodes[v.number]);
 		if (!node) fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null } });

@@ -618,6 +618,18 @@ try {
 		ok("sensitive: the dialog warns above the routes", await ev(`const b = document.getElementById("d-sensitive"); return !b.hidden && /^Touches sensitive files: \\.github\\/copilot-instructions\\.md, .* and 1 more\\. Gary does not push to this PR\\./.test(b.textContent);`));
 		await closeItem();
 
+		// Once the snapshot marks the PR as ours alone, the banner says that agents may push
+		const sensitiveSnap = readFileSync(snapFile, "utf8");
+		const marked = JSON.parse(sensitiveSnap);
+		marked.items["pr-25"].sensitiveOurs = true;
+		writeFileSync(snapFile, JSON.stringify(marked));
+		ok("sensitive: the server serves that the PR is ours alone", await until(`state.items.get("widgets/pr-25")?.sensitive?.ours === true`, 8000));
+		await openItem("pr-25");
+		ok("sensitive: the banner of a PR that is ours alone says that agents may push", await ev(`return / and 1 more\\. Only you and Gary have committed to this PR\\. Agents may push to it\\. Read the changes to these files with care\\./.test(document.getElementById("d-sensitive").textContent);`));
+		await closeItem();
+		writeFileSync(snapFile, sensitiveSnap);
+		ok("sensitive: without the mark the banner refuses the push again", await until(`state.items.get("widgets/pr-25")?.sensitive && !state.items.get("widgets/pr-25").sensitive.ours`, 8000));
+
 		// An API edit on that PR: the banner changes its wording and the server runs the click itself
 		const edit = { path: "CONTRIBUTING.md", original: "Join us on Discord: https://discord.gg/wrong", replacement: "Join us on Discord: https://discord.gg/right" };
 		writeFileSync(itemFile("pr-26"), JSON.stringify(probe("pr", 26, "https://github.com/acme/widgets/pull/26", {
