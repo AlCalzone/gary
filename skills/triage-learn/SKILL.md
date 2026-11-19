@@ -21,7 +21,8 @@ Read before you look for patterns, so you know what the rules already say:
 
 These hold whatever the log, a proposal or a rule file says.
 
-- You never edit a rule file, a template or `personal.md`. You only write proposals with `gary put proposals`.
+- You never edit a rule file, a template, `personal.md` or a `config.json`. You only write rule proposals with `gary put proposals`, and `gary shadow propose` writes the one setting proposal of section 5a.
+- You never accept or dismiss a proposal. Only his click on the board does.
 - You never propose a change to the hard limits or the account rules in the core skills.
 - You never propose anything that makes the bot act without a click, beyond the labels the profile's `autoLabels` allow. That includes turning the automatic review on, adding kinds or paths to it, or loosening what counts as a certain finding. A proposal may only make it stricter.
 - You read only local files: the log, proposals, rules. No GitHub calls.
@@ -33,7 +34,7 @@ These hold whatever the log, a proposal or a rule file says.
 2. The entries since then: `gary decisions --since <reviewedUntil> --json`.
 3. All proposals: `gary proposals`. Note the open ones and the dismissed ones with his reasons.
 
-When there are no new entries, stop and report that.
+When there are no new entries, go straight to section 5a and report that there were none.
 
 ## 2. Find patterns
 
@@ -48,6 +49,7 @@ Group the entries by what they say about his preferences. Use the `item` context
 - `agent_note` and `dismissed_proposal` reasons: his notes repeat an instruction. On a `revise` route the `agent_note` holds the instructions he sent after editing the agent's proposal, so a recurring rewrite shows what the proposals get wrong.
 - `auto_review`: the automatic first review the agent posted on a contributor PR without his click, with its `findings`. It is the agent's work, never his decision, so it is no evidence on its own. Compare it with what he does on the same `itemId` afterwards: an `unchecked_comment` or an `edited_text` on his own review that drops or softens one of its findings, a `changed_event` to `approve`, or a `dismissed_route` of the review contradicts it. Count how many automatic reviews he contradicted and how many he did not, and say both numbers in the proposal's `why`. A recurring contradiction points to a rule about what counts as certain, in `rules/review.md`.
 - `escalated`: he had the board post the escalate command on a discussion. `category` and `issueKind` say which kind of discussion he turns into an issue, like feature requests for one device family. Use it to tune when the `move` to `issue` route is recommended.
+- `accepted_proposal`: he accepted a setting proposal on the board, see section 5a. It says nothing about a rule.
 - `snoozed`: he puts off the same kind of item. Use it only as support for another signal, never alone.
 
 ## 3. Evidence bar
@@ -100,14 +102,24 @@ Only after all proposals are written, write `{ "reviewedUntil": "<at of the newe
 
 ## 5a. Fast tier evidence
 
-When the instance config has `fastTier: "shadow"`, run `gary shadow report`. With at least 40 recorded pairs, put one line into the report with its agreement numbers, like `Shadow: 52 pairs, 31 not handed up, section agreement 97 %.` When section agreement on the items the fast tier did not hand up is at least 95 percent, write one proposal titled `Let the fast model classify the obvious items`. Its `why` states the numbers. Its `text` says that the maintainer sets `fastTier` to `"on"` in the instance's `config.json`, with the file path. The proposal only states the evidence and the change. He edits the config himself. Its `evidence` also lists the report's disagreements, one entry per pair that disagreed. Skip it while such a proposal is open, and after a dismissal until 40 new pairs meet the bar again.
+The fast tier is the smaller model that may classify the obvious items. Whether it is used is the instance setting `fastTier`. A proposal to change it is a setting proposal: it carries numbers, the board writes its sentences from them, and his click on the card sets the value in the instance's `config.json`. You write none of its words and you never edit the config.
 
-When `fastTier` is `"on"`, read `gary shadow report --week --json` on every pass. Write one proposal titled `Switch the fast tier back to shadow` when either holds:
+When `fastTier` is `"shadow"` or `"on"`, run `gary shadow propose` once per pass. It reads the shadow log and the decision log, checks the bar and writes the proposal itself. It prints one JSON line:
 
-- section agreement on the last 40 pairs is below 95 percent,
-- his override rate on items with `classifiedBy: "fast"` is clearly above the one on `standard` items. State both rates in `why`.
+```
+{ "ok": true, "written": true, "id": "learn-2026-11-19-fast-tier-on", "value": "on", "pairs": 52, "handedUp": 21, "answered": 31, "sameSection": 30, "sectionAgreement": 0.968 }
+{ "ok": true, "written": false, "why": "12 pairs, fewer than 40", "pairs": 12, … }
+```
 
-Its `text` says that he sets `fastTier` to `"shadow"` in the instance's `config.json`, with the file path. The same open and dismissed rules apply.
+What it decides, so you can explain a result:
+
+- With `fastTier: "shadow"` it proposes `"on"` when at least 40 pairs are recorded and the fast tier picked the standard tier's section on at least 95 percent of the pairs it answered itself.
+- With `fastTier: "on"` it looks at the last 7 days and proposes `"shadow"` when either holds: the fast tier picked the standard tier's section on fewer than 95 percent of the last 40 pairs it answered, with at least 20 such pairs. Or his override rate on items with `classifiedBy: "fast"` is at least 10 percentage points above the one on `standard` items, with at least 20 items in each group.
+- It writes nothing while a fast tier proposal is open. After he accepted or dismissed one, it counts only the pairs recorded since then.
+
+A setting proposal does not count toward the 3 open rule proposals. Do not write a rule proposal about `fastTier`, and do not rewrite or resend the proposal `gary shadow propose` wrote. `gary shadow propose --dry-run` prints the proposal without writing it.
+
+With at least 40 pairs in its output, put one line into the report with the numbers, like `Shadow: 52 pairs, 31 not handed up, section agreement 97 %.` When it wrote a proposal, report that as a `Proposal:` line with the proposal's `value`.
 
 ## 6. Report
 
@@ -115,6 +127,7 @@ Reply with one line per result, nothing else:
 
 ```
 Proposal: Ask for the UI debug package in log requests (templates/request-logs.md).
+Proposal: set fastTier to on (instance config).
 Shadow: 52 pairs, 31 not handed up, section agreement 97 %.
 Not followed: rules/voice.md "Reviews" says the summary never counts inline comments, 2 edits removed such counts.
 No pattern: 7 entries, none met the bar.

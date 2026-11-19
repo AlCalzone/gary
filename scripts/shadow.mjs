@@ -2,12 +2,16 @@
 // gary shadow report [--since <ISO> | --week] [--json]: pairs the fast and standard answers per run and item and
 // prints how often they agree and how often the fast tier handed the item up. A second part groups the
 // maintainer's decisions from the decision log by the tier that classified the item.
+// gary shadow propose [--dry-run]: writes the setting proposal that turns the fast tier on, or back to shadow, when the
+// numbers of the report meet the bar. The numbers go into the proposal as they are, and the board builds the sentences.
+// gary shadow convert <id> [--dry-run]: rebuilds a fast tier proposal that was written as a rule proposal.
 import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { sendWrite } from "./board-put.mjs";
 import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
-import { stateDir } from "./lib/config.mjs";
-import { readDecisions } from "./lib/learning.mjs";
+import { instanceName, loadConfig, stateDir } from "./lib/config.mjs";
+import { isSettingProposal, readDecisions, validateProposal } from "./lib/learning.mjs";
 import { CLASSIFIERS } from "./lib/validate-item.mjs";
 
 export const TIERS = ["fast", "standard"];
@@ -16,6 +20,11 @@ const FIELDS = ["at", "run", "itemId", "repo", "tier", "model", "section", "hasR
 export const MIN_ITEMS = 20;
 export const RECENT_PAIRS = 40;
 export const MIN_SECTION_AGREEMENT = 0.95;
+// A proposal to turn the fast tier on needs this many pairs
+export const MIN_PAIRS = 40;
+// The fast tier's override rate must exceed the standard tier's by this much before Gary proposes to switch back
+export const OVERRIDE_MARGIN = 0.1;
+const MAX_DIFFERENCES = 50;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const shadowFile = () => join(stateDir(), "shadow.jsonl");
 
@@ -177,15 +186,167 @@ async function record(file) {
 
 const pct = (s) => (s === null ? "-" : `${Math.round(s * 100)}%`);
 
+/** The pair report since `since`, with the maintainer's decisions per tier as `decisions`. */
+async function fullReport(since) {
+	const r = buildReport(await readEntries(), { since });
+	// readDecisions takes entries later than `since`, the shadow entries from `since` on
+	r.decisions = decisionsByTier(await readBoardItems(), await readDecisions({ since: since && new Date(Date.parse(since) - 1).toISOString() }), { since });
+	return r;
+}
+
+const SETTING_TITLES = { on: "Use the faster model for obvious items", shadow: "Go back to the standard model for all items" };
+
+/** Why the report speaks for switching back to shadow: `agreement`, `overrides`, both or neither. */
+export function switchBackReasons(report) {
+	const reasons = [];
+	const recent = report.recentSectionAgreement;
+	if (recent.warning && recent.pairs >= MIN_ITEMS) reasons.push("agreement");
+	const { fast, standard } = report.decisions ?? {};
+	if (fast && standard && !fast.tooFew && !standard.tooFew && fast.any.rate >= standard.any.rate + OVERRIDE_MARGIN) reasons.push("overrides");
+	return reasons;
+}
+
+/** The report's disagreements, one entry per item and pair of answers with the number of runs that showed it. */
+export function differencesOf(report, boardItems = []) {
+	const items = new Map(boardItems.map((i) => [i.id, i.data]));
+	const groups = new Map();
+	for (const d of report.disagreements) {
+		const answer = (a) => ({ section: a.section ?? null, recommendedType: a.recommendedType ?? null });
+		const diff = { itemId: d.itemId, fast: answer(d.fast), standard: answer(d.standard) };
+		const key = JSON.stringify(diff);
+		const item = items.get(d.itemId);
+		const g = groups.get(key) ?? {
+			itemId: d.itemId,
+			...(Number.isInteger(item?.number) && item.number > 0 && { number: item.number }),
+			...(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(issues|pull|discussions)\/\d+$/.test(item?.url ?? "") && { url: item.url }),
+			runs: 0,
+			fast: diff.fast,
+			standard: diff.standard,
+		};
+		g.runs++;
+		groups.set(key, g);
+	}
+	return [...groups.values()].sort((a, b) => b.runs - a.runs).slice(0, MAX_DIFFERENCES);
+}
+
+/** Builds the setting proposal for `value` from a report. `reasons` belongs to a proposal that switches back. */
+export function buildSettingProposal({ id, createdAt, value, report, boardItems, reasons = [] }) {
+	const stats = {
+		pairs: report.pairs,
+		handedUp: report.handedUp,
+		answered: report.compared,
+		sameSection: report.sectionAgreement.same,
+		sameRouteType: report.routeAgreement.same,
+	};
+	if (reasons.includes("agreement")) {
+		const recent = report.recentSectionAgreement;
+		stats.recent = { answered: recent.pairs, sameSection: recent.same, needed: Math.ceil(recent.pairs * MIN_SECTION_AGREEMENT) };
+	}
+	if (reasons.includes("overrides")) {
+		const tier = (t) => ({ items: t.items, changed: t.any.count });
+		stats.overrides = { fast: tier(report.decisions.fast), standard: tier(report.decisions.standard) };
+	}
+	return {
+		id,
+		createdAt,
+		kind: "setting",
+		setting: { key: "fastTier", value },
+		title: SETTING_TITLES[value],
+		stats,
+		...(value === "shadow" && { reasons }),
+		differences: differencesOf(report, boardItems),
+		status: "open",
+		decidedAt: null,
+		reason: "",
+	};
+}
+
+async function readProposals() {
+	const dir = join(boardDir(), "proposals");
+	let names = [];
+	try {
+		names = (await readdir(dir)).filter((n) => n.endsWith(".json") && !n.startsWith("."));
+	} catch (e) {
+		if (e.code !== "ENOENT") throw e;
+	}
+	return (await Promise.all(names.map((n) => readJson(join(dir, n))))).filter(Boolean);
+}
+
+// A fast tier proposal in the shape of a rule proposal, whose text tells the maintainer to edit the config
+const isRuleShapedFastTier = (p) => p.kind === undefined && typeof p.text === "string" && p.text.includes("`fastTier`");
+
+async function storeProposal(proposal, dryRun) {
+	const problems = validateProposal(proposal.id, proposal);
+	if (problems.length) throw new Error(`The proposal is invalid, nothing was written: ${problems.join(", ")}`);
+	if (dryRun) return;
+	const [status, body] = await sendWrite(instanceName(), { op: "set", path: `proposals/${proposal.id}`, data: proposal });
+	if (status !== 200) throw new Error(body?.error ?? `The board server answered ${status}`);
+}
+
+async function propose(argv) {
+	const dryRun = argv.includes("--dry-run");
+	const none = (why) => console.log(JSON.stringify({ ok: true, written: false, why }));
+	const tier = loadConfig().fastTier;
+	if (tier === "off") return none("fastTier is off");
+	const all = await readProposals();
+	const open = all.find((p) => p.status === "open" && ((isSettingProposal(p) && p.setting?.key === "fastTier") || isRuleShapedFastTier(p)));
+	if (open) return none(`${open.id} is still open`);
+	// A decided proposal resets the count, so the next one rests only on what was recorded after it
+	const decided = all.filter((p) => isSettingProposal(p) && p.setting?.key === "fastTier" && Number.isFinite(Date.parse(p.decidedAt ?? ""))).map((p) => Date.parse(p.decidedAt));
+	const last = decided.length ? Math.max(...decided) : -Infinity;
+	const value = tier === "shadow" ? "on" : "shadow";
+	const from = value === "on" ? last : Math.max(last, Date.now() - WEEK_MS);
+	const since = Number.isFinite(from) ? new Date(from).toISOString() : undefined;
+	const report = await fullReport(since);
+	const counts = { since: since ?? null, pairs: report.pairs, handedUp: report.handedUp, answered: report.compared, sameSection: report.sectionAgreement.same, sectionAgreement: report.sectionAgreement.share };
+	let reasons = [];
+	if (value === "on") {
+		if (report.pairs < MIN_PAIRS) return console.log(JSON.stringify({ ok: true, written: false, why: `${report.pairs} pairs, fewer than ${MIN_PAIRS}`, ...counts }));
+		if (!(report.sectionAgreement.share >= MIN_SECTION_AGREEMENT)) return console.log(JSON.stringify({ ok: true, written: false, why: `section agreement ${pct(report.sectionAgreement.share)} is below ${pct(MIN_SECTION_AGREEMENT)}`, ...counts }));
+	} else {
+		reasons = switchBackReasons(report);
+		if (!reasons.length) return console.log(JSON.stringify({ ok: true, written: false, why: "the fast tier agrees with the standard tier and with the maintainer's decisions", ...counts }));
+	}
+	const now = new Date();
+	const base = `learn-${now.toISOString().slice(0, 10)}-fast-tier-${value}`;
+	const taken = new Set(all.map((p) => p.id));
+	let id = base;
+	for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+	const proposal = buildSettingProposal({ id, createdAt: now.toISOString(), value, report, boardItems: await readBoardItems(), reasons });
+	await storeProposal(proposal, dryRun);
+	console.log(JSON.stringify({ ok: true, written: !dryRun, id, value, ...counts, ...(dryRun && { proposal }) }));
+}
+
+async function convert(argv) {
+	const dryRun = argv.includes("--dry-run");
+	const id = argv.find((a) => !a.startsWith("--"));
+	if (!id) throw new Error("Usage: gary shadow convert <proposal id> [--dry-run]");
+	const old = (await readProposals()).find((p) => p.id === id);
+	if (!old) throw new Error(`There is no proposal ${id}.`);
+	if (isSettingProposal(old)) return console.log(JSON.stringify({ ok: true, written: false, why: `${id} is a setting proposal already` }));
+	if (!isRuleShapedFastTier(old)) throw new Error(`${id} is a rule proposal that does not name fastTier. It stays as it is.`);
+	const value = ["on", "shadow"].find((v) => old.text.includes(`\`"${v}"\``));
+	if (!value) throw new Error(`The text of ${id} does not say which value fastTier should get.`);
+	const report = await fullReport(value === "on" ? undefined : new Date(Date.now() - WEEK_MS).toISOString());
+	const reasons = value === "shadow" ? switchBackReasons(report) : [];
+	if (value === "shadow" && !reasons.length) throw new Error(`The report of the last week gives no reason to switch back, so ${id} cannot be rebuilt. Dismiss it on the board.`);
+	const proposal = {
+		...buildSettingProposal({ id, createdAt: old.createdAt, value, report, boardItems: await readBoardItems(), reasons }),
+		status: old.status,
+		decidedAt: old.decidedAt ?? null,
+		reason: old.reason ?? "",
+	};
+	await storeProposal(proposal, dryRun);
+	console.log(JSON.stringify({ ok: true, written: !dryRun, id, value, ...(dryRun && { proposal }) }));
+}
+
 async function report(argv) {
 	const i = argv.indexOf("--since");
 	const week = argv.includes("--week");
 	if (week && i >= 0) throw new Error("Pass --since or --week, not both");
 	const since = week ? new Date(Date.now() - WEEK_MS).toISOString() : i >= 0 ? argv[i + 1] : undefined;
 	if (i >= 0 && !Number.isFinite(Date.parse(since ?? ""))) throw new Error("--since needs an ISO time");
-	const r = buildReport(await readEntries(), { since });
-	// readDecisions takes entries later than `since`, the shadow entries from `since` on
-	r.decisions = decisionsByTier(await readBoardItems(), await readDecisions({ since: since && new Date(Date.parse(since) - 1).toISOString() }), { since });
+	const r = await fullReport(since);
 	if (argv.includes("--json")) return console.log(JSON.stringify({ since: since ?? null, ...r }, null, 2));
 	console.log(`${r.pairs} pairs${since ? ` since ${since}` : ""}, ${r.sampledPairs} of them from sampling`);
 	console.log(`fast tier handed up: ${r.handedUp} (${pct(r.handedUpShare)})`);
@@ -215,5 +376,7 @@ export async function main(argv) {
 	const [sub, ...rest] = argv;
 	if (sub === "record") return record(rest[0]);
 	if (sub === "report") return report(rest);
-	throw new Error("Usage: gary shadow record <json file> | gary shadow report [--since <ISO>] [--json]");
+	if (sub === "propose") return propose(rest);
+	if (sub === "convert") return convert(rest);
+	throw new Error("Usage: gary shadow record <json file> | report [--since <ISO> | --week] [--json] | propose [--dry-run] | convert <proposal id> [--dry-run]");
 }

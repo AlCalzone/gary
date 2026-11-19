@@ -169,6 +169,8 @@ Two older layouts are moved by commands, never silently:
 - `gary shadow record <file>`: append shadow comparison entries, one object or a list, to `<state>/shadow.jsonl`. Each is `{ at, run, itemId, repo, tier: "fast" | "standard", model, section, hasRoutes, recommendedType, handedUp, reason, sampled }`. `sampled` is optional, true for a pair the routine sampled in `on` mode. `section` and `recommendedType` may be null when the fast tier handed up, and only the fast tier hands up. An invalid entry refuses the whole file.
 - `gary shadow report [--since <ISO> | --week] [--json]`: pair the latest fast and standard entry per run and item, and print the number of pairs and how many came from sampling, how often the fast tier handed up, the agreement on section and on the recommended route type over the pairs the fast tier answered, and every disagreement with both answers. It warns when the section agreement over the last 40 pairs the fast tier answered is below 95 percent. `--week` means `--since` 7 days ago.
   The second part, "Your decisions by tier", counts per `classifiedBy` value the items of that tier: board items reviewed since `--since` plus the items the decision log names with that tier since then. For each tier it counts the items with a `dismissed_route` of the recommended route, a `chose_alternative`, an `edited_text`, and any of the three, with rates. It says when a tier has fewer than 20 items. `--json` adds the item ids, under `decisions.<tier>`: `{ items, itemIds, tooFew, dismissedRecommended, choseAlternative, editedText, any }`, each count as `{ count, rate, itemIds }`. The pair counts are `sampledPairs` and `recentSectionAgreement: { pairs, same, share, warning }`.
+- `gary shadow propose [--dry-run]`: write the setting proposal for `fastTier` when the numbers meet the bar, see "Setting proposals". It prints one JSON line, `{ ok, written, id, value, since, pairs, handedUp, answered, sameSection, sectionAgreement }`, or `{ ok, written: false, why, … }`. `--dry-run` prints the proposal as `proposal` and writes nothing.
+- `gary shadow convert <id> [--dry-run]`: rebuild one fast tier proposal that was stored as a rule proposal, under the same id, see "Setting proposals".
 - `gary decisions [--since <ISO>] [--json]`: print the decision log, see Learning. `--since` is exclusive.
 - `gary claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>] [--request <action id>]`: claim work on an item before starting it. It creates `<state>/claims/<itemId>.<kind>.json` exclusively with `{ run, at, expiresAt }`, default ttl 60 minutes, and exits 3 with the holder when another run holds an unexpired claim. The same run renews its claim, an expired claim is taken over. A `fix` claim without `--request` is the routine's own fix: it also exits 3 with the numbers when `maxPendingAutoFixes` fixes of the routine are pending, see "Fix limit". `push` covers take_over, revise, address_review, drive rounds and format. A `fix` claim also exits 3 while a fix PR for the item is a draft or open, and while a `start_fix` request other than `--request` is queued for it: a request worker passes the id of its own action doc. A refused claim needs no item doc: the caller skips the item.
 - `gary release <itemId> <kind> --run <run>`: remove the claim when `run` holds it, exit 3 when another run does. Every exit of a job, also a failed one, releases its claims. A claim a crashed job leaves behind expires.
@@ -179,8 +181,8 @@ Two older layouts are moved by commands, never silently:
 - `gary api-edit --pr <n> [--route <id>]` and `gary api-edit --pr <n> --sha <head sha> --file <route.json>`: check the API edit of a `take_over` or `revise` route against GitHub and print what the click would commit, see "API edit". The first form reads the route from the stored item, the second a draft route `{ params, text }` before it is stored. It prints `{ ok, dryRun, message, files, diff, invocations }` or the refusal as `{ ok: false, result }`, and exits 1 on a refusal and 4 while paused. It has no mode that commits: only the click on the board does.
 - `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
 - `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
-- `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
-- `gary put proposals <id> <file>`: write one rule proposal, validated. `gary put learn <file>`: write the learn cursor.
+- `gary proposals [--json]`: list every proposal with its status and dismissal reason.
+- `gary put proposals <id> <file>`: write one proposal, validated. `gary put learn <file>`: write the learn cursor.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
 - `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the fast tier, the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
@@ -730,7 +732,7 @@ Board-only actions, no GitHub call. The page applies them to the item file throu
 | `dismiss` | `hidden: true` until the item changes on GitHub. The board calls it "Hide until it changes" |
 | `snooze` | `params.days`, sets `snoozedUntil` |
 | `dismiss_route` | removes one route, see Routes. The server applies it through `/api/action` |
-| `accept_proposal`, `dismiss_proposal` | decide a rule proposal, see Learning. The server applies them through `/api/action` |
+| `accept_proposal`, `dismiss_proposal` | decide a proposal, see Learning. The server applies them through `/api/action` |
 
 Agent requests. The server writes them as queued action docs when their route is clicked. The page writes only the `reanalyze` doc of "Analyze again". The master session watches the queue between runs (`gary watch-queue` under the Monitor tool) and starts them within seconds. If the master is not running, the next hourly run picks them up:
 
@@ -751,7 +753,7 @@ Every action returns `{ ok, result }` and never throws past the entry point. `--
 
 ## Learning
 
-Gary learns from where the maintainer deviates from the agent's proposals. The server keeps a decision log. A daily skill turns patterns in it into rule proposals. The maintainer accepts or dismisses each proposal on the board, and an accepted one is appended to a rules file.
+Gary learns from where the maintainer deviates from the agent's proposals. The server keeps a decision log. A daily skill turns patterns in it into rule proposals. The maintainer accepts or dismisses each proposal on the board, and an accepted one is appended to a rules file. A second kind, the setting proposal, changes one value in the instance config when he accepts it.
 
 ### Decision log
 
@@ -774,7 +776,8 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `unchecked_comment` | `comment: { path, text }` | one entry per inline review comment the maintainer unchecked |
 | `agent_note` | `text` | the note of "Analyze again", or the instruction text of an agent route |
 | `snoozed` | `days`, or `untilActivity: true` | the maintainer snoozed or hid the item |
-| `dismissed_proposal` | `proposal: { id, title, target, file }`, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
+| `dismissed_proposal` | `proposal: { id, title, target, file }`, or `{ id, title, kind: "setting", setting }` for a setting proposal, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
+| `accepted_proposal` | `proposal: { id, title, kind: "setting", setting }`, `from` | `accept_proposal` changed a setting. `from` is the value before. An accepted rule proposal writes no entry |
 | `changed_event` | `route: { type, title }`, `from`, `to` | a `review` ran with another event than the route's `params.event` |
 | `auto_review` | `review: { url, sha, event, reason, comments, offer }`, `findings: [{ severity, text, ref }]` | `gary auto-review post` posted an automatic review. It is the agent's work, never the maintainer's decision. `triage-learn` compares it with what he does on the item afterwards |
 | `escalated` | `route: { type, title }`, `issueKind`, `category` | the escalate button posted the profile's escalate command on a discussion. `issueKind` and `category` are `null` when the route or the item has none |
@@ -786,7 +789,7 @@ The server derives these entries itself when a bot or agent route is clicked, an
 
 ### Proposals
 
-`<state>/board/proposals/<id>.json`, one file per proposal:
+`<state>/board/proposals/<id>.json`, one file per proposal. A doc without `kind` is a rule proposal:
 
 ```jsonc
 {
@@ -805,14 +808,58 @@ The server derives these entries itself when a bot or agent route is clicked, an
 }
 ```
 
-The skill writes proposals with `gary put proposals <id> <file>`, which validates them. `gary proposals [--json]` lists every proposal with its status and the dismissal reason. `/api/state` serves the open proposals as `proposals`, and the event stream pushes their changes.
+### Setting proposals
+
+A proposal with `kind: "setting"` changes one value in the instance's `config.json`. Only the settings in `PROPOSAL_SETTINGS` (`scripts/lib/learning.mjs`) can be proposed, each with a fixed list of values. Today that is `fastTier` with `on` or `shadow`.
+
+```jsonc
+{
+  "id": "learn-2026-11-19-fast-tier-on",
+  "createdAt": "ISO",
+  "kind": "setting",
+  "setting": { "key": "fastTier", "value": "on" },   // on | shadow
+  "title": "Use the faster model for obvious items",  // for `gary proposals` and the log. The board has its own words
+  "stats": {
+    "pairs": 130, "handedUp": 76, "answered": 54,    // handedUp + answered = pairs
+    "sameSection": 54, "sameRouteType": 51,          // of the answered pairs
+    "recent": { "answered": 40, "sameSection": 30, "needed": 38 },   // required for the reason "agreement"
+    "overrides": { "fast": { "items": 20, "changed": 8 }, "standard": { "items": 25, "changed": 2 } }   // required for the reason "overrides"
+  },
+  "reasons": ["agreement", "overrides"],             // only with value "shadow", at least one
+  "differences": [                                    // at most 50, one per item and pair of answers
+    { "itemId": "issue-9413", "number": 9413, "url": "https://github.com/…/issues/9413", "runs": 3,
+      "fast": { "section": "deferred", "recommendedType": "follow_up" },
+      "standard": { "section": "deferred", "recommendedType": null } }
+  ],
+  "status": "open", "decidedAt": null, "reason": "",
+  "note": ""                                          // set by the server when the config already had the value
+}
+```
+
+A setting proposal has no `why`, `evidence`, `target`, `file`, `heading` or `text`, and any field not listed here is refused. `number` and `url` of a difference are optional and come from the board item. The proposal carries numbers only. The board builds every sentence of the card from them, so no model writes its wording.
+
+`gary shadow propose` is the only writer. It reads `fastTier` from the instance config:
+
+- `shadow`: it proposes `on` when the report has at least 40 pairs and the section agreement over the answered pairs is at least 95 percent.
+- `on`: it takes the report of the last 7 days and proposes `shadow` for one or both reasons. `agreement`: `recentSectionAgreement` has at least 20 pairs and a share below 95 percent. `recent.needed` is 95 percent of `recent.answered`, rounded up. `overrides`: both `decisions.fast` and `decisions.standard` have at least 20 items, and the `any` rate of `fast` is at least 0.1 above the one of `standard`. `overrides.<tier>.changed` is that tier's `any.count`.
+- `off`: it writes nothing.
+
+It writes nothing while a fast tier proposal is open. Once one was accepted or dismissed, the report starts at its `decidedAt`, so the next proposal rests only on pairs recorded since. The id is `learn-<YYYY-MM-DD>-fast-tier-<value>`, with `-2`, `-3` and so on when that id is taken.
+
+`gary shadow convert <id>` rebuilds a fast tier proposal that an older version stored as a rule proposal: a doc without `kind` whose `text` names `` `fastTier` `` and the value in backticks. It keeps `id`, `createdAt`, `status`, `decidedAt` and `reason`, and takes the numbers from the report, the whole log for `on` and the last 7 days for `shadow`. Any other rule proposal is refused and stays as it is.
+
+### Writing and listing
+
+The skill writes rule proposals with `gary put proposals <id> <file>`, which validates them. `gary proposals [--json]` lists every proposal with its status and the dismissal reason. `/api/state` serves the open proposals as `proposals`, and the event stream pushes their changes.
 
 ### Accept and dismiss
 
 Both go through `/api/action` with `{ proposalId, text }`.
 
 - `accept_proposal` appends `text`, the edited rule, to the target file: under `heading` when the file has that heading, at the end of the file otherwise. The path must resolve inside the profile's `rules/` or `templates/` directory, or be exactly the shared `<root>/personal.md`. Symlinks that lead elsewhere are refused, and the write is atomic. When the profile directory is a git repository, the server commits that one file there with the message `Add rule: <title>` and does not push. Then it sets `status: "accepted"` and `decidedAt`.
+- `accept_proposal` on a setting proposal ignores `text`. The server validates the stored proposal again, reads the instance's `config.json`, sets the one key and writes the file atomically. The other keys, their order and the indentation stay. The server answers `{ ok: true, result: <config file>, setting: { key, value }, changed: true }`, sets `status: "accepted"` and `decidedAt`, and logs an `accepted_proposal` entry. The config loader reads the file again on its next call, so the server and the next run use the new value without a restart. It refuses with `ok: false` and changes nothing when the proposal is invalid, when the config is not a JSON object, or when the config would have errors afterwards. When the config already has the value, it writes no config and no log entry, marks the proposal accepted with `note` and answers `changed: false`.
 - `dismiss_proposal` sets `status: "dismissed"`, `decidedAt` and `reason` from `text`, and logs a `dismissed_proposal` entry.
+- Only a click on the board sends either action. No skill and no `gary` command accepts a proposal.
 
 Both run in dry-run mode too, because they change only local files and never GitHub.
 

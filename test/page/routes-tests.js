@@ -443,11 +443,14 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const P = window.makeProposalFixtures(iso);
   const planBefore = document.querySelector("#plan .sum")?.textContent;
   window.__subs["proposals"](__mkSnap(P)); await wait(10);
-  ok("proposals show a lightbulb with their count", !learnBtn.hidden && learnBtn.textContent === "2" && learnBtn.getAttribute("aria-label") === "2 suggested rules");
+  ok("proposals show a lightbulb with their count", !learnBtn.hidden && learnBtn.textContent === "2" && learnBtn.getAttribute("aria-label") === "2 suggestions");
   ok("proposals stay out of the plan and the budget", document.querySelector("#plan .sum")?.textContent === planBefore && !document.querySelector('#board .row[data-id="p1"]'));
   learnBtn.click(); await wait(10);
   const ldlg = document.getElementById("learn-dialog");
   const pcards = () => [...ldlg.querySelectorAll(".pcard")];
+  ok("rule proposals keep their heading and intro, and no settings group shows", !document.getElementById("learn-rules").hidden && document.getElementById("learn-settings").hidden
+    && document.getElementById("learn-rules-title").textContent === "What your decisions suggest" && /^You decided differently from the agent more than once\. Add a rule/.test(document.querySelector("#learn-rules .learn-intro").textContent)
+    && document.getElementById("learn-title").textContent === "Suggestions");
   ok("the dialog lists the proposals as cards", ldlg.open && pcards().length === 2 && /closing feature requests/.test(pcards()[0].textContent) && /invited yourself/.test(pcards()[0].querySelector(".card-why").textContent));
   ok("evidence is collapsed and counted", !pcards()[0].querySelector("details").open && pcards()[0].querySelector("summary").textContent === "Based on 3 decisions" && pcards()[1].querySelector("summary").textContent === "Based on 4 decisions");
   ok("where the rule goes", /Adds to rules\/classification\.md under “Feature requests” in the project profile/.test(pcards()[0].textContent) && /Adds to your personal rules under “Voice”/.test(pcards()[1].textContent));

@@ -393,6 +393,25 @@ try {
 	await ev(`document.getElementById("learn-close").click();`);
 	ok("with nothing open the lightbulb hides", await until(`document.getElementById("learn").hidden`));
 
+	// A setting proposal: the click writes the instance config
+	writeFileSync(join(BOARD, "proposals", "learn-2026-11-19-fast-tier-on.json"), JSON.stringify({
+		id: "learn-2026-11-19-fast-tier-on", createdAt: new Date().toISOString(), kind: "setting", setting: { key: "fastTier", value: "on" }, title: "Use the faster model for obvious items",
+		stats: { pairs: 130, handedUp: 76, answered: 54, sameSection: 54, sameRouteType: 51 },
+		differences: [{ itemId: "issue-26", number: 26, url: "https://github.com/acme/widgets/issues/26", runs: 3, fast: { section: "deferred", recommendedType: "follow_up" }, standard: { section: "deferred", recommendedType: null } }],
+		status: "open", decidedAt: null, reason: "",
+	}));
+	ok("a setting proposal shows the lightbulb", await until(`!document.getElementById("learn").hidden && document.getElementById("learn").textContent === "1"`, 8000));
+	await ev(`document.getElementById("learn").click();`);
+	ok("the dialog shows it as a setting, without the rules group", await until(`document.querySelectorAll("#learn-dialog .pcard").length === 1 && !document.getElementById("learn-settings").hidden && document.getElementById("learn-rules").hidden`));
+	ok("the card has the plain title and the difference", await ev(`const c = ${pcard("Use the faster model")}; return !c.querySelector("textarea") && /^#26, in 3 runs: faster model: Implement card\. Standard model: no card\.$/.test(c.querySelector(".diffs li").textContent);`));
+	await ev(`[...${pcard("Use the faster model")}.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Turn it on").click();`);
+	ok("Turn it on writes fastTier into the instance config", await fileUntil(() => json(join(HOME, "config.json")).fastTier === "on"));
+	ok("the other settings stay", json(join(HOME, "config.json")).escalateAs === "me" && json(join(HOME, "config.json")).profile === PROFILE_COPY);
+	ok("the setting proposal is accepted on disk", json(join(BOARD, "proposals", "learn-2026-11-19-fast-tier-on.json")).status === "accepted");
+	ok("the card says what was set", await until(`${pcard("Use the faster model")}?.querySelector(".card-actions")?.textContent === 'Set fastTier: "on" in the instance config'`));
+	await ev(`document.getElementById("learn-close").click();`);
+	ok("after the accept the lightbulb hides", await until(`document.getElementById("learn").hidden`));
+
 	// An item the agent could not analyze: one "open" route and a notice
 	writeFileSync(itemFile("issue-28"), JSON.stringify(probe("issue", 28, "https://github.com/acme/widgets/issues/28", {
 		hint: "Open: read it yourself", blocked: { reason: "safety_filter", at: new Date().toISOString() },

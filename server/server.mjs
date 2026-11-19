@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
-import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
+import { applyProposal, applySetting, cut, isSettingProposal, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
@@ -1795,7 +1795,26 @@ export async function startBoardServer({
 		});
 	}
 
-	// Accepting appends the rule to its file. Both run in dry-run mode too, because they change only local files
+	// What a decision log entry says about the proposal it is about
+	const proposalRef = (p) => (isSettingProposal(p) ? { id: p.id, title: p.title, kind: "setting", setting: p.setting } : { id: p.id, title: p.title, target: p.target, file: p.file });
+
+	async function acceptSetting(name, file, p, decidedAt) {
+		const configFile = join(instanceDir(name), "config.json");
+		let applied;
+		try {
+			applied = await withLock(docLocks, configFile, () => applySetting(p, name));
+		} catch (e) {
+			return [200, { ok: false, result: e.message }];
+		}
+		const { key, value, from, changed } = applied;
+		const note = changed ? undefined : `${key} was already ${JSON.stringify(value)}`;
+		await writeAtomic(file, { ...p, status: "accepted", decidedAt, ...(note && { note }) });
+		if (changed) await decide(name, "accepted_proposal", null, null, { proposal: proposalRef(p), from });
+		return [200, { ok: true, result: applied.file, setting: { key, value }, changed, ...(note && { note }) }];
+	}
+
+	// Accepting appends the rule to its file, or sets the setting in the instance config.
+	// Both run in dry-run mode too, because they change only local files
 	async function handleProposal(name, body) {
 		const { proposalId, text } = body;
 		if (typeof proposalId !== "string" || !PROPOSAL_ID.test(proposalId)) return [400, { ok: false, result: "proposalId is invalid." }];
@@ -1812,9 +1831,10 @@ export async function startBoardServer({
 			const decidedAt = new Date().toISOString();
 			if (!accept) {
 				await writeAtomic(file, { ...p, status: "dismissed", decidedAt, reason: (text ?? "").trim() });
-				await decide(name, "dismissed_proposal", null, null, { proposal: { id: p.id, title: p.title, target: p.target, file: p.file }, reason: (text ?? "").trim() });
+				await decide(name, "dismissed_proposal", null, null, { proposal: proposalRef(p), reason: (text ?? "").trim() });
 				return [200, { ok: true, result: "Proposal dismissed." }];
 			}
+			if (p.kind !== undefined) return acceptSetting(name, file, p, decidedAt);
 			const rule = typeof text === "string" && text.trim() ? text : p.text;
 			let applied;
 			try {

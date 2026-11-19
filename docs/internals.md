@@ -104,7 +104,7 @@ gary put items pr-412 item.json           # the file is the complete item and re
 gary put --merge items pr-412 patch.json  # change only these fields, null removes a field
 gary put items pr-412 --delete            # remove the item
 gary put meta meta.json                   # replace meta.json
-gary put proposals <id> <file>            # write a rule proposal
+gary put proposals <id> <file>            # write a proposal
 gary put learn <file>                     # write the learning cursor
 ```
 
@@ -128,7 +128,7 @@ It sends the write through the board server, so it queues behind clicks on the s
 
 ### gary decisions and gary proposals
 
-`gary decisions --since <ISO> --json` prints the entries of the decision log. `gary proposals` lists every rule proposal with its status. See [Learning](#learning).
+`gary decisions --since <ISO> --json` prints the entries of the decision log. `gary proposals` lists every proposal with its status. See [Learning](#learning).
 
 ## Setup in scripts
 
@@ -230,9 +230,9 @@ The server reads two things for the page from the snapshot, with `sensitiveFacts
 
 The classification rules take these as given. The profile's `automatedComments` decides which bot comments are `automated`. Its entries are `{ name, pattern, origin? }`, where `pattern` is a regex without flags, tested against the start of the comment body.
 
-Quick classification has two tiers, set by `fastTier` (`off`, `shadow` or `on`, default `off`) in the instance config. The fast tier (Haiku) settles only cases the facts decide and hands up everything else. The standard tier (Sonnet) does the rest. With `shadow`, both run, only the standard result is stored, and `gary shadow record <file>` keeps both tiers' entries per item. A file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be `null` only when the fast tier handed up. `gary shadow report [--since <ISO>] [--json]` compares them. `triage-learn` proposes `on` once 40 pairs show at least 95 percent section agreement.
+Quick classification has two tiers, set by `fastTier` (`off`, `shadow` or `on`, default `off`) in the instance config. The fast tier (Haiku) settles only cases the facts decide and hands up everything else. The standard tier (Sonnet) does the rest. With `shadow`, both run, only the standard result is stored, and `gary shadow record <file>` keeps both tiers' entries per item. A file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be `null` only when the fast tier handed up. `gary shadow report [--since <ISO>] [--json]` compares them. `gary shadow propose`, run by `triage-learn`, proposes `on` once 40 pairs show at least 95 percent section agreement.
 
-Every item doc carries `classifiedBy` (`fast`, `standard` or `full`), and every decision log entry carries it too, so `gary shadow report` can show "Your decisions by tier". `--week` limits the report to the last 7 days. In `on` mode the routine samples 1 in 10 of the fast tier's own decisions, at least 1 per run, and runs the standard tier on them as well. Both entries are recorded with `sampled: true`. The fast result stays unless the two disagree on the section or the recommended route type, in which case the standard result is stored. `triage-learn` proposes switching back to `shadow` when agreement on the last 40 pairs drops below 95 percent, or when the maintainer overrides fast-tier items clearly more often than standard ones.
+Every item doc carries `classifiedBy` (`fast`, `standard` or `full`), and every decision log entry carries it too, so `gary shadow report` can show "Your decisions by tier". `--week` limits the report to the last 7 days. In `on` mode the routine samples 1 in 10 of the fast tier's own decisions, at least 1 per run, and runs the standard tier on them as well. Both entries are recorded with `sampled: true`. The fast result stays unless the two disagree on the section or the recommended route type, in which case the standard result is stored. `gary shadow propose` proposes switching back to `shadow` when agreement on the last 40 pairs drops below 95 percent, or when the maintainer's override rate on fast-tier items is at least 10 percentage points above the one on standard items.
 
 `gary wants --json` lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the reason, and `unknown` for items without a snapshot entry. The routine attempts those changes every run. Assignees are only added.
 
@@ -285,7 +285,7 @@ Everything under the instance's `state/` (`<home>/state/`):
 ```
 board/items/<id>.json       item docs
 board/actions/<id>.json     action docs, incl. queued agent requests
-board/proposals/<id>.json   rule proposals
+board/proposals/<id>.json   rule and setting proposals
 board/meta.json             run status
 control.json                the pause switch
 decisions.jsonl             the decision log
@@ -301,6 +301,8 @@ snapshot.json, snapshot.pending.json, logs
 The board server logs where the maintainer deviates from the agent's proposals in `state/decisions.jsonl`: a dismissed route, another route than the recommended one, an edited text, a thread decision against the agent's verdict, an unchecked review comment, a note to the agent, a snooze. Routes he does on GitHub himself are reported by the page to `/api/decision`. It writes that local log entry and keeps the click in `state/opened.json`, so the card still says "Copied and opened on GitHub" after a reload or a click on another card.
 
 The `triage-learn` skill reads new entries with `gary decisions --since <ISO>`, writes rule proposals with `gary put proposals <id> <file>` and its cursor with `gary put learn <file>`. The board shows open proposals. Accepting one appends the rule under its heading in the profile's `rules/` or `templates/`, or in the home's `personal.md`, and commits that file when the profile is a git repository. It never pushes. Dismissing one stores the reason and logs it, so the pattern is not proposed again. Both work in dry-run mode, because they change only local files. `gary proposals` lists every proposal with its status.
+
+A setting proposal (`kind: "setting"`) changes one value in the instance's `config.json`. The only one today is `fastTier`, to `on` or back to `shadow`. `gary shadow propose` writes it from the shadow report, with numbers and no prose: `stats` and `differences`. The board builds the card's sentences from them in `settingParagraphs` and `differenceLine` (`board/board.html`), in plain words: "faster model", "standard model", "passed on", "kind of card", "board section". Accepting it runs `applySetting` (`scripts/lib/learning.mjs`): validate the proposal against the allow-list `PROPOSAL_SETTINGS`, set the key, check the resulting config with `checkConfig`, write atomically with the file's indentation. The config loader notices the changed file on its next read. The server logs `accepted_proposal`. `gary shadow convert <id>` rebuilds a fast tier proposal that an older version stored as a rule proposal.
 
 ## Tests
 

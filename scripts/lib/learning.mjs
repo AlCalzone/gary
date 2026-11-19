@@ -3,8 +3,8 @@ import { execFile } from "node:child_process";
 import { appendFile, lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
-import { PROPOSAL_ID, writeAtomic } from "./board-store.mjs";
-import { instanceDir, instanceName, loadInstance, personalFile } from "./config.mjs";
+import { ID_PATTERN, PROPOSAL_ID, writeAtomic } from "./board-store.mjs";
+import { CONFIG_DEFAULTS, checkConfig, instanceDir, instanceName, loadInstance, personalFile } from "./config.mjs";
 
 const run = promisify(execFile);
 const MAX_LOG_TEXT = 8000;
@@ -12,6 +12,11 @@ const MAX_TITLE = 60;
 const MAX_RULE = 20000;
 const PROPOSAL_STATUS = ["open", "accepted", "dismissed"];
 const PROFILE_FILE = /^(rules|templates)\/[A-Za-z0-9._-]+\.md$/;
+// The settings a proposal may change, each with the values it may set
+export const PROPOSAL_SETTINGS = { fastTier: ["on", "shadow"] };
+const SETTING_FIELDS = ["id", "createdAt", "kind", "setting", "title", "stats", "differences", "reasons", "status", "decidedAt", "reason", "note"];
+const SETTING_REASONS = ["agreement", "overrides"];
+const MAX_DIFFERENCES = 50;
 
 const stateOf = (instance = instanceName()) => join(instanceDir(instance), "state");
 export const decisionsFile = (instance) => join(stateOf(instance), "decisions.jsonl");
@@ -83,7 +88,85 @@ export async function readDecisions({ since, instance } = {}) {
 const isString = (v) => typeof v === "string" && v.trim().length > 0;
 const isIso = (v) => typeof v === "string" && Number.isFinite(Date.parse(v));
 
-/** Returns the problems of one proposal doc. */
+const isCount = (v) => Number.isInteger(v) && v >= 0;
+const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+const isGithubUrl = (v) => typeof v === "string" && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(issues|pull|discussions)\/\d+$/.test(v);
+
+export const isSettingProposal = (p) => p?.kind === "setting";
+
+function answerProblems(a, at) {
+	if (!isPlainObject(a)) return [`${at} must be { section, recommendedType }`];
+	const errors = [];
+	for (const key of Object.keys(a)) if (!["section", "recommendedType"].includes(key)) errors.push(`${at} has the unknown field "${key}"`);
+	for (const key of ["section", "recommendedType"]) {
+		if (a[key] !== null && !(isString(a[key]) && a[key].length <= 40)) errors.push(`${at}.${key} must be null or a string of at most 40 characters`);
+	}
+	return errors;
+}
+
+function statsProblems(p) {
+	const s = p.stats;
+	if (!isPlainObject(s)) return ["stats must be { pairs, handedUp, answered, sameSection, sameRouteType }"];
+	const errors = [];
+	const known = ["pairs", "handedUp", "answered", "sameSection", "sameRouteType", "recent", "overrides"];
+	for (const key of Object.keys(s)) if (!known.includes(key)) errors.push(`stats has the unknown field "${key}"`);
+	const counts = ["pairs", "handedUp", "answered", "sameSection", "sameRouteType"];
+	if (!counts.every((k) => isCount(s[k]))) errors.push(`stats.${counts.join(", stats.")} must be whole numbers`);
+	else {
+		if (s.handedUp + s.answered !== s.pairs) errors.push("stats.handedUp and stats.answered must add up to stats.pairs");
+		if (s.sameSection > s.answered || s.sameRouteType > s.answered) errors.push("stats.sameSection and stats.sameRouteType cannot exceed stats.answered");
+	}
+	const reasons = p.reasons;
+	if (p.setting?.value !== "shadow") {
+		if (reasons !== undefined) errors.push("reasons belongs only to a proposal that switches back");
+		return errors;
+	}
+	if (!Array.isArray(reasons) || !reasons.length || new Set(reasons).size !== reasons.length || !reasons.every((r) => SETTING_REASONS.includes(r))) {
+		errors.push(`reasons must list at least one of ${SETTING_REASONS.join(", ")}`);
+		return errors;
+	}
+	if (reasons.includes("agreement")) {
+		const r = s.recent;
+		if (!isPlainObject(r) || !isCount(r.answered) || !isCount(r.sameSection) || !isCount(r.needed) || r.sameSection > r.answered || r.needed > r.answered || r.answered < 1) {
+			errors.push("stats.recent must be { answered, sameSection, needed } for the reason agreement");
+		}
+	}
+	if (reasons.includes("overrides")) {
+		const tier = (t) => isPlainObject(t) && isCount(t.items) && isCount(t.changed) && t.changed <= t.items && t.items >= 1;
+		if (!isPlainObject(s.overrides) || !tier(s.overrides.fast) || !tier(s.overrides.standard)) errors.push("stats.overrides must be { fast: { items, changed }, standard: { items, changed } } for the reason overrides");
+	}
+	return errors;
+}
+
+function settingProblems(p) {
+	const errors = [];
+	for (const key of Object.keys(p)) if (!SETTING_FIELDS.includes(key)) errors.push(`a setting proposal has no field "${key}"`);
+	const s = p.setting;
+	if (!isPlainObject(s) || Object.keys(s).some((k) => !["key", "value"].includes(k)) || !Object.hasOwn(PROPOSAL_SETTINGS, s.key ?? "")) {
+		errors.push(`setting must be { key, value } with one of the keys ${Object.keys(PROPOSAL_SETTINGS).join(", ")}`);
+	} else if (!PROPOSAL_SETTINGS[s.key].includes(s.value)) {
+		errors.push(`setting.value for ${s.key} must be one of ${PROPOSAL_SETTINGS[s.key].join(", ")}`);
+	}
+	errors.push(...statsProblems(p));
+	const d = p.differences;
+	if (!Array.isArray(d) || d.length > MAX_DIFFERENCES) errors.push(`differences must be a list of at most ${MAX_DIFFERENCES} { itemId, runs, fast, standard }`);
+	else {
+		d.forEach((x, i) => {
+			const at = `differences[${i}]`;
+			if (!isPlainObject(x)) return errors.push(`${at} must be an object`);
+			for (const key of Object.keys(x)) if (!["itemId", "number", "url", "runs", "fast", "standard"].includes(key)) errors.push(`${at} has the unknown field "${key}"`);
+			if (typeof x.itemId !== "string" || !ID_PATTERN.test(x.itemId)) errors.push(`${at}.itemId must be an item id`);
+			if (!Number.isInteger(x.runs) || x.runs < 1) errors.push(`${at}.runs must be a whole number from 1`);
+			if (x.number !== undefined && !(Number.isInteger(x.number) && x.number > 0)) errors.push(`${at}.number must be the item's number`);
+			if (x.url !== undefined && !isGithubUrl(x.url)) errors.push(`${at}.url must be the item's GitHub URL`);
+			errors.push(...answerProblems(x.fast, `${at}.fast`), ...answerProblems(x.standard, `${at}.standard`));
+		});
+	}
+	if (p.note !== undefined && typeof p.note !== "string") errors.push("note must be a string");
+	return errors;
+}
+
+/** Returns the problems of one proposal doc. A doc with `kind: "setting"` is a setting proposal, one without `kind` a rule proposal. */
 export function validateProposal(id, p) {
 	const errors = [];
 	if (!p || typeof p !== "object" || Array.isArray(p)) return ["the proposal must be a JSON object"];
@@ -91,21 +174,55 @@ export function validateProposal(id, p) {
 	if (p.id !== id) errors.push(`id "${p.id}" differs from the file name ${id}`);
 	if (!isIso(p.createdAt)) errors.push("createdAt must be an ISO time");
 	if (!isString(p.title) || p.title.length > MAX_TITLE) errors.push(`title is required, at most ${MAX_TITLE} characters`);
-	if (!isString(p.why)) errors.push("why is required");
-	if (!Array.isArray(p.evidence) || !p.evidence.every((e) => e && typeof e === "object" && isString(e.itemId) && isString(e.type))) {
-		errors.push("evidence must be a list of { at, itemId, type, gist }");
+	if (p.kind !== undefined && p.kind !== "setting") errors.push('kind must be "setting", or absent for a rule proposal');
+	if (isSettingProposal(p)) errors.push(...settingProblems(p));
+	else {
+		if (!isString(p.why)) errors.push("why is required");
+		if (!Array.isArray(p.evidence) || !p.evidence.every((e) => e && typeof e === "object" && isString(e.itemId) && isString(e.type))) {
+			errors.push("evidence must be a list of { at, itemId, type, gist }");
+		}
+		if (p.target === "profile") {
+			if (!PROFILE_FILE.test(p.file ?? "")) errors.push("file must be rules/<topic>.md or templates/<name>.md for the profile");
+		} else if (p.target === "personal") {
+			if (p.file !== "personal.md") errors.push("file must be personal.md for target personal");
+		} else errors.push('target must be "profile" or "personal"');
+		if (p.heading !== undefined && p.heading !== null && typeof p.heading !== "string") errors.push("heading must be a string or null");
+		if (!isString(p.text) || p.text.length > MAX_RULE) errors.push(`text is required, at most ${MAX_RULE} characters`);
 	}
-	if (p.target === "profile") {
-		if (!PROFILE_FILE.test(p.file ?? "")) errors.push("file must be rules/<topic>.md or templates/<name>.md for the profile");
-	} else if (p.target === "personal") {
-		if (p.file !== "personal.md") errors.push("file must be personal.md for target personal");
-	} else errors.push('target must be "profile" or "personal"');
-	if (p.heading !== undefined && p.heading !== null && typeof p.heading !== "string") errors.push("heading must be a string or null");
-	if (!isString(p.text) || p.text.length > MAX_RULE) errors.push(`text is required, at most ${MAX_RULE} characters`);
 	if (!PROPOSAL_STATUS.includes(p.status)) errors.push(`status must be one of ${PROPOSAL_STATUS.join(", ")}`);
 	if (p.decidedAt !== undefined && p.decidedAt !== null && !isIso(p.decidedAt)) errors.push("decidedAt must be null or an ISO time");
 	if (p.reason !== undefined && typeof p.reason !== "string") errors.push("reason must be a string");
 	return errors;
+}
+
+/**
+ * Sets the one setting of a setting proposal in the instance's config.json. Throws when the proposal is invalid,
+ * when the config cannot be read or when it would be invalid afterwards. Other keys, their order and the
+ * indentation stay as they are. Returns `{ file, key, value, from, changed }`. `changed` is false when the
+ * config already had the value, and then nothing is written.
+ */
+export async function applySetting(p, instance = instanceName()) {
+	const problems = validateProposal(p?.id, p);
+	if (!isSettingProposal(p) || problems.length) throw new Error(`This proposal is invalid and was not applied: ${(problems.length ? problems : ["it changes no setting"]).join(", ")}.`);
+	const { key, value } = p.setting;
+	// A config.json that links into a dotfiles repository must stay a link
+	const file = await realpath(join(instanceDir(instance), "config.json"));
+	const text = await readFile(file, "utf8");
+	let data;
+	try {
+		data = JSON.parse(text);
+	} catch (e) {
+		throw new Error(`${file} is not valid JSON, so nothing was changed: ${e.message}`);
+	}
+	if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(`${file} must hold a JSON object, so nothing was changed.`);
+	const from = data[key] ?? CONFIG_DEFAULTS[key];
+	if (from === value) return { file, key, value, from, changed: false };
+	const next = { ...data, [key]: value };
+	const { errors } = checkConfig(next);
+	if (errors.length) throw new Error(`${file} would be invalid, so nothing was changed: ${errors.join(", ")}.`);
+	const indent = /^([ \t]+)"/m.exec(text)?.[1] ?? "\t";
+	await writeAtomic(file, JSON.stringify(next, null, indent) + "\n", { raw: true });
+	return { file, key, value, from, changed: true };
 }
 
 /** Resolves the file a proposal of an instance targets. Throws when it would leave the allowed directories. */

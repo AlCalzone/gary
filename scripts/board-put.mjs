@@ -3,7 +3,7 @@
 //   gary put --merge items <id> <json file>   merge the fields into the item, null removes a field
 //   gary put items <id> --delete              remove the item
 //   gary put meta <json file>                 replace meta.json
-//   gary put proposals <id> <json file>       write one rule proposal
+//   gary put proposals <id> <json file>       write one proposal
 //   gary put learn <json file>                write the learn cursor <state>/learn.json
 // A replace keeps the maintainer's `hidden` and `snoozedUntil`, and `priority` when the file has none.
 // An item write is validated against the result. --no-validate skips that, for migrations.
@@ -79,27 +79,8 @@ function parse(argv, merge) {
 	fail("Usage: gary put [--merge] [--no-validate] items <id> <json file> | items <id> --delete | meta <json file> | proposals <id> <json file> | learn <json file>");
 }
 
-export async function main(argv) {
-	const noValidate = argv.includes("--no-validate");
-	const write = parse(argv.filter((a) => a !== "--no-validate" && a !== "--merge"), argv.includes("--merge"));
-	const instance = instanceName();
-	if (write.op === "learn") {
-		const problems = await writeLearn(write.data);
-		if (problems.length) fail("learn.json is invalid, nothing was written", problems);
-		console.log(JSON.stringify({ ok: true }));
-		return;
-	}
-	if (!docPath(instance, write.path)) fail(`Invalid document path ${write.path}`);
-	if (write.path.startsWith("proposals/")) {
-		const problems = validateProposal(write.path.slice("proposals/".length), write.data);
-		if (problems.length) fail("The proposal is invalid, nothing was written", problems);
-	}
-	if (write.path === "meta") {
-		const problems = validateMeta(write.data);
-		if (problems.length) fail("meta.json is invalid, nothing was written", problems);
-	}
-	if (!noValidate) await check(instance, write);
-
+/** Sends one board write through the board server, or applies it directly when no server answers. Returns `[status, body]`. */
+export async function sendWrite(instance, write) {
 	const { port } = rootConfig();
 	let token = "";
 	try {
@@ -128,7 +109,31 @@ export async function main(argv) {
 		reply = await applyWrite(instance, write);
 	}
 
-	const [status, body] = reply;
+	return reply;
+}
+
+export async function main(argv) {
+	const noValidate = argv.includes("--no-validate");
+	const write = parse(argv.filter((a) => a !== "--no-validate" && a !== "--merge"), argv.includes("--merge"));
+	const instance = instanceName();
+	if (write.op === "learn") {
+		const problems = await writeLearn(write.data);
+		if (problems.length) fail("learn.json is invalid, nothing was written", problems);
+		console.log(JSON.stringify({ ok: true }));
+		return;
+	}
+	if (!docPath(instance, write.path)) fail(`Invalid document path ${write.path}`);
+	if (write.path.startsWith("proposals/")) {
+		const problems = validateProposal(write.path.slice("proposals/".length), write.data);
+		if (problems.length) fail("The proposal is invalid, nothing was written", problems);
+	}
+	if (write.path === "meta") {
+		const problems = validateMeta(write.data);
+		if (problems.length) fail("meta.json is invalid, nothing was written", problems);
+	}
+	if (!noValidate) await check(instance, write);
+
+	const [status, body] = await sendWrite(instance, write);
 	if (status !== 200) fail(body?.error ?? `The board server answered ${status}`);
 	console.log(JSON.stringify({ ok: true }));
 }

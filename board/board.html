@@ -726,7 +726,7 @@ textarea.short { min-height: 5.4em; }
 .bar-reload { margin-left: auto; font-size: 12.5px; padding: 4px 10px; }
 .bar-reload:not([hidden]) + .iconbtn { margin-left: 8px; }
 .reload-btn:not([hidden]) + .conn { margin-left: 0; }
-/* Suggested rules: a quiet header entry, never part of the plan */
+/* Suggestions: a quiet header entry, never part of the plan */
 .learn-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--act-think); font: 600 12.5px/1 var(--font-body); cursor: pointer; }
 .learn-btn:hover { background: color-mix(in srgb, var(--act-think) 10%, transparent); }
 .learn-btn .i { width: 16px; height: 16px; }
@@ -734,7 +734,11 @@ textarea.short { min-height: 5.4em; }
 .learn-btn:not([hidden]) + .conn { margin-left: 0; }
 .intent-think { --int: var(--act-think); }
 .learn-intro { margin: 0; max-width: 64ch; font-family: var(--font-read); font-size: 15.5px; line-height: 1.55; color: var(--muted); }
+.learn-group { display: flex; flex-direction: column; gap: 14px; }
+.learn-group[hidden] { display: none; }
+.learn-group + .learn-group:not([hidden]) { margin-top: 12px; }
 .pcard .card-head { cursor: default; }
+.diffs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-family: var(--font-read); font-size: 14.5px; line-height: 1.5; max-width: 64ch; }
 .p-title { font-weight: 600; font-size: 15px; line-height: 1.4; }
 .evidence summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
 .evidence ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
@@ -979,17 +983,26 @@ textarea {
 
 <dialog class="detail learn" id="learn-dialog" aria-labelledby="learn-title">
   <div class="d-bar">
-    <span class="d-ref">Suggested rules</span>
+    <span class="d-ref" id="learn-title">Suggestions</span>
     <button class="btn quiet bar-reload" type="button" hidden>Updated, reload</button>
     <button class="iconbtn" type="button" id="learn-close" aria-label="Close" title="Close"></button>
   </div>
   <div class="d-body">
-    <div class="d-head">
-      <h2 class="d-title" id="learn-title">What your decisions suggest</h2>
-      <p class="learn-intro">You decided differently from the agent more than once. Add a rule and the agent follows it from the next run.</p>
-    </div>
-    <div class="routes" id="learn-cards"></div>
-    <p class="farewell" id="learn-empty" hidden>Nothing to learn right now.</p>
+    <section class="learn-group" id="learn-settings" aria-labelledby="learn-settings-title" hidden>
+      <div class="d-head">
+        <h2 class="d-title" id="learn-settings-title"></h2>
+        <p class="learn-intro" id="learn-settings-intro"></p>
+      </div>
+      <div class="routes" id="learn-setting-cards"></div>
+    </section>
+    <section class="learn-group" id="learn-rules" aria-labelledby="learn-rules-title" hidden>
+      <div class="d-head">
+        <h2 class="d-title" id="learn-rules-title">What your decisions suggest</h2>
+        <p class="learn-intro">You decided differently from the agent more than once. Add a rule and the agent follows it from the next run.</p>
+      </div>
+      <div class="routes" id="learn-cards"></div>
+    </section>
+    <p class="farewell" id="learn-empty" hidden>No suggestions right now.</p>
   </div>
 </dialog>
 
@@ -4332,6 +4345,9 @@ function postDecision(body) {
 const learn = {
   el: document.getElementById("learn-dialog"),
   cards: document.getElementById("learn-cards"),
+  rules: document.getElementById("learn-rules"),
+  settings: document.getElementById("learn-settings"),
+  settingCards: document.getElementById("learn-setting-cards"),
   empty: document.getElementById("learn-empty"),
   btn: document.getElementById("learn"),
   recs: new Map(),
@@ -4394,8 +4410,8 @@ async function proposalAction(p, rec, action, text) {
   rec.status.replaceChildren(h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the board server" })));
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
-    await state.mcp.callTool(SERVER, action, { instance: str(p.instance), proposalId: p.id, text });
-    if (action === "accept_proposal") learn.added.set(p.key, proposalAdded(p));
+    const res = await state.mcp.callTool(SERVER, action, { instance: str(p.instance), proposalId: p.id, text });
+    if (action === "accept_proposal") learn.added.set(p.key, isSetting(p) ? settingApplied(p, res && res.payload) : proposalAdded(p));
     else learn.gone.add(p.key);
     rec.sig = null;
   } catch (e) {
@@ -4404,6 +4420,124 @@ async function proposalAction(p, rec, action, text) {
     learn.busy.delete(p.key);
     renderLearn();
   }
+}
+
+const isSetting = (p) => p.kind === "setting";
+
+// What each kind of card is called in a sentence. Any other type shows as its own words
+const CARD_KINDS = {
+  reply: "Reply", request_logs: "Ask for a log", close: "Close", reopen: "Reopen", merge: "Merge", review: "Review",
+  address_review: "Address the review", follow_up: "Implement", take_over: "Take over", revise: "Change", drive: "Drive",
+  format: "Format", move: "Move", chore: "Chore", open: "Open on GitHub",
+};
+const SETTING_TEXT = {
+  on: { title: "Use the faster model for obvious items", accept: "Turn it on" },
+  shadow: { title: "Go back to the standard model for all items", accept: "Switch back" },
+};
+const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+const times = (n) => (n === 1 ? "once" : n + " times");
+const percent = (n, of) => Math.round((n / of) * 100) + " %";
+
+// The sentences of a setting card, built from the proposal's numbers
+function settingParagraphs(p) {
+  const s = p.stats && typeof p.stats === "object" ? p.stats : {};
+  const pairs = count(s.pairs), handedUp = count(s.handedUp), answered = count(s.answered);
+  const same = (n) => (n === answered ? "every time" : times(n));
+  const sameSection = count(s.sameSection), sameKind = count(s.sameRouteType);
+  const compared = [
+    "Gary compared their answers " + times(pairs) + ".",
+    handedUp ? "The faster model passed " + handedUp + " of these on as too hard." : "The faster model passed none of these on.",
+    !answered ? "" : (handedUp ? "In the other " + answered : "In all " + answered) + " it chose "
+      + (sameSection === sameKind ? "the same board section and the same kind of card " + same(sameSection)
+        : "the same board section " + same(sameSection) + " and the same kind of card " + same(sameKind)) + ".",
+  ].filter(Boolean).join(" ");
+  if (str(p.setting.value) === "on") {
+    return [
+      "For a while, a faster and cheaper model sorted the same items as the standard model. Its answers were not used. " + compared,
+      "If you turn this on, the faster model sorts the obvious items and passes the rest on to the standard model. Runs get faster and cheaper. "
+        + "The faster model never drafts text for GitHub, never judges code and never suggests closing an item. Full reviews stay as they are.",
+      "Gary keeps checking some of its answers against the standard model and suggests switching back when the two disagree too often.",
+    ];
+  }
+  const reasons = Array.isArray(p.reasons) ? p.reasons : [];
+  const out = ["The faster model sorts the obvious items at the moment. Gary checks some of its answers against the standard model."];
+  const r = s.recent;
+  if (reasons.includes("agreement") && r && typeof r === "object") {
+    out.push("In the last " + count(r.answered) + " checks the faster model chose the same board section as the standard model " + times(count(r.sameSection))
+      + ". Gary expects at least " + count(r.needed) + ".");
+  }
+  const o = s.overrides;
+  if (reasons.includes("overrides") && o && o.fast && o.standard && count(o.fast.items) && count(o.standard.items)) {
+    out.push("You dismissed, replaced or rewrote Gary's suggestion on " + count(o.fast.changed) + " of " + count(o.fast.items) + " items the faster model sorted ("
+      + percent(count(o.fast.changed), o.fast.items) + "). On items the standard model sorted it was " + count(o.standard.changed) + " of " + count(o.standard.items)
+      + " (" + percent(count(o.standard.changed), o.standard.items) + ").");
+  }
+  out.push("If you switch back, the standard model sorts every item again. The faster model keeps running next to it and its answers are not used. "
+    + "Gary suggests turning it on again when the two agree often enough.");
+  return out;
+}
+
+// What one model answered, in the words of the board. The board section shows only where the two differ
+function answerWords(a, other) {
+  const of = (x) => (x && typeof x === "object" ? x : {});
+  const kind = (x) => (str(of(x).recommendedType) ? (CARD_KINDS[of(x).recommendedType] || str(of(x).recommendedType).replace(/_/g, " ")) + " card" : "no card");
+  const section = (x) => (SECTION_IDS.has(of(x).section) ? SECTIONS[SECTION_ORDER.get(of(x).section)].name : str(of(x).section));
+  const parts = [];
+  if (kind(a) !== kind(other) || section(a) === section(other)) parts.push(kind(a));
+  if (section(a) !== section(other) && section(a)) parts.push("board section “" + section(a) + "”");
+  return parts.join(", ");
+}
+
+const MAX_SHOWN_DIFFERENCES = 5;
+
+function differenceLine(x, p) {
+  const itemId = str(x.itemId);
+  const key = itemKeyOf(str(p.instance) || refOf(itemId).instance, itemId);
+  const d = key ? state.items.get(key) : null;
+  const number = d ? d.number : x.number;
+  const num = Number.isInteger(number) ? "#" + number : itemId;
+  const ref = key
+    ? h("button", {
+      type: "button", class: "lane-switch ev-link", text: num, title: "Open " + num,
+      onclick: () => {
+        closeLearn();
+        openDetail(key);
+      },
+    })
+    : ghLink(str(x.url), num, "ev-ref");
+  const runs = count(x.runs);
+  return h("li", null, ref, ", in " + runs + (runs === 1 ? " run" : " runs") + ": faster model: " + answerWords(x.fast, x.standard)
+    + ". Standard model: " + answerWords(x.standard, x.fast) + ".");
+}
+
+function settingApplied(p, payload) {
+  const set = str(p.setting.key) + ": " + JSON.stringify(str(p.setting.value));
+  return payload && payload.changed === false ? "The instance config already had " + set : "Set " + set + " in the instance config";
+}
+
+function buildSetting(p, rec) {
+  const differences = (Array.isArray(p.differences) ? p.differences : []).filter((x) => x && typeof x === "object");
+  const text = SETTING_TEXT[str(p.setting.value)];
+  rec.ta = null;
+  rec.status = h("div", { class: "z-status" });
+  rec.actions = h("div", { class: "card-actions" });
+  const why = h("input", { type: "text", class: "field", placeholder: "Why not? (optional)", "aria-label": "Why not? (optional)" });
+  rec.dismissBox = h("div", { class: "dismiss-box", hidden: true }, why,
+    h("div", { class: "dismiss-actions" },
+      h("button", { class: "btn quiet", type: "button", text: "Dismiss suggestion", onclick: () => proposalAction(p, rec, "dismiss_proposal", why.value.trim()) }),
+      h("button", { class: "btn quiet", type: "button", text: "Cancel", onclick: () => { rec.dismissBox.hidden = true; } })));
+  const more = differences.length - MAX_SHOWN_DIFFERENCES;
+  rec.card.replaceChildren(
+    h("div", { class: "card-head" }, h("span", { class: "p-title", text: text.title }),
+      multiInstance() ? h("span", { class: "p-instance", text: (instanceByName(str(p.instance)) || EMPTY_INSTANCE).title || str(p.instance) }) : null),
+    h("div", { class: "card-body" },
+      settingParagraphs(p).map((t) => h("p", { class: "card-why", text: t })),
+      differences.length ? h("span", { class: "card-label", text: "Where they differed" }) : null,
+      differences.length ? h("ul", { class: "diffs" }, differences.slice(0, MAX_SHOWN_DIFFERENCES).map((x) => differenceLine(x, p)),
+        more > 0 ? h("li", { text: "And " + more + " more." }) : null) : null,
+      rec.actions,
+      rec.dismissBox,
+      rec.status));
 }
 
 function buildProposal(p, rec) {
@@ -4437,6 +4571,12 @@ function proposalButtons(p, rec) {
   if (learn.added.has(p.key)) {
     return [h("span", { class: "status done step-done" }, icon("doneCheck"), h("span", { text: learn.added.get(p.key) }))];
   }
+  if (isSetting(p)) {
+    return [
+      h("button", { class: "btn intent-think primary", type: "button", text: SETTING_TEXT[str(p.setting.value)].accept, onclick: () => proposalAction(p, rec, "accept_proposal") }),
+      h("button", { class: "btn quiet", type: "button", text: "Not now", onclick: () => { rec.dismissBox.hidden = false; rec.dismissBox.querySelector("input").focus(); } }),
+    ];
+  }
   return [
     h("button", { class: "btn intent-think primary", type: "button", text: "Add rule", onclick: () => proposalAction(p, rec, "accept_proposal", rec.ta.value) }),
     h("button", { class: "btn quiet", type: "button", text: "Not this", onclick: () => { rec.dismissBox.hidden = false; rec.dismissBox.querySelector("input").focus(); } }),
@@ -4448,13 +4588,13 @@ function renderLearn() {
   const waiting = list.filter((p) => !learn.added.has(p.key)).length;
   learn.btn.hidden = waiting === 0;
   learn.btn.replaceChildren(icon("lightbulb"), h("span", { class: "learn-count", text: String(waiting) }));
-  const label = waiting === 1 ? "1 suggested rule" : waiting + " suggested rules";
+  const label = waiting === 1 ? "1 suggestion" : waiting + " suggestions";
   learn.btn.setAttribute("aria-label", label);
   learn.btn.title = label;
   if (!learn.el.open) return;
   const keep = new Set(list.map((p) => p.key));
   for (const k of [...learn.recs.keys()]) if (!keep.has(k)) learn.recs.delete(k);
-  const nodes = list.map((p) => {
+  const cardOf = (p) => {
     let rec = learn.recs.get(p.key);
     if (!rec) {
       rec = { card: h("section", { class: "card open intent-think pcard" }), core: null, sig: null, draft: null };
@@ -4464,21 +4604,30 @@ function renderLearn() {
     if (core !== rec.core) {
       rec.core = core;
       rec.sig = null;
-      buildProposal(p, rec);
+      if (isSetting(p)) buildSetting(p, rec);
+      else buildProposal(p, rec);
     }
     const sig = JSON.stringify([learn.added.get(p.key), learn.busy.has(p.key)]);
     if (sig !== rec.sig) {
       rec.sig = sig;
       rec.actions.replaceChildren(...proposalButtons(p, rec));
       if (learn.added.has(p.key)) {
-        rec.ta.disabled = true;
+        if (rec.ta) rec.ta.disabled = true;
         rec.dismissBox.hidden = true;
       }
     }
     return rec.card;
-  });
-  placeChildren(learn.cards, nodes);
-  learn.empty.hidden = nodes.length > 0;
+  };
+  const settings = list.filter(isSetting);
+  const rules = list.filter((p) => !isSetting(p));
+  placeChildren(learn.settingCards, settings.map(cardOf));
+  placeChildren(learn.cards, rules.map(cardOf));
+  learn.settings.hidden = settings.length === 0;
+  learn.rules.hidden = rules.length === 0;
+  const one = settings.length === 1;
+  document.getElementById("learn-settings-title").textContent = one ? "A setting Gary would change" : "Settings Gary would change";
+  document.getElementById("learn-settings-intro").textContent = (one ? "Gary measured this itself." : "Gary measured these itself.") + " Nothing changes until you click.";
+  learn.empty.hidden = list.length > 0;
 }
 
 function setupLearn() {
@@ -4789,13 +4938,13 @@ function subscribe(db) {
     render();
   }, onDbError);
 
-  // Rule proposals are their own collection. A server without them leaves the header entry hidden.
+  // Proposals are their own collection. A server without them leaves the header entry hidden.
   try {
     db.collection("proposals").onSnapshot((snap) => {
       state.proposals = snap.docs.map((doc) => {
         const d = doc.data() || {};
         return { ...d, key: doc.id, id: str(d.id) || doc.id };
-      }).filter((x) => typeof x.title === "string");
+      }).filter((x) => (x.kind === "setting" ? x.setting && typeof x.setting === "object" && Object.hasOwn(SETTING_TEXT, x.setting.value) : typeof x.title === "string"));
       renderLearn();
     }, () => {});
   } catch {

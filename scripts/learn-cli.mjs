@@ -1,5 +1,5 @@
 // gary decisions [--since <ISO>] [--json]: prints the decision log. --since is exclusive.
-// gary proposals [--json]: lists every rule proposal with its status.
+// gary proposals [--json]: lists every proposal with its status.
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { boardDir, readJson } from "./lib/board-store.mjs";
@@ -14,6 +14,7 @@ function gist(e) {
 		case "unchecked_comment": return `unchecked a comment on ${e.comment?.path}`;
 		case "agent_note": return e.text;
 		case "snoozed": return e.untilActivity ? "hidden until it changes" : `snoozed for ${e.days} days`;
+		case "accepted_proposal": return `${e.proposal?.id}: ${e.proposal?.setting?.key} from ${e.from} to ${e.proposal?.setting?.value}`;
 		case "dismissed_proposal": return `${e.proposal?.id}${e.reason ? `: ${e.reason}` : ""}`;
 		default: return "";
 	}
@@ -40,7 +41,7 @@ export async function proposalsMain(argv) {
 	const list = (await Promise.all(names.map((n) => readJson(join(dir, n))))).filter(Boolean).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 	if (argv.includes("--json")) return console.log(JSON.stringify(list, null, 2));
 	for (const p of list) {
-		console.log(`${String(p.status).padEnd(9)} ${p.id}  ${p.title}  -> ${p.target}:${p.file}${p.status === "dismissed" && p.reason ? `  (${p.reason})` : ""}`);
+		console.log(`${String(p.status).padEnd(9)} ${p.id}  ${p.title}  -> ${p.kind === "setting" ? `${p.setting?.key}=${p.setting?.value}` : `${p.target}:${p.file}`}${p.status === "dismissed" && p.reason ? `  (${p.reason})` : ""}`);
 	}
 	console.log(`${list.length} proposals`);
 }

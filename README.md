@@ -88,7 +88,7 @@ When a suggestion is wrong, dismiss its card and say why. The agent never offers
 
 Items Gary could not analyze show one card that opens the thread on GitHub, so you decide yourself. That happens when the model's safety filter stopped the agent or the analysis failed three times. "Analyze again" retries.
 
-Gary learns from your decisions. When you often dismiss the same kind of card, pick the alternative, or rewrite drafts the same way, it proposes a small rule. Proposals appear on the board. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`.
+Gary learns from your decisions. When you often dismiss the same kind of card, pick the alternative, or rewrite drafts the same way, it proposes a small rule. Proposals appear on the board behind the lightbulb in the header. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`. Gary can also suggest a setting, like using the faster model for obvious items. That card shows what Gary measured, and one click changes the setting in the instance's `config.json`.
 
 ## Commands you run
 
@@ -104,11 +104,11 @@ From a clone, `gary setup` links the command into `~/.local/bin`, which must be 
 - `gary pause`: stop every write to GitHub at once. The board stays up, nothing needs a restart.
 - `gary resume`: end the pause.
 - `gary decisions --since <date>`: show the log of your decisions that Gary learns from.
-- `gary proposals`: list the rule proposals and their status.
+- `gary proposals`: list the proposals and their status.
 - `gary validate`: check the stored items against the rules, read-only.
 - `gary auto-review list`: show the reviews Gary posted without a click, and which PRs still wait for their contributor.
 
-While paused, every click that would post, review, label or transfer is refused with "Gary is paused. Nothing was sent." Agent requests still queue and start after `gary resume`. Snoozing, dismissing a suggestion and deciding rule proposals keep working. The board header shows the pause.
+While paused, every click that would post, review, label or transfer is refused with "Gary is paused. Nothing was sent." Agent requests still queue and start after `gary resume`. Snoozing, dismissing a suggestion and deciding proposals keep working. The board header shows the pause.
 
 ## Several projects
 
@@ -126,7 +126,7 @@ Gary has three layers. Each kind of change has one place:
 - **Profile**: one directory per project, named by `profile` in `config.json`. It can live in its own repo or inside your project, so a team can share it. Project facts go into `profile.json`, project rules into `rules/classification.md`, `rules/voice.md`, `rules/review.md` and `rules/issues.md`, canned texts into `templates/`.
 - **Home**: `~/.config/gary/` or `$GARY_HOME`. `personal.md` holds your own rules and writing style for all projects. `config.json` holds the board's port. Each instance lives in `instances/<name>/` with its `config.json`, an optional `personal.md` for that project, and `state/` with the board's data.
 
-Quick classification of obvious items, like a green dependency update or an item waiting on its reporter, can run on a smaller, faster model. `fastTier` in the instance's `config.json` controls it: `off` by default, `shadow` to let it run next to the standard model without effect, `on` to use it. In shadow mode Gary compares both and proposes switching to `on` once they agree on at least 95 percent of 40 or more items. In `on` mode it keeps checking a sample against the standard model and against your own decisions, and proposes going back to `shadow` when the fast model falls behind. `gary shadow report --week` shows the numbers.
+Quick classification of obvious items, like a green dependency update or an item waiting on its reporter, can run on a smaller, faster model. `fastTier` in the instance's `config.json` controls it: `off` by default, `shadow` to let it run next to the standard model without effect, `on` to use it. In shadow mode Gary compares both and suggests switching to `on` once they agree on at least 95 percent of 40 or more comparisons. In `on` mode it keeps checking a sample against the standard model and against your own decisions, and suggests going back to `shadow` when the fast model does worse. Both suggestions are cards on the board, and your click changes the setting. `gary shadow report --week` shows the numbers.
 
 The agents read a rule in this order: the core, then the profile file of the same topic, then the shared `personal.md`, then the instance's `personal.md`. A later file wins. The safety limits below cannot be changed by a profile or by `personal.md`.
 
