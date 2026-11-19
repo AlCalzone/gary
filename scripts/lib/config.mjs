@@ -56,6 +56,54 @@ export function fixReviewOf(config, profile) {
 
 export const FAST_TIERS = ["off", "shadow", "on"];
 
+// `master` and `worker` are sessions. The other roles are subagents a worker starts
+export const MODEL_ROLES = ["master", "worker", "review", "standard", "fast"];
+export const MODEL_ALIASES = ["haiku", "sonnet", "opus", "fable"];
+export const MODEL_DEFAULTS = { master: "sonnet", worker: "sonnet", review: "opus", standard: "sonnet", fast: "haiku" };
+const MODEL_ID = /^claude-[a-z0-9-]+$/;
+// A session starts with `claude --model`, which takes a full model id. A subagent start takes an alias only
+const SESSION_ROLES = ["master", "worker"];
+// `fable` has no place in this order, so a comparison with it never says "smaller"
+const MODEL_SIZE = { haiku: 0, sonnet: 1, opus: 2 };
+
+/** Collects the problems of a `models` object. `where` is "root" for the root config and "instance" for an instance config. */
+function checkModels(models, where, errors, unknown) {
+	if (models === undefined) return;
+	if (!models || typeof models !== "object" || Array.isArray(models)) {
+		errors.push(`"models" must map a role (${MODEL_ROLES.join(", ")}) to a model`);
+		return;
+	}
+	for (const [role, value] of Object.entries(models)) {
+		if (!MODEL_ROLES.includes(role)) unknown.push(`unknown field "models.${role}"`);
+		else if (role === "master" && where === "instance") errors.push(`"models.master" belongs in the root config.json, because one master session serves every instance`);
+		else if (SESSION_ROLES.includes(role)) check(errors, MODEL_ALIASES.includes(value) || (typeof value === "string" && MODEL_ID.test(value)), `"models.${role}" must be one of ${MODEL_ALIASES.join(", ")}, or a full model id that matches ${MODEL_ID}`);
+		else check(errors, MODEL_ALIASES.includes(value), `"models.${role}" must be one of ${MODEL_ALIASES.join(", ")}. A subagent start takes no full model id`);
+	}
+}
+
+/**
+ * The model of every role for one instance config: `{ models, sources, fallback }`.
+ * The instance's `models` win over the root config's, and those over the defaults. `sources` names the layer per role:
+ * "instance", "root" or "default". `fallback` is the model of the one retry after a safety filter stopped a `review`
+ * subagent: `{ model, relation }` with the `standard` model and "smaller" or "other", or null when both roles
+ * use the same model and a retry would change nothing.
+ */
+export function modelsOf(config, root = rootConfig()) {
+	const models = {};
+	const sources = {};
+	for (const role of MODEL_ROLES) {
+		const layer = config?.models?.[role] !== undefined ? "instance" : root.models?.[role] !== undefined ? "root" : "default";
+		sources[role] = layer;
+		models[role] = layer === "instance" ? config.models[role] : layer === "root" ? root.models[role] : MODEL_DEFAULTS[role];
+	}
+	const { review, standard } = models;
+	const fallback = review === standard ? null : { model: standard, relation: MODEL_SIZE[standard] < MODEL_SIZE[review] ? "smaller" : "other" };
+	return { models, sources, fallback };
+}
+
+/** The models of one instance, see modelsOf. */
+export const modelsFor = (name) => modelsOf(loadConfigFor(name));
+
 // The kinds of PR that may get the one automatic first review. `config` means the PR only touches the profile's autoReviewPaths.config
 export const AUTO_REVIEW_KINDS = ["config"];
 export const AUTO_REVIEW_DEFAULTS = { enabled: false, kinds: ["config"], maxPerRun: 3 };
@@ -118,15 +166,16 @@ export function hasFlatLayout() {
 	return !!data && typeof data === "object" && "profile" in data;
 }
 
-/** The server-wide settings in <root>/config.json: `{ port }`. */
+/** The machine-wide settings in <root>/config.json: `{ port, models }`. `models` holds only the roles the file sets. */
 export function rootConfig() {
 	const file = rootConfigFile();
 	const data = existsSync(file) && !hasFlatLayout() ? readSettings(file, "Root config") : {};
 	const errors = [];
-	for (const key of Object.keys(data)) check(errors, key === "port", `unknown field "${key}"`);
+	for (const key of Object.keys(data)) check(errors, ["port", "models"].includes(key), `unknown field "${key}"`);
 	check(errors, data.port === undefined || isInt(data.port, 1, 65535), `"port" must be a port number`);
+	checkModels(data.models, "root", errors, errors);
 	if (errors.length) throw new SettingsError(`Root config ${file} is invalid:\n- ${errors.join("\n- ")}`);
-	return { port: data.port ?? DEFAULT_PORT };
+	return { port: data.port ?? DEFAULT_PORT, models: data.models ?? {} };
 }
 
 export class SettingsError extends Error {}
@@ -303,7 +352,7 @@ const isStringList = (v, pattern) => Array.isArray(v) && v.every((s) => typeof s
 export function checkConfig(data) {
 	const errors = [];
 	const unknown = [];
-	const known = ["profile", "me", "checkout", "fixReview", "autoReview", ...Object.keys(CONFIG_DEFAULTS)];
+	const known = ["profile", "me", "checkout", "fixReview", "autoReview", "models", ...Object.keys(CONFIG_DEFAULTS)];
 	for (const key of Object.keys(data)) {
 		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
 		else check(unknown, known.includes(key), `unknown field "${key}"`);
@@ -350,6 +399,7 @@ export function checkConfig(data) {
 			check(errors, ar.maxPerRun === undefined || isInt(ar.maxPerRun, 0, 50), `"autoReview.maxPerRun" must be a whole number from 0 to 50`);
 		}
 	}
+	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };
 }
 

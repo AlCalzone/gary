@@ -100,7 +100,8 @@ From a clone, `gary setup` links the command into `~/.local/bin`, which must be 
 
 - `gary setup`: install or reconfigure Gary on this machine. `gary setup --instance <name>` adds a project.
 - `gary instances`: list the projects on this machine.
-- `gary doctor`: check the installation without changing anything: Node, `gh` and its login, the bot token, the profile, the checkout, the port, the skill links, the pause switch, and whether the automatic review is on.
+- `gary doctor`: check the installation without changing anything: Node, `gh` and its login, the bot token, the profile, the checkout, the port, the skill links, the pause switch, the models, and whether the automatic review is on.
+- `gary models`: print which model runs the master, the workers, the reviews and the classification.
 - `gary pause`: stop every write to GitHub at once. The board stays up, nothing needs a restart.
 - `gary resume`: end the pause.
 - `gary decisions --since <date>`: show the log of your decisions that Gary learns from.
@@ -114,7 +115,15 @@ While paused, every click that would post, review, label or transfer is refused 
 
 One machine can run Gary for several repos. Each repo gets its own instance with its own settings, pause switch and decision log, and its own tab on the one board. Ask Claude to set up Gary for the next repo, and the `triage-setup` skill creates a new instance next to the existing ones. The board picks it up without a restart, and the next hourly run includes it. Your shared `personal.md` applies to all instances. Each instance can add its own `personal.md` on top. Instances of the same project on different machines can share one profile.
 
-One master Claude session runs everything, started every hour by one scheduled task. It starts the board server, starts one worker per instance for the triage, and watches the queue of all instances to start a worker for each request you click. A worker is a child session where the harness supports it, otherwise a headless `claude -p` run, otherwise the master does the job itself. Workers report only by writing files into their instance's state, so nothing depends on messages between sessions.
+One master Claude session runs everything, started every hour by one scheduled task. It starts the board server, starts one worker per instance for the triage, and watches the queue of all instances to start a worker for each request you click. A worker is a child session where the harness supports it, otherwise a headless `claude -p` run, otherwise the master does the job itself.
+
+Which model does what is the `models` setting. By default the master and the workers run on Sonnet, and every review, fix and push runs on Opus. The quick classification runs on Sonnet, and on Haiku for obvious items when `fastTier` is on. Set other models in `~/.config/gary/config.json` for the machine, or in an instance's `config.json` for one project:
+
+```json
+{ "models": { "master": "sonnet", "worker": "sonnet", "review": "opus", "standard": "sonnet", "fast": "haiku" } }
+```
+
+`gary models` prints what applies. Gary starts workers and subagents on these models itself. The master session is the one exception: its model is set on the scheduled task or its thread, and the `triage-setup` skill does that or tells you where. Workers report only by writing files into their instance's state, so nothing depends on messages between sessions.
 
 `gary serve` starts the board server without a Claude session. `gary migrate` moves an installation from the older one-board-per-instance layout to this one.
 

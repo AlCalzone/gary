@@ -552,9 +552,9 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   // A smaller model did the analysis
   const FALLBACK = "The full analysis was stopped by the safety filter. Code-level conclusions need your check.";
   await openItem("issue-9483");
-  ok("fallback: a quiet Smaller model badge in the meta row with the tooltip", [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Smaller model" && b.title === FALLBACK && b.classList.contains("tone-muted")));
+  ok("fallback: a quiet Fallback model badge in the meta row with the tooltip", [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Fallback model" && b.title === FALLBACK && b.classList.contains("tone-muted")));
   await openItem("issue-9471");
-  ok("no badge without analyzedBy", ![...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Smaller model"));
+  ok("no badge without analyzedBy", ![...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Fallback model"));
   document.getElementById("d-close").click(); await wait(5);
   for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
   await wait(5);

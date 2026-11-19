@@ -146,7 +146,13 @@ export async function main(argv) {
 	if (o.port) {
 		const port = Number(o.port);
 		if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("--port must be a port number");
-		writeFileSync(rootConfigFile(), JSON.stringify({ port }, null, "\t") + "\n");
+		let current = {};
+		try {
+			current = JSON.parse(readFileSync(rootConfigFile(), "utf8"));
+		} catch {
+			// A missing or unreadable root config starts from the port alone
+		}
+		writeFileSync(rootConfigFile(), JSON.stringify({ ...current, port }, null, "\t") + "\n");
 		report.push(`set the board port ${port} in ${rootConfigFile()}`);
 	}
 

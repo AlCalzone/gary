@@ -2098,7 +2098,7 @@ function stateIcons(id, d, dim, withPassing) {
   if (d.reviewDepth === "pending") out.push(["eye", "muted", "Not analyzed yet", null, "Not analyzed yet"]);
   const w = workingOf(d);
   if (w && w.kind === "review") out.push(["wrench", "muted", WORKING_TEXT.review, null, "Agent reviewing"]);
-  if (d.analyzedBy === "fallback") out.push(["sparkleSmall", "muted", FALLBACK_NOTE, null, "Smaller model"]);
+  if (d.analyzedBy === "fallback") out.push(["sparkleSmall", "muted", FALLBACK_NOTE, null, "Fallback model"]);
   if (d.blocked && typeof d.blocked === "object") out.push(["sparklesOff", "muted", "Not analyzed by the agent", null, "Not analyzed"]);
   if (d.hidden === true) out.push(["archive", "muted", "Dismissed"]);
   else if (dim && withPassing) {

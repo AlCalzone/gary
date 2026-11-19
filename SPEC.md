@@ -6,7 +6,7 @@ The examples below use the project `acme/widgets`, the maintainer `octocat` and 
 
 ## Decisions
 
-- **Runtime**: one master Claude session per machine. An hourly scheduled task posts `Run the triage-master skill.` into it. The master owns the one board server and the one queue watcher, and starts one worker per instance for the hourly triage and one per agent request. Workers report only through the instance's state directory. Classification, reviews, triage and fixes run in workers or subagents, so the master's context stays small across runs.
+- **Runtime**: one master Claude session per machine. An hourly scheduled task posts ``Run the triage-master skill. Models come from `gary models`.`` into it. The master owns the one board server and the one queue watcher, and starts one worker per instance for the hourly triage and one per agent request. Workers report only through the instance's state directory. Classification, reviews, triage and fixes run in workers or subagents, so the master's context stays small across runs. Each of the three levels has its model set in `models`, see "Models".
 - **Identity**: see Accounts. Gary's code reads the bot token from `bot.tokenFile` and sets `GH_TOKEN` itself. It never depends on a `gh` shell function or alias.
 - **Scope**: all open PRs that are not drafts. Draft PRs are ignored entirely. Issues and discussions with activity in the last `activeWindowDays` days. Older ones appear only as a count.
 - **Author tags**: `maintainer` (the profile's `maintainers` and `me`), `bot` (the profile's `botLogins`, the configured bot and every GitHub App), `copilot` (GitHub's Copilot coding agent), `contributor` (everyone else). All are included and filterable.
@@ -41,6 +41,7 @@ Gary has three layers, one place for each kind of change.
     migrate.mjs          gary migrate
     serve.mjs            gary serve
     doctor.mjs           gary doctor
+    models.mjs           gary models
     lib/                 paths and settings, gh wrapper, actions, freshness guard, board store
   mcp-server/index.mjs   stdio MCP server "gary"
   server/server.mjs      board server: serves the page, runs clicked routes, watches the board store
@@ -49,7 +50,7 @@ Gary has three layers, one place for each kind of change.
   profiles/template/     the skeleton `gary setup` copies for a new project
 
 <root>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
-  config.json            the server-wide settings: { "port": 7878 }
+  config.json            the machine-wide settings: { "port": 7878, "models": { … } }, see "Models"
   personal.md            the maintainer's own rules for every instance
   state/                 server-wide files: server-token, server.log
   instances/<name>/      one instance per repository. The name matches ^[a-z0-9][a-z0-9-]{0,39}$
@@ -94,6 +95,7 @@ The core contains no repo name, no account name and no absolute path. It works a
   "maxPendingAutoFixes": 10,       // how many fixes the routine started on its own may be pending at a time. 0 turns automatic fixes off
   "fixReview": { "reviewer": "copilot", "requestAs": "me", "maxRounds": 3, "markReady": true },   // the review rounds a fix PR of Gary gets on its own, see "Fix review rounds"
   "fastTier": "off",               // off | shadow | on: whether simple items get a smaller model. shadow runs both and records them for `gary shadow report`
+  "models": { "worker": "sonnet", "review": "opus", "standard": "sonnet", "fast": "haiku" },   // optional: the model per role for this instance, see "Models"
   "escalateAs": "prefill",         // prefill | me: who posts the profile's escalate command on a discussion, see "Escalate"
   "autoReview": { "enabled": false, "kinds": ["config"], "maxPerRun": 3 }   // the one review a contributor PR gets without a click, see "Automatic first review"
 }
@@ -102,6 +104,30 @@ The core contains no repo name, no account name and no absolute path. It works a
 `profile` and `me` are required. The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `reviewer` is `copilot` or `off`, `requestAs` is `me` or `bot`, `maxRounds` is 1 to 3, and fields left out take their default. A value outside these lists is an error. It is also off when the profile's `reviewBots` does not list `copilot`, or when `requestAs` is `bot` without a bot. `gary doctor` says which case holds. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. `escalateAs` is `prefill` or `me`, another value is an error, and `gary doctor` shows it and warns when it is `me` and the profile has no `botCommands.escalate`. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
 
 Code looks up an instance through `loadInstance(name)`. Its allowed repos are the profile's one `repo`, and `allowedRepo(instance, repo)`, `checkoutFor(instance, repo)` and `rulesFor(instance, repo, topic)` answer per repo. For `maintainer` they return the configured checkout and the profile's `rules/<topic>.md`. The skills read that file directly.
+
+### Models
+
+Three levels of sessions run, and `models` names the model of each role:
+
+```jsonc
+{
+  "master": "sonnet",     // the one master session. Root config only
+  "worker": "sonnet",     // a triage-routine session, one per instance and per agent request
+  "review": "opus",       // every subagent that reads code or writes text that gets posted
+  "standard": "sonnet",   // the standard tier of the quick classification
+  "fast": "haiku"         // the fast tier of the quick classification
+}
+```
+
+The values shown are the defaults. The `review` role covers full PR reviews, full issue and discussion triages, fixes, every `triage-review-pr` mode (`address_review`, `take_over`, `revise`, `format`, `drive`, `offer-reply`) and the learn pass.
+
+- **Layers.** `models` can stand in the root `config.json` and in an instance's `config.json`, each with any subset of the roles. Per role the instance's value wins, then the root's, then the default. `models.master` in an instance config is an error, because one master session serves every instance.
+- **Values.** `master` and `worker` take an alias (`haiku`, `sonnet`, `opus`, `fable`) or a full model id that matches `^claude-[a-z0-9-]+$`. Both are sessions, and `claude --model` takes either. `review`, `standard` and `fast` take an alias only. They are subagents, and the Agent tool's `model` takes no full id. Another value is an error. An unknown role is an unknown field.
+- **Who applies them.** The master starts each worker on the instance's `worker` model: `claude -p --model <worker> "<job line>"`, or the model option of the tool that starts a child session. A worker that only runs `triage-learn` starts on `review`. The worker passes `model` on every subagent start, with the value of the subagent's role. A skill the maintainer starts himself uses the same roles for its subagents. No job line and no scheduled-task prompt names a model.
+- **The master's own model.** No skill can change the model of a running session. `models.master` is applied where the scheduled task or its thread is created: the `triage-setup` skill sets the model there when the host has a tool for it, or tells the maintainer which model to pick. The master compares its own model with `models.master` on every start and says so in its reply when they differ. `gary doctor` prints the value and cannot check it.
+- **Fallback.** A `review` subagent that the provider's safety filter stopped is retried once on the `standard` model. The item then carries `analyzedBy: "fallback"` and a finding that says so. The finding says "smaller model" only when both are among `haiku`, `sonnet` and `opus` and `standard` comes earlier in that order. Otherwise it names the model. When `review` and `standard` are the same model there is no retry, and the item is blocked right away.
+- **`gary models [--json] [--all]`** prints what applies. For the resolved instance: `{ instance, models, sources, fallback }`, where `sources` names the layer per role (`instance`, `root` or `default`) and `fallback` is `{ model, relation: "smaller" | "other" }` or `null`. With `--all`: `{ master, instances: { <name>: { models, sources, fallback } } }`, with `{ error }` for an instance whose config is invalid. The master reads `--all`, a worker reads its instance.
+- **Visibility.** Every `summary.txt` a worker writes has a `Models:` line with the model each role really ran on, like `Models: worker claude-sonnet-4-5, review opus, standard sonnet, fast haiku.` The worker names its own model as its session reports it, and adds `(config: <value>)` when that is another model. Item docs get no new field: `classifiedBy` and `analyzedBy` stay as they are.
 
 ### profile.json
 
@@ -165,6 +191,7 @@ Two older layouts are moved by commands, never silently:
 - `gary serve [--watch] [--dry-run]`: run the one board server in the foreground.
 - `gary migrate`: move instances to the single-server layout, see Instances. Safe to run again.
 - `gary pause [--all]`, `gary resume [--all]`: set and clear the pause switch of the instance, or of every instance, see Pause.
+- `gary models [--json] [--all]`: print the model of every role for the resolved instance, or the master's model and every instance's, see "Models".
 - `gary instances [--json]`: list every instance with `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `valid`, `served` (the board server lists it) and `current` (the working directory resolves to it), plus `settingsError` and `settingsWarnings` when there are any.
 - `gary wants [--json]`: list, per item with `wants`, the labels to add, the labels to remove and the assignees to add that GitHub does not show yet, with `wantsReason`. GitHub's state comes from the labels and assignees in the staged snapshot, or in the baseline when nothing is staged. Items without a snapshot entry are listed as `unknown`. Read-only.
 - `gary shadow record <file>`: append shadow comparison entries, one object or a list, to `<state>/shadow.jsonl`. Each is `{ at, run, itemId, repo, tier: "fast" | "standard", model, section, hasRoutes, recommendedType, handedUp, reason, sampled }`. `sampled` is optional, true for a pair the routine sampled in `on` mode. `section` and `recommendedType` may be null when the fast tier handed up, and only the fast tier hands up. An invalid entry refuses the whole file.
@@ -187,7 +214,7 @@ Two older layouts are moved by commands, never silently:
 - `gary put proposals <id> <file>`: write one proposal, validated. `gary put learn <file>`: write the learn cursor.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the fast tier, the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
+- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
 
 Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
@@ -568,7 +595,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "takenOver": false,              // PRs: true after a take_over ran, also as an API edit. Allows `drive`, `address_review` and `revise` on a contributor PR
   "lastEventUrl": "https://github.com/…/issues/12#issuecomment-123",   // optional, copied from the snapshot's facts.lastEventUrl. The board opens the thread there, at its bottom
   "classifiedBy": "fast",          // optional, the agent's: fast | standard | full, the tier that wrote this item
-  "analyzedBy": "fallback",        // optional: a safety filter stopped the full model's triage and a smaller model did it. Only value "fallback"
+  "analyzedBy": "fallback",        // optional: a safety filter stopped the `review` model's triage and the fallback model did it, see "Models". Only value "fallback"
   "blocked": { "reason": "safety_filter", "at": "ISO" },   // optional: the agent could not analyze the item. reason: safety_filter | failed. A successful triage writes the item without it
   "rounds": [                      // PRs: written when a drive ended
     { "n": 1, "fixed": ["…"], "dismissed": [ { "summary": "…", "reason": "…" } ], "open": ["…"] }
@@ -985,12 +1012,12 @@ The `triage-master` skill runs once per machine: it starts the board with `board
 
 The `triage-routine` skill is the worker for one instance. In short:
 
-1. Run `gary paths` and read `config.json` and the profile. Take the run lock. Check the profile's `requiredTools`.
+1. Run `gary paths` and `gary models`, and read `config.json` and the profile. Take the run lock. Check the profile's `requiredTools`.
 2. Process queued action files in `<state>/board/actions/` that the master handed it. They are agent requests and go onto this run's work list. Write back status and result.
 3. Run `gary snapshot`.
 4. Delete the items for `closed` ids with `gary put items <id> --delete`.
 5. Quick-classify every `changed` item. Pick up to `maxFullReviewsPerRun` for a full review: first items that need analysis, then contributor PRs, then items in `active`, then the rest by updatedAt.
-6. Run full reviews as parallel subagents. PRs use `triage-review-pr`, issues and discussions use `triage-issue`.
+6. Run full reviews as parallel subagents on the `review` model. PRs use `triage-review-pr`, issues and discussions use `triage-issue`.
 7. Attempt up to `maxAutoFixesPerRun` fixes that the issue triage marked as solvable.
 8. Write each item as a complete doc with `repo`, with `gary put`, which keeps the maintainer's fields. Clear `hidden` on changed items with `gary put --merge`. Apply the autonomous label and assignment changes with `gary action --autonomous`.
 9. Write `meta.json`. Run `gary snapshot --commit`. Write `summary.txt`.
@@ -1001,8 +1028,8 @@ This section is the contract for the single-server change. Where an older sectio
 
 ### Processes
 
-- One board server per machine serves every instance. One port, in `<root>/config.json` as `{ "port": 7878 }`. Instance configs have no port.
-- One master Claude session owns the server and the one queue watcher. It starts one worker per instance for the hourly triage and one worker per agent request. A worker is a child session when the harness has tools for that, otherwise a headless run, otherwise the master does the job itself with subagents.
+- One board server per machine serves every instance. One port, in `<root>/config.json` as `{ "port": 7878 }`. Instance configs have no port. The root config also holds the machine's `models`.
+- One master Claude session owns the server and the one queue watcher. It starts one worker per instance for the hourly triage and one worker per agent request. A worker is a child session when the harness has tools for that, otherwise a headless run, otherwise the master does the job itself with subagents. The first two start on the instance's `worker` model.
 - Workers report through the instance's state directory only. Nothing depends on messages between sessions.
 - Server-wide files live in `<root>/state/`: `server-token`, `server.log`. Everything else stays in `<root>/instances/<name>/state/`.
 - The server watches `<root>/instances/` and picks up a new instance without a restart.

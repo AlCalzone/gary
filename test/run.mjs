@@ -13,6 +13,7 @@ const SUITES = [
 	["node", "accounts.test.mjs"],
 	["node", "learning.test.mjs"],
 	["node", "settings.test.mjs"],
+	["node", "models.test.mjs"],
 	["node", "pause.test.mjs"],
 	["node", "instances.test.mjs"],
 	["node", "migrate.test.mjs"],

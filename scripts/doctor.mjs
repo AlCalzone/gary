@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, autoReviewOf, fixReviewOf, homePath, instanceName, instanceNames, loadConfig, loadProfile, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
+import { ROOT, autoReviewOf, fixReviewOf, homePath, instanceName, instanceNames, loadConfig, loadProfile, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { readLogin } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
@@ -84,6 +84,11 @@ async function checkInstance() {
 			add("bot", "ok", `no bot, ${config.allowOwnTokenPushes ? "bot routes run under your own gh login" : "bot routes become text you post yourself"}`);
 		}
 		add("fast tier", "ok", { off: "off, every item gets the standard tier", shadow: "shadow, both tiers run and `gary shadow report` compares them", on: "on, simple items get the fast tier" }[config.fastTier]);
+		await attempt("models", async () => {
+			const { models, fallback } = modelsOf(config);
+			const retry = fallback ? `a review stopped by the safety filter is retried on ${fallback.model}` : "no retry after a safety-filter stop, because review and standard are the same model";
+			return ["ok", `worker ${models.worker}, review ${models.review}, standard ${models.standard}, fast ${models.fast}, ${retry}. master ${models.master}, not checked: the host sets the master session's model`];
+		});
 		add("fix limit", "ok", config.maxPendingAutoFixes === 0 ? "maxPendingAutoFixes is 0, the routine starts no fix on its own" : `at most ${config.maxPendingAutoFixes} automatic fix PRs pending at a time, ${config.maxAutoFixesPerRun} new per run`);
 		await attempt("fix review", async () => {
 			const fr = fixReviewOf(config, loadProfile());

@@ -61,4 +61,17 @@ Run `gary --instance <name> doctor` and fix what it reports together with him. `
 
 ## 5. Schedule
 
-One scheduled task runs Gary for the whole machine. It runs the `triage-master` skill every hour, which starts a worker per instance and serves one board on the root port (`<root>/config.json`, set with `gary setup --port`). Check with the harness's scheduling tool whether that task exists. If it does, adding a project needed only the new instance: the next hourly run picks it up, and the board shows its tab without a restart. If it does not, create it with the prompt `Run the triage-master skill.` and any project directory, then start the first run, so he sees the board fill.
+One scheduled task runs Gary for the whole machine. It runs the `triage-master` skill every hour, which starts a worker per instance and serves one board on the root port (`<root>/config.json`, set with `gary setup --port`). Check with the harness's scheduling tool whether that task exists. If it does, adding a project needed only the new instance: the next hourly run picks it up, and the board shows its tab without a restart. If it does not, create it with the prompt below and any project directory, then start the first run, so he sees the board fill.
+
+```
+Run the triage-master skill. Models come from `gary models`.
+```
+
+The prompt names no model. Which model does what is the `models` setting (SPEC.md "Models"): the root `config.json` sets it for the machine, and an instance's `config.json` overrides `worker`, `review`, `standard` and `fast` for its project. Leave it at the defaults unless he asks for other models. `gary --instance <name> models` prints what applies.
+
+The master session's own model is `master` in that output. No skill can change the model of a running session, so set it here, on the task or on the thread it posts into:
+
+- When the host has a tool that sets a thread's or a task's model, use it. In T3 Code that is `t3_thread_configure` with `modelSelection.model` on the task's thread. Take the host's name for the model from its own list, like `orchestrator_capabilities`.
+- Otherwise tell him which model to pick for the task, and where the host has that setting.
+
+Do the same when he changes `models.master` later. `gary doctor` prints `master` in its `models` line and cannot check it, because it does not see the master session.

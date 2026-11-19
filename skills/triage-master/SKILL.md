@@ -21,6 +21,12 @@ Find the `board_start` MCP tool with ToolSearch and call it. It starts the one b
 
 Run `gary instances --json`. Each entry has `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served`, `current`, `valid`, `settingsError` and `settingsWarnings`. Skip an instance with `valid: false`, start no worker for it, and name it in the summary with its `settingsError`. A paused instance still gets its hourly worker, because a paused run triages read-only. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`. An instance missing from its `instances`, or with `served: false`, is not on the board yet. Note it in the summary.
 
+## 2a. Models
+
+Run `gary models --all --json`. It prints `{ master, instances: { <name>: { models, sources, fallback } } }`. `models` names the model per role: `worker`, `review`, `standard` and `fast`. You need two of them: `worker` for every worker that runs `triage-routine`, and `review` for a worker that runs `triage-learn`. The worker reads the other roles itself. An instance with `error` in place of `models` gets no worker, like one with `valid: false`.
+
+`master` is the model this session should run on. You cannot change your own model. Compare `master` with the model you run on. When they differ, add one line to your reply: `Master runs on <your model>, the config names <master>. Set the model on the scheduled task or its thread.`
+
 ## 3. Hourly workers
 
 For each instance, pick a run id (UTC timestamp) and start one worker (see "Start a worker") with this job:
@@ -83,9 +89,11 @@ A worker must run with the instance's `checkout` as its working directory. The p
 
 Use the first way that works in this session:
 
-1. **Child sessions.** The session has a tool that starts a child or detached session, like Claude Desktop's session tools or T3 Code's delegate tool, or any tool whose description says it starts a child or detached session. Use it only when the tool can set the child's working directory to the `checkout`, or when this session already runs in the `checkout` itself and the child inherits that. Compare `pwd -P` with the `checkout` to know. A worktree of the checkout does not count. Start one per job, with a self-contained prompt: the job line above, plus "Report only by writing the summary file. Do not message me."
-2. **Headless run.** Otherwise run `claude -p "<job line>"` from the shell, with the instance's `checkout` as working directory, in the background, with a timeout of 60 minutes for an hourly job and 30 for a request. Pass the models the job line names. If the run exits at once without a summary file, read its output: a permission or sign-in problem is reported to the maintainer, and this job falls back to the third way.
-3. **In this session.** Otherwise do the job here, with subagents, one instance after another. This is the only case where your context grows.
+1. **Child sessions.** The session has a tool that starts a child or detached session, like Claude Desktop's session tools or T3 Code's delegate tool, or any tool whose description says it starts a child or detached session. Use it only when the tool can set the child's working directory to the `checkout`, or when this session already runs in the `checkout` itself and the child inherits that. Compare `pwd -P` with the `checkout` to know. A worktree of the checkout does not count. The tool must also take the child's model. Pass the worker's model in its model option, like `target.model` of T3 Code's delegate tool. A tool without a model option, or one that refuses the value, does not count: use the headless run. Start one per job, with a self-contained prompt: the job line above, plus "Report only by writing the summary file. Do not message me."
+2. **Headless run.** Otherwise run `claude -p --model <model> "<job line>"` from the shell, with the instance's `checkout` as working directory, in the background, with a timeout of 60 minutes for an hourly job and 30 for a request. If the run exits at once without a summary file, read its output: a permission or sign-in problem is reported to the maintainer, and this job falls back to the third way.
+3. **In this session.** Otherwise do the job here, with subagents, one instance after another. This is the only case where your context grows. The worker's part then runs on your model. Every subagent still gets the model of its role, as `triage-routine` describes.
+
+`<model>` is the instance's `worker` model from step 2a for a `triage-routine` job, and its `review` model for a `triage-learn` job. Always pass it, also when it equals a default: without it the worker runs on whatever model the machine's Claude settings name. The job line carries no model names. The worker gets the models of its subagents from `gary models`.
 
 The worker only reads in the `checkout`. It never switches branches or edits files there. Writes and a PR's files go into throwaway worktrees, as the worker's own skills describe.
 
@@ -103,7 +111,7 @@ On every hourly start, do the same for every claimed action doc and every claim 
 
 Wait for each worker's `summary.txt` with a Monitor or a polling loop, with the same time limits as above. A worker that wrote none by then failed: note `<name>: no summary after 60 minutes.`
 
-When an hourly summary says `Learning due.`, start a worker with the job `Run the triage-learn skill for Gary instance <name>.`
+When an hourly summary says `Learning due.`, start a worker with the job `Run the triage-learn skill for Gary instance <name>.`, on the instance's `review` model.
 
 Reply with one line per instance, taken from the first line of its `summary.txt`:
 

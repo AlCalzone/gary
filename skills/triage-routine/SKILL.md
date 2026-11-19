@@ -33,13 +33,26 @@ Reference files, read when you reach the step that needs them:
 - `${CLAUDE_SKILL_DIR}/references/item-doc.md`: how to write `state`, `findings`, `threads` and `routes`, and the validation checklist for returned docs.
 - `${CLAUDE_SKILL_DIR}/references/voice.md`: how suggested replies must sound. Profile topic: `voice`.
 
+## Models
+
+Run `gary models --json` right after `gary paths`. It prints `{ instance, models, sources, fallback }`. `models` names one model per role, from the instance's `config.json`, then the root `config.json`, then the defaults:
+
+- `worker`: you. The master started you on it.
+- `review`: every subagent that reads code or writes text that gets posted. That is a full PR review, a full issue or discussion triage, a fix, every `triage-review-pr` mode (`address_review`, `take_over`, `revise`, `format`, `drive`, `offer-reply`) and the learn pass.
+- `standard`: the standard tier of the quick classification.
+- `fast`: the fast tier of the quick classification.
+
+Every Agent tool call you make passes `model` with the value of its role. A call without `model` inherits your own model, and a review would then run on the `worker` model. Below, `<review>`, `<standard>` and `<fast>` are these values. The values of the three subagent roles are always aliases the Agent tool takes: `haiku`, `sonnet`, `opus` or `fable`. A skill you hand a job to starts its own subagents by the same roles, so pass the JSON from `gary models` in every brief, next to the paths.
+
+`fallback` belongs to "Stopped by a safety filter" in step 6.
+
 ## Claims
 
 Two runs must never work on the same item at once. Before any work on one item that takes minutes or writes, claim it: a fix, a full review or triage, a `take_over`, a `revise`, an `address_review`, a `drive` round, a `format`. Use `gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` with kind `fix`, `review` or `push`. A request job passes `--request` with the id of the action doc it handles. Without it, a `fix` claim is refused while another `start_fix` request for the item is queued, or while a fix PR for it is in draft or open. Then use and `gary release <itemId> <kind> --run <run>` at the end, also on failure. Exit code 3 means someone else holds the claim or the claim is refused: skip the item, never work in parallel, and name it in the summary. `gary claims` lists the current claims. A subagent that does the work claims and releases itself, with the run id from its brief. Every worker releases its claims on every exit path, failures and refusals included, and sets its action doc to `done` or `failed` before it exits. A doc left `queued` or claimed blocks the item, because such docs do not expire.
 
 ## Subagents or not
 
-Depending on the harness, you may or may not be able to start subagents. Check whether the Agent tool is available. Where this skill says "start a subagent", do so when you can. When you cannot, do the same job yourself, one item after another, by invoking the named skill with the same brief and writing its result to the same place. Keep the order: quick classification, then full reviews, then fixes. The budget and every rule stay the same. Only the parallelism goes.
+Depending on the harness, you may or may not be able to start subagents. Check whether the Agent tool is available. Where this skill says "start a subagent", do so when you can. When you cannot, do the same job yourself, one item after another, by invoking the named skill with the same brief and writing its result to the same place. Keep the order: quick classification, then full reviews, then fixes. The budget and every rule stay the same. Only the parallelism goes. Every job then runs on your own model, whatever its role names. The `Models:` line of the summary says so (step 9).
 
 ## Hard limits
 
@@ -106,10 +119,10 @@ For the hourly job, read all action files, keep those with `status: "queued"`, a
    - A `full_review` with `params.by: "auto_review"` means the PR's author re-requested the automatic review. Review the PR like any other, then run step 6a for it.
    - A `full_review` with `params.by: "api_edit"` follows an API edit: the server committed a text edit to the PR after his click, and `params.pushed` names the action and the new head. Review the PR on that head like any other. Pass the review subagent the previous item doc, which already carries `pushed` and, after a take-over, `takenOver: true`. The item it returns keeps both and follows "Routes after a push" in the review skill's `push-to-pr.md`.
    - `start_fix` comes from a `follow_up` route with `as: "agent"`. It goes onto the fix list of step 7, outside `maxAutoFixesPerRun`. Pass `text` and `params.finding` to the subagent.
-   - `address_review`, `take_over`, `revise` and `format`: start one subagent per request right away, with the `triage-review-pr` skill in the matching mode. Pass the action file path, the item file path, the paths from `gary paths` and a fresh scratch subdirectory. These run in parallel with the rest of the run, because each works in its own worktree. The subagent returns `{ status, result, resultParts, item }`. Copy `status`, `result` and `resultParts` into the action file, and validate `item` like any returned doc before writing it in step 8. In a request job, write the item right away, so the subagent's CI poll can update it.
-   - `drive`: run one round the same way, with the drive mode and the state file path `<state>/drive/<itemId>.json`. A round that returns `status: "waiting"` keeps the action file claimed and leaves the state file in place. The queue watcher notices the review within a minute, and the master starts the next round as a new request job. Only the final round's `{ status, result, item }` goes into the action file and the item. A drive whose action has `params.by: "fix"` belongs to a fix PR's review rounds: it has no item file, and it ends through `gary fix-review finish`, as `drive.md` describes.
+   - `address_review`, `take_over`, `revise` and `format`: start one subagent per request right away, with the `triage-review-pr` skill in the matching mode and `model: <review>`. Pass the action file path, the item file path, the paths from `gary paths`, the JSON from `gary models` and a fresh scratch subdirectory. These run in parallel with the rest of the run, because each works in its own worktree. The subagent returns `{ status, result, resultParts, item }`. Copy `status`, `result` and `resultParts` into the action file, and validate `item` like any returned doc before writing it in step 8. In a request job, write the item right away, so the subagent's CI poll can update it.
+   - `drive`: run one round the same way, also with `model: <review>`, with the drive mode and the state file path `<state>/drive/<itemId>.json`. A round that returns `status: "waiting"` keeps the action file claimed and leaves the state file in place. The queue watcher notices the review within a minute, and the master starts the next round as a new request job. Only the final round's `{ status, result, item }` goes into the action file and the item. A drive whose action has `params.by: "fix"` belongs to a fix PR's review rounds: it has no item file, and it ends through `gary fix-review finish`, as `drive.md` describes.
    - A `format` request with `params.by: "auto_review"` is the format job the PR's author accepted. It runs like a clicked one.
-   - A job with `action: "auto_review"` and `event: "offer-reply"` has no action file. The PR's author commented after the offer to push the formatting. Start one subagent with the `triage-review-pr` skill in the `offer-reply` mode and pass it `pr`, `at` and the paths. It judges the comment and records the judgement with `gary auto-review reply`. Write its one line to `summary.txt`.
+   - A job with `action: "auto_review"` and `event: "offer-reply"` has no action file. The PR's author commented after the offer to push the formatting. Start one subagent with the `triage-review-pr` skill in the `offer-reply` mode and `model: <review>`, and pass it `pr`, `at` and the paths. It judges the comment and records the judgement with `gary auto-review reply`. Write its one line to `summary.txt`.
 3. Board-only actions (`dismiss`, `snooze`) are applied by the server. If one is queued anyway, apply its effect to the item file and mark it done.
 4. Write back `status`, `finishedAt` and `result` (comment URL or error message).
 
@@ -160,15 +173,15 @@ Run `gary auto-review list --json`. `states` holds, per PR with an automatic rev
 
 ### 5. Classify and choose reviews
 
-Quick classification runs in subagents. Split `changed`, plus the items from step 4b, into chunk files of at most 25 entries under `<run>/chunks/` with a small node script, without printing the entries. Start one subagent per chunk in a single message, model `sonnet`. Each one reads the classification file, `references/item-doc.md`, `references/voice.md` and `references/accounts.md` with their profile and personal layers, and SPEC.md. It writes one complete item doc per entry to `<run>/items/<id>.json`, validates them, and replies with one line per item: id, section, and whether it is a full-review candidate. The brief tells both tiers that every item with routes needs `effortMinutes`, because `gary put` refuses a doc without it. It tells the classifier to take who spoke last, who waits and for how long, CI and cleanliness from `facts`, and to read `replies` only for what was said (classification file, "Facts first"). The quick result is a complete item doc with `reviewDepth: "quick"`. It carries `wants` and `wantsReason` when the classification wants labels or assignees (`references/item-doc.md`). Every item doc carries `hint` and `effortMinutes` (`references/item-doc.md`), the quick ones too. Copy `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
+Quick classification runs in subagents. Split `changed`, plus the items from step 4b, into chunk files of at most 25 entries under `<run>/chunks/` with a small node script, without printing the entries. Start one subagent per chunk in a single message, with `model: <standard>`. Each one reads the classification file, `references/item-doc.md`, `references/voice.md` and `references/accounts.md` with their profile and personal layers, and SPEC.md. It writes one complete item doc per entry to `<run>/items/<id>.json`, validates them, and replies with one line per item: id, section, and whether it is a full-review candidate. The brief tells both tiers that every item with routes needs `effortMinutes`, because `gary put` refuses a doc without it. It tells the classifier to take who spoke last, who waits and for how long, CI and cleanliness from `facts`, and to read `replies` only for what was said (classification file, "Facts first"). The quick result is a complete item doc with `reviewDepth: "quick"`. It carries `wants` and `wantsReason` when the classification wants labels or assignees (`references/item-doc.md`). Every item doc carries `hint` and `effortMinutes` (`references/item-doc.md`), the quick ones too. Copy `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
 
 **Tiers.** The instance config's `fastTier` (`off`, `shadow` or `on`, default `off`) decides who classifies:
 
-- **Fast tier** (model `haiku`): gets the entries with their `facts` and the rules. It decides only cases the facts settle: a clean dependency-bot PR, an item waiting on its reporter with nothing new from them, an item whose decision lives on an open PR, an answered discussion where no reply is owed, an informational tracking issue, and a backlog issue by the bot or an agent when it can copy the gist for the `Implement:` card from the title. It never decides a PR with `facts.aiAuthored`. It returns `section`, routes that need no drafted text (a `merge` as `me`, an `Implement:` card for bot or agent backlog, no routes for a waiting item), `effortMinutes` for every item with routes, and `wants`. For everything else it returns `{ "id", "handUp": true, "reason": "<one line>" }`. It never writes text a human would post, never judges code and never decides a close.
-- **Standard tier** (model `sonnet`): the classification described above, for every handed-up item and every item that needs drafted text.
-- Full reviews stay on the large model.
+- **Fast tier** (`model: <fast>`): gets the entries with their `facts` and the rules. It decides only cases the facts settle: a clean dependency-bot PR, an item waiting on its reporter with nothing new from them, an item whose decision lives on an open PR, an answered discussion where no reply is owed, an informational tracking issue, and a backlog issue by the bot or an agent when it can copy the gist for the `Implement:` card from the title. It never decides a PR with `facts.aiAuthored`. It returns `section`, routes that need no drafted text (a `merge` as `me`, an `Implement:` card for bot or agent backlog, no routes for a waiting item), `effortMinutes` for every item with routes, and `wants`. For everything else it returns `{ "id", "handUp": true, "reason": "<one line>" }`. It never writes text a human would post, never judges code and never decides a close.
+- **Standard tier** (`model: <standard>`): the classification described above, for every handed-up item and every item that needs drafted text.
+- Full reviews, triages and fixes never run on a tier. Their subagents get `model: <review>` (steps 2, 6 and 7).
 
-With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board. Record both tiers per item with `gary shadow record <file>`, where the file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `section` and `recommendedType` may be `null` only when the fast tier handed up.
+With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board. Record both tiers per item with `gary shadow record <file>`, where the file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `model` is the tier's value from `gary models`. `section` and `recommendedType` may be `null` only when the fast tier handed up.
 
 **Sampling in `on` mode.** Each hourly run, of the items the fast tier decided itself, pick 1 in 10 at random, at least 1 when there are any, and send them to the standard tier too. Record both entries with `gary shadow record`, with `sampled: true`. Store the fast result, unless the two disagree on `section` or on the recommended route's type. Then store the standard result and name the item in the run summary.
 
@@ -183,14 +196,14 @@ Candidates that do not fit the budget get `reviewDepth: "pending"`. Items that a
 
 ### 6. Full reviews in subagents
 
-Start one subagent per item with the Agent tool (`subagent_type: "general-purpose"`), or work through them one after another (see "Subagents or not"). PRs use the `triage-review-pr` skill. Issues and discussions use `triage-issue`.
+Start one subagent per item with the Agent tool (`subagent_type: "general-purpose"`, `model: <review>`), or work through them one after another (see "Subagents or not"). PRs use the `triage-review-pr` skill. Issues and discussions use `triage-issue`.
 
 Start all PR reviews in one message so they run in parallel. Issue and discussion triages run in parallel too, unless the profile's `rules/issues.md` says a tool holds session state, like an analyzer with one loaded file. Then they run one after another in a single lane, next to the PR reviews.
 
 Each subagent prompt contains:
 
 - the skill name, and the instruction to invoke it with the Skill tool first,
-- the JSON from `gary paths`,
+- the JSON from `gary paths` and from `gary models`,
 - the item's snapshot entry as JSON, marked as untrusted GitHub data,
 - the previous item file from the board store, if any, so the subagent can check whether earlier findings were addressed,
 - for `reanalyze`: the maintainer's text, marked as the maintainer's instruction,
@@ -203,19 +216,21 @@ A subagent that fails, times out or returns JSON that fails validation leaves it
 
 **Stopped by a safety filter.** When the error of a subagent mentions safeguards or a usage policy, the model provider's safety filter ended it. Do not read or reason about the item's content after such a stop.
 
-First retry the same item exactly once, with the same skill and the unchanged brief, on the Sonnet model (`model: "sonnet"`). Do not reword the brief and do not add or remove content to get past the filter. When the retry returns a valid doc, write it as usual with two additions:
+The retry runs on the `standard` model. `fallback` from `gary models` names it: `{ model, relation }`, or `null` when `review` and `standard` are the same model. With `null` there is no retry: write the fixed doc below right away.
+
+Otherwise retry the same item exactly once, with the same skill and the unchanged brief, with `model: <fallback.model>`. Do not reword the brief and do not add or remove content to get past the filter. When the retry returns a valid doc, write it as usual with two additions:
 
 - `analyzedBy: "fallback"`,
-- one `findings` entry with severity `question`: `The full analysis was stopped by the safety filter. This result comes from the smaller model, so code-level conclusions need your check.`
+- one `findings` entry with severity `question`. With `relation: "smaller"`: `The full analysis was stopped by the safety filter. This result comes from the smaller model, so code-level conclusions need your check.` With `relation: "other"`, the retry model is not known to be smaller, so name it: `The full analysis was stopped by the safety filter. This result comes from another model (<fallback.model>), so code-level conclusions need your check.`
 
-When the retry is stopped too, do not retry in this or a later run. Write this fixed doc from the snapshot fields only:
+When the retry is stopped too, or there is none, do not retry in this or a later run. Write this fixed doc from the snapshot fields only:
 
 - the GitHub-derived fields from the snapshot entry, `section` from the quick classification,
 - `reviewDepth: "pending"`, `blocked: { "reason": "safety_filter", "at": "<ISO now>" }`,
 - `state`: `The agent could not analyze this. Its topic triggered the model's safety filter.`,
 - exactly one route: `{ "id": "r1", "type": "open", "title": "Decide yourself: agent could not analyze this", "as": "me", "recommended": true }`, without text, and the same string as `hint`.
 
-A blocked item is left out of every later full-review list. It is retried only when the maintainer clicks "Analyze again", which queues a `reanalyze`. That request clears `blocked` and the failure count, starts on the full model again, and falls back to Sonnet the same way. The same applies to request jobs.
+A blocked item is left out of every later full-review list. It is retried only when the maintainer clicks "Analyze again", which queues a `reanalyze`. That request clears `blocked` and the failure count, starts on the `review` model again, and falls back the same way. The same applies to request jobs.
 
 ### 6a. Automatic first review
 
@@ -233,7 +248,7 @@ Never post such a review any other way, and never loosen a doc the command refus
 
 The routine opens draft fix PRs without a click, up to `maxAutoFixesPerRun` per run, and `0` turns that off. A second limit holds across runs: at most `maxPendingAutoFixes` fixes the routine started itself may be pending, as a running job or as a draft or open PR. `gary claim <itemId> fix` enforces it and exits 3 with the numbers, like `The limit of pending automatic fixes is reached: 10 of 10 are a draft, open or running.` Stop starting autonomous fixes for this run at the first such refusal, and add one line to the run summary: `Fix limit: 10 of 10 automatic fixes pending, 3 fixes held back.` Fixes he clicked never count and are never refused by it. Every hourly run considers all stored items that have a `follow_up` route with `as: "agent"` titled `Start fix:` and no draft PR yet, not only the items classified in this run. `Implement:` routes wait for his click. An autonomous fix uses the agent's own approach, unless the route's `text` gives one. A fix he started with instructions follows his instructions exactly.
 
-Right before starting an autonomous fix, read the queue again. An item with a queued or claimed `start_fix` request is his: skip it. Then claim the item with kind `fix`. The fix subagent checks the queue once more before it opens the PR. When a `start_fix` request for the item arrived after the fix started, it stops without opening a PR, releases the claim, and leaves the item to the request. A clicked request always wins. A draft PR exists when `links` has an entry labeled `Draft fix`. Pick up to `maxAutoFixesPerRun` of them, oldest `reviewedAt` first, plus every queued `start_fix` request outside that limit. Skip this step when the account setup allows no pushes. For each, start a subagent with the `triage-issue` skill in fix mode. Pass the item doc from step 6, the snapshot entry, the route's `text` and the paths. Fix subagents run in parallel, because each works in its own git worktree.
+Right before starting an autonomous fix, read the queue again. An item with a queued or claimed `start_fix` request is his: skip it. Then claim the item with kind `fix`. The fix subagent checks the queue once more before it opens the PR. When a `start_fix` request for the item arrived after the fix started, it stops without opening a PR, releases the claim, and leaves the item to the request. A clicked request always wins. A draft PR exists when `links` has an entry labeled `Draft fix`. Pick up to `maxAutoFixesPerRun` of them, oldest `reviewedAt` first, plus every queued `start_fix` request outside that limit. Skip this step when the account setup allows no pushes. For each, start a subagent with the `triage-issue` skill in fix mode and `model: <review>`. Pass the item doc from step 6, the snapshot entry, the route's `text` and the paths. Fix subagents run in parallel, because each works in its own git worktree.
 
 The fix subagent hands a new fix PR to its review rounds itself (`autofix.md`, step 5a). While those rounds run, the fix PR gets no board item: skip a PR in the snapshot whose `garyFix` item has `fix.review` in `gary fixes --json`. The rounds end with a queued `full_review` that puts it on the board.
 
@@ -251,20 +266,28 @@ Write `meta.json` with `gary put meta <file>`: `lastRunAt`, `lastRunSummary`, `p
 
 Run `gary snapshot --commit` only after all items are written. If any item write failed, skip the commit. The next run then sees the same items as changed and retries them. Delete `<state>/run.lock`.
 
-Write these three lines to `<state>/runs/<run>/summary.txt`, plus the extra lines this skill names (pause, rule changes, fast tier), and reply with the same lines:
+Write these three lines to `<state>/runs/<run>/summary.txt`, plus the `Models:` line and the extra lines this skill names (pause, rule changes, fast tier), and reply with the same lines:
 
 ```
 Actions: 2 agent requests done, 1 queued approval failed (pr-412: head changed since the review).
 Reviews: 8 full, 5 quick, 4 pending. 1 draft fix opened for issue-398.
 Top: issue-405 waits 3 days for an answer about the timeout on reconnect.
+Models: worker claude-sonnet-4-5, review opus, standard sonnet, fast haiku.
 ```
+
+**The `Models:` line.** Every `summary.txt` has it, the one of a request job and of a paused run too. It names the model each role really ran on in this run, so a model that was inherited by mistake shows up:
+
+- `worker` is the model you run on, as your own session names it. That is a fact about you, never the config value copied. When it is another model than `models.worker`, write `worker <yours> (config: <models.worker>)`.
+- `review`, `standard` and `fast` are the `model` values you passed to the Agent tool. Leave out a role this run started no subagent for.
+- A job you did yourself, because you cannot start subagents, ran on your model. Write `review <yours>, done by the worker (config: <models.review>)`, and the same for a tier.
+- A retry after a safety-filter stop adds `fallback <model> for <itemId>`.
 
 When `fastTier` is not `off`, add `Fast tier: decided N, handed up M, sampled S, disagreed D.`, followed by the ids of disagreeing samples. Line 3 names the item at `active` priority 1. If `active` is empty, it names the first `easy` item. Use the same three lines as `lastRunSummary`.
 
 ### 9a. Learn
 
-After the reply of step 9, check whether a learning pass is due: this is the first run of the day (the previous `lastRunAt` in `meta.json` is from an earlier day), or `gary decisions --since <reviewedUntil from <state>/learn.json> --json` returns 20 or more entries. If it is due, start one background subagent with the `triage-learn` skill and the paths. Do not wait for it, and do not let its failure fail the run. Its one-line results go into the next run's summary. Without subagents, skip the pass and note `Learning due.` in `summary.txt`, so the master can start it.
+After the reply of step 9, check whether a learning pass is due: this is the first run of the day (the previous `lastRunAt` in `meta.json` is from an earlier day), or `gary decisions --since <reviewedUntil from <state>/learn.json> --json` returns 20 or more entries. If it is due, start one background subagent with the `triage-learn` skill, `model: <review>` and the paths. Do not wait for it, and do not let its failure fail the run. Its one-line results go into the next run's summary. Without subagents, skip the pass and note `Learning due.` in `summary.txt`, so the master can start it.
 
 ### 10. Request jobs
 
-A request job writes one line to `summary.txt`, like `take_over for pr-412: pushed 1 commit.`, `revise for pr-9496: pushed 1 commit.` or `drive for pr-412: waiting for the review.` The master reads it.
+A request job writes one line to `summary.txt`, like `take_over for pr-412: pushed 1 commit.`, `revise for pr-9496: pushed 1 commit.` or `drive for pr-412: waiting for the review.` The master reads it. The `Models:` line of step 9 follows as the second line, like `Models: worker claude-sonnet-4-5, review opus.`
