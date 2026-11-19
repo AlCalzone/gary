@@ -32,7 +32,7 @@ async function check(instance, write) {
 	// fixFor is code-owned: it comes from Gary's record of its fix PRs, whatever the doc says
 	if (write.op === "replace" && write.data.kind === "pr") {
 		const forItem = fixPrNumbers(sources.records).get(write.data.number);
-		if (forItem) write.data.fixFor = { itemId: forItem, ref: `${write.data.repo}#${write.data.number}` };
+		if (forItem) write.data.fixFor = { itemId: forItem, ref: `${write.data.repo}#${forItem.split("-").pop()}` };
 		else delete write.data.fixFor;
 	}
 	const merged = write.op === "merge" ? mergeFields(cur ?? {}, write.data) : replaceFields(cur, write.data);

@@ -123,7 +123,7 @@ t.check("the request worker for that request can", r.status === 0, r.stdout);
 
 // fixFor is code-owned
 r = gary("put", "items", "pr-19", file({ ...BASE, kind: "pr", number: 19, url: "https://github.com/acme/widgets/pull/19", fixFor: { itemId: "issue-1", ref: "x/y#1" } }));
-t.check("a fix PR item gets fixFor from the record", r.status === 0 && JSON.stringify(JSON.parse(readFileSync(join(items, "pr-19.json"), "utf8")).fixFor) === '{"itemId":"issue-23","ref":"acme/widgets#19"}', r.stdout + r.stderr);
+t.check("a fix PR item gets fixFor from the record", r.status === 0 && JSON.stringify(JSON.parse(readFileSync(join(items, "pr-19.json"), "utf8")).fixFor) === '{"itemId":"issue-23","ref":"acme/widgets#23"}', r.stdout + r.stderr);
 r = gary("put", "items", "pr-12", file({ ...BASE, kind: "pr", number: 12, url: "https://github.com/acme/widgets/pull/12", fixFor: { itemId: "issue-1", ref: "acme/widgets#12" } }));
 t.check("other PRs lose a fixFor the doc claims", r.status === 0 && JSON.parse(readFileSync(join(items, "pr-12.json"), "utf8")).fixFor === undefined, r.stdout);
 r = gary("put", "--merge", "items", "issue-22", file({ ...BASE, kind: "issue", number: 22, url: "https://github.com/acme/widgets/issues/22", fixFor: { itemId: "issue-1", ref: "acme/widgets#1" }, hint: "x", routes: [{ id: "r1", type: "open", title: "x", recommended: true }] }));

@@ -78,6 +78,8 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 		const f = item.fixFor;
 		if (item.kind !== "pr" || !isObject(f) || Object.keys(f).some((k) => !["itemId", "ref"].includes(k)) || typeof f.itemId !== "string" || !ID_PATTERN.test(f.itemId) || typeof f.ref !== "string" || !/^[\w.-]+\/[\w.-]+#\d+$/.test(f.ref)) {
 			err("fixFor", 'fixFor is only for PRs, as { itemId, ref: "owner/name#number" }');
+		} else if (f.ref.split("#")[1] !== f.itemId.split("-").pop()) {
+			err("fixFor", `fixFor.ref must name the item the fix is for (${f.itemId}), never the fix PR itself`);
 		}
 	}
 	if (item.classifiedBy !== undefined && !CLASSIFIERS.includes(item.classifiedBy)) err("classifiedBy", `classifiedBy must be one of ${CLASSIFIERS.join(", ")}`);

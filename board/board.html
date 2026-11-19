@@ -1662,6 +1662,19 @@ function renderHandled(rows) {
 
 const fixParkedEls = {};
 const autoWaitEls = {};
+const analyzingEls = {};
+
+// Items the agent is analyzing again. Their cards are about to change, so they stay out of the plan
+function renderAnalyzing(rows) {
+  if (!analyzingEls.el) return;
+  analyzingEls.el.hidden = rows.length === 0;
+  analyzingEls.count.textContent = "The agent is analyzing again: " + rows.length;
+  analyzingEls.list.replaceChildren(...rows.map(([key, d]) => {
+    const open = h("button", { class: "btn quiet small", type: "button", text: "Open", "data-focus-key": "analyzing:" + key });
+    open.addEventListener("click", () => openDetail(key));
+    return quietRow(key, d, open);
+  }));
+}
 
 // The one review a contributor PR got without a click, as the server serves it
 function autoReviewOf(d) {
@@ -1694,7 +1707,7 @@ function renderAutoReview(d) {
   const lead = a.waiting === true ? AUTO_WAITING_TEXT + "." : "Reviewed automatically." + (changed.length ? " Since then " + changed.join(", ") + "." : "");
   const asked = (Array.isArray(a.asked) ? a.asked : []).map(str).filter(Boolean);
   const offer = a.offer && typeof a.offer === "object" ? { open: "It offered to push the formatting. No answer yet.", accepted: "The author accepted the offer to push the formatting.", closed: "The offer to push the formatting is closed.", named: "It named the format command." }[str(a.offer.state)] : null;
-  el.replaceChildren(
+  setKids(el,
     h("p", { class: "ar-lead" }, h("span", { text: lead }), timeEl(a.at, ""), isGithubUrl(str(a.url)) ? h("a", { href: str(a.url), target: "_blank", rel: "noopener noreferrer", text: "View review", "data-focus-key": "auto:review" }) : null),
     asked.length ? h("span", { text: "It asked for:" }) : null,
     asked.length ? h("ul", null, ...asked.map((t) => h("li", null, richText(t)))) : null,
@@ -1775,6 +1788,7 @@ function buildSections() {
   Object.assign(handledEls, quietLine("handled"));
   Object.assign(fixParkedEls, quietLine("fix-parked"));
   Object.assign(autoWaitEls, quietLine("auto-waiting"));
+  Object.assign(analyzingEls, quietLine("analyzing"));
 
   for (const g of GROUPS) {
     const list = h("div", { class: "list" });
@@ -2052,7 +2066,7 @@ function renderAgentBanner(d) {
   if (ff) {
     const src = itemKeyOf(str(d.instance), str(ff.itemId));
     const srcTitle = src ? str(state.items.get(src).title) : "";
-    forEl.replaceChildren(h("span", { text: "Fix for " + str(ff.ref) + (srcTitle ? ": " + srcTitle : "") }),
+    setKids(forEl, h("span", { text: "Fix for " + str(ff.ref) + (srcTitle ? ": " + srcTitle : "") }),
       src ? h("button", { class: "btn small", type: "button", text: "Open on board", "data-focus-key": "fixfor:board", onclick: () => switchDialog(src) }) : null);
   }
 }
@@ -2385,6 +2399,7 @@ function renderListNow() {
   const byGroup = new Map(GROUPS.map((g) => [g.id, []]));
   const handledRows = [];
   const fixParkedRows = [];
+  const analyzingRows = [];
   const autoWaitRows = [];
   for (const [id, d] of state.items) {
     if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
@@ -2396,6 +2411,10 @@ function renderListNow() {
     }
     if (fixParked(d)) {
       fixParkedRows.push([id, d]);
+      continue;
+    }
+    if (analyzing(id)) {
+      analyzingRows.push([id, d]);
       continue;
     }
     if (autoWaiting(d)) {
@@ -2451,6 +2470,7 @@ function renderListNow() {
   els.board.classList.toggle("combined", combinedView());
   renderHandled(handledRows);
   renderFixParked(fixParkedRows);
+  renderAnalyzing(analyzingRows);
   renderAutoWaiting(autoWaitRows);
 
   // The second-line icons never wrap. Icons that do not fit are dropped from the end, the least important first.
@@ -2549,7 +2569,7 @@ function renderDetailHead(d, dim) {
   const review = Array.isArray(d.reviews) && d.reviews.length ? null : reviewStatus(d);
   const kind = kindStatus(detail.id, d);
   const words = kind[2].split(", ").slice(1).join(", ");
-  detail.ref.replaceChildren(iconEntry(kind), review ? iconEntry(review) : "", ref,
+  setKids(detail.ref, iconEntry(kind), review ? iconEntry(review) : "", ref,
     words ? h("span", { class: "kind-words " + kind[1], text: words.charAt(0).toUpperCase() + words.slice(1) }) : null, categoryChip(d));
   detail.title.textContent = str(d.title) || "(no title)";
 
@@ -4162,6 +4182,11 @@ function blockedNotice(d) {
 }
 
 // Place children in order, moving only nodes that are out of place, so a focused field stays attached
+// replaceChildren prints null and false as text, so drop them first
+function setKids(el, ...kids) {
+  el.replaceChildren(...kids.filter((k) => k != null && k !== false && k !== ""));
+}
+
 function placeChildren(box, nodes) {
   nodes.forEach((n, i) => {
     if (box.children[i] !== n) box.insertBefore(n, box.children[i] || null);
@@ -4191,10 +4216,10 @@ function renderRounds(d) {
         h("span", { class: "vlabel v-wrong", text: "dismissed" }), " ", richText(str(t && t.summary)),
         t && str(t.reason) ? h("span", { class: "t-note" }, " · ", richText(t.reason)) : null))) : null,
       list(x.open).length ? h("ul", null, list(x.open).map((t) => h("li", null, h("span", { class: "vlabel v-unjudged", text: "open" }), " ", richText(str(t))))) : null))));
-  detail.rounds.replaceChildren(
+  detail.rounds.replaceChildren(...[
     open.length ? h("div", { class: "rounds-open" }, h("span", { class: "card-label", text: "Still open after the agent's last round" }),
       h("ul", null, open.map((t) => h("li", null, richText(t))))) : null,
-    details);
+    details].filter(Boolean));
 }
 
 function renderWorking(d) {
@@ -4206,7 +4231,7 @@ function renderWorking(d) {
   const sig = w.kind + "|" + str(w.since);
   if (detail.workingEl.dataset.sig === sig) return;
   detail.workingEl.dataset.sig = sig;
-  detail.workingEl.replaceChildren(icon("wrench"), h("span", { text: WORKING_TEXT[w.kind] }), parseTime(w.since) ? timeEl(w.since, "since ") : null);
+  setKids(detail.workingEl, icon("wrench"), h("span", { text: WORKING_TEXT[w.kind] }), parseTime(w.since) ? timeEl(w.since, "since ") : null);
 }
 
 function renderZones(id, d, locked) {
@@ -4381,7 +4406,7 @@ function renderDetail() {
   }
   if (detail.updated && detail.updatedEl.dataset.before !== detail.updated.before) {
     detail.updatedEl.dataset.before = detail.updated.before;
-    detail.updatedEl.replaceChildren(
+    setKids(detail.updatedEl,
       h("p", { class: "upd-line" }, icon("sparkles"), h("span", { text: "Updated by the agent just now" })),
       detail.updated.before ? h("p", { class: "upd-before" }, "Before: ", hintEl(detail.updated.before)) : null);
   }
@@ -5111,7 +5136,7 @@ async function boot() {
   setupDetail();
   setupRowKeys();
   buildSections();
-  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el, fixParkedEls.el, autoWaitEls.el);
+  els.board.append(planEls.el, ...GROUPS.map((g) => groupEls.get(g.id).el), handledEls.el, fixParkedEls.el, autoWaitEls.el, analyzingEls.el);
   renderConnection();
   render();
 

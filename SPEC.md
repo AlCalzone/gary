@@ -538,7 +538,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "wantsReason": "One sentence.",  // required with wants
   "handled": { "at": "ISO", "routeId": "r1", "routeType": "reply", "verified": null },   // the maintainer's, see below
   "live": { "state": "closed", "checkedAt": "ISO" },   // set by a refresh that found the thread closed or merged. The next snapshot drops the item
-  "fixFor": { "itemId": "issue-23", "ref": "acme/widgets#19" }   // code-owned, PRs: the item this Gary fix PR is for, from <state>/fixes.json
+  "fixFor": { "itemId": "issue-23", "ref": "acme/widgets#23" }   // code-owned, PRs: the item this Gary fix PR is for, with `ref` naming that item, from <state>/fixes.json
 }
 ```
 
