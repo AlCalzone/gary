@@ -102,6 +102,11 @@ export function sensitiveFacts(entry) {
 	return files.length ? { sensitiveFiles: files.slice(0, MAX_SENSITIVE_FILES), sensitiveFileCount: files.length } : {};
 }
 
+/** Whether a PR's snapshot entry lists sensitive files: true or false, or undefined without an entry. */
+export function touchesSensitive(entry) {
+	return entry ? (entry.sensitiveFiles ?? []).length > 0 : undefined;
+}
+
 /** The facts of a PR entry from the snapshot. */
 export function prFacts(entry) {
 	const approvedBy = (entry.reviewSummary ?? []).filter((r) => r.state === "approved").map((r) => r.author);
@@ -113,7 +118,7 @@ export function prFacts(entry) {
 		ciGreen,
 		// Only a complete file list can prove a PR changes dependencies only
 		dependencyOnly: files.length > 0 && files.length >= (entry.changedFileCount ?? files.length) && files.every(isDependencyFile),
-		touchesSensitive: (entry.sensitiveFiles ?? []).length > 0,
+		touchesSensitive: touchesSensitive(entry),
 		...sensitiveFacts(entry),
 		openThreadCount,
 		approvedBy,

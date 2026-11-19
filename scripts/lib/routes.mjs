@@ -10,8 +10,8 @@ export const ROUTE_TYPES = {
 	review: ["bot", "me"],
 	address_review: ["agent"],
 	follow_up: ["agent", "bot", "me"],
-	take_over: ["agent"],
-	revise: ["agent"],
+	take_over: ["agent", "bot"],
+	revise: ["agent", "bot"],
 	drive: ["agent"],
 	format: ["agent"],
 	move: ["bot", "me"],
@@ -25,6 +25,11 @@ export const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "revi
 export const MOVE_MODES = ["transfer", "close"];
 // What a discussion becomes after the escalate command. It only words the card, the repo's workflow picks the label
 export const ISSUE_KINDS = ["bug", "enhancement"];
+// A take_over or revise with this `params.via` is an API edit: the server commits the route's text edits itself
+export const API_EDIT_VIA = "api";
+const API_EDIT_TYPES = new Set(["take_over", "revise"]);
+export const isApiEdit = (route) => API_EDIT_TYPES.has(route?.type) && route.params?.via === API_EDIT_VIA;
+const PUSHING_PR_TYPES = new Set(["address_review", "take_over", "revise", "drive", "format"]);
 export const CHORE_ACTIONS = new Set(["label", "assign", "ready", "answer_discussion", "react", "update_branch", "rerun_ci"]);
 
 /** The route's actor, or undefined when the type is unknown or the given `as` is not allowed for it. */
@@ -35,6 +40,11 @@ export function actorOf(route) {
 		// The target decides who acts: GitHub has no API to convert between issues and discussions
 		const to = route.params?.to;
 		const as = to === "discussion" || to === "issue" ? "me" : typeof to === "string" ? "bot" : undefined;
+		return route.as === undefined || route.as === as ? as : undefined;
+	}
+	// The form decides who acts: the server commits an API edit as the bot, the agent pushes everything else
+	if (API_EDIT_TYPES.has(route.type)) {
+		const as = isApiEdit(route) ? "bot" : "agent";
 		return route.as === undefined || route.as === as ? as : undefined;
 	}
 	// follow_up has more than one sensible actor, so it needs an explicit `as`
@@ -97,10 +107,14 @@ export function driveRefusal(item, maxRounds = 3) {
 	return null;
 }
 
-/** Why the server refuses a revise route with these instructions on this item, or null when it accepts it. */
-export function reviseRefusal(item, text) {
+/**
+ * Why the server refuses a revise route with these instructions on this item, or null when it accepts it.
+ * An API edit carries its change in `params.edits`, so its `text` may be empty.
+ */
+export function reviseRefusal(item, text, route) {
 	const refusal = pushRefusal(item, "revise");
 	if (refusal) return refusal;
+	if (isApiEdit(route)) return null;
 	if (!(typeof text === "string" && text.trim())) return "revise needs a text that says what to change.";
 	return null;
 }
@@ -112,10 +126,24 @@ export function takeOverRefusal(route, item) {
 	if (!pushRefusal(item)) return "take_over is only for contributor PRs that are not taken over. Use revise on this PR.";
 	const mode = route?.params?.mode ?? "push";
 	if (mode !== "push" && mode !== "replace") return 'take_over needs params.mode "push" or "replace".';
+	if (isApiEdit(route) && mode !== "push") return "An API edit commits to the PR branch. It cannot open a replacement PR.";
 	if (mode === "replace" && !(typeof route.callout === "string" && route.callout.trim())) {
 		return "A replacement PR needs a callout that says why pushing is not possible.";
 	}
 	return null;
+}
+
+/**
+ * Why this route may not run on a PR that changes sensitive files, or null. `sensitive` is true when the PR's
+ * snapshot entry lists such files, false when it lists none, undefined when the entry is unknown.
+ * Only the API edit may push there. An agent in a checkout of such a PR would load instructions or run code
+ * the contributor wrote.
+ */
+export function sensitiveRefusal(route, sensitive) {
+	if (sensitive !== true || !PUSHING_PR_TYPES.has(route?.type)) return null;
+	if (isApiEdit(route)) return null;
+	if (API_EDIT_TYPES.has(route.type)) return `This PR changes sensitive files, so ${route.type} is only allowed as an API edit (params.via "api") with the exact text edits.`;
+	return `This PR changes sensitive files, so Gary does not run ${route.type} on it.`;
 }
 
 /**

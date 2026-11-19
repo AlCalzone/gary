@@ -114,11 +114,12 @@ async function commentExists(commentId) {
 /**
  * Checks that a thread has not moved since the agent reviewed it. For `react` it checks only that the thread and the comment exist.
  * Returns `{ ok: true, state, stateReason }`, or `{ ok: false, reason, forceable, state, stateReason }`.
- * `force` skips every refusal except a moved head for merge, an approval or a review with inline comments. Never throws: a failed read refuses without force.
+ * `force` skips every refusal except a moved head for merge, an approval or a review with inline comments, and for
+ * every action when `headBound` is true. Never throws: a failed read refuses without force.
  */
 export async function checkFresh({ instance, ...request }) {
 	if (instance) return withInstance(instance, () => checkFresh(request));
-	const { action, kind, number, item, params, force = false, openOnly = false } = request;
+	const { action, kind, number, item, params, force = false, openOnly = false, headBound: bound = false } = request;
 	if (!GUARDED_ACTIONS.has(action) && action !== "react" && !openOnly) return { ok: true };
 	const repo = item?.repo ?? loadProfile().repo;
 	if (!allowedRepo(instanceName(), repo)) return { ok: false, reason: `${repo} is not a repository of instance ${instanceName()}`, forceable: false };
@@ -165,7 +166,7 @@ export async function checkFresh({ instance, ...request }) {
 	}
 
 	if (!reasons.length) return { ok: true, ...live };
-	const forceable = !(headMoved && headBound(action, params));
+	const forceable = !(headMoved && (bound || headBound(action, params)));
 	if (force && forceable) return { ok: true, forced: true, ...live };
 	return { ok: false, reason: reasons.join(" "), forceable, ...live };
 }

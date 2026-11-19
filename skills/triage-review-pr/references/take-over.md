@@ -2,6 +2,8 @@
 
 The maintainer clicked `take_over` on a contributor PR that is not taken over yet. Finishing it ourselves is quicker than another round trip. On a PR we already control (by the maintainer, the bot, another bot or Copilot, or with `takenOver: true`), return `status: "failed"`: changes there are a `revise`, see `revise.md`. You get the action file (`params.mode`, optional `params.decisions` with one decision per open thread, optional `text` with instructions), the item doc with the review's findings and threads, and a scratch directory.
 
+A `take_over` route with `params.via: "api"` never reaches you. The server commits its text edits itself after the click, and it is the only take-over a PR with sensitive files can get. When an action for such a PR reaches you anyway, the precondition in `push-to-pr.md` refuses it.
+
 ## What a take-over never does
 
 Taking over means finishing the code. The limits in `push-to-pr.md`, "What a take-over or a change never does", apply.

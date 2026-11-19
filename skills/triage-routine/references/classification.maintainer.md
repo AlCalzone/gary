@@ -129,7 +129,7 @@ Bot reviewers are often right about real bugs and often wrong about project conv
 
 A PR changing a path in the profile's `sensitivePaths` gets the fact named in `state` and goes to `review`, at least. Such paths can run code with repo secrets, change what agents like this one do, or pull in new code. A contributor PR touching them deserves a closer look even when the change looks harmless.
 
-Gary pushes nothing to such a PR, whoever opened it. Write no `take_over`, `revise`, `address_review`, `drive` or `format` route for it. The board's dialog shows a warning with the matching files above the routes, taken from the snapshot. So `state` names the paths, and the routes need no extra explanation.
+No agent works in a checkout of such a PR, whoever opened it. Write no `address_review`, `drive` or `format` route for it, and no `take_over` or `revise` in their normal form. The one exception is the API edit (`item-doc.md`, "API edit"): when every finding we would fix ourselves is a small text replacement outside the sensitive files, recommend a `take_over` or `revise` with `params.via: "api"` that carries the exact edits, and keep the `review` as the alternative. The server commits those edits through the GitHub API after his click, without a checkout. In every other case offer only the `review`. The board's dialog shows a warning with the matching files above the routes, taken from the snapshot, and it says which of the two cases holds. So `state` names the paths, and the routes need no extra explanation.
 
 ## No routes
 

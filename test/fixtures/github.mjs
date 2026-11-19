@@ -24,6 +24,8 @@ export const issuesAndPrs = {
 	16: { __typename: "PullRequest", id: "PR_16", url: `${URL}/pull/16`, state: "MERGED", isDraft: false, headRefOid: "e".repeat(40) },
 	19: { __typename: "PullRequest", id: "PR_19", url: `${URL}/pull/19`, state: "OPEN", isDraft: true, headRefOid: "9".repeat(40) },
 	25: { __typename: "PullRequest", id: "PR_25", url: `${URL}/pull/25`, state: "OPEN", isDraft: false, headRefOid: "5".repeat(40) },
+	26: { __typename: "PullRequest", id: "PR_26", url: `${URL}/pull/26`, state: "OPEN", isDraft: false, headRefOid: "6".repeat(40) },
+	27: { __typename: "PullRequest", id: "PR_27", url: `${URL}/pull/27`, state: "OPEN", isDraft: false, headRefOid: "6".repeat(40) },
 	20: { __typename: "Issue", id: "I_20", url: `${URL}/issues/20`, state: "CLOSED" },
 	21: { __typename: "Issue", id: "I_21", url: `${URL}/issues/21`, state: "OPEN" },
 	22: { __typename: "Issue", id: "I_22", url: `${URL}/issues/22`, state: "OPEN" },
@@ -215,3 +217,33 @@ export const searchPrs = [
 ];
 
 export const openTotals = { pullRequests: 1, issues: 3, discussions: 2 };
+
+// What the API edit reads about a PR: 26 comes from a fork that allows edits by maintainers, 27 from a branch of the repo
+export const EDIT_HEAD = "6".repeat(40);
+export const NEW_HEAD = "7".repeat(40);
+export const apiPrs = {
+	26: { id: "PR_26", url: `${URL}/pull/26`, state: "OPEN", headRefOid: EDIT_HEAD, headRefName: "docs-update", baseRefName: "main", isCrossRepository: true, maintainerCanModify: true, headRepository: { nameWithOwner: "hubot/widgets" } },
+	27: { id: "PR_27", url: `${URL}/pull/27`, state: "OPEN", headRefOid: EDIT_HEAD, headRefName: "gary/docs", baseRefName: "main", isCrossRepository: false, maintainerCanModify: false, headRepository: { nameWithOwner: `${OWNER}/${REPO}` } },
+};
+
+export const CONTRIBUTING = "# Contributing\n\nJoin us on Discord: https://discord.gg/wrong\n\nRun the tests before you open a PR.\nRun the tests before you open a PR.\n";
+
+// Files per commit for the API edit: `text`, and `mode`, `type`, `binary`, `truncated` or `oid` where a file differs from a plain text file
+export const files = {
+	[EDIT_HEAD]: {
+		"CONTRIBUTING.md": { text: CONTRIBUTING },
+		"docs/guide.md": { text: "# Guide\r\n\r\nSee the old page.\r\n" },
+		"docs/setup.md": { text: "Step one\nStep two" },
+		"docs/a.md": { text: "a\n" },
+		"docs/b.md": { text: "b\n" },
+		"docs/c.md": { text: "c\n" },
+		"docs/link.md": { text: "CONTRIBUTING.md", mode: 0o120000 },
+		"run.sh": { text: "echo hi\n", mode: 0o100755 },
+		"logo.png": { binary: true },
+		"big.md": { text: "cut", truncated: true },
+		"odd.md": { text: "read differently\n", oid: "0".repeat(40) },
+		docs: { type: "tree", mode: 0o040000 },
+		".github/copilot-instructions.md": { text: "Follow the rules.\n" },
+		"package.json": { text: "{}\n" },
+	},
+};

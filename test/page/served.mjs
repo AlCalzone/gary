@@ -598,6 +598,26 @@ try {
 		await openItem("pr-25");
 		ok("sensitive: the dialog warns above the routes", await ev(`const b = document.getElementById("d-sensitive"); return !b.hidden && /^Touches sensitive files: \\.github\\/copilot-instructions\\.md, .* and 1 more\\. Gary does not push to this PR\\./.test(b.textContent);`));
 		await closeItem();
+
+		// An API edit on that PR: the banner changes its wording and the server runs the click itself
+		const edit = { path: "CONTRIBUTING.md", original: "Join us on Discord: https://discord.gg/wrong", replacement: "Join us on Discord: https://discord.gg/right" };
+		writeFileSync(itemFile("pr-26"), JSON.stringify(probe("pr", 26, "https://github.com/acme/widgets/pull/26", {
+			hint: "Take over: fix the Discord link", reviewedSha: "6".repeat(40),
+			routes: [{ id: "r1", type: "take_over", as: "bot", title: "Take over: fix the Discord link", recommended: true, params: { via: "api", message: "docs: fix the Discord invite link", edits: [edit] } }],
+		})));
+		writeFileSync(snapFile, JSON.stringify({ fetchedAt: new Date().toISOString(), items: { ...JSON.parse(readFileSync(snapFile, "utf8")).items, "pr-26": { kind: "pr", number: 26, sensitiveFiles: [".github/copilot-instructions.md"] } } }));
+		ok("api edit: the server serves the route with the bot as its actor", await until(`state.items.get("widgets/pr-26")?.routes?.[0]?.actor === "bot" && !!state.items.get("widgets/pr-26").sensitive`, 8000));
+		await openItem("pr-26");
+		ok("api edit: the banner says that Gary only commits the shown edits", await ev(`return /copilot-instructions\\.md\\. Gary only commits the text edits shown below, outside these files\\./.test(document.getElementById("d-sensitive").textContent);`));
+		ok("api edit: the card shows the diff", await ev(`const rows = [...document.querySelectorAll("#d-routes .card .edit-list .hunk span")].map((s) => s.textContent); return rows.length === 2 && rows[0].startsWith("-Join us") && rows[1].startsWith("+Join us") && document.querySelector("#d-routes .card .edit-list .c-where").textContent === "CONTRIBUTING.md";`));
+		const editBtn = (text) => `[...document.querySelectorAll("#d-routes .card .card-actions button")].find((b) => b.textContent === ${JSON.stringify(text)})`;
+		await ev(`${editBtn("Commit the text edit")}.click();`);
+		ok("api edit: the click asks to confirm", await until(`!!${editBtn("Confirm: commit to the contributor's PR as widgets-bot")}`));
+		await ev(`${editBtn("Confirm: commit to the contributor's PR as widgets-bot")}.click();`);
+		ok("api edit: the server runs the click itself and queues no agent", await fileUntil(() => actionFiles().some((a) => a.itemId === "pr-26" && a.action === "take_over" && a.status === "done" && a.via === "server" && /createCommitOnBranch/.test(a.result))) && !actionFiles().some((a) => a.itemId === "pr-26" && a.status === "queued"));
+		ok("api edit: the card says Done", await until(`/Done/.test(document.querySelector("#d-routes .card")?.textContent ?? "") && !document.querySelector("#d-routes .card .card-actions button")`, 8000));
+		await closeItem();
+		rmSync(itemFile("pr-26"));
 		rmSync(itemFile("disc-32"));
 		rmSync(itemFile("pr-25"));
 		if (before === null) rmSync(snapFile);

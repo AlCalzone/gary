@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, applyWrite, docPath, mergeFields, readJson, replaceFields, tokenFile } from "./lib/board-store.mjs";
 import { instanceName, loadInstance, loadProfile, rootConfig } from "./lib/config.mjs";
+import { touchesSensitive } from "./lib/facts.mjs";
 import { accountMode } from "./lib/gh.mjs";
 import { validateProposal, writeLearn } from "./lib/learning.mjs";
 import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
@@ -36,7 +37,7 @@ async function check(instance, write) {
 	}
 	const merged = write.op === "merge" ? mergeFields(cur ?? {}, write.data) : replaceFields(cur, write.data);
 	const fix = merged.kind === "issue" || merged.kind === "discussion" ? fixStateOf(id, sources) : null;
-	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos, fix });
+	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos, fix, sensitive: touchesSensitive(sources.snapshot[id]) });
 	for (const w of warnings) console.error(`warning: ${id}: ${w.message}`);
 	if (errors.length) fail(`${id} breaks ${errors.length} rule${errors.length === 1 ? "" : "s"}, nothing was written`, errors.map((e) => e.message));
 }

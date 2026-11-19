@@ -32,7 +32,7 @@ All of these must hold before you edit anything:
 - `state` is `OPEN`.
 - `headRefOid` equals the item's `reviewedSha`. New commits mean the review may be stale.
 - The writing identity can push. For a fork PR (`isCrossRepository: true`), read `maintainerCanModify`. It must be `true`, which means the author ticked "Allow edits by maintainers". For a branch inside the repo (`isCrossRepository: false`), GitHub always reports `maintainerCanModify: false`. There the writing identity's write access to the repo allows the push.
-- No changed file matches the profile's `sensitivePaths`.
+- No changed file matches the profile's `sensitivePaths`. A worktree of such a PR would put the contributor's agent instructions, configs or manifests on disk, where you or a tool could load them. This check has no exception. The one push such a PR can get is the API edit, which the server commits without an agent (`item-doc.md`, "API edit").
 
 If a check fails, stop before editing. Return `status: "failed"` with the reason. Post nothing.
 

@@ -591,6 +591,7 @@ button.card-head:hover .chev { color: var(--fg); }
 .sensitive-banner { margin: 0 0 12px; font-weight: 400; }
 .sensitive-banner[hidden] { display: none; }
 .sensitive-banner code { overflow-wrap: anywhere; }
+.edit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .reason { align-self: flex-start; }
 .card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .editor-tools { display: flex; justify-content: flex-end; margin-top: -6px; }
@@ -2052,7 +2053,7 @@ function stateIcons(id, d, dim, withPassing) {
     else if (a && a.status === "failed") out.push(["alert", "bad", "Failed: " + name, null, "Failed: " + name]);
     else if (a && recentlyDone(a)) out.push(["doneCheck", "ok", doneName(a), null, doneName(a)]);
   }
-  if (sensitiveOf(d)) out.push(["alert", "warn", sensitiveSummary(sensitiveOf(d)) + ". Gary does not push to this PR.", null, "Sensitive files"]);
+  if (sensitiveOf(d)) out.push(["alert", "warn", sensitiveSummary(sensitiveOf(d)) + ". " + sensitivePush(d), null, "Sensitive files"]);
   const open = !isClosedThread(id, d);
   if (d.kind === "pr" && d.ci === "failing") out.push(["ciFail", "bad", "CI failing"]);
   const openThreads = Array.isArray(d.threads) ? d.threads.filter((t) => t && typeof t === "object").length : 0;
@@ -2568,7 +2569,7 @@ function renderDetailInfo(d) {
   detail.reviews.hidden = badges.length === 0;
   // An address_review card, or a take_over card that covers every thread, lists the threads itself
   const onCard = routesOf(d).some((r) => r.type === "address_review"
-    || (r.type === "take_over" && takeOverThreads(d).length && takeOverThreads(d).length === reviewThreads(d).length));
+    || (r.type === "take_over" && !apiEdit(r) && takeOverThreads(d).length && takeOverThreads(d).length === reviewThreads(d).length));
   const threads = onCard ? null : buildThreads(d.threads);
   if (threads) {
     threads.open = detail.threadsOpen;
@@ -2670,8 +2671,8 @@ const ROUTE_ACTORS = {
   review: ["bot"],
   address_review: ["agent"],
   follow_up: ["agent", "bot", "me"],
-  take_over: ["agent"],
-  revise: ["agent"],
+  take_over: ["agent", "bot"],
+  revise: ["agent", "bot"],
   drive: ["agent"],
   move: ["bot", "me"],
   chore: ["bot"],
@@ -2723,6 +2724,28 @@ function escalateNote(d, r) {
   return escalatePosts(d) ? becomes + ". The button posts " + command + " under your GitHub login." : becomes + " once you post " + command + " there.";
 }
 
+// A take_over or revise whose exact text edits the server commits through the GitHub API, without an agent
+function apiEdit(r) {
+  return (r.type === "take_over" || r.type === "revise") && str(paramsOf(r).via) === "api";
+}
+
+function apiEdits(r) {
+  const edits = paramsOf(r).edits;
+  return (Array.isArray(edits) ? edits : []).filter((e) => e && typeof e === "object" && typeof e.path === "string" && typeof e.original === "string" && typeof e.replacement === "string");
+}
+
+// The edits of the card as diffs, so he sees exactly what the click commits
+function buildApiEdits(r) {
+  const message = str(paramsOf(r).message);
+  return [
+    h("ul", { class: "edit-list" }, apiEdits(r).map((e) => h("li", null, h("div", { class: "c-body" },
+      h("code", { class: "c-where", text: e.path }),
+      ...commentBody({ original: e.original, suggestion: e.replacement }))))),
+    message ? h("p", { class: "quiet-line edit-message" }, "Commit message: ", h("code", { text: message })) : null,
+    h("p", { class: "quiet-line edit-how", text: "Commits through the GitHub API, without checking out the branch" }),
+  ];
+}
+
 // The changed files of a PR that match the profile's sensitive paths: `{ files, total }`, or null
 function sensitiveOf(d) {
   const s = d.kind === "pr" && d.sensitive && typeof d.sensitive === "object" ? d.sensitive : null;
@@ -2736,7 +2759,14 @@ function sensitiveSummary(s) {
   return "Touches sensitive files: " + s.files.join(", ") + (more > 0 ? " and " + more + " more" : "");
 }
 
-// The warning above the routes. It explains why the PR has no card that pushes
+// What Gary pushes to a PR with sensitive files: only the text edits of an API edit card, when the item has one
+function sensitivePush(d) {
+  return routesOf(d).some(apiEdit)
+    ? "Gary only commits the text edits shown below, outside these files."
+    : "Gary does not push to this PR.";
+}
+
+// The warning above the routes. It explains why the PR has no card that pushes from a checkout
 function renderSensitive(d) {
   const el = document.getElementById("d-sensitive");
   const s = sensitiveOf(d);
@@ -2746,7 +2776,9 @@ function renderSensitive(d) {
   const files = s.files.flatMap((f, i) => [i ? ", " : "", h("code", { text: f })]);
   el.replaceChildren(icon("alert"), h("span", null,
     h("strong", { text: "Touches sensitive files: " }), ...files, more > 0 ? " and " + more + " more" : "", ". ",
-    "Gary does not push to this PR. It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets."));
+    routesOf(d).some(apiEdit)
+      ? sensitivePush(d) + " It checks out nothing and runs nothing from this PR. These files can change what agents do or run code with repo secrets."
+      : sensitivePush(d) + " It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets."));
 }
 
 // The discussion's category on GitHub, like "Feature Requests"
@@ -2852,6 +2884,7 @@ function routeHasEditor(r) {
 function editorLabel(r) {
   const as = actorOf(r);
   if (r.type === "address_review") return "Note for the whole run (optional)";
+  if (apiEdit(r)) return "Note for the contributor, added to the comment about the commit (optional)";
   if (r.type === "take_over" || (r.type === "follow_up" && as === "agent")) return "Instructions for the agent (optional)";
   if (r.type === "revise") return "Instructions for the agent";
   if (r.type === "follow_up") return "Issue text";
@@ -2890,8 +2923,12 @@ function routeButtons(d, r) {
       if (as === "agent") return [{ id: "main", actor: "agent", label: "Start fix" }];
       if (as === "me") return [me("Open GitHub to file the issue", { copy: null })];
       return [run("File issue", { confirm: true })];
-    case "take_over": return [{ id: "main", actor: "agent", label: p.mode === "replace" ? "Open a replacement PR" : "Take over" }];
-    case "revise": return [{ id: "main", actor: "agent", label: "Change", needsText: true }];
+    case "take_over":
+      if (apiEdit(r)) return [run("Commit the text edit" + (apiEdits(r).length === 1 ? "" : "s"), { confirm: true, confirmVerb: "commit to the contributor's PR" })];
+      return [{ id: "main", actor: "agent", label: p.mode === "replace" ? "Open a replacement PR" : "Take over" }];
+    case "revise":
+      if (apiEdit(r)) return [run("Commit the text edit" + (apiEdits(r).length === 1 ? "" : "s"), { confirm: true, confirmVerb: "commit to the PR" })];
+      return [{ id: "main", actor: "agent", label: "Change", needsText: true }];
     case "drive": return [{ id: "main", actor: "agent", label: "Drive this PR" }];
     case "move": {
       if (str(p.to) === "discussion") return [me("Open GitHub to convert", { copy: null })];
@@ -3448,6 +3485,8 @@ function buildCardInputs(id, d, r, rec) {
     // The canned text only matters for "Close, ask to reopen there", so it shows once he picks that button
     rec.revealBox = h("div", { class: "reveal", hidden: !rec.revealed }, ...editor);
     out.push(rec.revealBox);
+  } else if (apiEdit(r)) {
+    out.push(...buildApiEdits(r), ...editor);
   } else if (r.type === "take_over" && takeOverThreads(d).length) {
     out.push(buildDecisions(rec, takeOverThreads(d)), ...editor);
   } else if (r.type !== "address_review") {
@@ -3593,7 +3632,7 @@ function routePayload(d, r, rec, b) {
   if (r.type === "review") input.commentIds = [...rec.checks].filter(([, on]) => on).map(([cid]) => cid);
   if (r.type === "review" && detail.events.has(r.id)) input.event = detail.events.get(r.id);
   if (r.type === "follow_up" && actorOf(r) === "agent") input.askReporter = rec.askReporter === true;
-  if (r.type === "address_review" || (r.type === "take_over" && takeOverThreads(d).length)) {
+  if (r.type === "address_review" || (r.type === "take_over" && !apiEdit(r) && takeOverThreads(d).length)) {
     input.decisions = [...rec.decisions].map(([threadId, st]) => ({ threadId, decision: st.decision, ...(st.note.trim() ? { note: st.note.trim() } : {}) }));
   }
   if (r.type === "follow_up" && rec.titleInput && rec.titleInput.value !== str(paramsOf(r).title)) input.title = rec.titleInput.value;

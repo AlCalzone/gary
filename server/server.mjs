@@ -14,14 +14,15 @@ import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tok
 import { applyProposal, cut, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
-import { sensitiveFacts } from "../scripts/lib/facts.mjs";
-import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes } from "../scripts/lib/fixes.mjs";
+import { runApiEdit } from "../scripts/lib/api-edit.mjs";
+import { sensitiveFacts, touchesSensitive } from "../scripts/lib/facts.mjs";
+import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
-import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
+import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
 const MAX_BODY = 256 * 1024;
@@ -110,6 +111,12 @@ export function validateInput(route, item, input) {
 			ids.add(id);
 		}
 		return { commentIds: [...ids], ...event };
+	}
+
+	// The card of an API edit has no switches: the route's edits are all it commits
+	if (isApiEdit(route)) {
+		checkKeys(input, [], "input");
+		return {};
 	}
 
 	if (route.type === "address_review" || route.type === "take_over") {
@@ -309,6 +316,13 @@ export function planRoute(route, item, input, text, mode = "bot") {
 		}
 		case "reopen":
 			return { steps: [{ action: "reopen", params: {}, text }], guard: { action: "reopen", params: {} } };
+		case "take_over":
+		case "revise": {
+			// Only the API edit of these types runs on the server. `text` is the note for the contributor
+			const refusal = route.type === "take_over" ? takeOverRefusal(route, item) : reviseRefusal(item, text, route);
+			if (refusal) throw new Refusal(refusal);
+			return { apiEdit: true, action: route.type, params, text };
+		}
 		case "follow_up": {
 			const title = chosen.title ?? params.title;
 			return { followUp: true, steps: [{ action: "create_issue", params: { title }, text }], guard: { action: "comment", params: {} } };
@@ -1246,6 +1260,13 @@ export async function startBoardServer({
 
 			if (route.type === "move" && route.params?.to === "issue") return handleEscalate(name, itemId, item, route, body, key, hash);
 
+			// A PR with sensitive files gets no agent in its checkout, also when the item file still offers one
+			if (item.kind === "pr") {
+				const snapshot = await withInstance(name, () => readSnapshotItems());
+				const refusal = sensitiveRefusal(route, touchesSensitive(snapshot[itemId]));
+				if (refusal) return [200, { ok: false, result: refusal, sensitive: true }];
+			}
+
 			const draft = typeof text === "string" ? text : typeof route.text === "string" ? route.text : "";
 			let plan;
 			try {
@@ -1285,6 +1306,7 @@ export async function startBoardServer({
 			}
 
 			if (isPaused(served.get(name).state)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
+			if (plan.apiEdit) return handleApiEdit(name, itemId, item, route, plan, entry, key, body);
 
 			// The server never merges
 			if (plan.steps.some((s) => s.action === "merge" || !Object.hasOwn(ACTIONS, s.action))) {
@@ -1430,6 +1452,72 @@ export async function startBoardServer({
 		}
 		schedulePush(name, "items");
 		return [200, outcome];
+	}
+
+	/**
+	 * Runs the API edit of a `take_over` or `revise` route: commits the route's text edits to the PR's head branch
+	 * through the GitHub API, comments on the PR and queues a full review of the new head.
+	 * Call it inside the item's action lock, after the draft, repeat and pause checks.
+	 */
+	async function handleApiEdit(name, itemId, item, route, plan, entry, key, body) {
+		const { number, repo } = item;
+		// "Post anyway" never passes a moved head because the edits were written for the reviewed one
+		const fresh = await checkFresh({ instance: name, action: "comment", params: {}, kind: "pr", number, item, force: body.force === true, headBound: true });
+		if (fresh.state) {
+			liveStates.set(`${name}/${itemId}`, { state: fresh.state, reason: fresh.stateReason ?? null });
+			schedulePush(name, "items");
+		}
+		if (!fresh.ok) {
+			refusals.set(key, { reason: fresh.reason, forceable: fresh.forceable });
+			schedulePush(name, "items");
+			return [200, { ok: false, result: fresh.reason, stale: true, forceable: fresh.forceable }];
+		}
+
+		logRouteDecisions(name, itemId, item, route, plan.text, body.input, false);
+		const outcome = await runApiEdit({ instance: name, repo, number, reviewedSha: item.reviewedSha, params: plan.params, text: plan.text, dryRun });
+		const committed = outcome.ok && !dryRun;
+		const at = new Date().toISOString();
+		const result = !outcome.ok ? outcome.result : dryRun ? JSON.stringify({ dryRun: true, invocations: outcome.invocations }) : outcome.url;
+		await logClick(name, itemId, {
+			...entry,
+			action: plan.action,
+			params: plan.params,
+			text: plan.text,
+			status: outcome.ok ? "done" : "failed",
+			via: "server",
+			finishedAt: at,
+			result,
+			...(committed && { resultParts: { commits: [outcome.url], threads: [] }, ...(outcome.commentUrl && { commentUrl: outcome.commentUrl }) }),
+		});
+		if (!outcome.ok) {
+			schedulePush(name, "items");
+			return [200, { ok: false, result, ...(outcome.paused && { paused: true }) }];
+		}
+		doneKeys.add(key);
+		refusals.delete(key);
+		if (committed) {
+			const file = itemFile(name, itemId);
+			await withLock(docLocks, file, async () => {
+				const cur = await readJson(file);
+				if (!cur) return;
+				const links = [...(Array.isArray(cur.links) ? cur.links : []), { label: "Our commit", url: outcome.url }];
+				await writeAtomic(file, { ...cur, pushed: { action: plan.action, sha: outcome.sha, at }, ...(plan.action === "take_over" && { takenOver: true }), links });
+			});
+			// Queue the review of the new head now because the card that decides the PR comes from it
+			await logClick(name, itemId, {
+				action: "full_review",
+				params: { repo, number, by: "api_edit", pushed: { action: plan.action, sha: outcome.sha } },
+				text: `Gary committed a text edit to this PR through the API. Review the new head ${outcome.sha.slice(0, 7)}.`,
+				status: "queued",
+				via: "queue",
+				createdAt: at,
+				finishedAt: null,
+				result: "",
+			});
+		}
+		await setHandled(name, itemId, route, outcome.commentUrl ? "commented" : null);
+		schedulePush(name, "items");
+		return [200, { ok: true, result: dryRun ? { dryRun: true, invocations: outcome.invocations } : outcome.url, ...(outcome.warning && { warning: outcome.warning }) }];
 	}
 
 	/** Marks the item as handled by the maintainer through `route`. The routine and the refresh read it. */

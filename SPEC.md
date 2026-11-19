@@ -35,6 +35,7 @@ Gary has three layers, one place for each kind of change.
     execute-action.mjs   gary action
     watch-queue.mjs      gary watch-queue
     auto-review.mjs      gary auto-review
+    api-edit.mjs         gary api-edit
     setup.mjs            gary setup
     migrate.mjs          gary migrate
     serve.mjs            gary serve
@@ -69,7 +70,8 @@ Gary has three layers, one place for each kind of change.
 <profile>/               one directory per project, named by `profile` in config.json. A team can share it
   profile.json           facts the code needs
   rules/                 classification.md, voice.md, review.md, issues.md
-  templates/             canned texts, like request-logs.md and reopen-elsewhere.md, and the fixed texts of the automatic review
+  templates/             canned texts, like request-logs.md and reopen-elsewhere.md, the fixed texts of the automatic review
+                         and api-edit.md, the comment after an API edit
 ```
 
 The core contains no repo name, no account name and no absolute path. It works as a Claude Code plugin and from a plain git clone. In a plugin install Claude Code puts `bin/` on the Bash PATH and starts the MCP server from `.mcp.json`. For a clone, `gary setup` links the skills into `~/.claude/skills`, links the launcher into `~/.local/bin` and registers the MCP server with `claude mcp add --scope user gary`.
@@ -174,6 +176,7 @@ Two older layouts are moved by commands, never silently:
 - `gary fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer`: record a fix PR Gary opened in `<state>/fixes.json`, `{ <itemId>: [{ number, url, branch, run, startedBy, at }] }`. The autofix skill calls it right after `gh pr create`.
 - `gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run]` and `gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--dry-run]`: start and end the review rounds of a fix PR Gary opened, see "Fix review rounds". Both refuse a PR that is not in `fixes.json`, and both exit 4 and write nothing while the instance is paused. `--dry-run` prints the GitHub writes and the docs it would write.
 - `gary auto-review check|post|accept|reply|rerequest|list`: the one automatic first review on a contributor PR and its format offer, see "Automatic first review". Exit 3 means a rule refused, exit 4 that the instance is paused.
+- `gary api-edit --pr <n> [--route <id>]` and `gary api-edit --pr <n> --sha <head sha> --file <route.json>`: check the API edit of a `take_over` or `revise` route against GitHub and print what the click would commit, see "API edit". The first form reads the route from the stored item, the second a draft route `{ params, text }` before it is stored. It prints `{ ok, dryRun, message, files, diff, invocations }` or the refusal as `{ ok: false, result }`, and exits 1 on a refusal and 4 while paused. It has no mode that commits: only the click on the board does.
 - `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
 - `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
 - `gary proposals [--json]`: list every rule proposal with its status and dismissal reason.
@@ -195,7 +198,7 @@ Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance.
 Rules:
 
 - Without a bot, every route that would run as the bot becomes prefill for the maintainer where a prefill exists: reply, request_logs, reopen, a follow-up issue, a review body, the close of a move. Routes without a prefill (inline review comments, transfer, chores) are offered only in `own` mode, and the card shows his avatar.
-- Agent routes that push (`address_review`, `take_over`, `revise`, `drive`, `format`, a fix) need the `bot` or `own` mode. Otherwise the routine does not offer them and the server refuses them.
+- Agent routes that push (`address_review`, `take_over`, `revise`, `drive`, `format`, a fix) need the `bot` or `own` mode. Otherwise the routine does not offer them and the server refuses them. The same holds for the API edit, which the server commits itself.
 - `request_review` with `reviewer: "copilot"` runs under the maintainer's login in every mode, after the check that the login is `me`. The helper in `scripts/lib/gh.mjs` sends only that one mutation.
 - With `escalateAs: "me"`, a click on the escalate button of a `move` to `issue` route posts the profile's `botCommands.escalate` on the discussion under the maintainer's login, in every mode, after the same login check. See "Escalate". With a bot configured, these two helpers are the only code that reaches his login.
 - No text the bot posts may contain a command from `botCommands`. The escalate button is the only place a command is posted, and it posts as the maintainer.
@@ -276,8 +279,8 @@ Rules:
 | `review` | `bot`, `me` (in every account mode, always prefill of the body, no inline comments) | `event`: `approve`, `request_changes`, `comment`. `comments`: `[{ id, path, line, startLine, text, diffHunk, original, suggestion }]`. `diffHunk` holds the at most 12 diff lines the comment refers to, starting with its `@@` header, shown on the card and never sent to GitHub. A comment that proposes a change carries `suggestion`, the replacement text without a fence, and `original`, the exact text of lines `startLine`..`line` (or `line` alone) of the file at `reviewedSha`, joined with newlines. The server composes the GitHub body from `text` and `suggestion`. `line` is on the right side of a diff hunk at `reviewedSha`. `startLine` is optional, for a range | submit one PR review with `text` as the body and the checked `comments` inline |
 | `address_review` | `agent` | | offered only where `drive` is: on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true`. These are the PRs we control. Pushing our commits to any other contributor PR is always a take-over. Also offered only when every open thread has a verdict, and when the bot cannot push to the branch only if no thread needs a fix. The agent fixes or dismisses each open review thread per the maintainer's decisions, replies in each thread, resolves it and pushes to the PR branch |
 | `follow_up` | `agent`, `bot`, `me` | `title` for an issue | `agent`: queued as `start_fix` with the route's `text` as instructions and `params.finding`. `bot`: file an issue with `title` and `text`, then link it in the thread. `me`: open GitHub's new-issue form with `title` and `text` filled in |
-| `take_over` | `agent` | `mode`: `push` (default), `replace` | `push`: the agent finishes the PR in the contributor's PR with our commits, pushed as the bot. `replace`: it opens a replacement PR. `replace` is the exception and needs a `callout` that says why pushing is not possible. Only for contributor PRs that are not taken over (`takenOver` is not true). On every PR where `drive` is allowed, `take_over` is invalid: the validator rejects it and the server refuses the click, and changes there go through `revise`. On a contributor PR that is not taken over, open review threads are handled by a `take_over` with mode `push`, with the same per-thread decisions as `address_review`. After a take-over the item carries `takenOver: true`, and from then on `address_review`, `drive` and `revise` are allowed and `take_over` is not |
-| `revise` | `agent` | | the card and its button are called "Change". The agent changes a PR we already control by the instructions in `text` and pushes to the PR branch, as the bot or, with `allowOwnTokenPushes`, under the maintainer's login. `text` is required: it holds the agent's proposal, and the maintainer can edit it on the card. No params and no `mode`. It never opens a replacement PR and never sets `takenOver`. Offered exactly where `drive` is: on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true`. It carries no thread decisions: open review threads stay with `address_review` and `drive`. Like a take-over it never merges, approves, closes or marks the PR ready, and it may set the PR title |
+| `take_over` | `agent`, or `bot` for an API edit | `mode`: `push` (default), `replace`. For an API edit `via: "api"`, `edits` and `message`, see "API edit" | `push`: the agent finishes the PR in the contributor's PR with our commits, pushed as the bot. `replace`: it opens a replacement PR. `replace` is the exception and needs a `callout` that says why pushing is not possible. Only for contributor PRs that are not taken over (`takenOver` is not true). On every PR where `drive` is allowed, `take_over` is invalid: the validator rejects it and the server refuses the click, and changes there go through `revise`. On a contributor PR that is not taken over, open review threads are handled by a `take_over` with mode `push`, with the same per-thread decisions as `address_review`. After a take-over the item carries `takenOver: true`, and from then on `address_review`, `drive` and `revise` are allowed and `take_over` is not |
+| `revise` | `agent`, or `bot` for an API edit | none. For an API edit `via: "api"`, `edits` and `message`, see "API edit" | the card and its button are called "Change". The agent changes a PR we already control by the instructions in `text` and pushes to the PR branch, as the bot or, with `allowOwnTokenPushes`, under the maintainer's login. `text` is required: it holds the agent's proposal, and the maintainer can edit it on the card. No params and no `mode`. It never opens a replacement PR and never sets `takenOver`. Offered exactly where `drive` is: on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true`. It carries no thread decisions: open review threads stay with `address_review` and `drive`. Like a take-over it never merges, approves, closes or marks the PR ready, and it may set the PR title |
 | `drive` | `agent` | `maxRounds`: 1 to 3, default 3 | the agent drives the PR on its own: address the open review comments by its own verdicts, push, request a Copilot review, wait for it, repeat. It stops when no valid comment is left, after `maxRounds`, or when it is stuck. Offered only on PRs by a maintainer, a bot or Copilot, and on contributor PRs with `takenOver: true` |
 | `format` | `agent` | | no text, no params, no input. Applies the project's autofix to the PR branch and pushes the result, as the bot or, with `allowOwnTokenPushes`, under the maintainer's login. Offered on any open PR whose `autofix` has `changes: true`, also on a contributor PR that is not taken over: running the project's own formatter is not a take-over, so neither `takenOver` nor the push rule of `address_review` and `drive` applies, and it never sets `takenOver`. Without a bot and without `allowOwnTokenPushes` it is unavailable |
 | `move` | per button | `to`: a name from `relatedRepos`, `discussion`, or `issue` | Repo name, on an issue: two buttons, both bot. "Transfer" moves the issue. "Close, ask to reopen there" posts `text` (template `reopen-elsewhere`) and closes as not planned, for issues that lack the info the other repo needs. `discussion`, on an issue: `me`, opens the issue, he converts it there. GitHub has no API for it and it needs no reply. `issue`, on a discussion: `me`, copies `botCommands.escalate` and opens the discussion. With `escalateAs: "me"` a primary button posts the command under his login, see "Escalate". Optional `issueKind`: `bug` or `enhancement`. Without that command there is no such route |
@@ -290,6 +293,7 @@ The click sends `{ itemId, routeId, text, draftHash, force, input }` to `/api/ac
 - `address_review`: `{ decisions: [{ threadId, decision: "fix" | "dismiss", note }] }`. The card lists the item's `threads`. Each switch starts from the agent's verdict: only `valid` starts on `fix`, `optional`, `wrong` and `unjudged` start on `dismiss`. `note` is optional per thread. `text` is an optional note for the whole run.
 - `take_over`: `{ decisions }`, the same as for `address_review` and validated the same way. Optional: a take-over without open threads sends none.
 - `revise`: no input. The click's `text` holds the instructions, and the server refuses a click whose `text` is empty.
+- `take_over` and `revise` as an API edit: no input and no thread decisions. The click's `text` is the optional note for the contributor.
 - `follow_up`: `{ title }` when the maintainer edited it. With `as: "agent"`: `{ askReporter: true | false }` from the card's switch "Ask the reporter to test". It is off by default. The route may preset it with `params.askReporter: true` and a `params.askReporterWhy` of at most 200 characters, shown next to the switch. The server stores the boolean as `params.askReporter` on the `start_fix` action doc, false when the input has none. Both params are valid on this route only.
 - `drive`: `{ maxRounds }`, 1 to 3, when the maintainer changed it.
 - `move` to a repo: `{ mode: "transfer" | "close" }`. Required. `close` needs a non-empty `text`. The two buttons share one route, so after one ran the other is refused.
@@ -338,6 +342,70 @@ The card of a used `as: "me"` route says so in words where a bot card says "Done
 
 `dismiss_route` removes a suggested route the maintainer does not want: `{ itemId, routeId, text }` to `/api/action`, with `text` an optional reason of at most 500 characters. The server removes the route from the item and appends `{ type, title, reason, at }` to the item's `dismissedRoutes`. When the removed route was the recommended one and routes remain, the first remaining route becomes recommended and `hint` becomes its title. When no route remains, the server also writes a queued `reanalyze` action doc whose `text` names the dismissed route and the reason, so the agent proposes something else. The dismissal is logged as a done action doc with `via: "board"` and in the decision log.
 
+### API edit
+
+A PR that changes a file matching the profile's `sensitivePaths` gets no agent in a checkout of its branch. Such files are agent instruction files, workflows, lint configs and manifests. An agent in that checkout would load instructions or run code the contributor wrote. So `address_review`, `drive`, `format` and the checkout forms of `take_over` and `revise` are refused there: by the validator, and by the server at the click when the item file still offers one.
+
+The API edit is the one push such a PR can get. It is a `take_over` (contributor PR that allows edits by maintainers) or a `revise` (PR we control) with `as: "bot"` and these params:
+
+```jsonc
+{
+  "id": "r1", "type": "take_over", "as": "bot", "title": "Take over: fix the Discord link", "recommended": true,
+  "params": {
+    "via": "api",
+    "message": "docs: fix the Discord invite link",   // the commit message, one conventional commit line
+    "edits": [                                         // the exact change, written out at review time
+      { "path": "CONTRIBUTING.md", "original": "Join us on Discord: https://discord.gg/wrong", "replacement": "Join us on Discord: https://discord.gg/right" }
+    ]
+  },
+  "text": "Is the old server gone for good?"          // optional: a note or question for the contributor, added to the comment
+}
+```
+
+`original` is the exact text of whole lines of the file at `reviewedSha`, like the `original` of a review comment. `replacement` is their full replacement. Neither ends with a line break. The route exists only when every change we would make is such a replacement. It is offered only on PRs with sensitive files: every other PR keeps the checkout forms, and the validator refuses the API form there.
+
+Limits. The validator checks the ones that need no GitHub read. The code that commits checks all of them again:
+
+- At most 5 edits in at most 3 files and at most 40 changed lines in total. An edit counts the larger of its replaced and its new line count. `original` and `replacement` have at most 4000 characters each. The numbers are `API_EDIT_LIMITS` in `scripts/lib/api-edit.mjs`.
+- No path matches `sensitivePaths`, compared with and without regard to case. A path under `.github/` or `.git/` is refused whatever the profile lists. So is an absolute path, a path with `..`, `.`, an empty segment, a backslash or a control character.
+- Every path is an existing regular file at the PR head, mode `100644`. A missing path, a symlink, a directory, a submodule, an executable file, a binary file and a file too large for the API to return as text are refused. So the commit creates, deletes and renames nothing and changes no mode.
+- `original` occurs exactly once in the file at the head, as whole lines. Two edits of one file do not overlap. `replacement` is not empty and differs from `original`.
+- No `replacement`, path, `message` or note contains a `botCommands` string.
+- `message` matches `<type>(<scope>): <text>` with a type of `fix`, `docs`, `chore`, `feat`, `refactor`, `test`, `style` or `perf`, has at most 72 characters and one line, and holds no `@`, no marker that skips CI like `[skip ci]` and no closing keyword like `closes #12`.
+- `reviewedSha` is a full 40-character SHA.
+
+The click needs a second confirm and runs on the server, with no agent. The server first reads the thread like for every bot route that posts. A person's comment or review after `reviewedAt` is refused with "Post anyway". A head other than `reviewedSha` is refused. No force passes it. Then `runApiEdit` in `scripts/lib/api-edit.mjs`:
+
+1. checks the pause, the account mode and all limits above,
+2. reads the PR and refuses one that is not open, whose head differs from `reviewedSha`, whose head repository is gone, a fork PR without `maintainerCanModify`, and a PR of the repo whose head branch is the base repository's default branch or the PR's own base branch. The target is always the PR's `headRefName` in its `headRepository`, both read from the PR,
+3. reads each file as text at that SHA with one GraphQL query (`Commit.file`) and compares the git blob hash of the text with the blob's id. A match proves that the text is the file byte for byte,
+4. applies the replacements in memory,
+5. sends one `createCommitOnBranch` mutation with `expectedHeadOid: reviewedSha`, the message and the full new content of each edited file as `additions`, and no `deletions`. GitHub creates the commit and moves the branch in one step. It refuses when the branch no longer points at that SHA. The mutation cannot force-push,
+6. posts one comment on the PR: the profile's `templates/api-edit.md` or the default "I pushed a small text fix to this PR: {commit}", with `{commit}` and `{files}` filled in, then the route's `text`.
+
+Nothing is checked out, no code from the PR runs and no formatter runs. Commit and comment go out as the bot, or under the maintainer's login in `own` mode. CI is not waited for.
+
+`createCommitOnBranch` was chosen over the git data API (blob, tree, commit, ref update). It is one request where that needs four. Its `expectedHeadOid` is exactly the check "fail when the branch moved", built in. A refused commit leaves no objects behind. It takes only additions and deletions of files. It cannot move another ref or write a tree entry with a mode. One thing is not yet tried against GitHub: the mutation on a fork's branch with the bot's token, where the push right comes from `maintainerCanModify`.
+
+After the commit the server:
+
+- writes the action doc with `action: "take_over"` or `"revise"`, `via: "server"`, `status: "done"`, the commit URL as `result`, `resultParts: { commits: [url], threads: [] }` and `commentUrl`,
+- sets `pushed: { action, sha, at }` on the item, adds the link "Our commit", and sets `takenOver: true` for a `take_over`. `reviewedSha` stays the old head. Every route that is bound to the reviewed code is therefore refused until the review ran,
+- queues a `full_review` with `params: { repo, number, by: "api_edit", pushed: { action, sha } }`. The card that decides the PR on the new head then appears without waiting for the hourly run,
+- marks the item handled.
+
+A failed commit writes the doc with `status: "failed"` and changes nothing else. The button works again. A comment that fails after the commit keeps the click done and answers with a `warning`. With `--dry-run` the reads and checks run, the answer holds the two invocations, and neither the item nor the queue changes.
+
+What makes this safe on a PR with sensitive files:
+
+- No process ever has the PR's tree on disk. The danger of such a PR is an agent or a tool that loads its files. The API edit reads at most 3 files as text through the API and never the sensitive ones.
+- The edits are untrusted. An agent that read the PR's content wrote them. That content may try to steer it. So the guard is the code: the path rules, the size caps and the exact-once match run in the validator and again right before the commit, on the files as they are at the head. The agent's judgement is no guard.
+- The maintainer sees the exact diff on the card and confirms it. Nothing here runs without his click. No command line or MCP tool commits an API edit: `gary api-edit` only checks.
+- The commit can only change text inside files that already exist outside the sensitive paths. It cannot touch a workflow, an agent instruction file, a manifest or a symlink. It cannot add a file an agent or a build would pick up.
+- The branch is the PR's own head branch and never the default branch. It moves only from the reviewed commit.
+
+What it does not do: it does not make the PR's sensitive changes safe. Those still need the maintainer's own review before a merge. After the API edit no agent may check out the branch either. A PR can also add a symlink that points to a file the API edit changes. The edit then shows up under that name too, with the text he confirmed.
+
 ## Board page
 
 One page serves every instance. `GET /api/state` returns `{ board, items, proposals }`:
@@ -364,7 +432,9 @@ A PR whose served `autoReview` has `waiting: true` is in no plan group and adds 
 
 A discussion shows its GitHub category, like "Feature Requests", as a quiet outlined chip: after the title on its list row, and in the dialog's meta row before the labels. The board's search matches it.
 
-A PR with a served `sensitive` shows a warning block in the dialog above the verdict and the routes, in the callout colors: "Touches sensitive files: `.github/copilot-instructions.md`, `package.json` and 2 more. Gary does not push to this PR. It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets." It appears on contributor PRs and on PRs we control alike, because the push is refused on both. The meta row carries a warning badge "Sensitive files", and the list row a warning icon whose tooltip names the files.
+A PR with a served `sensitive` shows a warning block in the dialog above the verdict and the routes, in the callout colors: "Touches sensitive files: `.github/copilot-instructions.md`, `package.json` and 2 more. Gary does not push to this PR. It gets no take-over, no change and no format run. These files can change what agents do or run code with repo secrets." It appears on contributor PRs and on PRs we control alike, because the push is refused on both. The meta row carries a warning badge "Sensitive files", and the list row a warning icon whose tooltip names the files. When the item has an API edit route, the second and third sentence are "Gary only commits the text edits shown below, outside these files. It checks out nothing and runs nothing from this PR.", and the tooltip changes the same way.
+
+The card of an API edit shows each edit as a diff under its path, rendered like the suggestion of a review comment: the `original` lines removed, the `replacement` lines added. Below them it shows the commit message and the line "Commits through the GitHub API, without checking out the branch". Its text field is "Note for the contributor, added to the comment about the commit (optional)". Its button is "Commit the text edit", or "Commit the text edits" for more than one, with the bot's avatar, and a second click confirms: "Confirm: commit to the contributor's PR as widgets-bot", or "commit to the PR" on a change. The card has no thread switches. A done card says "Done · view on GitHub" with the commit.
 
 ## Validation
 
@@ -376,6 +446,7 @@ A PR with a served `sensitive` shows a warning block in the dialog above the ver
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
 - A `review` route with a preset `event: "comment"` is a warning, except on a PR by a bot: a review with something for the contributor is a change request.
 - `address_review` only when every thread has an id and a verdict, and only where `drive` would be accepted. `drive`, `take_over` and `revise` only where the server would accept them: `take_over` only on a contributor PR that is not taken over, `revise` only where `drive` is allowed, with a non-empty `text` and no params.
+- On a PR whose snapshot entry lists `sensitiveFiles`: no `address_review`, `drive` or `format`, and `take_over` and `revise` only as an API edit. On a PR whose entry lists none, no API edit. Without an entry neither is checked. An API edit passes the limits in "API edit" that need no GitHub read, has `as: "bot"`, and needs a 40-character `reviewedSha`. A `revise` as an API edit may have an empty `text`.
 - `pushed` is `{ action, sha, at }` on a PR. While `pushed.sha` equals `reviewedSha`, the agent's push made the current head, and the item needs at least one route that decides the PR: `merge`, `review`, `revise`, `address_review` or `close`. A `reply` that reports the push is not one. This holds while CI still runs on the new head: the route then carries a callout that says so.
 - An item with `blocked` has exactly one route, of type `open`. An `open` route has no text and no params, and is allowed without `blocked` too.
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. A `move` to `issue` needs a discussion that the refresh did not find closed, the profile's `botCommands.escalate`, and an `issueKind` of `bug` or `enhancement` when it has one. `category` is a non-empty string and only on a discussion. Chores name a chore action.
@@ -446,8 +517,8 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
     { "severity": "major", "text": "…", "ref": "…", "certain": true, "evidence": "The value 200 passes the range check and the device rejects it." }   // certain and evidence are optional. Only such a finding may go out in an automatic review
   ],
   "routes": [ … ],                // see Routes
-  "pushed": { "action": "take_over", "sha": "…", "at": "ISO" },   // PRs: the agent's last push and the head it made. action is take_over, revise, address_review, drive or format
-  "takenOver": false,              // PRs: true after a take_over ran. Allows `drive`, `address_review` and `revise` on a contributor PR
+  "pushed": { "action": "take_over", "sha": "…", "at": "ISO" },   // PRs: our last push and the head it made, by an agent or by an API edit. action is take_over, revise, address_review, drive or format
+  "takenOver": false,              // PRs: true after a take_over ran, also as an API edit. Allows `drive`, `address_review` and `revise` on a contributor PR
   "lastEventUrl": "https://github.com/…/issues/12#issuecomment-123",   // optional, copied from the snapshot's facts.lastEventUrl. The board opens the thread there, at its bottom
   "classifiedBy": "fast",          // optional, the agent's: fast | standard | full, the tier that wrote this item
   "analyzedBy": "fallback",        // optional: a safety filter stopped the full model's triage and a smaller model did it. Only value "fallback"
@@ -607,7 +678,7 @@ All strings that originate on GitHub are untrusted. The page renders them with `
   "params": {},
   "text": "",
   "status": "queued",              // queued | done | failed
-  "via": "server",                 // server for GitHub actions, queue for agent requests
+  "via": "server",                 // server for GitHub actions and API edits, queue for agent requests
   "createdAt": "ISO",
   "finishedAt": null,
   "result": ""                     // URL of the created comment, or the error message
@@ -665,7 +736,7 @@ Agent requests. The server writes them as queued action docs when their route is
 
 | action | effect |
 | --- | --- |
-| `full_review` | run the full review for this item, outside the budget. With `params: { repo, number, by: "auto_review", reRequestedAt }` the PR's author re-requested the automatic review, and the worker ends with the post step of "Automatic first review". After the review rounds of a fix PR it carries `params: { repo, number, by: "fix", fixFor, outcome, ready, rounds, lastPushedSha }` and the reason the rounds ended as `text`. The PR has no board item yet then, so the worker reads repo and number from the params |
+| `full_review` | run the full review for this item, outside the budget. With `params: { repo, number, by: "auto_review", reRequestedAt }` the PR's author re-requested the automatic review, and the worker ends with the post step of "Automatic first review". After the review rounds of a fix PR it carries `params: { repo, number, by: "fix", fixFor, outcome, ready, rounds, lastPushedSha }` and the reason the rounds ended as `text`. The PR has no board item yet then, so the worker reads repo and number from the params. With `params: { repo, number, by: "api_edit", pushed: { action, sha } }` the server committed an API edit, and the review looks at the new head and ends in a route that decides the PR |
 | `reanalyze` | `text` holds an optional maintainer instruction for the agent |
 | `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from. `params.askReporter` is true when he switched on "Ask the reporter to test": only then the PR body ends with one request to the reporter. A fix nobody clicked asks nobody |
 | `address_review` | `params.decisions` as sent by the card. The agent fixes or dismisses each thread and pushes to the PR branch as the bot |

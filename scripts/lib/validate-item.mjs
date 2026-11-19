@@ -1,7 +1,8 @@
 // Checks a board item against the rules of SPEC.md before it is written.
 import { ID_PATTERN } from "./board-store.mjs";
 import { fixBlock } from "./fixes.mjs";
-import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isObject, pushRefusal, reviseRefusal, takeOverRefusal } from "./routes.mjs";
+import { apiEditProblems } from "./api-edit.mjs";
+import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
 const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
@@ -30,9 +31,10 @@ const isString = (v) => typeof v === "string" && v.trim().length > 0;
 /**
  * Returns `{ errors, warnings }` for one item. Each entry is `{ code, message }`.
  * `mode` is the account mode from accountMode(), `profile` the loaded profile.json, `repos` the instance's allowed repos
- * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known.
+ * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known. `sensitive` says whether
+ * the PR's snapshot entry lists sensitive files: true, false, or undefined without an entry.
  */
-export function validateItem(id, item, { mode, profile, repos: repoList, fix = null }) {
+export function validateItem(id, item, { mode, profile, repos: repoList, fix = null, sensitive }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
@@ -184,6 +186,11 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 		// No second fix while one runs or its PR is a draft or open
 		if (route.type === "follow_up" && route.as === "agent" && fixBlock(fix)) err("fix-running", `${where}: ${fixBlock(fix)}`);
 
+		// A PR with sensitive files gets no agent in its checkout
+		if (sensitiveRefusal(route, sensitive)) err("sensitive-push", `${where}: ${sensitiveRefusal(route, sensitive)}`);
+		if (isApiEdit(route)) checkApiEdit(item, route, profile, sensitive, where, err);
+		else if (params.via !== undefined) err("api-edit", `${where}: params.via is only for take_over and revise routes, with the value "api"`);
+
 		switch (route.type) {
 			case "review": {
 				if (!REVIEW_EVENTS.includes(params.event)) err("review-event", `${where}: params.event must be one of ${REVIEW_EVENTS.join(", ")}`);
@@ -235,9 +242,9 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 				break;
 			}
 			case "revise": {
-				const refusal = reviseRefusal(item, route.text);
+				const refusal = reviseRefusal(item, route.text, route);
 				if (refusal) err("revise", `${where}: ${refusal}`);
-				if (Object.keys(params).length) err("revise-route", `${where}: a revise route has no params`);
+				if (Object.keys(params).length && !isApiEdit(route)) err("revise-route", `${where}: a revise route has no params`);
 				break;
 			}
 			case "move":
@@ -269,7 +276,8 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 
 		// Text the bot posts must not trigger a bot command
 		const bot = actors.some((a) => a === "bot" || a === "own");
-		if (bot && POSTING_TYPES.has(route.type) && commands.length) {
+		// The note of an API edit goes into the comment about the commit
+		if (((bot && POSTING_TYPES.has(route.type)) || isApiEdit(route)) && commands.length) {
 			const texts = [route.text, params.title, ...(Array.isArray(params.comments) ? params.comments.map((c) => c?.text) : [])];
 			for (const text of texts.filter((t) => typeof t === "string")) {
 				const hit = commands.find((c) => text.toLowerCase().includes(c));
@@ -279,6 +287,13 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 	});
 
 	return { errors, warnings };
+}
+
+// The server commits the edits of an API edit exactly as the route holds them
+function checkApiEdit(item, route, profile, sensitive, where, err) {
+	if (sensitive === false) err("api-edit-plain-pr", `${where}: this PR changes no sensitive files, so it gets the normal ${route.type} and no API edit`);
+	if (typeof item.reviewedSha !== "string" || !/^[0-9a-f]{40}$/.test(item.reviewedSha)) err("api-edit-sha", `${where}: an API edit needs the item's reviewedSha as a full 40-character SHA`);
+	for (const problem of apiEditProblems(route.params, profile)) err("api-edit", `${where}: ${problem}`);
 }
 
 const SUGGESTION_FENCE = /```suggestion\b/;
