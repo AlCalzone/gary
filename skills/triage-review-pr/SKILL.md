@@ -117,7 +117,7 @@ Pick the section with the classification file. Then pick the routes as `item-doc
 - **Waiting on the contributor after an automatic first review**: the previous item doc and the brief name it. Keep the routes and all findings. The board holds the PR back by itself until the contributor acts. When he pushed or replied since, say in `story` what the automatic review asked for and what changed, and check each of its findings against the new head.
 - **Waiting on the contributor** since the last change request: `deferred` and no routes, so it stays off the board until the contributor acts. Once the wait passes `activeMaxWaitDays`, offer `take_over` when the rules above allow it.
 
-PRs authored by the bot cannot get an approving or change-requesting review from the bot account, because GitHub forbids reviewing your own PR. Their `review` routes use `event: "comment"`. The maintainer approves from his own account. Without his approval such a PR goes to `review`. Once approved with CI passing, it is `easy` with a `merge` route.
+PRs authored by the bot cannot get an approving or change-requesting review from the bot account, because GitHub forbids reviewing your own PR. Their `review` routes use `event: "comment"`. The maintainer approves from his own account. Without his approval such a PR goes to `review`. When nothing is left to change, its recommended route is a `review` with `as: "me"` and `event: "approve"`, titled `Approve: after reading the diff`, with a short `text` and a `why` that says the bot cannot approve its own PR. A `merge` route may follow as the alternative, never as the recommended or only route, because the PR still lacks his approval. Once approved with CI passing, it is `easy` with a `merge` route.
 
 ## 5. Return
 

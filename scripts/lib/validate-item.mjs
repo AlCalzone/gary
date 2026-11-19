@@ -216,6 +216,10 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 				break;
 			}
 			case "merge":
+				// An agent wrote these PRs, and only the maintainer's approval says that a human read the code
+				if (route.recommended === true && (item.fixFor !== undefined || item.authorType === "copilot") && item.reviewDecision !== "approved") {
+					err("merge-unapproved", `${where}: this PR was written by an agent and is not approved. Recommend a "review" route with event "approve" and as "me", and offer the merge as the alternative`);
+				}
 				if (hasValidThread) warn("merge-valid-thread", `${where}: merges while a thread is judged valid`);
 				break;
 			case "address_review":
