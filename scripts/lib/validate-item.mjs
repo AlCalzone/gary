@@ -56,7 +56,9 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 	for (const key of ["title", "url", "author", "state"]) if (!isString(item[key])) err(`missing-${key}`, `${key} is required`);
 	if (!AUTHOR_TYPES.includes(item.authorType)) err("authorType", `authorType must be one of ${AUTHOR_TYPES.join(", ")}`);
 	if (!SECTIONS.includes(item.section)) err("section", `section must be one of ${SECTIONS.join(", ")}`);
-	if (!Number.isInteger(item.priority) || item.priority < 0) err("priority", "priority must be a whole number");
+	// The routine ranks only items with routes, so an item without routes may have no priority
+	const ranked = Array.isArray(item.routes) && item.routes.length > 0;
+	if ((ranked || item.priority != null) && (!Number.isInteger(item.priority) || item.priority < 0)) err("priority", "priority must be a whole number");
 	if (item.effortMinutes === undefined) err("effortMinutes", `effortMinutes is required: the minutes the maintainer needs, one of ${EFFORTS.join(", ")}`);
 	else if (!EFFORTS.includes(item.effortMinutes)) err("effortMinutes", `effortMinutes must be one of ${EFFORTS.join(", ")}, not ${JSON.stringify(item.effortMinutes)}`);
 	if (!DEPTHS.includes(item.reviewDepth)) err("reviewDepth", `reviewDepth must be one of ${DEPTHS.join(", ")}`);

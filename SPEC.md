@@ -514,7 +514,7 @@ The card of an API edit shows each edit as a diff under its path, rendered like 
 
 `gary put` and `gary validate` check an item against these rules. A broken rule refuses the write and lists every problem.
 
-- The required fields are present and every enum holds one of its values: `kind`, `number`, `title`, `url`, `author`, `authorType`, `section`, `priority`, `effortMinutes`, `reviewDepth`, `state`, and where present `ci`, `mergeable`, `reviewDecision`, `classifiedBy`, thread verdicts and finding severities. `repo` is present and one of the instance's repos. The id matches the opaque id pattern.
+- The required fields are present and every enum holds one of its values: `kind`, `number`, `title`, `url`, `author`, `authorType`, `section`, `priority`, `effortMinutes`, `reviewDepth`, `state`, and where present `ci`, `mergeable`, `reviewDecision`, `classifiedBy`, thread verdicts and finding severities. `repo` is present and one of the instance's repos. The id matches the opaque id pattern. An item without routes needs no `priority`, because the routine ranks only items with routes.
 - 0 to 4 routes with the ids `r1` to `r4`, each id once. With routes, exactly one is `recommended`, and `hint` equals its title and has at most 60 characters. An item without routes needs no hint.
 - No routes while a thread is `unjudged`.
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
