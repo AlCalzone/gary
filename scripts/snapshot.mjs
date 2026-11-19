@@ -380,6 +380,8 @@ function baselineEntry(item) {
 		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
 		// The validator and the board server decide from these which routes may push to the PR
 		...(item.sensitiveFiles && { sensitiveFiles: item.sensitiveFiles, ...(item.facts?.sensitiveOurs && { sensitiveOurs: true }) }),
+		// The board shows a discussion's category also on items written before the routine copied it
+		...(item.kind === "discussion" && typeof item.category === "string" && { category: item.category }),
 		// The board reads these to tell whether a PR with an automatic review still waits for its contributor
 		...(item.autoReview && { autoReview: item.autoReview }),
 		...(item.closingPrs && { closingPrs: item.closingPrs }),
