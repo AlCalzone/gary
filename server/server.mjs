@@ -22,7 +22,7 @@ import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
-import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
+import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, commentProse, driveRefusal, editedCommentBody, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
 
 const PAGE_FILE = join(ROOT, "board", "board.html");
 const MAX_BODY = 256 * 1024;
@@ -97,20 +97,33 @@ export function validateInput(route, item, input) {
 	const params = isObject(route.params) ? route.params : {};
 
 	if (route.type === "review") {
-		checkKeys(input, ["commentIds", "event"], "input");
+		checkKeys(input, ["commentIds", "commentTexts", "event"], "input");
 		if (input.event !== undefined && !Object.hasOwn(REVIEW_EVENTS, input.event)) throw new Refusal(`input.event must be one of ${Object.keys(REVIEW_EVENTS).join(", ")}.`);
 		const event = input.event === undefined ? {} : { event: input.event };
 		const comments = Array.isArray(params.comments) ? params.comments : [];
 		const known = new Set(comments.map((c) => c?.id).filter((id) => typeof id === "string"));
-		if (input.commentIds === undefined) return { commentIds: [...known], ...event };
-		if (!Array.isArray(input.commentIds)) throw new Refusal("input.commentIds must be an array.");
-		const ids = new Set();
-		for (const id of input.commentIds) {
-			if (typeof id !== "string" || !known.has(id)) throw new Refusal(`input.commentIds names an unknown comment.`);
-			if (ids.has(id)) throw new Refusal("input.commentIds lists a comment twice.");
-			ids.add(id);
+		let ids = known;
+		if (input.commentIds !== undefined) {
+			if (!Array.isArray(input.commentIds)) throw new Refusal("input.commentIds must be an array.");
+			ids = new Set();
+			for (const id of input.commentIds) {
+				if (typeof id !== "string" || !known.has(id)) throw new Refusal(`input.commentIds names an unknown comment.`);
+				if (ids.has(id)) throw new Refusal("input.commentIds lists a comment twice.");
+				ids.add(id);
+			}
 		}
-		return { commentIds: [...ids], ...event };
+		const texts = input.commentTexts ?? {};
+		if (!isObject(texts)) throw new Refusal("input.commentTexts must map comment ids to texts.");
+		const commentTexts = {};
+		for (const [id, words] of Object.entries(texts)) {
+			if (!known.has(id)) throw new Refusal("input.commentTexts names an unknown comment.");
+			if (typeof words !== "string" || !words.trim()) throw new Refusal("An edited comment needs a text.");
+			if (words.length > MAX_TEXT) throw new Refusal(`An edited comment has at most ${MAX_TEXT} characters.`);
+			if (/^\s*`{3,}suggestion/m.test(words)) throw new Refusal("An edited comment cannot hold a suggestion block. The comment keeps the one it has.");
+			// The edit of an unchecked comment is dropped, and so is one that changes nothing
+			if (ids.has(id) && words.trim() !== commentProse(comments.find((c) => c?.id === id))) commentTexts[id] = words.trim();
+		}
+		return { commentIds: [...ids], ...(Object.keys(commentTexts).length && { commentTexts }), ...event };
 	}
 
 	// The card of an API edit has no switches: the route's edits are all it commits
@@ -305,7 +318,12 @@ export function planRoute(route, item, input, text, mode = "bot") {
 		case "review": {
 			const comments = (Array.isArray(params.comments) ? params.comments : [])
 				.filter((c) => chosen.commentIds.includes(c.id))
-				.map((c) => ({ path: c.path, line: c.line, ...(c.startLine !== undefined && { startLine: c.startLine }), text: commentBody(c) }));
+				.map((c) => ({
+					path: c.path,
+					line: c.line,
+					...(c.startLine !== undefined && { startLine: c.startLine }),
+					text: chosen.commentTexts?.[c.id] === undefined ? commentBody(c) : editedCommentBody(c, chosen.commentTexts[c.id]),
+				}));
 			const event = chosen.event ?? params.event;
 			const reviewParams = { event, ...(comments.length && { comments }) };
 			if (!Object.hasOwn(REVIEW_EVENTS, event ?? "")) throw new Refusal("The review route has no valid event.");
@@ -1715,6 +1733,9 @@ export async function startBoardServer({
 		if (route.type === "review" && Array.isArray(chosen.commentIds)) {
 			for (const c of Array.isArray(route.params?.comments) ? route.params.comments : []) {
 				if (!chosen.commentIds.includes(c?.id)) decide(name, "unchecked_comment", itemId, item, { comment: { path: c?.path ?? "", text: cut(c?.text ?? "") } });
+				else if (chosen.commentTexts?.[c.id] !== undefined) {
+					decide(name, "edited_comment", itemId, item, { route: brief(route), comment: { path: c.path ?? "", line: c.line ?? null }, draft: cut(commentProse(c)), final: cut(chosen.commentTexts[c.id]) });
+				}
 			}
 		}
 	}

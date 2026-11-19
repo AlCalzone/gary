@@ -80,7 +80,7 @@ Gary's reviews never list formatting problems. When the project's formatter or l
 
 A reply that asks the reporter for something has a second button that also sets the project's "waiting" label, and the label is set by the next run when you post without it.
 
-On review cards you can uncheck inline comments and switch each open review thread between Fix and Dismiss. Only comments the agent judged valid start on Fix. A review with a finding goes out as "Request changes", a clean PR gets an approval, and a switch on the card lets you pick another type before sending.
+On review cards you can uncheck inline comments, edit their text and switch each open review thread between Fix and Dismiss. A suggested code change stays as the agent wrote it. Only comments the agent judged valid start on Fix. A review with a finding goes out as "Request changes", a clean PR gets an approval, and a switch on the card lets you pick another type before sending.
 
 The card that starts a fix has a switch "Ask the reporter to test", off by default. Without it, a fix PR mentions nobody and asks nobody to confirm.
 

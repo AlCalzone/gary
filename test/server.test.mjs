@@ -281,7 +281,23 @@ await expect("a mapped take_over without text is refused as a revise", "pr-12", 
 await expect("review rejects unknown comment id", "pr-12", "r1", { input: { commentIds: ["c9"] } }, refused(/unknown comment/));
 await expect("review rejects an unknown event", "pr-18", "r1", { input: { event: "dismiss" } }, refused(/input.event must be one of approve, request_changes, comment/));
 await expect("an approval with a checked suggestion is refused", "pr-18", "r1", { input: { event: "approve" } }, refused(/An approval cannot carry suggestions/));
-await expect("a review goes out as a comment when he picks that", "pr-18", "r1", { input: { event: "comment", commentIds: ["c1"] } }, (r) => r.data.ok === true);
+// Edited inline comments
+{
+	const { commentProse, editedCommentBody } = await import("../scripts/lib/routes.mjs");
+	const inside = { text: "Use the constant.\n```suggestion\nconst a = MAX;\n```" };
+	check("a suggestion inside the text is no part of the comment's words", commentProse(inside) === "Use the constant." && commentProse({ text: " Plain. " }) === "Plain." && commentProse({ text: "With field", suggestion: "x" }) === "With field");
+	check("an edit keeps a suggestion that sits inside the text", editedCommentBody(inside, "Please use the constant.") === "Please use the constant.\n\n```suggestion\nconst a = MAX;\n```" && editedCommentBody({ text: "Old" }, "New") === "New");
+}
+await expect("an edited comment must be one of the route", "pr-18", "r1", { input: { commentTexts: { c9: "x" } } }, refused(/commentTexts names an unknown comment/));
+await expect("an edited comment needs a text", "pr-18", "r1", { input: { commentTexts: { c1: "  " } } }, refused(/An edited comment needs a text/));
+await expect("an edited comment must be a string", "pr-18", "r1", { input: { commentTexts: { c1: 5 } } }, refused(/An edited comment needs a text/));
+await expect("commentTexts must be a map", "pr-18", "r1", { input: { commentTexts: ["x"] } }, refused(/must map comment ids to texts/));
+await expect("an edited comment has a length cap", "pr-18", "r1", { input: { commentTexts: { c1: "x".repeat(65537) } } }, refused(/at most 65536 characters/));
+await expect("an edited comment cannot bring its own suggestion", "pr-18", "r1", { input: { commentTexts: { c1: "Use this:\n```suggestion\nevil\n```" } } }, refused(/cannot hold a suggestion block/));
+await expect("an edited comment with a bot command is refused", "pr-18", "r1", { input: { event: "comment", commentTexts: { c2: "Fine. @widgets-bot automerge" } } }, (r) => r.data.ok === false && /bot command/.test(JSON.stringify(r.data)));
+await expect("only a review takes commentTexts", "issue-21", "r9", { input: { commentTexts: { c1: "x" } } }, refused(/unknown field/));
+await expect("an edited comment goes out with its suggestion unchanged", "pr-18", "r1", { input: { event: "comment", commentIds: ["c1"], commentTexts: { c1: " Please check the length here. ", c2: "Dropped with its checkbox" } } }, (r) =>
+	r.data.ok === true && invocations(r).includes("Please check the length here.\\n\\n```suggestion\\nnew\\n```") && !invocations(r).includes("Check the length") && !invocations(r).includes("Dropped with its checkbox") && !invocations(r).includes("Why this value?"));
 await expect("follow_up rejects an askReporter that is no boolean", "issue-21", "r8", { input: { askReporter: "yes" } }, refused(/input.askReporter must be true or false/));
 await expect("only the agent's fix card takes askReporter", "issue-21", "r1", { input: { askReporter: true } }, refused(/unknown field "askReporter"/));
 await expect("review rejects a repeated comment id", "pr-12", "r1", { input: { commentIds: ["c1", "c1"] } }, refused(/twice/));
@@ -452,7 +468,7 @@ const ar = byRoute("pr-12", "r2")[0];
 check("address_review doc is queued with decisions", ar?.status === "queued" && ar.action === "address_review" && ar.params.decisions.length === 2 && ar.params.decisions[0].note === "fix it" && ar.text === "Run note", ar);
 const sf = byRoute("issue-21", "r8")[0];
 check("start_fix doc carries text, finding and the switch he set", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2","askReporter":true}', sf);
-const ev18 = byRoute("pr-18", "r1")[0];
+const ev18 = byRoute("pr-18", "r1").find((a) => a.status === "done");
 check("the review goes out with the event he picked", ev18?.status === "done" && ev18.params.event === "comment" && ev18.params.comments.length === 1, ev18);
 check("a changed review event is logged for learning", readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).some((e) => e.type === "changed_event" && e.itemId === "pr-18" && e.from === "request_changes" && e.to === "comment" && e.route.type === "review"));
 check("drive doc", byRoute("pr-13", "r1")[0]?.params?.maxRounds === 3 && byRoute("pr-12", "r11")[0]?.params?.maxRounds === 2, docs.filter((d) => d.action === "drive"));

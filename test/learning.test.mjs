@@ -125,12 +125,15 @@ try {
 	// Decision log entries from clicks
 	await sleep(100);
 	t.check("a take_over thread override is logged", logOf("thread_override").some((e) => e.itemId === "pr-14" && e.decision === "dismiss" && e.note === "Not needed" && e.thread.verdict === "valid"), log());
-	r = await click("pr-12", "r2", { text: "Edited notes", input: { commentIds: ["c2"] } });
+	r = await click("pr-12", "r2", { text: "Edited notes", input: { commentIds: ["c2"], commentTexts: { c1: "Ignored, it is unchecked", c2: "Rename it to restoreNodes" } } });
 	t.check("a non-recommended review runs", r.data.ok, r);
 	await sleep(100);
 	t.check("chose_alternative is logged", logOf("chose_alternative").some((e) => e.itemId === "pr-12" && e.recommended.type === "reply" && e.chosen.type === "review"), log());
 	t.check("edited_text is logged with draft and final", logOf("edited_text").some((e) => e.itemId === "pr-12" && e.draft === "Notes" && e.final === "Edited notes"), log());
 	t.check("unchecked_comment is logged for the unchecked comment only", logOf("unchecked_comment").length === 1 && logOf("unchecked_comment")[0].comment.path === "src/a.ts", logOf("unchecked_comment"));
+	const editedComments = logOf("edited_comment");
+	t.check("edited_comment is logged for the checked comment with both texts", editedComments.length === 1 && editedComments[0].itemId === "pr-12" && editedComments[0].route.type === "review" && editedComments[0].comment.path === "src/b.ts" && editedComments[0].comment.line === 9
+		&& editedComments[0].draft === "Rename" && editedComments[0].final === "Rename it to restoreNodes", editedComments);
 	t.check("every entry carries the item facts", log().every((e) => e.at && e.item && e.item.kind && Array.isArray(e.item.labels)), log());
 	t.check("entries carry classifiedBy and reviewDepth of the item", log().filter((e) => e.itemId === "pr-12").every((e) => e.item.classifiedBy === "fast" && e.item.reviewDepth === "full") && log().filter((e) => e.itemId === "pr-14").every((e) => e.item.classifiedBy === null && e.item.reviewDepth === "full"), log().map((e) => [e.itemId, e.item]));
 	t.check("every entry names the instance, its kind and the repo", log().every((e) => e.instance === "widgets" && e.instanceKind === "maintainer" && e.repo === "acme/widgets"), log());

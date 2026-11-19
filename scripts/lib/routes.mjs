@@ -168,3 +168,19 @@ export function commentBody(comment) {
 	const block = `${fence}suggestion\n${comment.suggestion}\n${fence}`;
 	return text ? `${text}\n\n${block}` : block;
 }
+
+const SUGGESTION_BLOCK = /(`{3,})suggestion[^\n]*\n[\s\S]*?\n?\1/g;
+
+/** The words of a review comment without the suggestion blocks an older doc keeps inside `text`. */
+export function commentProse(comment) {
+	const text = typeof comment?.text === "string" ? comment.text : "";
+	return (typeof comment?.suggestion === "string" ? text : text.replace(SUGGESTION_BLOCK, "\n")).trim();
+}
+
+/** The body of a review comment with the maintainer's words in place of the agent's. The suggestion stays as it is. */
+export function editedCommentBody(comment, words) {
+	if (typeof comment?.suggestion === "string") return commentBody({ ...comment, text: words });
+	const blocks = (typeof comment?.text === "string" ? comment.text : "").match(SUGGESTION_BLOCK) ?? [];
+	return [words, ...blocks].join("\n\n");
+}
+

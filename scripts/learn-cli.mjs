@@ -11,6 +11,7 @@ function gist(e) {
 		case "chose_alternative": return `${e.chosen?.type} instead of ${e.recommended?.type}`;
 		case "edited_text": return `${e.route?.type}: edited the text`;
 		case "thread_override": return `${e.decision} a thread judged ${e.thread?.verdict}${e.note ? `: ${e.note}` : ""}`;
+		case "edited_comment": return `rewrote a comment on ${e.comment?.path}`;
 		case "unchecked_comment": return `unchecked a comment on ${e.comment?.path}`;
 		case "agent_note": return e.text;
 		case "snoozed": return e.untilActivity ? "hidden until it changes" : `snoozed for ${e.days} days`;

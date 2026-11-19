@@ -93,3 +93,93 @@
     learn.gone.clear(); learn.known.clear(); learn.added.clear();
     window.__reply = () => ({ ok: true, result: { dryRun: true } });
   }
+  // Editing the words of a review's inline comments
+  {
+    const base = "https://github.com/acme/widgets";
+    const common = { author: "someone", authorType: "contributor", section: "review", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full", kind: "pr" };
+    const comments = [
+      { id: "c1", path: "devices/a.json", line: 12, startLine: 10, text: "Metadata comments are for general information about the device.", original: "\"comments\": []", suggestion: "\"comments\": [{}]" },
+      { id: "c2", path: "devices/a.json", line: 30, text: "Why this default?" },
+    ];
+    const review = (extra = {}) => ({ id: "r1", type: "review", as: "bot", actor: "bot", title: "Request changes: two notes", text: "Two notes.", params: { event: "comment", comments }, recommended: true, draftHash: "h1", ...extra });
+    const list = (r = review()) => [
+      ["pr-9951", { ...common, number: 9951, title: "Add a device", url: base + "/pull/9951", routes: [r] }],
+      ["pr-9952", { ...common, number: 9952, title: "Add another device", url: base + "/pull/9952", routes: [review({ as: "me", actor: "me" })] }],
+    ];
+    const lis = () => [...openCard().querySelectorAll(".checklist li")];
+    const editBtn = (i) => [...lis()[i].querySelectorAll("button.c-edit")].find((b) => b.textContent === "Edit");
+    const resetBtn = (i) => [...lis()[i].querySelectorAll("button.c-edit")].find((b) => b.textContent === "Reset");
+    const area = (i) => lis()[i].querySelector("textarea");
+    const type = (i, text) => { area(i).value = text; area(i).dispatchEvent(new Event("input")); };
+    const key = (i, k) => area(i).dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+    const stored = () => localStorage.getItem("gary:widgets:drafts") || "";
+    items(list()); await wait(10);
+    await openAll();
+
+    await openItem("pr-9951");
+    ok("comment edit: each inline comment has an Edit link with a pencil, named for its place", !!editBtn(0)?.querySelector("svg") && editBtn(0).getAttribute("aria-label") === "Edit the comment on devices/a.json:10-12"
+      && editBtn(1).dataset.focusKey === "r:r1:c:c2:edit" && !resetBtn(0) && !lis()[0].querySelector(".c-edited"));
+    editBtn(0).click(); await wait(5);
+    ok("comment edit: Edit turns the text into a focused textarea with the same text", area(0)?.value === "Metadata comments are for general information about the device." && document.activeElement === area(0) && !lis()[0].querySelector(".c-text") && area(0).dataset.focusKey === "r:r1:c:c1:text");
+    ok("comment edit: the suggestion, the place and the checkbox stay as they are", lis()[0].querySelectorAll(".hunk .h-add").length === 1 && lis()[0].querySelector(".c-where").textContent === "devices/a.json:10-12" && lis()[0].querySelector("input[type=checkbox]").checked && !lis()[0].querySelector(".hunk textarea"));
+    type(0, "Please keep the metadata comments general.");
+    [...lis()[0].querySelectorAll("button")].find((b) => b.textContent === "Done").click(); await wait(5);
+    ok("comment edit: Done shows the new text as a paragraph, marked as edited, with Reset", !area(0) && lis()[0].querySelector(".c-text").textContent === "Please keep the metadata comments general." && lis()[0].querySelector(".c-edited")?.textContent === "edited" && !!resetBtn(0) && document.activeElement === editBtn(0));
+    ok("comment edit: the edit is saved like a draft, under the comment and the draft hash", JSON.parse(stored())["pr-9951|r1#c:c1|h1"] === "Please keep the metadata comments general.", stored());
+
+    editBtn(0).click(); await wait(5);
+    type(0, "Typed and thrown away");
+    const stays = !key(0, "Escape"); await wait(5);
+    ok("comment edit: Escape cancels the current edit and keeps the dialog open", stays && dlgR.open && !area(0) && lis()[0].querySelector(".c-text").textContent === "Please keep the metadata comments general." && JSON.parse(stored())["pr-9951|r1#c:c1|h1"] === "Please keep the metadata comments general.");
+
+    editBtn(1).click(); await wait(5);
+    type(1, "Why 5 as the default?");
+    area(1).dispatchEvent(new FocusEvent("blur")); await wait(5);
+    ok("comment edit: leaving the textarea keeps the edit", !area(1) && lis()[1].querySelector(".c-text").textContent === "Why 5 as the default?" && !!lis()[1].querySelector(".c-edited"));
+    editBtn(1).click(); await wait(5);
+    type(1, "  ");
+    area(1).dispatchEvent(new FocusEvent("blur")); await wait(5);
+    ok("comment edit: an emptied comment falls back to the agent's text", lis()[1].querySelector(".c-text").textContent === "Why this default?" && !lis()[1].querySelector(".c-edited") && !("pr-9951|r1#c:c2|h1" in JSON.parse(stored())));
+    editBtn(1).click(); await wait(5);
+    type(1, "Why 5 as the default?");
+    area(1).dispatchEvent(new FocusEvent("blur")); await wait(5);
+
+    // A reload keeps only what the browser stored
+    document.getElementById("d-close").click(); await wait(5);
+    for (const k of [...state.drafts.keys()]) if (k.includes("#c:")) state.drafts.delete(k);
+    await openItem("pr-9951");
+    ok("comment edit: the edits come back after a reload", lis()[0].querySelector(".c-text").textContent === "Please keep the metadata comments general." && lis()[1].querySelector(".c-text").textContent === "Why 5 as the default?" && lis().every((li) => !!li.querySelector(".c-edited")));
+    resetBtn(1).click(); await wait(5);
+    ok("comment edit: Reset restores the agent's text", lis()[1].querySelector(".c-text").textContent === "Why this default?" && !lis()[1].querySelector(".c-edited") && !resetBtn(1) && !("pr-9951|r1#c:c2|h1" in JSON.parse(stored())));
+
+    // Sent input: the edit of a checked comment only
+    editBtn(1).click(); await wait(5);
+    type(1, "Edited but unchecked");
+    area(1).dispatchEvent(new FocusEvent("blur")); await wait(5);
+    lis()[1].querySelector("input[type=checkbox]").click(); await wait(5);
+    let calls = __calls.length;
+    window.__reply = () => ({ ok: true, result: "https://github.com/acme/widgets/pull/9951#pullrequestreview-1" });
+    cardBtn("Comment").click(); await wait(5);
+    cardBtn("Confirm: comment as widgets-bot").click(); await wait(20);
+    const sent = __calls.at(-1);
+    ok("comment edit: the click sends the edited text of the checked comment", __calls.length === calls + 1 && sent.tool === "review" && JSON.stringify(sent.input.commentIds) === '["c1"]' && JSON.stringify(sent.input.commentTexts) === '{"c1":"Please keep the metadata comments general."}', sent);
+    ok("comment edit: a sent review drops its saved edits", !/#c:/.test(stored()), stored());
+    document.getElementById("d-close").click(); await wait(5);
+
+    // A new draft hash drops the edit
+    localStorage.setItem("gary:widgets:drafts", JSON.stringify({ ...JSON.parse(stored() || "{}"), "pr-9951|r1#c:c2|h1": "For the old text" }));
+    items(list(review({ draftHash: "h2" }))); await wait(10);
+    await openItem("pr-9951");
+    ok("comment edit: an edit made for an older draft is dropped", lis()[1].querySelector(".c-text").textContent === "Why this default?" && !lis()[1].querySelector(".c-edited") && !/For the old text/.test(stored()));
+    calls = __calls.length;
+    cardBtn("Comment").click(); await wait(5);
+    cardBtn("Confirm: comment as widgets-bot").click(); await wait(20);
+    ok("comment edit: an unedited review sends no commentTexts", __calls.length === calls + 1 && !("commentTexts" in __calls.at(-1).input), __calls.at(-1));
+    document.getElementById("d-close").click(); await wait(5);
+
+    await openItem("pr-9952");
+    ok("comment edit: a review he posts himself has no Edit link", lis().length === 2 && !openCard().querySelector(".c-edit") && lis()[0].querySelector(".c-text").textContent === "Metadata comments are for general information about the device.");
+    document.getElementById("d-close").click(); await wait(5);
+    window.__reply = () => ({ ok: true, result: { dryRun: true } });
+    items(F); await wait(5);
+  }
