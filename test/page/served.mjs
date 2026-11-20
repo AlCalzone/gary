@@ -726,6 +726,30 @@ try {
 	ok("draft for an outdated hash is dropped", await until(`document.querySelector("#d-routes .card.open textarea")?.value === "A PR is welcome!"`));
 	await closeItem();
 
+	// Answers to findings go through the server, which keeps them on the item
+	writeFileSync(itemFile("issue-40"), JSON.stringify(probe("issue", 40, "https://github.com/acme/widgets/issues/40", {
+		hint: "Reply: ask for the log",
+		findings: [{ id: "f1", severity: "question", text: "Which firmware does the stick run?" }, { severity: "minor", text: "The log ends early." }],
+		routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: ask for the log", text: "Please send the full log.", recommended: true }],
+	})));
+	await sleep(700);
+	await openItem("issue-40");
+	await ev(`document.querySelector("#d-findings .f-reply").click(); const ta = document.querySelector("#d-findings .f-answer textarea"); ta.value = "7.21, see the second comment."; ta.dispatchEvent(new Event("input"));`);
+	ok("answers: the button counts the answer", await until(`document.querySelector("#d-foot .foot-analyze").textContent === "Send 1 answer and analyze again"`));
+	await ev(`document.getElementById("d-close").click();`);
+	await cmd("Page.reload");
+	await sleep(500);
+	await until(`document.querySelectorAll("#board .row").length > 0`);
+	await until(`document.getElementById("conn").dataset.state === "connected"`);
+	await openItem("issue-40");
+	ok("answers: the answer draft survives a reload", await until(`document.querySelector("#d-findings .f-answer textarea")?.value === "7.21, see the second comment."`));
+	await ev(`document.querySelector("#d-foot .foot-analyze").click();`);
+	ok("answers: the server keeps the answer on the item", await fileUntil(() => json(itemFile("issue-40")).findingAnswers?.[0]?.text === "7.21, see the second comment." && json(itemFile("issue-40")).findingAnswers[0].finding === "f1"));
+	ok("answers: one reanalyze is queued with the answer", actionFiles().filter((a) => a.itemId === "issue-40" && a.action === "reanalyze" && a.status === "queued" && a.params?.answers?.[0]?.findingText === "Which firmware does the stick run?").length === 1);
+	ok("answers: the dialog shows You answered once the item comes back", await until(`/^You answered: 7\\.21, see the second comment\\. · /.test(document.querySelector("#d-findings .f-answered")?.textContent ?? "") && document.querySelector("#d-findings .f-answer").hidden`));
+	await closeItem();
+	rmSync(itemFile("issue-40"));
+
 	// Dismiss and snooze
 	await openItem("issue-25");
 	await until(`!!document.querySelector('#d-foot [aria-label="Snooze until new activity"]')`);

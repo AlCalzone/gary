@@ -870,6 +870,17 @@ dialog.detail::backdrop { background: var(--backdrop); }
 .sev.warn { background: var(--warn-soft); color: var(--warn); }
 .sev.faint { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--muted); }
 .fref { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+/* His answer to a finding: a quiet link, a small box under the finding, and what he sent */
+.f-reply { align-self: flex-start; font: 500 12px/1 var(--font-body); padding: 3px 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.f-reply:hover:not(:disabled) { color: var(--fg); }
+.f-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 2px; width: 100%; }
+.f-answer textarea { width: 100%; min-height: 3.6em; }
+.f-answered { font-size: 13px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; white-space: pre-wrap; }
+.f-answered b { font-weight: 600; }
+.earlier-answers { margin-top: 10px; }
+.earlier-answers > summary { cursor: pointer; width: max-content; max-width: 100%; font-size: 12.5px; color: var(--muted); }
+.earlier-answers ul { margin: 8px 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.earlier-answers .e-finding { font-size: 12.5px; color: var(--faint); overflow-wrap: anywhere; }
 .links { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; }
 .links > * { display: inline-flex; align-items: center; gap: 6px; }
 .links .blocked { color: var(--faint); }
@@ -1925,8 +1936,9 @@ function buildThreads(threads) {
     })));
 }
 
-function buildFindings(findings) {
-  if (!Array.isArray(findings) || !findings.length) return null;
+function buildFindings(id, d, pairs) {
+  if (!pairs.length) return null;
+  const findings = pairs.map(([f]) => f);
   const counts = {};
   for (const f of findings) {
     const s = str(f && f.severity) || "note";
@@ -1935,14 +1947,112 @@ function buildFindings(findings) {
   const parts = Object.entries(counts).map(([s, n]) => n + " " + s);
   return h("details", { class: "findings" },
     h("summary", { "data-focus-key": "findings", text: findings.length + (findings.length === 1 ? " finding" : " findings") + " (" + parts.join(", ") + ")" }),
-    h("ul", null, findings.map((f) => {
+    h("ul", null, pairs.map(([f, i]) => {
       const sev = str(f && f.severity) || "note";
       return h("li", null,
         h("span", { class: "sev " + severityClass(sev), text: sev }),
         h("span", { class: "f-body" },
           h("span", { class: "f-text" }, richText(f && f.text)),
-          f && f.ref ? h("span", { class: "fref", text: str(f.ref) }) : null));
+          f && f.ref ? h("span", { class: "fref", text: str(f.ref) }) : null,
+          ...findingReply(id, d, f, i)));
     })));
+}
+
+// ---------- answers to findings ----------
+
+// The server serves each finding with the key his answers name it by
+const findingKeyOf = (f, i) => str(f && f.key) || str(f && f.id) || "#" + i;
+const answerStep = (key) => "a:" + key;
+
+// His draft answer to one finding, or null when no box is open. An empty draft keeps the box open until a reload
+function answerDraft(id, key) {
+  const dk = draftKey(id, answerStep(key));
+  if (!state.drafts.has(dk)) {
+    const saved = savedDraft(id, answerStep(key), "1");
+    if (saved !== null) state.drafts.set(dk, saved);
+  }
+  return state.drafts.has(dk) ? state.drafts.get(dk) : null;
+}
+
+function setAnswerDraft(id, key, text) {
+  const dk = draftKey(id, answerStep(key));
+  if (text === null) {
+    state.drafts.delete(dk);
+    dropSavedDraft(id, answerStep(key));
+    return;
+  }
+  state.drafts.set(dk, text);
+  if (text.trim()) saveDraft(id, answerStep(key), "1", text);
+  else dropSavedDraft(id, answerStep(key));
+}
+
+// The answers he wrote and has not sent, for the item's current findings
+function answerDrafts(id, d) {
+  const out = [];
+  (Array.isArray(d && d.findings) ? d.findings : []).forEach((f, i) => {
+    if (!f || typeof f !== "object") return;
+    const key = findingKeyOf(f, i);
+    const text = str(answerDraft(id, key)).trim();
+    if (text) out.push({ finding: key, text });
+  });
+  return out;
+}
+
+function sentAnswers(d) {
+  return (Array.isArray(d && d.findingAnswers) ? d.findingAnswers : [])
+    .filter((a) => a && typeof a === "object" && typeof a.finding === "string" && str(a.text).trim());
+}
+
+const answeredLine = (a) => h("span", { class: "f-answered" }, h("b", { text: "You answered: " }), str(a.text),
+  Number.isFinite(parseTime(a.at)) ? " · " + sinceDay(a.at) : "");
+
+// What he sent for a finding, the Reply link and the box under it
+function findingReply(id, d, f, i) {
+  if (!f || typeof f !== "object") return [];
+  const key = findingKeyOf(f, i);
+  const last = sentAnswers(d).filter((a) => a.finding === key).at(-1);
+  const fk = "reply:" + key;
+  const link = h("button", { class: "f-reply", type: "button", "data-focus-key": fk, "aria-label": "Reply to this finding", text: "Reply" });
+  const ta = h("textarea", {
+    class: "answer-ta", rows: "2", "data-focus-key": draftKey(id, answerStep(key)), "aria-label": "Your answer to this finding",
+    value: str(answerDraft(id, key)),
+  });
+  const cancel = h("button", { class: "f-reply", type: "button", "data-focus-key": fk + ":cancel", text: "Cancel" });
+  const box = h("div", { class: "f-answer" }, ta, cancel);
+  const show = (open) => {
+    box.hidden = !open;
+    link.hidden = open;
+  };
+  show(answerDraft(id, key) !== null);
+  link.addEventListener("click", () => {
+    if (answerDraft(id, key) === null) setAnswerDraft(id, key, "");
+    show(true);
+    ta.focus();
+  });
+  ta.addEventListener("input", () => {
+    setAnswerDraft(id, key, ta.value);
+    updateAnswerCount();
+  });
+  cancel.addEventListener("click", () => {
+    setAnswerDraft(id, key, null);
+    ta.value = "";
+    show(false);
+    link.focus();
+    updateAnswerCount();
+  });
+  return [last ? answeredLine(last) : null, link, box];
+}
+
+// Answers whose finding the agent dropped in a later review
+function buildEarlierAnswers(d) {
+  const keys = new Set((Array.isArray(d.findings) ? d.findings : []).map((f, i) => findingKeyOf(f, i)));
+  const gone = sentAnswers(d).filter((a) => !keys.has(a.finding));
+  if (!gone.length) return null;
+  return h("details", { class: "earlier-answers" },
+    h("summary", { "data-focus-key": "earlier-answers", text: "Earlier answers (" + gone.length + ")" }),
+    h("ul", null, gone.map((a) => h("li", { class: "f-body" },
+      str(a.findingText) ? h("span", { class: "e-finding", text: str(a.findingText) }) : null,
+      answeredLine(a)))));
 }
 
 function buildLinks(links) {
@@ -2713,21 +2823,22 @@ function renderDetailInfo(d) {
   detail.threads.hidden = !threads;
 
   // Findings that belong to a route show on its card
-  const loose = (Array.isArray(d.findings) ? d.findings : []).filter((f) => f && typeof f === "object" && !f.routeId);
-  const findings = buildFindings(loose);
+  const loose = (Array.isArray(d.findings) ? d.findings : []).map((f, i) => [f, i]).filter(([f]) => f && typeof f === "object" && !f.routeId);
+  const findings = buildFindings(detail.id, d, loose);
   if (findings) {
     // More than three findings start collapsed
     if (detail.findingsOpen === null) detail.findingsOpen = loose.length <= 3;
     findings.open = detail.findingsOpen;
     findings.addEventListener("toggle", () => { detail.findingsOpen = findings.open; });
   }
-  detail.findings.replaceChildren(...(findings ? [findings] : []));
-  detail.findings.hidden = !findings;
+  const earlier = buildEarlierAnswers(d);
+  detail.findings.replaceChildren(...[findings, earlier].filter(Boolean));
+  detail.findings.hidden = !findings && !earlier;
 
   const links = buildLinks(d.links);
   detail.links.replaceChildren(...(links ? [links] : []));
   detail.linksSec.hidden = !links;
-  detail.support.hidden = !findings && !links;
+  detail.support.hidden = !findings && !earlier && !links;
 }
 
 const REACTION_EMOJI = { THUMBS_UP: "👍", HEART: "❤️", HOORAY: "🎉", ROCKET: "🚀", EYES: "👀" };
@@ -4165,7 +4276,8 @@ function cardActor(d, r) {
 
 function buildCard(id, d, r, rec) {
   const p = paramsOf(r);
-  const finding = (Array.isArray(d.findings) ? d.findings : []).find((f) => f && f.routeId === r.id) || null;
+  const findingAt = (Array.isArray(d.findings) ? d.findings : []).findIndex((f) => f && f.routeId === r.id);
+  const finding = findingAt >= 0 ? d.findings[findingAt] : null;
   const compact = routeCompact(r, d);
   rec.ta = null;
   rec.titleInput = null;
@@ -4210,6 +4322,7 @@ function buildCard(id, d, r, rec) {
   rec.body = h("div", { class: "card-body" },
     str(r.why) ? h("p", { class: "card-why" }, richText(r.why)) : null,
     finding ? h("p", { class: "card-finding" }, h("span", { class: "vlabel sev-" + severityClass(finding.severity), text: str(finding.severity) || "note" }), " ", richText(finding.text)) : null,
+    finding ? h("div", { class: "f-body" }, ...findingReply(id, d, finding, findingAt)) : null,
     r.type === "take_over" && p.mode !== "replace" ? h("p", { class: "quiet-line", text: "Continues in the contributor's PR" }) : null,
     callout,
     escalateRoute(r) ? h("p", { class: "quiet-line escalate-note" }, richText(escalateNote(d, r))) : null,
@@ -4321,7 +4434,7 @@ function renderRoutes(id, d, locked) {
     // The agent rewrote a draft he had edited: rebuild, so the editor shows the new text and keeps his as "previous"
     const dkR = draftKey(id, "r:" + r.id);
     if (state.drafts.has(dkR) && draftHashes.has(dkR) && draftHashes.get(dkR) !== str(r.draftHash)) rec.core = null;
-    const coreSig = JSON.stringify([core, hasText(r), d.threads, d.findings, d.kind, d.url]);
+    const coreSig = JSON.stringify([core, hasText(r), d.threads, d.findings, d.findingAnswers, d.kind, d.url]);
     if (coreSig !== rec.core) {
       rec.core = coreSig;
       rec.sig = null;
@@ -4351,7 +4464,7 @@ function renderRoutes(id, d, locked) {
           settled.url ? h("span", { text: "·" }) : null, settled.url ? ghLink(settled.url, "view on GitHub") : null].filter(Boolean) : []));
       }
       // What was sent stays readable and cannot be changed
-      if (r.done) for (const el of rec.body.querySelectorAll("input, textarea, button.seg, button.lane-switch")) el.disabled = true;
+      if (r.done) for (const el of rec.body.querySelectorAll("input, textarea, button.seg, button.lane-switch, button.f-reply")) el.disabled = true;
     }
     if (rec.ta) rec.ta.disabled = locked || !!r.done;
     const sig = JSON.stringify([r.done, r.refused, r.labelDone, r.answerDone, JSON.stringify(rec.parts), r.working, d.working, state.confirming.get(id), locked, isClosedThread(id, d), handledOf(id, d), openedOf(id, r), detail.events.get(r.id),
@@ -4458,7 +4571,7 @@ function buildZoneControls(id) {
   });
   note.addEventListener("input", () => {
     state.drafts.set(draftKey(id, reKey), note.value);
-    if (detail.zoneCtl && detail.zoneCtl.analyzing) detail.zoneCtl.review.disabled = !note.value.trim();
+    updateAnswerCount();
   });
   const setPanel = (open) => {
     detail.analyze.hidden = !open;
@@ -4468,6 +4581,11 @@ function buildZoneControls(id) {
   const send = h("button", {
     class: "btn intent-agent", type: "button", "data-focus-key": "more:send", title: "The agent does this",
     onclick: async () => {
+      if (answerDrafts(id, state.items.get(id)).length) {
+        await sendAnswers(id, note.value.trim());
+        if (detail.id === id && state.notes.get(id)?.kind !== "failed") setPanel(false);
+        return;
+      }
       if (analyzing(id) && !note.value.trim()) return;
       detail.lastZone = "agent";
       await runAction(id, "reanalyze", {}, note.value.trim(), reKey);
@@ -4493,8 +4611,11 @@ function buildZoneControls(id) {
     detail.lastZone = "away";
     restoreItem(id);
   });
-  const analyze = fbtn([icon("sparkles"), "Analyze again"], "Analyze again", "foot:analyze", () => setPanel(detail.analyze.hidden),
-    "Ask the agent to look at this item again");
+  // With answers written, one click sends them together with the note
+  const analyze = fbtn([icon("sparkles"), "Analyze again"], "Analyze again", "foot:analyze", () => {
+    if (answerDrafts(id, state.items.get(id)).length) sendAnswers(id, note.value.trim()).then(() => { if (detail.id === id && state.notes.get(id)?.kind !== "failed") setPanel(false); });
+    else setPanel(detail.analyze.hidden);
+  }, "Ask the agent to look at this item again");
   analyze.classList.add("foot-analyze");
   analyze.setAttribute("aria-expanded", "false");
   analyze.setAttribute("aria-controls", "d-analyze");
@@ -4503,7 +4624,7 @@ function buildZoneControls(id) {
     status,
     h("span", { class: "foot-label" }, icon("moon"), "Snooze"), ...snoozes, dismiss, restore, analyze,
   );
-  return { review: send, input: note, inputDraft: draftKey(id, reKey), snoozes, dismiss, restore, analyze, status, panelLabel, analyzing: false };
+  return { review: send, input: note, inputDraft: draftKey(id, reKey), snoozes, dismiss, restore, analyze, status, panelLabel, label: null, locked: false };
 }
 
 // An analysis of this item is queued or running, so "Analyze again" would only start a second one
@@ -4517,20 +4638,58 @@ function updateFooter(d, locked) {
   const zc = detail.zoneCtl;
   if (!zc) return;
   for (const c of [zc.review, zc.input, zc.analyze, ...zc.snoozes, zc.dismiss, zc.restore]) c.disabled = locked;
-  const busy = analyzing(detail.id);
-  if (zc.analyzing !== busy) {
-    zc.analyzing = busy;
-    zc.analyze.replaceChildren(icon("sparkles"), busy ? "Analyzing…" : "Analyze again");
-    zc.analyze.setAttribute("aria-label", busy ? "Analyzing, add a note" : "Analyze again");
-    zc.analyze.title = busy ? "The agent is analyzing this item. You can add a note to the running analysis." : "Ask the agent to look at this item again";
-    zc.panelLabel.textContent = busy ? "Add a note to the running analysis" : "Analyze again";
-  }
-  // While it runs, only a typed note goes out, as a second request with that note
-  zc.review.disabled = locked || (busy && !zc.input.value.trim());
+  zc.locked = locked;
+  updateAnswerCount();
   zc.restore.hidden = !isHiddenItem(d);
   zc.dismiss.hidden = d.hidden === true;
   // A sent instruction clears its draft, so the note empties as well
   if (!state.drafts.has(zc.inputDraft) && document.activeElement !== zc.input && zc.input.value !== "") zc.input.value = "";
+}
+
+// The Analyze again button counts his unsent answers. While an analysis runs, only a note or an answer goes out
+function updateAnswerCount() {
+  const zc = detail.zoneCtl;
+  const id = detail.id;
+  if (!zc || !id) return;
+  const n = answerDrafts(id, state.items.get(id)).length;
+  const busy = analyzing(id);
+  const label = n ? "Send " + n + (n === 1 ? " answer" : " answers") + " and analyze again" : busy ? "Analyzing…" : "Analyze again";
+  if (zc.label !== label) {
+    zc.label = label;
+    zc.analyze.replaceChildren(icon("sparkles"), label);
+    zc.analyze.setAttribute("aria-label", n ? label : busy ? "Analyzing, add a note" : "Analyze again");
+    zc.analyze.title = n ? "Send your answers to the agent" : busy ? "The agent is analyzing this item. You can add a note to the running analysis." : "Ask the agent to look at this item again";
+    zc.analyze.dataset.tip = zc.analyze.title;
+  }
+  zc.panelLabel.textContent = busy ? "Add a note to the running analysis" : "Analyze again";
+  zc.review.disabled = zc.locked || (busy && !n && !zc.input.value.trim());
+}
+
+// One reanalyze with his answers to findings and the note. The server checks the answers and keeps them on the item
+async function sendAnswers(id, text) {
+  const d = state.items.get(id);
+  const answers = answerDrafts(id, d);
+  if (!answers.length || state.busy.has(id)) return;
+  detail.lastZone = "agent";
+  state.notes.delete(id);
+  state.busy.add(id);
+  render();
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    await state.mcp.callTool(SERVER, "reanalyze", { instance: refOf(id).instance, itemId: refOf(id).id, text, input: { answers } });
+    for (const a of answers) setAnswerDraft(id, a.finding, null);
+    state.drafts.delete(draftKey(id, "more:reanalyze"));
+    state.notes.set(id, { kind: "done", text: "The agent is on it" });
+    // The boxes close now, before the item with his answers comes back
+    detail.deps.delete("info");
+    for (const rec of detail.cards.values()) rec.core = null;
+  } catch (e) {
+    const p = e && e.code === "tool_error" ? refusalPayload(e) : null;
+    state.notes.set(id, refusalNote(e, id) || { kind: "failed", text: p ? resultString(p.result) || "Sending failed." : routeFailure(e, null) });
+  } finally {
+    state.busy.delete(id);
+    render();
+  }
 }
 
 // Route results show on their card. Everything else, including agent requests, shows in the footer.
