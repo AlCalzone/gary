@@ -39,6 +39,13 @@
   --cat-deferred: #dfebf7;
   --cat-hardware: #eee4d8;
   --cat-snoozed: #e9e9f1;
+  --cat-active-ink: #a8481f;
+  --cat-easy-ink: #1f6a45;
+  --cat-almost-ink: #7f5c0b;
+  --cat-review-ink: #5a43b3;
+  --cat-deferred-ink: #255f99;
+  --cat-hardware-ink: #7f5326;
+  --cat-snoozed-ink: #5a6175;
   --ok: #2a7a52;
   --ok-soft: #e0f2e8;
   --warn: #8f5d0c;
@@ -81,13 +88,20 @@
     --act-agent: #62d2e0;
     --code-bg: #272c3b;
     --act-away: #a6adc2;
-    --cat-active: #42302a;
-    --cat-easy: #22392c;
-    --cat-almost: #3d3622;
-    --cat-review: #312c4f;
-    --cat-deferred: #223446;
-    --cat-hardware: #3a3129;
-    --cat-snoozed: #2b2c38;
+    --cat-active: #4d2f24;
+    --cat-easy: #1d3f2b;
+    --cat-almost: #433620;
+    --cat-review: #372e63;
+    --cat-deferred: #1e3a57;
+    --cat-hardware: #433226;
+    --cat-snoozed: #2e3242;
+    --cat-active-ink: #f4a582;
+    --cat-easy-ink: #86d9a4;
+    --cat-almost-ink: #ebcb72;
+    --cat-review-ink: #bbaefa;
+    --cat-deferred-ink: #8cc0f0;
+    --cat-hardware-ink: #dcb38a;
+    --cat-snoozed-ink: #a6adc2;
     --ok: #8fd4ae;
     --ok-soft: #1d3529;
     --warn: #efc27c;
@@ -127,13 +141,20 @@
   --act-agent: #62d2e0;
   --code-bg: #272c3b;
   --act-away: #a6adc2;
-  --cat-active: #42302a;
-  --cat-easy: #22392c;
-  --cat-almost: #3d3622;
-  --cat-review: #312c4f;
-  --cat-deferred: #223446;
-  --cat-hardware: #3a3129;
-  --cat-snoozed: #2b2c38;
+  --cat-active: #4d2f24;
+  --cat-easy: #1d3f2b;
+  --cat-almost: #433620;
+  --cat-review: #372e63;
+  --cat-deferred: #1e3a57;
+  --cat-hardware: #433226;
+  --cat-snoozed: #2e3242;
+  --cat-active-ink: #f4a582;
+  --cat-easy-ink: #86d9a4;
+  --cat-almost-ink: #ebcb72;
+  --cat-review-ink: #bbaefa;
+  --cat-deferred-ink: #8cc0f0;
+  --cat-hardware-ink: #dcb38a;
+  --cat-snoozed-ink: #a6adc2;
   --ok: #8fd4ae;
   --ok-soft: #1d3529;
   --warn: #efc27c;
@@ -412,16 +433,17 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
   line-height: 1;
   padding: 4px 8px;
   border-radius: 999px;
-  color: var(--fg);
+  color: var(--ink, var(--fg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink, var(--line)) 45%, transparent);
   white-space: nowrap;
 }
-.cat-active { background: var(--cat-active); }
-.cat-easy { background: var(--cat-easy); }
-.cat-almost { background: var(--cat-almost); }
-.cat-review { background: var(--cat-review); }
-.cat-deferred { background: var(--cat-deferred); }
-.cat-hardware { background: var(--cat-hardware); }
-.cat-snoozed { background: var(--cat-snoozed); }
+.cat-active { --ink: var(--cat-active-ink); background: var(--cat-active); }
+.cat-easy { --ink: var(--cat-easy-ink); background: var(--cat-easy); }
+.cat-almost { --ink: var(--cat-almost-ink); background: var(--cat-almost); }
+.cat-review { --ink: var(--cat-review-ink); background: var(--cat-review); }
+.cat-deferred { --ink: var(--cat-deferred-ink); background: var(--cat-deferred); }
+.cat-hardware { --ink: var(--cat-hardware-ink); background: var(--cat-hardware); }
+.cat-snoozed { --ink: var(--cat-snoozed-ink); background: var(--cat-snoozed); }
 .show-all { margin: 4px 10px 8px; }
 .sum { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .list { display: flex; flex-direction: column; }
@@ -2552,7 +2574,7 @@ function renderSplit(byGroup) {
     const t = totals.get(sec.id);
     const seg = h("button", { class: "split-seg", type: "button", title: label(sec), "aria-label": label(sec) });
     seg.style.flexGrow = String(t.min);
-    seg.style.background = "var(--cat-" + sec.id + ")";
+    seg.style.background = "var(--cat-" + sec.id + "-ink)";
     seg.addEventListener("click", jump(sec));
     return seg;
   }));
@@ -2560,7 +2582,7 @@ function renderSplit(byGroup) {
   planEls.split.hidden = open.length === 0;
   planEls.legend.replaceChildren(...open.map((sec) => {
     const dot = h("span", { class: "split-dot" });
-    dot.style.background = "var(--cat-" + sec.id + ")";
+    dot.style.background = "var(--cat-" + sec.id + "-ink)";
     const key = h("button", { class: "split-key", type: "button" }, dot, label(sec));
     key.addEventListener("click", jump(sec));
     return key;
