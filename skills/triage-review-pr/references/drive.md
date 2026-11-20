@@ -57,7 +57,9 @@ When the drive ends, for any of the reasons below, return `{ status: "done", res
 - routes that fit: `merge` as `me` when nothing is open and CI passes. Otherwise `address_review` when the open threads need his decision, or `review` when findings for the contributor remain,
 - a `state` that names why the drive stopped, and says when the PR needs a new approval because our pushes dismissed the earlier one, like `The review bot found nothing new after round 2.` or `CI fails in the build step, which needs a decision on the API.`
 
-Then, on a watched PR, run `gary pr-watch done --pr <n> --sha <head> --seen-me <read at>`, with `--seen-others <read at>` when this round judged other people's feedback. The PR goes back to waiting for the maintainer's feedback. On any other PR, delete the state file.
+Then, on a watched PR, run `gary pr-watch done --pr <n> --sha <head> --seen-me <read at>`, with `--seen-others <read at>` when this round judged other people's feedback. Add `--request-maintainer` when the drive ended cleanly, as "Clean and stuck ends" below defines. The PR goes back to waiting for the maintainer's feedback. On any other PR, delete the state file.
+
+With `--request-maintainer` the command then requests his review on GitHub, as the bot. Its output's `maintainerReview` says whether the request went out, was skipped or failed. A skip or a failure does not fail the command, and the round has ended all the same. Name a failure in `result`. Exit code 4 means the instance is paused: nothing changed. Record the step in `<run>/would-have.json` and run `gary pr-watch done` again without the flag, so the round ends.
 
 The drive ends when:
 
@@ -68,6 +70,10 @@ The drive ends when:
 - another person commented or reviewed since the drive started, in a drive that no `params.trigger: "others"` started,
 - a needed change would touch a sensitive path that step 5 does not allow,
 - the bot's review did not arrive within 30 minutes.
+
+### Clean and stuck ends
+
+The first two reasons are a clean end: the drive's outcome is `done`, and you have nothing left that you could do on your own. Threads left open for his decision count as clean, because the next move is his. A round for feedback that handled its feedback and requests no next review bot round ends cleanly too. Every other reason is a stuck end, like a refused push or a refusal of `gary push-check`. Only a clean end passes `--request-maintainer`. Never name him with an @-mention, in a reply, a comment or a `--reason`. The review request is his notification.
 
 ## Between rounds
 
@@ -88,9 +94,9 @@ The state file with `reviewRequestedAt` is all a waiting drive needs. `gary watc
 - A comment or a review by another person on the PR since `startedAt` ends the drive, like a push by someone else does. The maintainer does not count: his feedback is part of the next round. The review bot, the configured bot and automated comments do not count either. Read them from `gary item pr <number>`: `facts.timeline` entries with side `them`, or side `us` whose author is neither `me` nor the bot.
 - You never return an item and never write routes. The drive ends through one command, in every case:
   ```bash
-  gary fix-review finish --pr <number> --outcome done --reason "<why the rounds ended>" --seen-me <read at>
+  gary fix-review finish --pr <number> --outcome done --reason "<why the rounds ended>" --seen-me <read at> --request-maintainer
   ```
-  Add `--seen-others <read at>` when the round judged other people's feedback.
+  Add `--seen-others <read at>` when the round judged other people's feedback. Pass `--request-maintainer` with every `--outcome done` and never with `--outcome stopped`. After the ready mark, the command requests his review as the bot. `maintainerReview` in its output says what happened, and a failed request still ends the rounds.
   Use `--outcome done` when the review bot has nothing open after a round, when its review brought no new threads, or when `maxRounds` rounds are done. The command marks the PR ready when the instance's `fixReview.markReady` is on. You never mark it ready yourself. Use `--outcome stopped` when the drive is stuck or failed: CI fails for a reason you cannot fix, the push was refused, a person commented or pushed, `gary push-check` refused, a needed change would touch a sensitive path that step 5 does not allow, or the review did not arrive. The PR then stays a draft.
 - `--reason` is one or two plain sentences for the maintainer, like `Copilot found nothing new after round 2.` or `CI fails in the build step, which the fix cannot change.` Name the comments still open after the last round there, in words. Never put a node id into it.
 - The command queues the full review of the PR item and puts the state file into the stage `watch`. It marks the PR ready only the first time. The master starts that review within seconds, and its worker writes the item with the `rounds` and your reason. Return `{ "status": "done", "result": "<the reason>" }` without `item`.
@@ -109,7 +115,7 @@ The routes of the returned item follow "Routes after a push" in `push-to-pr.md`:
 - The maintainer's threads and comments follow "The maintainer's threads" below. Other people's follow "Other people's threads", and only with `params.trigger: "others"`.
 - A plain PR comment that asks for a change counts like a thread. Answer such comments in one PR comment as the writing identity, saying what you changed or why not. Post nothing else.
 - When review bot rounds remain and the round pushed, you may request the next one with `gary pr-watch review`, as step 9 says. The drive then continues as above.
-- When the round ends without a next review bot round: on a fix PR, end through `gary fix-review finish` as in the section above. On any other PR, return `{ status: "done", result, resultParts, item }` as `push-to-pr.md` describes, with the round appended to `rounds`, and run `gary pr-watch done`. Its item is the PR reviewed again on the new head, with a card for every thread that stayed open for his decision.
+- When the round ends without a next review bot round: on a fix PR, end through `gary fix-review finish` as in the section above. On any other PR, return `{ status: "done", result, resultParts, item }` as `push-to-pr.md` describes, with the round appended to `rounds`, and run `gary pr-watch done`, with `--request-maintainer` when the round ended cleanly. Its item is the PR reviewed again on the new head, with a card for every thread that stayed open for his decision.
 
 ### The maintainer's threads
 

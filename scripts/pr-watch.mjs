@@ -5,8 +5,9 @@
 //     Queues an agent round for the feedback of the maintainer (me) or of other people up to `at`.
 //   gary pr-watch review --pr <n> --sha <head> [--action <id>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run]
 //     Requests the next review bot round after a round pushed, within the cap of 3 per PR.
-//   gary pr-watch done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>]
+//   gary pr-watch done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]
 //     Ends a round without a next review bot round. The PR goes back to waiting for the maintainer's feedback.
+//     With --request-maintainer the writing identity then requests his review.
 // Exit code 3 means a rule refused, 4 that the instance is paused.
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
@@ -18,9 +19,9 @@ import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { driveDir } from "./lib/fixes.mjs";
 import { accountMode, writeLogin } from "./lib/gh.mjs";
-import { REVIEW_ROUND_CAP, WATCH_TRIGGERS, enterReview, enterWatch, pushWork, reviewRoundCap, reviewRoundsUsed, seenMarks, stageOf, unhandledFeedback, watchedPr, watchedPrs, writeDrive } from "./lib/watch.mjs";
+import { REVIEW_ROUND_CAP, WATCH_TRIGGERS, enterReview, enterWatch, pushWork, requestMaintainerReview, reviewRoundCap, reviewRoundsUsed, seenMarks, stageOf, unhandledFeedback, watchedPr, watchedPrs, writeDrive } from "./lib/watch.mjs";
 
-const USAGE = "Usage: gary pr-watch list [--json] | round --pr <n> --by me|others --at <ISO> [--run <run>] [--dry-run] | review --pr <n> --sha <head> [--action <id>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run] | done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>]";
+const USAGE = "Usage: gary pr-watch list [--json] | round --pr <n> --by me|others --at <ISO> [--run <run>] [--dry-run] | review --pr <n> --sha <head> [--action <id>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run] | done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]";
 
 class Refused extends Error {}
 
@@ -157,14 +158,19 @@ async function review(argv) {
 
 async function done(argv) {
 	const { out, rest } = options(argv, ["--pr", "--sha", "--seen-me", "--seen-others"]);
-	if (rest.length || !out.pr) throw new Error(USAGE);
+	const requestMaintainer = rest.includes("--request-maintainer");
+	if (rest.filter((a) => a !== "--request-maintainer").length || !out.pr) throw new Error(USAGE);
 	checkSha(out.sha);
 	const seen = seenMarks(out);
 	const c = await context(out.pr);
+	// Without the request, done changes only the drive file, so it also runs while paused
+	if (requestMaintainer && isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 	const next = enterWatch(c.drive ?? baseDrive(c), { sha: out.sha, seen: marksFor(seen) });
 	await mkdir(driveDir(), { recursive: true });
 	await writeDrive(c.itemId, next);
-	return { ok: true, stage: "watch", itemId: c.itemId, seenAt: next.seenAt };
+	const result = { ok: true, stage: "watch", itemId: c.itemId, seenAt: next.seenAt };
+	if (requestMaintainer) result.maintainerReview = await requestMaintainerReview({ repo: c.repo, number: c.number });
+	return result;
 }
 
 export async function main(argv) {

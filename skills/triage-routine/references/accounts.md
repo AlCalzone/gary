@@ -8,7 +8,7 @@ Who writes to GitHub depends on the home `config.json`. SPEC.md "Accounts" is th
 | without a bot | `bot: null`, `allowOwnTokenPushes: false` | prefill for the maintainer where a prefill exists, otherwise not offered | not offered |
 | own token | `bot: null`, `allowOwnTokenPushes: true` | prefill where one exists, otherwise run under the maintainer's `gh` login | allowed, under the maintainer's `gh` login |
 
-`request_review` runs under the maintainer's login in every setup.
+`request_review` for a Copilot review runs under the maintainer's login in every setup. The request for the maintainer's own review runs under the writing identity: the bot with a bot, and skipped in the own-token setup.
 
 ## Writing routes for each setup
 

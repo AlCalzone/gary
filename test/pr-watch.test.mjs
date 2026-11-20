@@ -214,6 +214,38 @@ setOverrides(pr19({ reviews: [review(user("octocat"), at(19, 9))], state: "MERGE
 r = gary("watch-queue", "--once");
 t.check("a merged PR prints nothing and its watch is removed", r.stdout.trim() === "" && !existsSync(driveFile), r.stdout);
 
+// The clean end of a round requests his review
+reset();
+setFixes({ "issue-23": [record] });
+setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, feedback: {} } });
+setOverrides({ "requests-19": { isDraft: false } });
+r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA);
+t.check("done without the flag requests no review", r.status === 0 && json(r).maintainerReview === undefined && writes().length === 0, [r.stdout, writes()]);
+r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
+o = json(r);
+t.check("done --request-maintainer requests his review as the bot after the state change", r.status === 0 && o.maintainerReview?.requested === true && read(driveFile).stage === "watch" && writes().length === 1 && writes()[0].mutation === "requestReviews" && writes()[0].as === "widgets-bot" && JSON.stringify(writes()[0].variables) === '{"id":"PR_19","users":["U_octocat"]}', [o, writes()]);
+setOverrides({ "requests-19": { isDraft: false, reviewRequests: { nodes: [{ requestedReviewer: { login: "octocat" } }] } } });
+r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
+t.check("done --request-maintainer with his review pending requests nothing", r.status === 0 && /already requested/.test(json(r).maintainerReview?.skipped) && writes().length === 1, [r.stdout, writes()]);
+setOverrides({});
+r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
+t.check("done --request-maintainer on a draft requests nothing", r.status === 0 && /is a draft/.test(json(r).maintainerReview?.skipped) && writes().length === 1, [r.stdout, writes()]);
+setOverrides({ "requests-19": { isDraft: false }, writeError: "Review cannot be requested from pull request author." });
+writeFileSync(driveFile, JSON.stringify({ ...read(driveFile), stage: "review", reviewRequestedAt: new Date().toISOString() }));
+r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
+o = json(r);
+t.check("a failed request still ends the round and reports the reason", r.status === 0 && o.ok === true && o.maintainerReview?.requested === false && /Review cannot be requested/.test(o.maintainerReview.error) && read(driveFile).stage === "watch" && writes().length === 1, o);
+setOverrides({ "requests-19": { isDraft: false } });
+writeFileSync(driveFile, JSON.stringify({ ...read(driveFile), stage: "review", reviewRequestedAt: new Date().toISOString() }));
+gary("pause");
+r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
+t.check("paused: done --request-maintainer requests nothing and keeps the drive", r.status === 4 && json(r).paused === true && read(driveFile).stage === "review" && writes().length === 1, r.stdout);
+gary("resume");
+writeFileSync(join(itemsDir, "pr-25.json"), JSON.stringify({ kind: "pr", repo: "acme/widgets", number: 25, author: "hubot", authorType: "contributor", takenOver: true, pushed: { action: "take_over", sha: "5".repeat(40), at: at(18, 9) } }));
+r = gary("pr-watch", "done", "--pr", "25", "--sha", "5".repeat(40), "--request-maintainer");
+t.check("done --request-maintainer on a taken-over PR requests his review", r.status === 0 && json(r).maintainerReview?.requested === true && writes().at(-1)?.variables.id === "PR_25", [r.stdout, writes()]);
+setOverrides({});
+
 // Paused and without an account that may push
 setOverrides(pr19({ reviews: [review(user("octocat"), at(19, 9))] }));
 gary("pause");

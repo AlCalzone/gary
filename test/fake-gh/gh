@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // A stand-in for the gh binary in tests. It answers the reads Gary makes from test/fixtures/github.mjs
 // and refuses every write, so no test can reach GitHub.
-//   FAKE_GH_WRITES         a file. With it the fake accepts the two mutations of the fix review rounds, a Copilot
-//                          review request and marking a PR ready, a PR review, a discussion comment, and the commit and
-//                          the comment of an API edit, and appends one line per accepted write. A `writeError` in
+//   FAKE_GH_WRITES         a file. With it the fake accepts the mutations of the fix review rounds, a Copilot
+//                          review request, marking a PR ready and a review request for the maintainer, a PR review, a
+//                          discussion comment, and the commit and the comment of an API edit, and appends one line per
+//                          accepted write. A `writeError` in
 //                          FAKE_GH_OVERRIDES makes such a write fail with that message, and a `branchHead` there is the
 //                          head a commit must expect
 //   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
 //   FAKE_GH_LOGIN          the stored login without GH_TOKEN, default octocat. Empty means not logged in
 //   FAKE_GH_LOG            a file that gets one line per call, for tests that check what ran
-//   FAKE_GH_OVERRIDES      a JSON file { "issue-22": { …fields } } merged into the full nodes of `gary item`, read on every call
+//   FAKE_GH_OVERRIDES      a JSON file { "issue-22": { …fields } } merged into the full nodes of `gary item`, read on every call.
+//                          "requests-<n>" is merged into the PR that a review request for the maintainer reads
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as gh from "../fixtures/github.mjs";
@@ -61,6 +63,7 @@ if (/^\s*mutation\b/.test(query)) {
 	const accepted = [
 		["requestCopilotCodeReview", { requestCopilotCodeReview: { success: true, failureReason: null } }],
 		["markPullRequestReadyForReview", { markPullRequestReadyForReview: { pullRequest: { url: `${gh.URL}/pull/0` } } }],
+		["requestReviews(", { requestReviews: { pullRequest: { url: `${gh.URL}/pull/${String(v.id).replace("PR_", "")}` } } }],
 		["addPullRequestReview", { addPullRequestReview: { pullRequestReview: { url: `${gh.URL}/pull/${String(v.id).replace("PR_", "")}#pullrequestreview-777` } } }],
 		["createCommitOnBranch", { createCommitOnBranch: { commit: { oid: gh.NEW_HEAD, url: `${gh.URL}/commit/${gh.NEW_HEAD}` } } }],
 		["addComment(", { addComment: { commentEdge: { node: { url: `${gh.URL}/pull/${String(v.id).replace("PR_", "")}#issuecomment-950` } } } }],
@@ -92,6 +95,14 @@ const overrides = (() => {
 })();
 const withOverride = (key, node) => (node && overrides[key] ? { ...node, ...overrides[key] } : node);
 
+// The PR a review request for the maintainer reads: its author, its draft flag and the pending review requests
+if (query.includes("reviewRequests(first:") && query.includes("user(login: $me)")) {
+	const item = gh.issuesAndPrs[v.number];
+	if (!item || item.__typename !== "PullRequest") fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null }, user: null });
+	const { id, url, state, isDraft } = item;
+	const pr = { id, url, state, isDraft, author: { login: gh.prAuthors[v.number] ?? "hubot" }, reviewRequests: { nodes: [] }, ...overrides[`requests-${v.number}`] };
+	out({ data: { repository: { pullRequest: pr }, user: gh.users[v.me] ? { id: gh.users[v.me] } : null } });
+}
 if (query.includes("issueOrPullRequest(number")) {
 	const item = gh.issuesAndPrs[v.number];
 	if (!item) fail(`Could not resolve to an issue or pull request with the number of ${v.number}.`, { repository: { issueOrPullRequest: null } });

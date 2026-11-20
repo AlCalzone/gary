@@ -1,5 +1,7 @@
 // gary action --dry-run against the fake gh: validation, account rules and the writes it would send.
 import { spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { GARY, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 
 const CASES = [
@@ -111,5 +113,56 @@ for (const [ok, json, match] of CASES) {
 	const out = r.stdout + r.stderr;
 	t.check(`${ok ? "ok" : "refused"}: ${json}`, (r.status === 0) === ok && out.includes(match), out.slice(0, 400));
 }
+
+// The maintainer's review: requested by the writing identity, or skipped with nothing sent
+const OVERRIDES = join(dir, "overrides.json");
+writeFileSync(OVERRIDES, "{}");
+const action = (json, extra = env) => {
+	const r = spawnSync(process.execPath, [GARY, "action", "--dry-run"], { input: json, env: { ...extra, FAKE_GH_OVERRIDES: OVERRIDES }, encoding: "utf8" });
+	try {
+		return { status: r.status, ...JSON.parse(r.stdout) };
+	} catch {
+		return { status: r.status, unparsed: r.stdout + r.stderr };
+	}
+};
+const maintainer = (number, params = {}) => JSON.stringify({ action: "request_review", kind: "pr", number, params: { reviewer: "maintainer", ...params } });
+let o = action(maintainer(12));
+const sent = o.result?.invocations;
+t.check("the maintainer's review is requested as the bot with his id and union", o.status === 0 && sent?.length === 1 && sent[0].as === "widgets-bot" && /requestReviews\(input: \{ pullRequestId: \$id, userIds: \$users, union: true \}\)/.test(sent[0].stdin.query) && JSON.stringify(sent[0].stdin.variables) === '{"id":"PR_12","users":["U_octocat"]}', o);
+const skips = [
+	["he wrote the PR", maintainer(26), /You wrote PR #26/],
+	["the PR is a draft", maintainer(13), /PR #13 is a draft/],
+	["the PR is closed", maintainer(15), /PR #15 is closed/],
+	["the PR is merged", maintainer(16), /PR #16 is merged/],
+];
+for (const [why, json, reason] of skips) {
+	o = action(json);
+	t.check(`skipped when ${why}`, o.status === 0 && o.ok === true && reason.test(o.skipped) && o.result?.invocations?.length === 0, o);
+}
+writeFileSync(OVERRIDES, JSON.stringify({ "requests-12": { reviewRequests: { nodes: [{ requestedReviewer: { login: "hubot" } }, { requestedReviewer: { login: "OctoCat" } }] } } }));
+o = action(maintainer(12));
+t.check("skipped when his review is already requested", o.status === 0 && /already requested/.test(o.skipped) && o.result?.invocations?.length === 0, o);
+writeFileSync(OVERRIDES, JSON.stringify({ "requests-12": { reviewRequests: { nodes: [{ requestedReviewer: { login: "hubot" } }, { requestedReviewer: {} }] } } }));
+o = action(maintainer(12));
+t.check("a pending request of someone else or of a team does not count", o.status === 0 && o.skipped === undefined && o.result?.invocations?.length === 1, o);
+writeFileSync(OVERRIDES, "{}");
+o = action(maintainer(12, { as: "bot" }));
+t.check("params.as is refused for the maintainer's review", o.status === 1 && /only for a Copilot review/.test(o.result), o);
+o = action(JSON.stringify({ action: "request_review", kind: "pr", number: 12, params: { reviewer: "maintainer" }, text: "@octocat please look" }));
+t.check("the maintainer's review request posts no text", o.status === 1 && /does not post text/.test(o.result), o);
+o = action(maintainer(21));
+t.check("an issue number is refused", o.status === 1 && /not found/.test(o.result), o);
+const own = makeHome(tempDir(), { bot: null, allowOwnTokenPushes: true });
+o = action(maintainer(12), own.env);
+t.check("skipped when writes run under his own login", o.status === 0 && /your own login/.test(o.skipped) && o.result?.invocations?.length === 0, o);
+const none = makeHome(tempDir(), { bot: null });
+o = action(maintainer(12), none.env);
+t.check("refused without an account that may write", o.status === 1 && /cannot write to GitHub/.test(o.result), o);
+spawnSync(process.execPath, [GARY, "pause"], { env, encoding: "utf8" });
+o = action(maintainer(12));
+t.check("paused: the maintainer's review is not requested", o.status === 1 && /paused/.test(o.result), o);
+spawnSync(process.execPath, [GARY, "resume"], { env, encoding: "utf8" });
+removeDir(dirname(own.root));
+removeDir(dirname(none.root));
 removeDir(dir);
 t.done();

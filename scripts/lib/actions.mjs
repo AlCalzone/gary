@@ -1,4 +1,4 @@
-import { allowedRepo, instanceName, loadProfile, repoParts, withInstance } from "./config.mjs";
+import { allowedRepo, instanceName, loadConfig, loadProfile, repoParts, withInstance } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReview, verifyOwnLogin, writeLogin } from "./gh.mjs";
 
@@ -205,11 +205,12 @@ export const ACTIONS = {
 	},
 	request_review: {
 		description:
-			"Request a Copilot review on the PR under your own gh login, or as the bot with `params.as: \"bot\"`. `params.reviewer` must be copilot and listed in the profile's reviewBots.",
+			"Request a review on the PR. With `params.reviewer: \"copilot\"` it requests a Copilot review under your own gh login, or as the bot with `params.as: \"bot\"`, and copilot must be listed in the profile's reviewBots. With `params.reviewer: \"maintainer\"` the writing identity requests your review, added to the reviewers already requested. It sends nothing when you wrote the PR, when the PR is closed, merged or a draft, or when your review is already requested.",
 		kinds: ["pr"],
 		params: ["reviewer", "as"],
 		run: async (ctx) => {
-			if (ctx.params.reviewer !== "copilot") throw new Error("params.reviewer must be copilot");
+			if (ctx.params.reviewer === "maintainer") return requestMaintainerReview(ctx);
+			if (ctx.params.reviewer !== "copilot") throw new Error("params.reviewer must be copilot or maintainer");
 			if (!loadProfile().reviewBots.includes("copilot")) throw new Error("The profile does not list copilot in reviewBots");
 			forbidText(ctx);
 			const target = await resolveTarget(ctx);
@@ -456,10 +457,12 @@ export const ACTIONS = {
  * `instance` scopes everything to that instance. `repo` is the item's repo and must be allowed for the instance.
  * With `dryRun`, read-only lookups still run and every write is returned in `result.invocations` instead.
  * With `autonomous`, the action counts as one nobody clicked, and only label and assign within the profile's rules may run.
+ * `markedReady` tells that the caller marked the PR ready in the same dry run, so a draft counts as ready.
+ * An action that sends nothing by its own rules returns `skipped` with the reason.
  */
 export async function runAction({ instance, repo, ...request } = {}) {
 	if (instance) return withInstance(instance, () => runAction({ repo, ...request }));
-	const { action, kind, number, params, text, dryRun = false, autonomous = false } = request;
+	const { action, kind, number, params, text, dryRun = false, autonomous = false, markedReady = false } = request;
 	try {
 		if (isPaused()) return { ok: false, result: PAUSED_MESSAGE, paused: true };
 		const ctx = validate({ action, kind, number, params, text });
@@ -469,8 +472,10 @@ export async function runAction({ instance, repo, ...request } = {}) {
 		forbidBotCommands(ctx);
 		if (autonomous) checkAutonomous(ctx);
 		ctx.dryRun = !!dryRun;
+		ctx.markedReady = ctx.dryRun && markedReady === true;
 		ctx.invocations = [];
 		const result = await ACTIONS[action].run(ctx);
+		if (ctx.skipped) return { ok: true, skipped: ctx.skipped, result: ctx.dryRun ? { dryRun: true, invocations: [] } : ctx.skipped };
 		if (ctx.dryRun) return { ok: true, result: { dryRun: true, invocations: ctx.invocations } };
 		return { ok: true, result: result ?? "" };
 	} catch (e) {
@@ -604,6 +609,56 @@ function reviewComments(value) {
 		}
 		return c;
 	});
+}
+
+const sameLogin = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
+
+/**
+ * Requests the maintainer's review as the writing identity, with `union: true` so other requested reviewers stay.
+ * It sets `ctx.skipped` and sends nothing when he wrote the PR, when the writing identity is his own login, when the
+ * PR is not open or is a draft, and when his review is already requested.
+ */
+async function requestMaintainerReview(ctx) {
+	if (ctx.params.as !== undefined) throw new Error("params.as is only for a Copilot review. The writing identity requests the maintainer's review");
+	forbidText(ctx);
+	assertWriteAllowed();
+	const { me } = loadConfig();
+	const { owner, name } = repoParts(ctx.repo);
+	let data;
+	try {
+		data = await graphql(
+			`query($owner: String!, $name: String!, $number: Int!, $me: String!) {
+				repository(owner: $owner, name: $name) {
+					pullRequest(number: $number) {
+						id url state isDraft author { login }
+						reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } } } }
+					}
+				}
+				user(login: $me) { id }
+			}`,
+			{ owner, name, number: ctx.number, me },
+		);
+	} catch (e) {
+		if (/Could not resolve to a PullRequest/i.test(e.message)) throw new Error(`PR #${ctx.number} not found`);
+		throw e;
+	}
+	const pr = data?.repository?.pullRequest;
+	if (!pr) throw new Error(`PR #${ctx.number} not found`);
+	if (!data.user?.id) throw new Error(`User ${me} from config.json not found on GitHub`);
+	if (sameLogin(pr.author?.login, me)) ctx.skipped = `You wrote PR #${ctx.number}, so your review is not requested.`;
+	else if (sameLogin(writeLogin(), me)) ctx.skipped = "Writes run under your own login, so your review is not requested.";
+	else if (pr.state !== "OPEN") ctx.skipped = `PR #${ctx.number} is ${pr.state.toLowerCase()}, so your review is not requested.`;
+	else if (pr.isDraft && !ctx.markedReady) ctx.skipped = `PR #${ctx.number} is a draft, so your review is not requested.`;
+	else if ((pr.reviewRequests?.nodes ?? []).some((n) => sameLogin(n?.requestedReviewer?.login, me))) ctx.skipped = `Your review is already requested on PR #${ctx.number}.`;
+	if (ctx.skipped) return pr.url;
+	const result = await mutate(
+		ctx,
+		`mutation($id: ID!, $users: [ID!]) {
+			requestReviews(input: { pullRequestId: $id, userIds: $users, union: true }) { pullRequest { url } }
+		}`,
+		{ id: pr.id, users: [data.user.id] },
+	);
+	return result?.requestReviews.pullRequest.url ?? pr.url;
 }
 
 function requireOpen(target) {

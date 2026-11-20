@@ -1,8 +1,9 @@
 // The review rounds a fix PR of Gary gets without a click. They run as a drive with `by: "fix"`.
 //   gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run]
 //     Requests the first review and writes the waiting drive. The fix worker calls it right after `gary fix-record`.
-//   gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run]
+//   gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer] [--dry-run]
 //     Ends a round: marks the PR ready after the first `done`, and queues the full review of the PR item.
+//     With --request-maintainer and `done` the writing identity then requests the maintainer's review.
 //     The drive file stays in the stage "watch", so the maintainer's later feedback starts the next round.
 // Both refuse a PR that is not in <state>/fixes.json, and do nothing while the instance is paused.
 import { randomBytes } from "node:crypto";
@@ -14,9 +15,9 @@ import { fixReviewOf, instanceName, loadInstance } from "./lib/config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
 import { driveDir, fixRecordOf, prItemId, readFixRecords, recordFixReady } from "./lib/fixes.mjs";
 import { accountMode } from "./lib/gh.mjs";
-import { enterWatch, seenMarks } from "./lib/watch.mjs";
+import { enterWatch, requestMaintainerReview, seenMarks } from "./lib/watch.mjs";
 
-const USAGE = "Usage: gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run] | finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run]";
+const USAGE = "Usage: gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run] | finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer] [--dry-run]";
 const OUTCOMES = ["done", "stopped"];
 const MAX_REASON = 500;
 
@@ -79,7 +80,8 @@ async function start(argv) {
 async function finish(argv) {
 	const { out, rest } = options(argv, ["--pr", "--outcome", "--reason", "--seen-me", "--seen-others"]);
 	const dryRun = rest.includes("--dry-run");
-	if (rest.filter((a) => a !== "--dry-run").length || !out.pr) throw new Error(USAGE);
+	const requestMaintainer = rest.includes("--request-maintainer");
+	if (rest.filter((a) => a !== "--dry-run" && a !== "--request-maintainer").length || !out.pr) throw new Error(USAGE);
 	if (!OUTCOMES.includes(out.outcome)) throw new Error(`--outcome must be one of ${OUTCOMES.join(", ")}`);
 	if (typeof out.reason !== "string" || !out.reason.trim() || out.reason.length > MAX_REASON) throw new Error(`--reason must say in at most ${MAX_REASON} characters why the rounds ended`);
 	const seen = seenMarks(out);
@@ -115,7 +117,14 @@ async function finish(argv) {
 		finishedAt: null,
 		result: "",
 	};
-	if (dryRun) return { ok: true, dryRun: true, ready, invocations, wouldWrite: { action: { itemId: c.itemId, ...review } } };
+	// Only a clean end hands the PR to him
+	const askMaintainer = requestMaintainer && out.outcome === "done";
+	const notAsked = requestMaintainer && !askMaintainer && { maintainerReview: { requested: false, skipped: "The rounds stopped, so your review is not requested." } };
+	if (dryRun) {
+		const maintainerReview = askMaintainer ? await requestMaintainerReview({ repo: c.repo, number: c.number, dryRun, markedReady: ready }) : null;
+		if (maintainerReview?.invocations) invocations.push(...maintainerReview.invocations);
+		return { ok: true, dryRun: true, ready, invocations, ...(maintainerReview && { maintainerReview }), ...notAsked, wouldWrite: { action: { itemId: c.itemId, ...review } } };
+	}
 
 	if (ready) await recordFixReady(c.number, now);
 	const reviewId = await writeAction(c.itemId, review);
@@ -123,7 +132,8 @@ async function finish(argv) {
 	// In the own mode the round's replies post under his login, so all his feedback up to now counts as seen
 	const marks = accountMode() === "own" ? { ...seen, me: now } : seen;
 	await writeAtomic(stateFile, enterWatch(drive, { sha: drive.lastPushedSha, seen: marks, now }));
-	return { ok: true, ready, ...(readyNote && { warning: readyNote }), reviewId, itemId: c.itemId, rounds: rounds.length, stage: "watch" };
+	const maintainerReview = askMaintainer ? await requestMaintainerReview({ repo: c.repo, number: c.number }) : null;
+	return { ok: true, ready, ...(readyNote && { warning: readyNote }), reviewId, itemId: c.itemId, rounds: rounds.length, stage: "watch", ...(maintainerReview && { maintainerReview }), ...notAsked };
 }
 
 export async function main(argv) {

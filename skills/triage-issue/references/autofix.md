@@ -9,7 +9,7 @@ Opening the draft PR is one of the few things the routine may do without a click
 - Work only in a new worktree on a new branch from `origin/<default branch>`.
 - Push only that branch. Never push to the default branch or to any existing branch, and never to a contributor's fork.
 - Open the PR as a draft. Never comment on the issue, never merge, approve or close.
-- Requesting the review bot's review and marking the PR ready happen only through `gary fix-review` (step 5a), which does both only for a fix PR recorded in `fixes.json` and only when the instance's `fixReview` setting is on. Never do either by hand.
+- Requesting the review bot's review, marking the PR ready and requesting the maintainer's review happen only through `gary fix-review` (step 5a), which does them only for a fix PR recorded in `fixes.json` and only when the instance's `fixReview` setting is on. Never do any of them by hand.
 
 ## 0. Claim
 

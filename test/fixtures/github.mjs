@@ -31,6 +31,9 @@ export const issuesAndPrs = {
 	22: { __typename: "Issue", id: "I_22", url: `${URL}/issues/22`, state: "OPEN" },
 };
 
+// PR authors where they matter. Every other PR is by hubot
+export const prAuthors = { 13: BOT, 19: BOT, 26: ME };
+
 export const discussions = {
 	31: { id: "D_31", url: `${URL}/discussions/31`, closed: false, category: { isAnswerable: true } },
 	32: { id: "D_32", url: `${URL}/discussions/32`, closed: false, category: { isAnswerable: false } },

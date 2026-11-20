@@ -3,6 +3,7 @@
 // "watch" while only the maintainer's feedback is awaited. A watched PR without a drive file counts as "watch".
 import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { runAction } from "./actions.mjs";
 import { ID_PATTERN, boardDir, readJson, writeAtomic } from "./board-store.mjs";
 import { ACTION_KINDS, listClaims } from "./claims.mjs";
 import { instanceName } from "./config.mjs";
@@ -178,6 +179,20 @@ export function seenMarks(out) {
 		seen[side] = new Date(out[flag]).toISOString();
 	}
 	return seen;
+}
+
+/**
+ * Requests the maintainer's review on a watched PR after a round ended cleanly. Never throws.
+ * Returns `{ requested: true, url }`, `{ requested: false, skipped }` when a rule says no, `{ requested: false, error }`
+ * when the request failed, and in a dry run `{ requested: false, dryRun: true, invocations }`.
+ * `markedReady` tells that the same dry run marked the PR ready.
+ */
+export async function requestMaintainerReview({ repo, number, dryRun = false, markedReady = false }) {
+	const r = await runAction({ action: "request_review", kind: "pr", number, repo, params: { reviewer: "maintainer" }, dryRun, markedReady });
+	if (!r.ok) return { requested: false, error: `Your review was not requested: ${r.result}` };
+	if (r.skipped) return { requested: false, skipped: r.skipped };
+	if (dryRun) return { requested: false, dryRun: true, invocations: r.result.invocations };
+	return { requested: true, url: r.result };
 }
 
 export const driveFile = (itemId, instance = instanceName()) => join(driveDir(instance), itemId + ".json");
