@@ -118,7 +118,7 @@ It sends the write through the board server, so it queues behind clicks on the s
 
 ### gary watch-queue
 
-`gary watch-queue` prints one line like `{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued. For every drive that waits for its review bot it reads the PR once a minute and prints one more line with `"event": "review-arrived"`, or `"review-timeout"` after 30 minutes, so the next round starts without the hourly run.
+`gary watch-queue` prints one line like `{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued. For every drive that waits for its review bot it reads the PR once a minute and prints one more line with `"event": "review-arrived"`, or `"review-timeout"` after 30 minutes, so the next round starts without the hourly run. For every watched PR, the bot's open PRs and the taken-over PRs, it reads the PR every 3 minutes and once at its start, and prints a line with `"event": "maintainer-feedback"` when the maintainer reviewed or commented after our last push and no round handled it yet.
 
 ### gary api-edit
 
@@ -283,6 +283,8 @@ While the state is `working`, `draft` or `open`, the fix carries `parked: true` 
 
 A fix PR Gary recorded gets review rounds without a click, as a drive with `by: "fix"`. `gary fix-review start` requests the first review and writes the waiting drive. `gary watch-queue` polls every waiting drive once a minute and prints a `review-arrived` or `review-timeout` line, on which the master starts the next round. `gary fix-review finish` marks the PR ready after a `done` drive and queues the `full_review` that puts the PR on the board. The fix state carries `review: { reviewer, round, maxRounds }` while the rounds run. `scripts/fix-review.mjs` holds both commands, and both refuse a PR that is not in `fixes.json`.
 
+The PRs we control stay watched after the review bot rounds, until they are merged or closed: every open PR by the instance's bot, the fix PRs among them, and every PR whose item has `takenOver: true`. `watchedPrs` in `scripts/lib/watch.mjs` lists them from `fixes.json`, the snapshot, the board items and the drive files. A drive file in the stage `watch` waits only for his feedback, so the server serves no `working` and blocks no click for it. The master turns the watcher's `maintainer-feedback` line into a queued `drive` request with `gary pr-watch round --by me`, and the hourly run does the same for other people's feedback with `--by others`. `seenAt: { me, others }` in the drive file, our last commit time from the snapshot's `feedback` and the item's `pushed.at` decide which feedback a round already handled, so feedback from before the watcher existed still starts one round. `gary pr-watch review` requests the next review bot round and refuses beyond 3 per PR over its life, counting both `copilotRounds` and the bot's reviews on GitHub. `gary fix-review finish` and `gary pr-watch done` put the file back into the stage `watch`.
+
 `maxPendingAutoFixes` limits the pending fixes the routine started itself. `pendingAutoFixes` in `scripts/lib/fixes.mjs` counts them, and `gary claim <itemId> fix` without `--request` refuses at the limit after it took the claim.
 
 ## State layout
@@ -299,6 +301,7 @@ decisions.jsonl             the decision log
 learn.json                  the learning cursor
 opened.json                 the prefill buttons he used, per item and route
 failures.json               failed analyses per item
+drive/<itemId>.json         waiting drives and watched PRs
 runs/<run>/would-have.json  what a paused run would have done
 snapshot.json, snapshot.pending.json, logs
 ```

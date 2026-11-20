@@ -39,7 +39,7 @@ Run the triage-routine skill for Gary instance <name>, job hourly, run directory
 
 ## 4. Waiting drives
 
-You arm nothing per drive. The queue Monitor of step 5 also watches every waiting drive, the ones a click started and the review rounds of Gary's own fix PRs. It reads each waiting PR once a minute and prints one line when the review arrived or the 30 minutes are over:
+You arm nothing per drive. The queue Monitor of step 5 also watches every waiting drive, the ones a click started and the review rounds of Gary's own fix PRs, and every watched PR (step 4b). It reads each waiting PR once a minute and prints one line when the review arrived or the 30 minutes are over:
 
 ```json
 { "instance": "widgets", "id": "<action id>", "itemId": "pr-412", "action": "drive", "event": "review-arrived" }
@@ -47,7 +47,17 @@ You arm nothing per drive. The queue Monitor of step 5 also watches every waitin
 
 On such a line, start a worker for the next round with the job `agent request { id, itemId, action: "drive" }`, and add `event: "<event>"` to it. A line with `review-timeout` starts the worker that ends the drive.
 
-A drive's action doc stays claimed while its file in `<state>/drive/` exists. That is a waiting drive, never a dead worker: leave it alone in step 5a.
+A drive's action doc stays claimed while its file in `<state>/drive/` has `stage: "review"`. That is a waiting drive, never a dead worker: leave it alone in step 5a. A file with `stage: "watch"` has no action doc of its own.
+
+## 4b. The maintainer's feedback on a watched PR
+
+The queue Monitor also reads the watched PRs, at most 20 per instance, every 3 minutes and once right at its start. These are the bot's open PRs, Gary's fix PRs among them, and the taken-over PRs. It prints one line per review or comment of the maintainer that no round handled yet:
+
+```json
+{ "instance": "widgets", "id": "watch-pr-412", "itemId": "pr-412", "action": "drive", "event": "maintainer-feedback", "pr": 412, "at": "2026-11-19T09:00:00Z" }
+```
+
+This line is no action doc. Run `gary --instance <instance> pr-watch round --pr <pr> --by me --at <at>` yourself. It queues a `drive` request for the round, which the Monitor prints a few seconds later like any other request. Start its worker as in step 5. Never read the feedback yourself. Exit code 3 means a rule refused, like a round that already runs or feedback a round handled. Exit code 4 means the instance is paused. Do nothing more in both cases.
 
 ## 4a. Answers to an automatic review
 
