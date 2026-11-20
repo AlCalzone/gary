@@ -88,7 +88,7 @@ When a suggestion is wrong, dismiss its card and say why. The agent never offers
 
 Items Gary could not analyze show one card that opens the thread on GitHub, so you decide yourself. That happens when the model's safety filter stopped the agent or the analysis failed three times. "Analyze again" retries.
 
-Gary learns from your decisions. When you often dismiss the same kind of card, pick the alternative, or rewrite drafts the same way, it proposes a small rule. Proposals appear on the board behind the lightbulb in the header. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`. Gary can also suggest a setting, like using the faster model for obvious items. That card shows what Gary measured, and one click changes the setting in the instance's `config.json`.
+Gary learns from your decisions. When you often dismiss the same kind of card, pick the alternative, or rewrite drafts the same way, it proposes a small rule. Proposals appear on the board behind the lightbulb in the header. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`. Gary can also suggest a setting, like using the faster model for obvious items. That card shows what Gary measured, and one click changes the setting in the instance's `config.json`. Once a week Gary also checks its rules for ones that repeat, conflict or name things that no longer exist, and proposes a change as a before and after. "Check rules" in the suggestions dialog, or `gary reconcile`, runs that check sooner.
 
 ## Commands you run
 
@@ -106,6 +106,7 @@ From a clone, `gary setup` links the command into `~/.local/bin`, which must be 
 - `gary resume`: end the pause.
 - `gary decisions --since <date>`: show the log of your decisions that Gary learns from.
 - `gary proposals`: list the proposals and their status.
+- `gary reconcile`: ask Gary to check its rules now.
 - `gary validate`: check the stored items against the rules, read-only.
 - `gary auto-review list`: show the reviews Gary posted without a click, and which PRs still wait for their contributor.
 

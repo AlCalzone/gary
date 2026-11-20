@@ -53,7 +53,7 @@ Ask whether he has writing rules or personal preferences for replies. Put rules 
 
 ## How Gary learns
 
-Tell him this in two or three sentences. The board logs his decisions locally: dismissed cards, alternatives he picks over the recommendation, drafts he rewrites, thread verdicts he flips, notes to the agent. Once a day, the `triage-learn` skill looks for recurring patterns and proposes up to three small rules for the profile or `personal.md`. He accepts or dismisses each proposal on the board, and nothing changes in his rules without that.
+Tell him this in two or three sentences. The board logs his decisions locally: dismissed cards, alternatives he picks over the recommendation, drafts he rewrites, thread verdicts he flips, notes to the agent. Once a day, the `triage-learn` skill looks for recurring patterns and proposes up to three small rules for the profile or `personal.md`. Once a week, the `triage-reconcile` skill proposes changes to rules that repeat, conflict or name things that no longer exist. He accepts or dismisses each proposal on the board, and nothing changes in his rules without that.
 
 ## 4. Check
 
