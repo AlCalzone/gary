@@ -2534,12 +2534,12 @@ function longestIncreasing(a) {
   return out;
 }
 
-// The estimated time of all open work per section, planned or not. Snoozed and finished rows are not open work.
+// Today's plan per section. Rows the budget left out stay out, so the bar never shows the backlog.
 function renderSplit(byGroup) {
   const totals = new Map(SECTIONS.map((sec) => [sec.id, { min: 0, n: 0 }]));
   for (const rows of byGroup.values()) {
     for (const r of rows) {
-      if (r.dim || finishedBy(r.id)) continue;
+      if (!r.planned) continue;
       const t = totals.get(sectionOf(r.data));
       t.min += planEffort(r.data);
       t.n++;
@@ -2556,7 +2556,7 @@ function renderSplit(byGroup) {
     seg.addEventListener("click", jump(sec));
     return seg;
   }));
-  planEls.split.setAttribute("aria-label", "Open work: " + (open.map(label).join(", ") || "none"));
+  planEls.split.setAttribute("aria-label", "Planned today: " + (open.map(label).join(", ") || "none"));
   planEls.split.hidden = open.length === 0;
   planEls.legend.replaceChildren(...open.map((sec) => {
     const dot = h("span", { class: "split-dot" });
