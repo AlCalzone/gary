@@ -129,7 +129,7 @@ For the hourly job, read all action files, keep those with `status: "queued"`, a
 
 ### 3. Snapshot
 
-Run `gary snapshot > <run>/snapshot.json`. It prints `changed`, `unchanged`, `closed` and `stale`. It does not save a new baseline. Never pass `--commit` here.
+Run `gary snapshot --out <run>/snapshot.json`, with the absolute path of the run directory. It creates the directory and writes `changed`, `unchanged`, `closed` and `stale` into the file. Never redirect its output with `>`: a redirect in the wrong directory empties the baseline `<state>/snapshot.json`. It does not save a new baseline. Never pass `--commit` here.
 
 Then run `gary pr-origin`. It finds the local Claude Code session that opened each open bot PR outside `fixes.json` and caches it in `<state>/origins.json`. A PR it already knows costs one file check. The board shows the origin in the PR's dialog, and the watch waits while that session is active. Never read the transcripts yourself. A failure here goes into the summary and stops nothing.
 

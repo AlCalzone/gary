@@ -1,3 +1,4 @@
+import { join } from "node:path";
 // The "Since your last choice" timeline: the activity the snapshot stores, the anchor and the groups after it.
 import { BOT, ME } from "./fixtures/github.mjs";
 import { makeHome, removeDir, runner, tempDir } from "./lib.mjs";
@@ -142,6 +143,16 @@ s = sinceSummary({ events: [ev(9, "hubot", "them", "comment")], openThreads: [],
 t.check("nothing after the anchor gives no groups", s.groups.length === 0 && s.anchor === anchor, s);
 s = sinceSummary({ events: [], openThreads: [], ci: [{ at: at(19, 11), state: "failing" }] }, anchor, {});
 t.check("the first CI result the snapshot saw is no change", s.groups.length === 0, s);
+
+// `gary snapshot --out`: the work list goes into the run directory, never over the baseline
+const { outPath } = await import("../scripts/snapshot.mjs");
+const { stateDir } = await import("../scripts/lib/config.mjs");
+const refused = (argv) => { try { outPath(argv); return false; } catch { return true; } };
+t.check("--out resolves the path of the work list", outPath(["--out", join(T, "run", "snapshot.json")]) === join(T, "run", "snapshot.json"));
+t.check("no --out means stdout", outPath([]) === null);
+t.check("--out refuses the baseline", refused(["--out", join(stateDir(), "snapshot.json")]));
+t.check("--out refuses the staged snapshot", refused(["--out", join(stateDir(), "snapshot.pending.json")]));
+t.check("--out needs a path", refused(["--out"]));
 
 removeDir(T);
 t.done();

@@ -254,6 +254,8 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .origin { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
 .origin[hidden] { display: none; }
 .origin p { margin: 0; }
+.origin summary { cursor: pointer; width: fit-content; }
+.origin details[open] { display: flex; flex-direction: column; gap: 4px; }
 .origin .origin-resume { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .origin code { overflow-wrap: anywhere; color: var(--fg); }
 .origin-warn { color: var(--warn); }
@@ -1129,9 +1131,9 @@ const KINDS = [
 ];
 const AUTHOR_TYPES = ["maintainer", "contributor", "copilot", "bot"];
 const AUTHOR_ICONS = {
-  maintainer: ["shield", "Maintainer"],
-  copilot: ["sparkles", "Copilot"],
-  bot: ["bot", "Bot"],
+  maintainer: ["shield", "Maintainer", "Opened by a maintainer of this repo"],
+  copilot: ["sparkles", "Copilot", "Opened by Copilot's coding agent. An AI wrote the code."],
+  bot: ["bot", "Bot", "Opened by a bot account. An agent or a workflow wrote it, no person."],
 };
 const SORTS = [
   { id: "board", label: "Board order" },
@@ -2513,7 +2515,7 @@ function buildRow(id, d, dim, slot) {
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
   const type = AUTHOR_ICONS[authorTypeOf(d)];
-  if (type) icons.push(icon(type[0], type[1], "muted"));
+  if (type) icons.push(icon(type[0], type[2], "muted"));
   const meta = icons.length ? h("span", { class: "r-meta" }, icons) : null;
   return h("button", {
     class: "row" + (dim ? " dim" : ""), type: "button", "data-id": id, "data-slot": slot, "aria-haspopup": "dialog",
@@ -2879,7 +2881,7 @@ function renderDetailHead(d, dim) {
     effortOf(d) ? h("span", { class: "tag effort", title: "Estimated time to read up and decide", text: formatEffort(effortOf(d)) }) : null,
     waiting != null ? iconEntry(["clock", waiting >= WAITING_CHIP_DAYS ? "warn" : "muted", "An outside person has waited " + waiting + " days for an answer", waiting + "d"]) : null,
     authorEl(d, "d-author", false),
-    type ? stateBadge([type[0], "muted", type[1], null, type[1]]) : null,
+    type ? stateBadge([type[0], "muted", type[2], null, type[1]]) : null,
     badges,
     autofixBadge(d),
     autoReviewOf(d) ? h("span", { class: "tag auto-review-tag", text: autoWaiting(d) ? AUTO_WAITING_TEXT : "Reviewed automatically" }) : null,
@@ -3468,6 +3470,7 @@ function renderOrigin(d) {
   const o = originOf(d);
   el.hidden = !o;
   if (!o) return el.replaceChildren();
+  if (!o.found) return el.replaceChildren(h("p", { class: "origin-line", text: originSummary(d, o) }));
   const kids = [h("p", { class: "origin-line", text: originSummary(d, o) })];
   if (o.found && o.prompt) kids.push(h("p", { class: "origin-prompt", text: "It started with: " + o.prompt }));
   if (o.found && o.resume) {
@@ -3486,7 +3489,10 @@ function renderOrigin(d) {
       },
     }), note));
   }
-  el.replaceChildren(...kids);
+  const box = h("details", { open: detail.originOpen === true, ontoggle: () => { detail.originOpen = box.open; } },
+    h("summary", { "data-focus-key": "origin", text: "Opened by a local Claude Code session" + (originActive(o) ? ", active now" : "") }),
+    ...kids);
+  el.replaceChildren(box);
 }
 
 function instOf(d) {
@@ -4937,6 +4943,7 @@ function openDetail(id, row) {
   detail.findingsOpen = null;
   detail.pendingFocus = null;
   detail.sinceOpen = undefined;
+  detail.originOpen = undefined;
   detail.openedAt = nowIso();
   detail.zoneCtl = buildZoneControls(id);
   renderDetail();

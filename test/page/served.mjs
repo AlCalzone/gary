@@ -95,7 +95,7 @@ try {
 	ok("avatar or placeholder in every row", await ev(`return [...document.querySelectorAll("#board .row")].every((r) => r.querySelector(".r-author .avatar"));`));
 	ok("avatar src through the DOM", await ev(`const i = document.querySelector("#board .row img.avatar"); return !!i && /^https:\\/\\/github\\.com\\/[A-Za-z0-9-]+\\.png\\?size=40$/.test(i.src) && i.loading === "lazy" && i.referrerPolicy === "no-referrer" && i.alt === "";`));
 	ok("author name shown", await ev(`return !!document.querySelector("#board .row .a-name")?.textContent;`));
-	ok("author type icon sits in the second-line cluster", await ev(`return [...document.querySelectorAll(".r-meta svg")].some((s) => /^(Maintainer|Bot|Copilot)$/.test(s.getAttribute("aria-label"))) && !document.querySelector(".r-author svg");`));
+	ok("author type icon sits in the second-line cluster", await ev(`return [...document.querySelectorAll(".r-meta svg")].some((s) => /^Opened by (a maintainer|a bot account|Copilot)/.test(s.getAttribute("aria-label"))) && !document.querySelector(".r-author svg");`));
 	const align = await ev(`const rows = [...document.querySelectorAll("#board .row")];
 		const left = (el) => el.getBoundingClientRect().left;
 		const firstChar = (t) => { const r = document.createRange(); r.setStart(t.firstChild, 0); r.setEnd(t.firstChild, 1); return r.getBoundingClientRect().left; };

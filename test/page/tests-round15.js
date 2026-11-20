@@ -28,6 +28,7 @@
 
     await openItem("pr-9971");
     ok("origin: the dialog names the session's directory, its start and its last activity", !box().hidden && box().querySelector(".origin-line")?.textContent === "Opened by a Claude Code session in ~/repositories/widgets/master on " + day(started) + ", last active " + day(quiet) + ", " + time(quiet) + ".", box().textContent);
+    ok("origin: the session details start folded behind one line", box().querySelector("details") && !box().querySelector("details").open && box().querySelector("summary")?.textContent === "Opened by a local Claude Code session", box().querySelector("summary")?.textContent);
     ok("origin: the dialog shows the first prompt", box().querySelector(".origin-prompt")?.textContent === "It started with: Look into why the LED stays red after a restore.");
     ok("origin: the resume command runs in the session's directory", box().querySelector(".origin-cmd")?.textContent === RESUME);
     window.__clip = null;

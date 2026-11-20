@@ -1,7 +1,8 @@
 // gary snapshot           print the work list, stage the snapshot in <state>/snapshot.pending.json
+// gary snapshot --out <f> write the work list to <f> instead, creating its directory
 // gary snapshot --commit  promote the staged snapshot to the baseline <state>/snapshot.json
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join, matchesGlob } from "node:path";
+import { dirname, join, matchesGlob, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
@@ -251,8 +252,19 @@ const ITEM_QUERIES = {
 	discussion: ["discussion", DISCUSSION_FIELDS],
 };
 
+/** The file `--out` names. The baseline and the staged snapshot must never be the target. */
+export function outPath(argv) {
+	const i = argv.indexOf("--out");
+	if (i < 0) return null;
+	const out = argv[i + 1] ? resolve(argv[i + 1]) : null;
+	if (!out) throw new Error("--out needs a file path");
+	if (out === resolve(BASELINE()) || out === resolve(PENDING())) throw new Error("--out must not name the baseline. Write the work list into the run directory.");
+	return out;
+}
+
 export async function main(argv = []) {
 	if (argv.includes("--commit")) return commit();
+	const out = outPath(argv);
 
 	const config = loadConfig();
 	const cutoff = Date.now() - config.activeWindowDays * 24 * 60 * 60 * 1000;
@@ -336,7 +348,9 @@ export async function main(argv = []) {
 			discussions: discussions.totalCount - discussions.nodes.length,
 		},
 	};
-	process.stdout.write(JSON.stringify(output) + "\n");
+	if (!out) return void process.stdout.write(JSON.stringify(output) + "\n");
+	mkdirSync(dirname(out), { recursive: true });
+	writeFileSync(out, JSON.stringify(output) + "\n");
 }
 
 /**
