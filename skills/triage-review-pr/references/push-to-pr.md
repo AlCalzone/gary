@@ -15,7 +15,11 @@
 
 A `take_over` and a `revise` change the code. They never decide the PR. You do not merge, approve, close or mark the PR ready, also when the instructions mention a merge. The maintainer has the last word and merges on GitHub himself.
 
-You may set the PR's title when it does not follow the profile's title format, because the title becomes the squash commit message: `gh pr edit <n> --repo <owner>/<repo> --title "<title>"` under the writing identity. Change nothing else on the PR: no labels beyond the autonomous ones, no reviewers, no milestone, no base branch. Say in the returned `state` that you changed the title.
+You may set the PR's title when it does not follow the profile's title format or no longer matches the change, because the title becomes the squash commit message: `gh pr edit <n> --repo <owner>/<repo> --title "<title>"` under the writing identity.
+
+On a PR by the bot account, the description is ours too. Every pushing job (take-over, change, address review, drive round, feedback round) brings it up to date when its push makes it wrong, like a removed feature it still describes or a test count that changed: `gh pr edit <n> --repo <owner>/<repo> --body-file <scratch>/pr-body.md`. Keep its structure and the `Fixes #N` line, rewrite only what is wrong, and follow the profile's rules for PR bodies. No @-mentions and no bot commands. On anyone else's PR, a contributor's or the maintainer's, leave the description alone.
+
+Change nothing else on the PR: no labels beyond the autonomous ones, no reviewers, no milestone, no base branch. Say in the returned `state` that you changed the title or the description.
 
 ## Claim
 
