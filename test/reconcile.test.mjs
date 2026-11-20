@@ -1,6 +1,6 @@
 // The reconcile pass: edit proposals, their accept and dismiss path, the request button and when a pass is due.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { GARY, PROFILE, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
@@ -64,6 +64,10 @@ r = put(edit("reconcile-extra", { heading: "## Old sections", finding: "taste", 
 t.check("put lists every problem of an edit proposal", r.status === 1 && /no field \\"heading/.test(r.stdout) && /finding/.test(r.stdout) && /evidence/.test(r.stdout), r.stdout);
 r = put(edit("reconcile-same", { before: "Label rule.", after: "Label rule." }));
 t.check("put refuses an edit that changes nothing", r.status === 1 && /differ/.test(r.stdout), r.stdout);
+r = gary("put", "--check", "proposals", "reconcile-checked", putFile(edit("reconcile-checked", { file: "rules/review.md", before: "- Ask for a changelog entry.\n", after: "" })));
+t.check("put --check validates and writes nothing", r.status === 0 && /"checked":true/.test(r.stdout) && !existsSync(join(BOARD, "proposals", "reconcile-checked.json")), r.stdout + r.stderr);
+r = gary("put", "--check", "proposals", "reconcile-twice", putFile(edit("reconcile-twice")));
+t.check("put --check refuses what put refuses", r.status === 1 && /more than once/.test(r.stdout), r.stdout);
 r = put(edit("reconcile-delete", { title: "Drop the changelog rule", finding: "vague", file: "rules/review.md", before: "- Ask for a changelog entry.\n", after: "" }));
 t.check("put writes a delete", r.status === 0, r.stdout + r.stderr);
 r = put(edit("reconcile-voice", { title: "Merge the two reply rules", finding: "duplicate", file: "rules/voice.md", before: "Keep replies short.\n\nKeep replies short and friendly.", after: "Keep replies short and friendly." }));

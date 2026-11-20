@@ -3,7 +3,7 @@
 //   gary put --merge items <id> <json file>   merge the fields into the item, null removes a field
 //   gary put items <id> --delete              remove the item
 //   gary put meta <json file>                 replace meta.json
-//   gary put proposals <id> <json file>       write one proposal
+//   gary put proposals <id> <json file>       write one proposal. --check validates it and writes nothing
 //   gary put learn <json file>                write the learn cursor <state>/learn.json
 // A replace keeps the maintainer's `hidden` and `snoozedUntil`, and `priority` when the file has none.
 // An item write is validated against the result. --no-validate skips that, for migrations.
@@ -76,7 +76,7 @@ function parse(argv, merge) {
 		if (collection === "actions") return { op: "merge", path: `actions/${id}`, data: readDoc(arg) };
 		return { op: merge ? "merge" : "replace", path: `items/${id}`, data: readDoc(arg) };
 	}
-	fail("Usage: gary put [--merge] [--no-validate] items <id> <json file> | items <id> --delete | meta <json file> | proposals <id> <json file> | learn <json file>");
+	fail("Usage: gary put [--merge] [--no-validate] [--check] items <id> <json file> | items <id> --delete | meta <json file> | proposals <id> <json file> | learn <json file>");
 }
 
 // An edit proposal must match its file now, so a pass learns of a wrong `before` at once
@@ -132,7 +132,8 @@ export async function sendWrite(instance, write) {
 
 export async function main(argv) {
 	const noValidate = argv.includes("--no-validate");
-	const write = parse(argv.filter((a) => a !== "--no-validate" && a !== "--merge"), argv.includes("--merge"));
+	const checkOnly = argv.includes("--check");
+	const write = parse(argv.filter((a) => a !== "--no-validate" && a !== "--merge" && a !== "--check"), argv.includes("--merge"));
 	const instance = instanceName();
 	if (write.op === "learn") {
 		const problems = await writeLearn(write.data);
@@ -145,6 +146,7 @@ export async function main(argv) {
 		const problems = validateProposal(write.path.slice("proposals/".length), write.data);
 		if (!problems.length && isEditProposal(write.data)) problems.push(...(await editTargetProblems(write.data, instance)));
 		if (problems.length) fail("The proposal is invalid, nothing was written", problems);
+		if (checkOnly) return console.log(JSON.stringify({ ok: true, checked: true }));
 	}
 	if (write.path === "meta") {
 		const problems = validateMeta(write.data);

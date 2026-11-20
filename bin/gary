@@ -7,7 +7,7 @@ import { SettingsError, instanceName, paths, setInstance } from "../scripts/lib/
 const COMMANDS = {
 	snapshot: ["../scripts/snapshot.mjs", "main", "Fetch open items and print the work list. --commit saves the staged snapshot"],
 	item: ["../scripts/snapshot.mjs", "itemMain", "Print the fresh snapshot entry of one item: item <id> | item <pr|issue|discussion> <number> [--repo <owner/name>]"],
-	put: ["../scripts/board-put.mjs", "main", "Write one board document: put items <id> <file> | items <id> --delete | meta <file> | proposals <id> <file> | learn <file>. --merge, --no-validate"],
+	put: ["../scripts/board-put.mjs", "main", "Write one board document: put items <id> <file> | items <id> --delete | meta <file> | proposals <id> <file> | learn <file>. --merge, --no-validate, --check for a proposal"],
 	validate: ["../scripts/validate.mjs", "main", "Check board items against the rules: validate [<id> ...]. Read-only"],
 	action: ["../scripts/execute-action.mjs", "main", "Run one GitHub action from a JSON file or stdin. --dry-run, --check-fresh, --autonomous"],
 	decisions: ["../scripts/learn-cli.mjs", "decisionsMain", "Print the decision log. --since <ISO> (exclusive), --json"],
