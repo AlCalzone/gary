@@ -14,6 +14,7 @@ function gist(e) {
 		case "edited_comment": return `rewrote a comment on ${e.comment?.path}`;
 		case "unchecked_comment": return `unchecked a comment on ${e.comment?.path}`;
 		case "agent_note": return e.text;
+		case "answered_finding": return `${e.finding?.severity ?? "finding"} "${e.finding?.text}": ${e.text}`;
 		case "snoozed": return e.untilActivity ? "hidden until it changes" : `snoozed for ${e.days} days`;
 		case "accepted_proposal": return `${e.proposal?.id}: ${e.proposal?.setting?.key} from ${e.from} to ${e.proposal?.setting?.value}`;
 		case "dismissed_proposal": return `${e.proposal?.id}${e.reason ? `: ${e.reason}` : ""}`;

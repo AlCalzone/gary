@@ -16,6 +16,7 @@ import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
 import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
+import { findingKey, findingsByKey } from "../scripts/lib/findings.mjs";
 import { sinceAnchor, sinceSummary } from "../scripts/lib/since.mjs";
 import { latest, pendingHold, requestReviewRound, stageOf, unhandledFeedback } from "../scripts/lib/watch.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
@@ -41,6 +42,9 @@ const MAX_NOTE = 1000;
 const MAX_TITLE = 256;
 const MAX_REASON = 500;
 const MAX_RULE = 20000;
+const MAX_ANSWER = 4000;
+// The answers kept on an item, newest last
+const MAX_KEPT_ANSWERS = 100;
 // A refresh reads GitHub, so it is limited per item and in total
 const REFRESH_ITEM_MS = 20000;
 const REFRESH_PER_MINUTE = 30;
@@ -1041,6 +1045,8 @@ export async function startBoardServer({
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),
 			...(typeof data.hint === "string" && { hint: servedHint(data) }),
+			// Every finding is served with the key his answers name it by
+			...(Array.isArray(data.findings) && { findings: data.findings.map((f, i) => (isObject(f) ? { ...f, key: findingKey(f, i) } : f)) }),
 			routes: routesOf(data).map((route) => {
 				const hash = draftHash(route, data);
 				const key = `${name}|${id}|${route.id}|${hash}`;
@@ -1318,6 +1324,7 @@ export async function startBoardServer({
 		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(name, body);
 		const { error: settingsError } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
+		if (body.action === "reanalyze") return handleReanalyze(name, body);
 		const { itemId, routeId, text, force, input } = body;
 		if (isObject(input) && input.part !== undefined) return handlePart(name, body);
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
@@ -1838,6 +1845,73 @@ export async function startBoardServer({
 		return [200, { ok: true, result: "Logged." }];
 	}
 
+	/** Checks his answers to the item's findings and returns them with each finding's text. Throws a Refusal. */
+	function checkAnswers(name, item, input) {
+		if (!isObject(input)) throw new Refusal("input must be an object.");
+		checkKeys(input, ["answers"], "input");
+		const answers = input.answers;
+		if (!Array.isArray(answers) || !answers.length) throw new Refusal("input.answers must list at least one answer.");
+		const findings = findingsByKey(item);
+		const commands = Object.values(settingsOf(name).instance?.profile?.botCommands ?? {}).map((c) => String(c).trim().toLowerCase()).filter(Boolean);
+		const seen = new Set();
+		return answers.map((a) => {
+			if (!isObject(a)) throw new Refusal("Each answer must be an object.");
+			checkKeys(a, ["finding", "text"], "An answer");
+			if (typeof a.finding !== "string" || !findings.has(a.finding)) throw new Refusal("An answer names a finding the item no longer has. Reload the board.");
+			if (seen.has(a.finding)) throw new Refusal("A finding has two answers.");
+			seen.add(a.finding);
+			const text = typeof a.text === "string" ? a.text.trim() : "";
+			if (!text) throw new Refusal("An answer is empty.");
+			if (text.length > MAX_ANSWER) throw new Refusal(`An answer is longer than ${MAX_ANSWER} characters.`);
+			const hit = commands.find((c) => text.toLowerCase().includes(c));
+			if (hit) throw new Refusal(`An answer contains the bot command "${hit}". Post bot commands on GitHub yourself.`);
+			const f = findings.get(a.finding);
+			return { finding: a.finding, findingText: typeof f.text === "string" ? f.text : "", severity: typeof f.severity === "string" ? f.severity : null, text };
+		});
+	}
+
+	// "Analyze again" with his answers to findings: one queued reanalyze, the answers kept on the item and logged
+	async function handleReanalyze(name, body) {
+		const { itemId, text = "", input } = body;
+		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return outdated;
+		if (typeof text !== "string" || text.length > MAX_TEXT) return [400, { ok: false, result: `text must be a string of at most ${MAX_TEXT} characters.` }];
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const file = itemFile(name, itemId);
+			let done;
+			try {
+				done = await withLock(docLocks, file, async () => {
+					const item = await readJson(file);
+					if (!item) return null;
+					const answers = checkAnswers(name, item, input);
+					const at = new Date().toISOString();
+					const kept = [...(Array.isArray(item.findingAnswers) ? item.findingAnswers : []), ...answers.map(({ finding, findingText, text }) => ({ finding, findingText, text, at }))];
+					await writeAtomic(file, { ...item, findingAnswers: kept.slice(-MAX_KEPT_ANSWERS) });
+					return { item, answers, at };
+				});
+			} catch (e) {
+				if (e instanceof Refusal) return [200, { ok: false, result: e.message }];
+				throw e;
+			}
+			if (!done) return outdated;
+			const { item, answers, at } = done;
+			await logClick(name, itemId, {
+				action: "reanalyze",
+				params: { answers: answers.map(({ finding, findingText, text }) => ({ finding, findingText, text })) },
+				text: text.trim(),
+				status: "queued",
+				via: "queue",
+				createdAt: at,
+				finishedAt: null,
+				result: "",
+			});
+			for (const a of answers) decide(name, "answered_finding", itemId, item, { finding: { key: a.finding, severity: a.severity, text: cut(a.findingText) }, text: cut(a.text) });
+			if (text.trim()) decide(name, "agent_note", itemId, item, { text: cut(text) });
+			const n = answers.length;
+			return [200, { ok: true, result: `Sent ${n} answer${n === 1 ? "" : "s"} to the agent.` }];
+		});
+	}
+
 	// Removes one suggested route the maintainer does not want and remembers it on the item
 	async function handleDismissRoute(name, body) {
 		const { itemId, routeId } = body;
@@ -1991,6 +2065,8 @@ export async function startBoardServer({
 			const { instance: _i, ref: _r, ...rest } = data;
 			data = rest;
 			if (path.startsWith("actions/") && typeof data.itemId === "string" && data.itemId.startsWith(`${name}/`)) data.itemId = data.itemId.slice(name.length + 1);
+			// Answers to findings are checked and kept on the item, so they come only through /api/action
+			if (path.startsWith("actions/") && isObject(data.params) && data.params.answers !== undefined) return [400, { error: "Answers to findings go through /api/action." }];
 		}
 		const write = { op: body.op, path, data };
 		return withLock(docLocks, file, async () => {

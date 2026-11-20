@@ -2,6 +2,7 @@
 import { ID_PATTERN } from "./board-store.mjs";
 import { fixBlock } from "./fixes.mjs";
 import { apiEditProblems } from "./api-edit.mjs";
+import { FINDING_ID } from "./findings.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
@@ -123,8 +124,15 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 	const findings = item.findings === undefined ? [] : item.findings;
 	if (!Array.isArray(findings)) err("findings", "findings must be a list");
 	const routeIds = new Set(routes.map((r) => r?.id));
+	const findingIds = new Set();
 	(Array.isArray(findings) ? findings : []).forEach((f, i) => {
 		if (!isObject(f) || !SEVERITIES.includes(f.severity)) err("finding-severity", `findings[${i}].severity must be one of ${SEVERITIES.join(", ")}`);
+		// The maintainer's answers name a finding by its id, so an id is unique within the item
+		if (isObject(f) && f.id !== undefined) {
+			if (typeof f.id !== "string" || !FINDING_ID.test(f.id)) err("finding-id", `findings[${i}].id must be 1 to 40 letters, digits, "-" or "_", like "f1"`);
+			else if (findingIds.has(f.id)) err("finding-id", `findings[${i}].id "${f.id}" is used twice`);
+			else findingIds.add(f.id);
+		}
 		if (isObject(f) && f.routeId !== undefined && !routeIds.has(f.routeId)) {
 			err("finding-route", `findings[${i}].routeId "${f.routeId}" names no route of this item`);
 		}
