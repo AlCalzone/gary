@@ -252,6 +252,19 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .auto-review .ar-lead { margin: 0; color: var(--fg); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
 .auto-review ul { margin: 0; padding-left: 1.2em; }
 .auto-review li { overflow-wrap: anywhere; }
+/* What happened since his last choice: one dot per group on a vertical line */
+.since { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
+.since[hidden] { display: none; }
+.since summary { cursor: pointer; width: fit-content; }
+.since ol { margin: 8px 0 0; padding: 0; list-style: none; }
+.since li { position: relative; padding: 0 0 8px 24px; color: var(--fg); line-height: 18px; overflow-wrap: anywhere; }
+.since li:last-child { padding-bottom: 0; }
+.since li::before { content: ""; position: absolute; left: 8px; top: 9px; bottom: -9px; width: 1.5px; background: var(--line-strong); }
+.since li:last-child::before { display: none; }
+.since .s-dot { position: absolute; left: 0; top: 1px; width: 17px; height: 17px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); color: var(--muted); }
+.since .s-dot .i { width: 14px; height: 14px; }
+.since .s-dot:empty::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.since .s-note { color: var(--warn); }
 .status.opened { color: var(--muted); }
 .status.opened .i, .head-done .i { width: 15px; height: 15px; color: var(--ok); flex: none; }
 .head-done { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 12px; font-size: 13px; color: var(--muted); white-space: nowrap; }
@@ -972,6 +985,7 @@ textarea {
       <div class="agent-banner" id="d-fix" role="status" hidden></div>
       <p class="fix-for" id="d-fix-for" hidden></p>
       <div class="origin" id="d-origin" hidden></div>
+      <div class="since" id="d-since" hidden></div>
       <div class="auto-review" id="d-auto" hidden></div>
       <div class="story" id="d-story" hidden></div>
       <div class="reviews" id="d-reviews" hidden></div>
@@ -1218,6 +1232,7 @@ const ICONS = {
   comments: [p("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")],
   external: [p("M15 3h6v6"), p("M10 14 21 3"), p("M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6")],
   copy: [["rect", { x: 8, y: 8, width: 13, height: 13, rx: 2 }], p("M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2")],
+  commit: [c(12, 12, 3), p("M3 12h6"), p("M15 12h6")],
 };
 
 // Build an SVG icon. With a label it gets role="img", a tooltip and an accessible name, otherwise it is hidden from assistive tech
@@ -2598,6 +2613,36 @@ function renderDetailHead(d, dim) {
     timeEl(d.updatedAt, "updated "),
   ].flat().filter(Boolean);
   detail.meta.replaceChildren(...meta);
+}
+
+const sinceDay = (iso) => {
+  const t = new Date(parseTime(iso));
+  return t.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(t.getFullYear() !== new Date().getFullYear() && { year: "numeric" }) });
+};
+
+// What happened on GitHub since his last choice, or since he last opened the dialog. The server builds the groups
+function renderSince(d) {
+  const el = document.getElementById("d-since");
+  const s = d.since && typeof d.since === "object" ? d.since : null;
+  const a = s && s.anchor && typeof s.anchor === "object" && Number.isFinite(parseTime(s.anchor.at)) ? s.anchor : null;
+  const groups = a && Array.isArray(s.groups) ? s.groups.filter((g) => g && typeof g.text === "string") : [];
+  el.hidden = !a;
+  if (!a) return el.replaceChildren();
+  const day = sinceDay(a.at);
+  const choice = a.kind === "choice";
+  if (!groups.length) {
+    el.classList.add("quiet");
+    return el.replaceChildren(h("p", { class: "since-quiet", text: choice ? "Nothing new since your last choice on " + day + "." : "Nothing new since you last opened it on " + day + "." }));
+  }
+  el.classList.remove("quiet");
+  const head = choice ? "Since your last choice, " + day + (str(a.label) ? " (" + str(a.label) + ")" : "") : "Since you last opened it, " + day;
+  const box = h("details", { open: detail.sinceOpen !== false, ontoggle: () => { detail.sinceOpen = box.open; } },
+    h("summary", { "data-focus-key": "since", text: head }),
+    h("ol", null, groups.map((g) => h("li", null,
+      h("span", { class: "s-dot" }, Object.hasOwn(ICONS, str(g.icon)) ? icon(str(g.icon)) : null),
+      h("span", { class: "s-text", text: g.text }),
+      str(g.note) ? h("span", { class: "s-note", text: " · " + str(g.note) }) : null))));
+  el.replaceChildren(box);
 }
 
 function renderDetailInfo(d) {
@@ -4506,6 +4551,7 @@ function renderDetail() {
 
   if (partChanged("head", [d, dim, latestOf(id), combinedView()])) renderDetailHead(d, dim);
   if (partChanged("info", [d])) renderDetailInfo(d);
+  if (partChanged("since", [d.since])) renderSince(d);
   renderZones(id, d, locked);
   if (partChanged("status", [latestOf(id), state.busy.has(id), state.notes.get(id), detail.lastZone])) renderZoneStatus(id);
 
@@ -4537,6 +4583,8 @@ function openDetail(id, row) {
   detail.lastZone = null;
   detail.findingsOpen = null;
   detail.pendingFocus = null;
+  detail.sinceOpen = undefined;
+  detail.openedAt = nowIso();
   detail.zoneCtl = buildZoneControls(id);
   renderDetail();
   detail.el.showModal();
@@ -4903,11 +4951,22 @@ function requestReload() {
 window.addEventListener("board:reload", requestReload);
 for (const b of document.querySelectorAll("#reload, .bar-reload")) b.addEventListener("click", () => location.reload());
 
+// The time he opened the dialog is stored on close, so the timeline he reads keeps its anchor while it is open
+function recordSeen(id, at) {
+  if (!state.db || !at || !state.items.has(id)) return;
+  try {
+    Promise.resolve(state.db.doc("items/" + refOf(id).instance + "/" + refOf(id).id).update({ seenAt: at })).catch(() => {});
+  } catch {
+    // The anchor falls back to the open before
+  }
+}
+
 function finishDetail() {
   const id = detail.id;
   // A close event can arrive after the dialog was opened again, and must not clear the new item
   if (!id || detail.el.open) return;
   detail.id = null;
+  recordSeen(id, detail.openedAt);
   state.confirming.delete(id);
   detail.cards.clear();
   detail.dismissed.clear();
