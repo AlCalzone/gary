@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { CATEGORIES, normalizeCategory } from "./categories.mjs";
 import { instanceDir, instanceName, rootStateDir } from "./config.mjs";
 
 // Ids are opaque. Nothing derives a repo, kind or number from one
@@ -74,6 +75,14 @@ export function replaceFields(cur, doc) {
 	return next;
 }
 
+// An old `section` in a write replaces the stored category, so it is mapped before the merge
+function categoryPatch(cur, data) {
+	if (data.section === undefined || CATEGORIES.includes(data.category)) return data;
+	const { authorType, ...mapped } = normalizeCategory({ authorType: cur?.authorType, ...data });
+	if (mapped.section !== undefined) return data;
+	return data.authorType === undefined ? mapped : { ...mapped, authorType };
+}
+
 /**
  * Applies one write to a board document.
  * `set` replaces, `replace` replaces an item but keeps the maintainer's fields, `update` merges into an existing doc,
@@ -98,9 +107,11 @@ export async function applyWrite(instance, { op, path, data }) {
 	if (op !== "set") {
 		const cur = await readJson(file);
 		if (!cur && op === "update") return [404, { error: `${path} does not exist.` }];
-		if (op === "replace") next = replaceFields(cur, data);
-		else next = op === "update" ? { ...cur, ...data } : mergeFields(cur ?? {}, data);
+		const patch = path.startsWith("items/") ? categoryPatch(cur, data) : data;
+		if (op === "replace") next = replaceFields(cur, patch);
+		else next = op === "update" ? { ...cur, ...patch } : mergeFields(cur ?? {}, patch);
 	}
+	if (path.startsWith("items/")) next = normalizeCategory(next);
 	await mkdir(dirname(file), { recursive: true });
 	await writeAtomic(file, next);
 	return [200, { ok: true }];

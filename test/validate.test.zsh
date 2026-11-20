@@ -41,7 +41,7 @@ expect "item writes no state" 0 "" test ! -e $GARY_HOME/state/snapshot.pending.j
 
 # put validation
 mk() { print -r -- "$2" > $H/$1.json }
-BASE='"repo":"acme/widgets","kind":"pr","number":12,"title":"t","url":"https://github.com/x","author":"a","authorType":"maintainer","section":"easy","priority":1,"effortMinutes":5,"reviewDepth":"full","state":"Decide."'
+BASE='"repo":"acme/widgets","kind":"pr","number":12,"title":"t","url":"https://github.com/x","author":"a","authorType":"maintainer","category":"land","priority":1,"effortMinutes":5,"reviewDepth":"full","state":"Decide."'
 mk good "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"r1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"Thanks\",\"recommended\":true},{\"id\":\"r2\",\"type\":\"merge\",\"title\":\"Merge: ready\",\"as\":\"me\"}],\"findings\":[{\"severity\":\"minor\",\"text\":\"x\",\"routeId\":\"r2\"}]}"
 expect "put: a valid item is written" 0 '"ok":true' node $B put items pr-12 $H/good.json
 expect "put: the item is stored" 0 '"Reply: thanks"' cat $ITEMS/pr-12.json
@@ -69,7 +69,25 @@ bad_case() { # name, pattern, json
 	expect "put refuses: $1" 1 "$2" node $B put items pr-12 $H/case.json
 }
 R1='{"id":"r1","type":"reply","title":"Reply: thanks","as":"bot","text":"Thanks","recommended":true}'
-bad_case "missing section" "section must be one of" "{${BASE/\"section\":\"easy\"/\"section\":null},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "missing category" "category must be one of act, unblock, land, decide" "{${BASE/\"category\":\"land\"/\"category\":null},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "unknown category" 'category must be one of act, unblock, land, decide, not \"later\"' "{${BASE/\"category\":\"land\"/\"category\":\"later\"},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "unknown old section" 'section \"soon\" is unknown' "{${BASE/\"category\":\"land\"/\"section\":\"soon\"},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "needsHardware is a flag" "needsHardware must be true or false" "{$BASE,\"needsHardware\":\"yes\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "a due date needs its source" "dueAt and dueSource come together" "{$BASE,\"dueAt\":\"2026-11-24\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "a series names its place" "series is { id, title, position, size }" "{$BASE,\"series\":{\"id\":\"pr-11\",\"title\":\"t\",\"position\":3,\"size\":2},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "waitingOn comes from the facts" "waitingOn must be one of us, them, nobody" "{$BASE,\"waitingOn\":\"me\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+# An item in the old form, with a section, is accepted and stored with its category
+OLD="{${BASE/\"category\":\"land\"/\"section\":\"review\"},\"authorType\":\"contributor\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+mk old "$OLD"
+expect "put takes the old section" 0 '"ok":true' node $B put items pr-12 $H/old.json
+expect "a contributor's review is stored as unblock" 0 '"category": "unblock"' cat $ITEMS/pr-12.json
+expect "the stored item has no section" 0 "" zsh -c "! grep -q '\"section\"' $ITEMS/pr-12.json"
+mk old2 "{${BASE/\"category\":\"land\"/\"section\":\"hardware\"},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+expect "put takes the old hardware section" 0 '"ok":true' node $B put items pr-12 $H/old2.json
+expect "hardware is stored as decide with the flag" 0 '"needsHardware": true' zsh -c "grep -q '\"category\": \"decide\"' $ITEMS/pr-12.json && cat $ITEMS/pr-12.json"
+expect "a merge with an old section maps it too" 0 '"category": "land"' zsh -c "print '{\"section\":\"almost\",\"routes\":[$R1],\"hint\":\"Reply: thanks\"}' > $H/m2.json; node $B put --merge items pr-12 $H/m2.json > /dev/null; cat $ITEMS/pr-12.json"
+expect "gary validate takes an old item on disk" 0 "1 items checked" zsh -c "node -e 'const f=process.argv[1];const d=JSON.parse(require(\"fs\").readFileSync(f));delete d.category;d.section=\"easy\";require(\"fs\").writeFileSync(f,JSON.stringify(d))' $ITEMS/pr-12.json; node $B validate pr-12"
+node $B put items pr-12 $H/good.json > /dev/null 2>&1
 bad_case "bad effort" "effortMinutes must be one of" "{${BASE/\"effortMinutes\":5/\"effortMinutes\":7},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
 bad_case "route id s1" "id must be one of r1, r2, r3, r4" "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[{\"id\":\"s1\",\"type\":\"reply\",\"title\":\"Reply: thanks\",\"as\":\"bot\",\"text\":\"x\",\"recommended\":true}]}"
 bad_case "duplicate route id" "is used twice" "{$BASE,\"hint\":\"Reply: thanks\",\"routes\":[$R1,{\"id\":\"r1\",\"type\":\"merge\",\"title\":\"Merge\",\"as\":\"me\"}]}"
@@ -233,7 +251,7 @@ expect "alsoLabel is only for reply and request_logs" 1 "alsoLabel is only for r
 node $B put items pr-12 $H/good.json > /dev/null 2>&1
 
 # alsoAnswer on discussion close routes
-DBASE='"repo":"acme/widgets","kind":"discussion","number":31,"title":"t","url":"https://github.com/acme/widgets/discussions/31","author":"a","authorType":"contributor","section":"easy","priority":1,"effortMinutes":5,"reviewDepth":"full","state":"Decide."'
+DBASE='"repo":"acme/widgets","kind":"discussion","number":31,"title":"t","url":"https://github.com/acme/widgets/discussions/31","author":"a","authorType":"contributor","category":"land","priority":1,"effortMinutes":5,"reviewDepth":"full","state":"Decide."'
 answer() { mk ans "{${2:-$DBASE},\"hint\":\"Close: answered\",\"routes\":[{\"id\":\"r1\",\"type\":\"${3:-close}\",\"title\":\"Close: answered\",\"as\":\"me\",\"text\":\"Closing.\",\"recommended\":true,\"params\":{\"alsoAnswer\":$1}}]}"; node $B put items disc-31 $H/ans.json }
 expect "alsoAnswer on a discussion close" 0 '"ok":true' answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/31#discussioncomment-1","gist":"Hold the button"}'
 expect "alsoAnswer needs a comment URL of the discussion" 1 "must be a comment URL in this discussion" answer '{"commentId":"DC_c1","url":"https://github.com/acme/widgets/discussions/310#x","gist":"x"}'
@@ -246,12 +264,14 @@ node $B put items disc-31 --delete > /dev/null 2>&1
 
 # A discussion that becomes an issue
 escalate() { mk esc "{${2:-$DBASE}${3:-},\"hint\":\"Accept: track as an enhancement issue\",\"routes\":[{\"id\":\"r1\",\"type\":\"move\",\"title\":\"Accept: track as an enhancement issue\",\"as\":\"me\",\"recommended\":true,\"params\":$1}]}"; node $B put items disc-31 $H/esc.json }
-expect "move to issue with issueKind and a category" 0 '"ok":true' escalate '{"to":"issue","issueKind":"enhancement"}' "$DBASE" ',"category":"Feature Requests"'
+expect "move to issue with issueKind and a category" 0 '"ok":true' escalate '{"to":"issue","issueKind":"enhancement"}' "$DBASE" ',"discussionCategory":"Feature Requests"'
 expect "move to issue without issueKind" 0 '"ok":true' escalate '{"to":"issue"}'
 expect "issueKind is bug or enhancement" 1 "params.issueKind must be one of bug, enhancement" escalate '{"to":"issue","issueKind":"feature"}'
 expect "no escalation of a closed discussion" 1 "the discussion is closed" escalate '{"to":"issue"}' "$DBASE" ',"live":{"state":"closed","checkedAt":"2026-11-17T14:00:00Z"}'
 expect "only a discussion becomes an issue" 1 "only a discussion can become an issue" escalate '{"to":"issue"}' "${DBASE/discussion/issue}"
-expect "only a discussion has a category" 1 "only discussions have one" escalate '{"to":"issue"}' "${DBASE/discussion/issue}" ',"category":"Ideas"'
+expect "only a discussion has a category" 1 "only discussions have one" escalate '{"to":"issue"}' "${DBASE/discussion/issue}" ',"discussionCategory":"Ideas"'
+expect "an old discussion keeps its GitHub category in category" 0 '"ok":true' escalate '{"to":"issue"}' "${DBASE/\"category\":\"land\"/\"section\":\"easy\"}" ',"category":"Ideas"'
+expect "it is stored as discussionCategory" 0 '"discussionCategory": "Ideas"' zsh -c "grep -q '\"category\": \"land\"' $ITEMS/disc-31.json && cat $ITEMS/disc-31.json"
 node $B put items disc-31 --delete > /dev/null 2>&1
 
 # gary action --autonomous

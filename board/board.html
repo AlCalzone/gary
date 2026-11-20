@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&display=swap">
 <style>
-/* Layout: a quiet header, then one bordered block per section with its own header band; rows are single lines that end in state icons, the effort figure and the age */
+/* Layout: a quiet header, then one bordered block per group with its own header band; rows are single lines that end in state icons, the effort figure and the age */
 :root {
   --tint: 5%;
   --bg: #edf0f7;
@@ -32,19 +32,15 @@
   --act-agent: #1b6b6e;
   --code-bg: #eceef5;
   --act-away: #5a6175;
-  --cat-active: #fbe3d8;
-  --cat-easy: #dcf1e4;
-  --cat-almost: #f9eec8;
-  --cat-review: #e5e1fa;
-  --cat-deferred: #dfebf7;
-  --cat-hardware: #eee4d8;
+  --cat-act: #fbe3d8;
+  --cat-unblock: #dfebf7;
+  --cat-land: #dcf1e4;
+  --cat-decide: #e5e1fa;
   --cat-snoozed: #e9e9f1;
-  --cat-active-ink: #a8481f;
-  --cat-easy-ink: #1f6a45;
-  --cat-almost-ink: #7f5c0b;
-  --cat-review-ink: #5a43b3;
-  --cat-deferred-ink: #255f99;
-  --cat-hardware-ink: #7f5326;
+  --cat-act-ink: #a8481f;
+  --cat-unblock-ink: #255f99;
+  --cat-land-ink: #1f6a45;
+  --cat-decide-ink: #5a43b3;
   --cat-snoozed-ink: #5a6175;
   --ok: #2a7a52;
   --ok-soft: #e0f2e8;
@@ -88,19 +84,15 @@
     --act-agent: #62d2e0;
     --code-bg: #272c3b;
     --act-away: #a6adc2;
-    --cat-active: #4d2f24;
-    --cat-easy: #1d3f2b;
-    --cat-almost: #433620;
-    --cat-review: #372e63;
-    --cat-deferred: #1e3a57;
-    --cat-hardware: #433226;
+    --cat-act: #4d2f24;
+    --cat-unblock: #1e3a57;
+    --cat-land: #1d3f2b;
+    --cat-decide: #372e63;
     --cat-snoozed: #2e3242;
-    --cat-active-ink: #f4a582;
-    --cat-easy-ink: #86d9a4;
-    --cat-almost-ink: #ebcb72;
-    --cat-review-ink: #bbaefa;
-    --cat-deferred-ink: #8cc0f0;
-    --cat-hardware-ink: #dcb38a;
+    --cat-act-ink: #f4a582;
+    --cat-unblock-ink: #8cc0f0;
+    --cat-land-ink: #86d9a4;
+    --cat-decide-ink: #bbaefa;
     --cat-snoozed-ink: #a6adc2;
     --ok: #8fd4ae;
     --ok-soft: #1d3529;
@@ -141,19 +133,15 @@
   --act-agent: #62d2e0;
   --code-bg: #272c3b;
   --act-away: #a6adc2;
-  --cat-active: #4d2f24;
-  --cat-easy: #1d3f2b;
-  --cat-almost: #433620;
-  --cat-review: #372e63;
-  --cat-deferred: #1e3a57;
-  --cat-hardware: #433226;
+  --cat-act: #4d2f24;
+  --cat-unblock: #1e3a57;
+  --cat-land: #1d3f2b;
+  --cat-decide: #372e63;
   --cat-snoozed: #2e3242;
-  --cat-active-ink: #f4a582;
-  --cat-easy-ink: #86d9a4;
-  --cat-almost-ink: #ebcb72;
-  --cat-review-ink: #bbaefa;
-  --cat-deferred-ink: #8cc0f0;
-  --cat-hardware-ink: #dcb38a;
+  --cat-act-ink: #f4a582;
+  --cat-unblock-ink: #8cc0f0;
+  --cat-land-ink: #86d9a4;
+  --cat-decide-ink: #bbaefa;
   --cat-snoozed-ink: #a6adc2;
   --ok: #8fd4ae;
   --ok-soft: #1d3529;
@@ -247,7 +235,9 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 /* A fix or a push in progress: filled teal, readable at a glance on the title line */
 .r-titleline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .agent-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; background: var(--act-agent); color: var(--surface); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
-.r-dcat { padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.r-dcat, .r-flag { padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.r-flag.due-soon { border-color: color-mix(in srgb, var(--cat-act-ink) 55%, transparent); color: var(--cat-act-ink); }
+.r-flag.overdue { border-color: var(--bad); color: var(--bad); font-weight: 600; }
 .agent-chip.quiet { background: color-mix(in srgb, var(--act-agent) 14%, var(--surface)); color: var(--act-agent); }
 .ci-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 1.5px var(--surface); }
 .ci-dot.ci-passing { background: var(--ok); }
@@ -437,12 +427,10 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink, var(--line)) 45%, transparent);
   white-space: nowrap;
 }
-.cat-active { --ink: var(--cat-active-ink); background: var(--cat-active); }
-.cat-easy { --ink: var(--cat-easy-ink); background: var(--cat-easy); }
-.cat-almost { --ink: var(--cat-almost-ink); background: var(--cat-almost); }
-.cat-review { --ink: var(--cat-review-ink); background: var(--cat-review); }
-.cat-deferred { --ink: var(--cat-deferred-ink); background: var(--cat-deferred); }
-.cat-hardware { --ink: var(--cat-hardware-ink); background: var(--cat-hardware); }
+.cat-act { --ink: var(--cat-act-ink); background: var(--cat-act); }
+.cat-unblock { --ink: var(--cat-unblock-ink); background: var(--cat-unblock); }
+.cat-land { --ink: var(--cat-land-ink); background: var(--cat-land); }
+.cat-decide { --ink: var(--cat-decide-ink); background: var(--cat-decide); }
 .cat-snoozed { --ink: var(--cat-snoozed-ink); background: var(--cat-snoozed); }
 .show-all { margin: 4px 10px 8px; }
 .sum { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1082,22 +1070,30 @@ textarea {
 const SERVER = "host:gary";
 const GITHUB_PREFIX = "https://github.com/";
 
-const SECTIONS = [
-  { id: "active", name: "Active communication", category: "Active" },
-  { id: "easy", name: "Easy wins", category: "Easy" },
-  { id: "almost", name: "Almost ready", category: "Almost" },
-  { id: "review", name: "Needs human review", category: "Review" },
-  { id: "deferred", name: "Deferred and larger projects", category: "Later" },
-  { id: "hardware", name: "Needs real hardware", category: "Hardware" },
+// The kind of move he makes on an item
+const CATEGORIES = [
+  { id: "act", label: "Act" },
+  { id: "unblock", label: "Unblock" },
+  { id: "land", label: "Land" },
+  { id: "decide", label: "Decide" },
 ];
-const SECTION_ORDER = new Map(SECTIONS.map((s, i) => [s.id, i]));
+const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
+const categoryLabel = (id) => (CATEGORIES.find((c) => c.id === id) || {}).label || "";
+const FALLBACK_CATEGORY = "decide";
+// Items written before categories carry a section. `review` maps by author, see categoryIdOf
+const FROM_SECTION = { active: "unblock", easy: "land", almost: "land", deferred: "decide", hardware: "decide" };
+// The words of the old sections, for setting proposals written before categories
+const OLD_SECTION_NAMES = { active: "Active communication", easy: "Easy wins", almost: "Almost ready", review: "Needs human review", deferred: "Deferred and larger projects", hardware: "Needs real hardware" };
 const GROUPS = [
-  { id: "quick", name: "Quick & Easy", sections: ["active", "easy"], cap: 5 },
-  { id: "after", name: "Afterwards", sections: ["almost", "review"], cap: Infinity },
-  { id: "later", name: "When you have time", sections: ["deferred", "hardware"], cap: Infinity },
+  { id: "quick", name: "Quick & Easy", cap: 5 },
+  { id: "after", name: "Afterwards", cap: Infinity },
+  { id: "later", name: "When you have time", cap: Infinity },
 ];
-const SECTION_IDS = new Set(SECTIONS.map((s) => s.id));
-const FALLBACK_SECTION = "review";
+// An item this quick is in "Quick & Easy" whatever its category, and so is an Act item due within this many days
+const QUICK_EFFORT_MAX = 2;
+const DUE_SOON_DAYS = 2;
+// The agent jobs he asks for. One that finished comes back first in its group
+const ASKED_JOBS = new Set(["take_over", "revise", "address_review", "drive", "format", "start_fix"]);
 const REVEAL_STEP = 10;
 const BUDGET_HOURS = [2, 4, 6, 8];
 const DEFAULT_BUDGET_HOURS = 6;
@@ -1115,7 +1111,7 @@ const AUTHOR_ICONS = {
   bot: ["bot", "Bot"],
 };
 const SORTS = [
-  { id: "section", label: "Section order" },
+  { id: "board", label: "Board order" },
   { id: "quickest", label: "Quickest first" },
 ];
 const WAITING_CHIP_DAYS = 3;
@@ -1355,7 +1351,7 @@ function nowIso() {
 
 function defaultFilters() {
   return {
-    kinds: KINDS.map((k) => k.id), authors: AUTHOR_TYPES.slice(), text: "", showHidden: false, sort: "section",
+    kinds: KINDS.map((k) => k.id), authors: AUTHOR_TYPES.slice(), text: "", showHidden: false, sort: "board",
     budget: DEFAULT_BUDGET_HOURS, extra: null,
   };
 }
@@ -1391,7 +1387,7 @@ function saveFilters() {
 function filtersActive() {
   const f = state.filters;
   return f.kinds.length !== KINDS.length || f.authors.length !== AUTHOR_TYPES.length
-    || f.text.trim() !== "" || f.showHidden || f.sort !== "section";
+    || f.text.trim() !== "" || f.showHidden || f.sort !== "board";
 }
 
 function isHiddenItem(d) {
@@ -1415,8 +1411,33 @@ function matchesFilters(d) {
   return true;
 }
 
-function sectionOf(d) {
-  return SECTION_IDS.has(d.section) ? d.section : FALLBACK_SECTION;
+function categoryIdOf(d) {
+  if (CATEGORY_IDS.has(d.category)) return d.category;
+  if (d.section === "review") return authorTypeOf(d) === "contributor" ? "unblock" : "land";
+  return FROM_SECTION[d.section] || FALLBACK_CATEGORY;
+}
+
+function needsHardware(d) {
+  return d.needsHardware === true || (!CATEGORY_IDS.has(d.category) && d.section === "hardware");
+}
+
+// Days from today to the due date, negative when overdue, or null without one
+function dueDays(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str(d.dueAt));
+  if (!m) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) - today) / DAY_MS);
+}
+
+function seriesOf(d) {
+  const s = d.series;
+  return s && typeof s === "object" && str(s.id) && Number.isInteger(s.position) && Number.isInteger(s.size) && s.size > 1 ? s : null;
+}
+
+// Someone outside our side waits on him
+function outsideWaits(d) {
+  return d.waitingOn ? d.waitingOn === "us" : waitingOf(d) != null;
 }
 
 function effortOf(d) {
@@ -1477,7 +1498,7 @@ function budgetMinutes() {
   return (f.budget + extra) * 60;
 }
 
-// Count every item handled today, whatever its section or filter, because that time is already gone
+// Count every item handled today, whatever its group or filter, because that time is already gone
 function spentMinutes() {
   let sum = 0;
   // Handled items can have left the board, so the action log is the source and the item only adds its effort
@@ -1508,7 +1529,21 @@ function compareQuickest(a, b) {
   return compareItems(a, b);
 }
 
+function askedWorkDone(id, d) {
+  const a = latestOf(id);
+  if (a && a.status === "done" && ASKED_JOBS.has(a.action)) return true;
+  return !!(d.pushed && typeof d.pushed === "object" && str(d.pushed.sha) && d.pushed.sha === d.reviewedSha);
+}
+
+// Finished work he asked for, then due items by due date, then outside contributors and reporters, then the lowest effort
 function compareItems(a, b) {
+  const keys = (r) => {
+    const due = dueDays(r.data);
+    return [askedWorkDone(r.id, r.data) ? 0 : 1, due == null ? Infinity : due, authorTypeOf(r.data) === "contributor" ? 0 : 1, effortOf(r.data) || Infinity];
+  };
+  const ka = keys(a);
+  const kb = keys(b);
+  for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
   const pa = Number.isFinite(a.data.priority) ? a.data.priority : 999;
   const pb = Number.isFinite(b.data.priority) ? b.data.priority : 999;
   if (pa !== pb) return pa - pb;
@@ -2374,8 +2409,8 @@ function isSnoozed(d) {
 
 function categoryOf(d) {
   if (isSnoozed(d)) return { id: "snoozed", label: "Snoozed" };
-  const s = sectionOf(d);
-  return { id: s, label: SECTIONS[SECTION_ORDER.get(s)].category };
+  const c = categoryIdOf(d);
+  return { id: c, label: categoryLabel(c) };
 }
 
 function categoryChip(d) {
@@ -2385,8 +2420,50 @@ function categoryChip(d) {
 
 function groupOf(d) {
   if (isHiddenItem(d)) return "later";
-  const s = sectionOf(d);
-  return GROUPS.find((g) => g.sections.includes(s)).id;
+  const effort = effortOf(d);
+  const due = dueDays(d);
+  const cat = categoryIdOf(d);
+  if ((effort != null && effort <= QUICK_EFFORT_MAX) || (cat === "act" && due != null && due <= DUE_SOON_DAYS)) return "quick";
+  if (cat !== "decide" || outsideWaits(d)) return "after";
+  return "later";
+}
+
+// The quiet chips after the title: the due date, real hardware and the place in a series
+function flagChips(d) {
+  const out = [];
+  const due = dueDays(d);
+  if (due != null) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str(d.dueAt));
+    const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const text = due < 0 ? "overdue " + -due + " d" : due === 0 ? "due today" : "due " + date;
+    const source = str(d.dueSource) ? ", from " + str(d.dueSource) : "";
+    out.push(h("span", { class: "r-flag due" + (due < 0 ? " overdue" : due <= DUE_SOON_DAYS ? " due-soon" : ""), title: "Due " + date + source, text }));
+  }
+  if (needsHardware(d)) out.push(h("span", { class: "r-flag hw", title: "Needs real hardware: the agent's test setup cannot reproduce it", text: "hardware" }));
+  const s = seriesOf(d);
+  if (s) out.push(h("span", { class: "r-flag series", title: "Part " + s.position + " of " + s.size + " of the series that starts with “" + str(s.title) + "”", text: "series " + s.position + "/" + s.size }));
+  return out;
+}
+
+// Rows of one series sit together, at the place of the series' first unfinished item, in series order
+function keepSeriesTogether(rows) {
+  const members = new Map();
+  for (const r of rows) {
+    const s = r.dim ? null : seriesOf(r.data);
+    if (s) members.set(s.id, [...(members.get(s.id) || []), r]);
+  }
+  const out = [];
+  for (const r of rows) {
+    const s = r.dim ? null : seriesOf(r.data);
+    if (!s) {
+      out.push(r);
+      continue;
+    }
+    const list = members.get(s.id);
+    const first = list.reduce((x, y) => (seriesOf(y.data).position < seriesOf(x.data).position ? y : x));
+    if (first === r) out.push(...list.slice().sort((x, y) => seriesOf(x.data).position - seriesOf(y.data).position));
+  }
+  return out;
 }
 
 // ---------- rows ----------
@@ -2409,6 +2486,7 @@ function buildRow(id, d, dim, slot) {
   const chip = agentChip(d);
   const held = holdChip(d);
   const dcat = discussionCategory(d) ? h("span", { class: "r-dcat", title: "Discussion category", text: discussionCategory(d) }) : null;
+  const flags = flagChips(d);
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
   const type = AUTHOR_ICONS[authorTypeOf(d)];
@@ -2425,7 +2503,7 @@ function buildRow(id, d, dim, slot) {
     h("span", { class: "r-main" },
       // The combined tab names the repo, so the full ref gets its own quiet line above the title
       combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
-      chip || dcat || held ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), dcat, chip, held) : h("span", { class: "r-title", title, text: title }),
+      chip || dcat || held || flags.length ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), ...flags, dcat, chip, held) : h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
     meta,
@@ -2556,20 +2634,22 @@ function longestIncreasing(a) {
   return out;
 }
 
-// Today's plan per section. Rows the budget left out stay out, so the bar never shows the backlog.
+// Today's plan per category. Rows the budget left out stay out, so the bar never shows the backlog.
 function renderSplit(byGroup) {
-  const totals = new Map(SECTIONS.map((sec) => [sec.id, { min: 0, n: 0 }]));
-  for (const rows of byGroup.values()) {
+  const totals = new Map(CATEGORIES.map((c) => [c.id, { min: 0, n: 0, group: null }]));
+  for (const [group, rows] of byGroup) {
     for (const r of rows) {
       if (!r.planned) continue;
-      const t = totals.get(sectionOf(r.data));
+      const t = totals.get(categoryIdOf(r.data));
       t.min += planEffort(r.data);
       t.n++;
+      t.group = t.group || group;
     }
   }
-  const open = SECTIONS.filter((sec) => totals.get(sec.id).n > 0);
-  const jump = (sec) => () => document.getElementById("group-" + GROUPS.find((g) => g.sections.includes(sec.id)).id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const label = (sec) => sec.category + " " + formatEffort(totals.get(sec.id).min);
+  const open = CATEGORIES.filter((c) => totals.get(c.id).n > 0);
+  // A click goes to the first group that holds planned work of the category
+  const jump = (sec) => () => document.getElementById("group-" + totals.get(sec.id).group)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const label = (sec) => sec.label + " " + formatEffort(totals.get(sec.id).min);
   planEls.split.replaceChildren(...open.map((sec) => {
     const t = totals.get(sec.id);
     const seg = h("button", { class: "split-seg", type: "button", title: label(sec), "aria-label": label(sec) });
@@ -2620,10 +2700,11 @@ function renderListNow() {
       continue;
     }
     const dim = isHiddenItem(d);
-    const order = isSnoozed(d) ? SECTIONS.length : SECTION_ORDER.get(sectionOf(d));
+    // Snoozed items come last in their group
+    const order = isSnoozed(d) ? 1 : 0;
     byGroup.get(groupOf(d)).push({ id, data: d, dim, order, planned: false });
   }
-  for (const rows of byGroup.values()) rows.sort((x, y) => x.order - y.order || sorter(x, y));
+  for (const [g, rows] of byGroup) byGroup.set(g, keepSeriesTogether(rows.sort((x, y) => x.order - y.order || sorter(x, y))));
 
   // Fill the plan in group order and skip items that do not fit the remaining time
   const budget = budgetMinutes();
@@ -3058,7 +3139,9 @@ function renderSensitive(d) {
 
 // The discussion's category on GitHub, like "Feature Requests"
 function discussionCategory(d) {
-  return d.kind === "discussion" ? str(d.category).trim() : "";
+  if (d.kind !== "discussion") return "";
+  // Items written before categories keep the discussion's category in `category`
+  return str(d.discussionCategory || (CATEGORY_IDS.has(d.category) ? "" : d.category)).trim();
 }
 
 function recommendedRoute(d) {
@@ -4962,13 +5045,13 @@ function settingParagraphs(p) {
   const s = p.stats && typeof p.stats === "object" ? p.stats : {};
   const pairs = count(s.pairs), handedUp = count(s.handedUp), answered = count(s.answered);
   const same = (n) => (n === answered ? "every time" : times(n));
-  const sameSection = count(s.sameSection), sameKind = count(s.sameRouteType);
+  const sameCategory = count(s.sameCategory ?? s.sameSection), sameKind = count(s.sameRouteType);
   const compared = [
     "Gary compared their answers " + times(pairs) + ".",
     handedUp ? "The faster model passed " + handedUp + " of these on as too hard." : "The faster model passed none of these on.",
     !answered ? "" : (handedUp ? "In the other " + answered : "In all " + answered) + " it chose "
-      + (sameSection === sameKind ? "the same board section and the same kind of card " + same(sameSection)
-        : "the same board section " + same(sameSection) + " and the same kind of card " + same(sameKind)) + ".",
+      + (sameCategory === sameKind ? "the same board category and the same kind of card " + same(sameCategory)
+        : "the same board category " + same(sameCategory) + " and the same kind of card " + same(sameKind)) + ".",
   ].filter(Boolean).join(" ");
   if (str(p.setting.value) === "on") {
     return [
@@ -4982,7 +5065,7 @@ function settingParagraphs(p) {
   const out = ["The faster model sorts the obvious items at the moment. Gary checks some of its answers against the standard model."];
   const r = s.recent;
   if (reasons.includes("agreement") && r && typeof r === "object") {
-    out.push("In the last " + count(r.answered) + " checks the faster model chose the same board section as the standard model " + times(count(r.sameSection))
+    out.push("In the last " + count(r.answered) + " checks the faster model chose the same board category as the standard model " + times(count(r.sameCategory ?? r.sameSection))
       + ". Gary expects at least " + count(r.needed) + ".");
   }
   const o = s.overrides;
@@ -4996,14 +5079,17 @@ function settingParagraphs(p) {
   return out;
 }
 
-// What one model answered, in the words of the board. The board section shows only where the two differ
+// What one model answered, in the words of the board. The board category shows only where the two differ
 function answerWords(a, other) {
   const of = (x) => (x && typeof x === "object" ? x : {});
   const kind = (x) => (str(of(x).recommendedType) ? (CARD_KINDS[of(x).recommendedType] || str(of(x).recommendedType).replace(/_/g, " ")) + " card" : "no card");
-  const section = (x) => (SECTION_IDS.has(of(x).section) ? SECTIONS[SECTION_ORDER.get(of(x).section)].name : str(of(x).section));
+  const place = (x) => {
+    if (of(x).section !== undefined) return Object.hasOwn(OLD_SECTION_NAMES, of(x).section) ? "board section “" + OLD_SECTION_NAMES[of(x).section] + "”" : str(of(x).section) && "board section “" + str(of(x).section) + "”";
+    return str(of(x).category) && "board category “" + (categoryLabel(of(x).category) || str(of(x).category)) + "”";
+  };
   const parts = [];
-  if (kind(a) !== kind(other) || section(a) === section(other)) parts.push(kind(a));
-  if (section(a) !== section(other) && section(a)) parts.push("board section “" + section(a) + "”");
+  if (kind(a) !== kind(other) || place(a) === place(other)) parts.push(kind(a));
+  if (place(a) !== place(other) && place(a)) parts.push(place(a));
   return parts.join(", ");
 }
 

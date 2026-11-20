@@ -257,3 +257,19 @@ export async function graphql(query, variables = {}) {
 	}
 	return response.data;
 }
+
+const projectAccess = new Map();
+
+/**
+ * Whether the token the snapshot reads with may read GitHub Projects, which needs the read:project scope.
+ * Resolves `{ ok: true }` or `{ ok: false, reason }`. One small query per process and repository.
+ */
+export function canReadProjects(repo = loadProfile().repo) {
+	if (!projectAccess.has(repo)) {
+		const { owner, name } = repoParts(repo);
+		projectAccess.set(repo, graphql(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { projectsV2(first: 1) { totalCount } } }`, { owner, name })
+			.then(() => ({ ok: true }))
+			.catch((e) => ({ ok: false, reason: MISSING_PERMISSION.test(e.message) ? "the token lacks the read:project scope" : e.message })));
+	}
+	return projectAccess.get(repo);
+}

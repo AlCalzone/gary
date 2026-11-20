@@ -1,7 +1,7 @@
 // Mechanical facts about an item, computed by code so no model has to read them out of a thread:
 // who spoke when, who we wait on, and for PRs whether it is clean and dependency-only.
 import { basename } from "node:path";
-import { AUTOMATED_TEXT_LIMIT } from "./config.mjs";
+import { AUTOMATED_TEXT_LIMIT, PROFILE_DEFAULTS } from "./config.mjs";
 
 export const MAX_TIMELINE = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -286,4 +286,91 @@ export function issueFacts(entry, timeline) {
 		...(typeof entry.category === "string" && { category: entry.category }),
 		authorIsUs: timeline.find((e) => e.kind === "opened")?.side === "us",
 	};
+}
+
+/**
+ * The earliest due date GitHub attaches to an issue or PR: its milestone's `dueOn`, or a date field of one of its
+ * project items whose name is in `fields`, compared without case. Returns `{ dueAt: "YYYY-MM-DD", dueSource }` or `{}`.
+ * Thread text never counts.
+ */
+export function dueFacts(node, fields = PROFILE_DEFAULTS.dueDateFields) {
+	const names = new Set(fields.map((f) => f.trim().toLowerCase()));
+	const found = [];
+	const m = node.milestone;
+	if (m?.dueOn && /^\d{4}-\d{2}-\d{2}/.test(m.dueOn)) found.push({ dueAt: m.dueOn.slice(0, 10), dueSource: `milestone ${m.title ?? ""}`.trim() });
+	for (const item of node.projectItems?.nodes ?? []) {
+		for (const v of item?.fieldValues?.nodes ?? []) {
+			const name = v?.field?.name;
+			if (typeof v?.date !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(v.date) || typeof name !== "string" || !names.has(name.trim().toLowerCase())) continue;
+			found.push({ dueAt: v.date.slice(0, 10), dueSource: `project "${item.project?.title ?? "?"}" · ${name}` });
+		}
+	}
+	found.sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+	return found[0] ?? {};
+}
+
+/**
+ * Finds series of related open items and returns a Map from item id to `{ id, title, position, size }`.
+ * Two PRs are stacked when one's base branch is the other's head branch inside the repo. An issue is in a series
+ * with its parent issue. A PR that closes an issue of such a series joins it. Wording is never read.
+ * `prs` and `issues` are the snapshot's raw nodes.
+ */
+export function seriesOf(prs = [], issues = []) {
+	const nodes = new Map();
+	for (const n of prs) nodes.set(`pr-${n.number}`, { id: `pr-${n.number}`, number: n.number, title: n.title ?? "" });
+	for (const n of issues) nodes.set(`issue-${n.number}`, { id: `issue-${n.number}`, number: n.number, title: n.title ?? "" });
+	// Edges point from the earlier item to the later one
+	const edges = [];
+	const byHead = new Map(prs.filter((p) => !p.isCrossRepository && p.headRefName).map((p) => [p.headRefName, `pr-${p.number}`]));
+	for (const p of prs) {
+		const below = byHead.get(p.baseRefName);
+		if (below && below !== `pr-${p.number}`) edges.push([below, `pr-${p.number}`]);
+	}
+	for (const i of issues) {
+		const parent = i.parent?.number;
+		if (parent && nodes.has(`issue-${parent}`)) edges.push([`issue-${parent}`, `issue-${i.number}`]);
+	}
+	const linked = new Set(edges.flat());
+	for (const p of prs) {
+		for (const c of p.closingIssuesReferences?.nodes ?? []) {
+			const issue = `issue-${c?.number}`;
+			if (linked.has(issue)) edges.push([issue, `pr-${p.number}`]);
+		}
+	}
+	// Group the linked items, then order each group so every item comes after the ones it builds on
+	const root = new Map();
+	const find = (x) => {
+		while (root.get(x) !== x) x = root.get(x);
+		return x;
+	};
+	for (const id of new Set(edges.flat())) root.set(id, id);
+	for (const [a, b] of edges) root.set(find(a), find(b));
+	const groups = new Map();
+	for (const id of root.keys()) groups.set(find(id), [...(groups.get(find(id)) ?? []), id]);
+	const out = new Map();
+	const byNumber = (a, b) => nodes.get(a).number - nodes.get(b).number || a.localeCompare(b);
+	for (const members of groups.values()) {
+		if (members.length < 2) continue;
+		const inside = new Set(members);
+		const before = new Map(members.map((id) => [id, 0]));
+		for (const [a, b] of edges) if (inside.has(a) && inside.has(b)) before.set(b, before.get(b) + 1);
+		const order = [];
+		const ready = members.filter((id) => before.get(id) === 0).sort(byNumber);
+		while (ready.length) {
+			const id = ready.shift();
+			order.push(id);
+			for (const [a, b] of edges) {
+				if (a !== id || !inside.has(b)) continue;
+				before.set(b, before.get(b) - 1);
+				if (before.get(b) > 0) continue;
+				ready.push(b);
+				ready.sort(byNumber);
+			}
+		}
+		// A cycle leaves items out of the order. They follow by number
+		for (const id of members.sort(byNumber)) if (!order.includes(id)) order.push(id);
+		const first = nodes.get(order[0]);
+		order.forEach((id, i) => out.set(id, { id: first.id, title: first.title, position: i + 1, size: order.length }));
+	}
+	return out;
 }

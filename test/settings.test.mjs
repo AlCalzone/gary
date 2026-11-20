@@ -35,12 +35,12 @@ const file = (data) => {
 };
 const stored = (id, board = BOARD) => JSON.parse(readFileSync(join(board, "proposals", id + ".json"), "utf8"));
 const ago = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-const entry = (over) => ({ at: ago(1), run: "run-1", itemId: "pr-12", repo: "acme/widgets", tier: "fast", model: "small", section: "easy", hasRoutes: true, recommendedType: "merge", handedUp: false, reason: "Clean.", ...over });
-const pair = (fast, standard = {}) => [entry(fast), entry({ ...fast, section: "easy", recommendedType: "merge", hasRoutes: true, handedUp: false, tier: "standard", model: "big", ...standard })];
-const handedUp = { section: null, hasRoutes: false, recommendedType: null, handedUp: true };
+const entry = (over) => ({ at: ago(1), run: "run-1", itemId: "pr-12", repo: "acme/widgets", tier: "fast", model: "small", category: "land", hasRoutes: true, recommendedType: "merge", handedUp: false, reason: "Clean.", ...over });
+const pair = (fast, standard = {}) => [entry(fast), entry({ ...fast, category: "land", recommendedType: "merge", hasRoutes: true, handedUp: false, tier: "standard", model: "big", ...standard })];
+const handedUp = { category: null, hasRoutes: false, recommendedType: null, handedUp: true };
 
-const stats = { pairs: 130, handedUp: 76, answered: 54, sameSection: 54, sameRouteType: 51 };
-const answers = { fast: { section: "deferred", recommendedType: "follow_up" }, standard: { section: "deferred", recommendedType: null } };
+const stats = { pairs: 130, handedUp: 76, answered: 54, sameCategory: 54, sameRouteType: 51 };
+const answers = { fast: { category: "decide", recommendedType: "follow_up" }, standard: { category: "decide", recommendedType: null } };
 const setting = (id, extra) => ({
 	id, createdAt: "2026-11-19T01:00:00Z", kind: "setting", setting: { key: "fastTier", value: "on" }, title: "Use the faster model for obvious items",
 	stats, differences: [{ itemId: "issue-9413", number: 9413, url: "https://github.com/acme/widgets/issues/9413", runs: 3, ...answers }], status: "open", decidedAt: null, reason: "", ...extra,
@@ -58,14 +58,18 @@ r = put("set-rule", setting("set-rule", { target: "profile", file: "rules/classi
 t.check("a setting proposal takes no rule fields", r.status === 1 && json(r).problems.includes('a setting proposal has no field "target"') && json(r).problems.includes('a setting proposal has no field "text"'), r.stdout);
 r = put("set-stats", setting("set-stats", { stats: { ...stats, answered: 60 } }));
 t.check("the numbers must add up", r.status === 1 && /add up to stats\.pairs/.test(r.stdout), r.stdout);
-r = put("set-diff", setting("set-diff", { differences: [{ itemId: "issue-1", runs: 0, fast: { section: "easy" }, standard: answers.standard }] }));
+r = put("set-diff", setting("set-diff", { differences: [{ itemId: "issue-1", runs: 0, fast: { category: "land" }, standard: answers.standard }] }));
 t.check("a difference needs its runs and both answers", r.status === 1 && /runs must be a whole number/.test(r.stdout) && /fast\.recommendedType/.test(r.stdout), r.stdout);
 r = put("set-kind", { ...setting("set-kind"), kind: "config" });
 t.check("an unknown kind is refused", r.status === 1 && json(r).problems.some((m) => m.startsWith('kind must be "setting"')), r.stdout);
 r = put("set-back", setting("set-back", { setting: { key: "fastTier", value: "shadow" } }));
 t.check("a proposal that switches back needs its reasons", r.status === 1 && /reasons must list/.test(r.stdout), r.stdout);
-r = put("set-back", setting("set-back", { setting: { key: "fastTier", value: "shadow" }, reasons: ["agreement"], stats: { ...stats, recent: { answered: 40, sameSection: 30, needed: 38 } } }));
+r = put("set-back", setting("set-back", { setting: { key: "fastTier", value: "shadow" }, reasons: ["agreement"], stats: { ...stats, recent: { answered: 40, sameCategory: 30, needed: 38 } } }));
 t.check("a proposal that switches back is written with its reason and numbers", r.status === 0, r.stdout + r.stderr);
+r = put("set-old", setting("set-old", { setting: { key: "fastTier", value: "shadow" }, reasons: ["agreement"], stats: { pairs: 130, handedUp: 76, answered: 54, sameSection: 54, sameRouteType: 51, recent: { answered: 40, sameSection: 30, needed: 38 } },
+	differences: [{ itemId: "issue-9413", runs: 1, fast: { section: "easy", recommendedType: "merge" }, standard: { section: "review", recommendedType: "merge" } }] }));
+t.check("a proposal written before categories, with sections, is still accepted", r.status === 0, r.stdout + r.stderr);
+writeFileSync(join(BOARD, "proposals", "set-old.json"), JSON.stringify({ ...stored("set-old"), status: "dismissed", decidedAt: ago(30) }));
 r = put("set-over", setting("set-over", { setting: { key: "fastTier", value: "shadow" }, reasons: ["overrides"] }));
 t.check("the reason overrides needs both rates", r.status === 1 && /stats\.overrides must be/.test(r.stdout), r.stdout);
 writeFileSync(join(BOARD, "proposals", "set-ok.json"), JSON.stringify({ ...setting("set-ok"), status: "dismissed", decidedAt: ago(30) }));
@@ -79,8 +83,8 @@ t.check("propose writes nothing below 40 pairs", json(r).ok && json(r).written =
 gary("shadow", "record", file([
 	...Array.from({ length: 15 }, (_, k) => pair({ itemId: `pr-b${k}` })).flat(),
 	...Array.from({ length: 12 }, (_, k) => pair({ itemId: `pr-c${k}`, ...handedUp })).flat(),
-	...["run-2", "run-3", "run-4"].flatMap((id) => pair({ run: id, itemId: "issue-22", section: "deferred", recommendedType: "follow_up" }, { section: "deferred", hasRoutes: false, recommendedType: null })),
-	...pair({ run: "run-5", itemId: "issue-9", section: "active", recommendedType: "reply" }),
+	...["run-2", "run-3", "run-4"].flatMap((id) => pair({ run: id, itemId: "issue-22", category: "decide", recommendedType: "follow_up" }, { category: "decide", hasRoutes: false, recommendedType: null })),
+	...pair({ run: "run-5", itemId: "issue-9", category: "unblock", recommendedType: "reply" }),
 ]));
 r = gary("shadow", "propose", "--dry-run");
 const today = new Date().toISOString().slice(0, 10);
@@ -90,7 +94,7 @@ r = gary("shadow", "propose");
 t.check("propose writes the proposal to turn the fast tier on", json(r).written === true && json(r).id === onId && json(r).value === "on", r.stdout + r.stderr);
 let p = stored(onId);
 t.check("it is a setting proposal for fastTier on, without rule fields", p.kind === "setting" && p.setting.key === "fastTier" && p.setting.value === "on" && p.status === "open" && !("text" in p) && !("target" in p) && !("why" in p), p);
-t.check("its numbers come from the report", JSON.stringify(p.stats) === JSON.stringify({ pairs: 41, handedUp: 12, answered: 29, sameSection: 28, sameRouteType: 25 }), p.stats);
+t.check("its numbers come from the report", JSON.stringify(p.stats) === JSON.stringify({ pairs: 41, handedUp: 12, answered: 29, sameCategory: 28, sameRouteType: 25 }), p.stats);
 const d22 = p.differences.find((x) => x.itemId === "issue-22");
 t.check("the differences are grouped per item with their runs", p.differences.length === 2 && p.differences[0] === d22 && d22.runs === 3 && d22.fast.recommendedType === "follow_up" && d22.standard.recommendedType === null, p.differences);
 t.check("a difference takes number and URL from the board item", d22.number === 22 && d22.url === "https://github.com/acme/widgets/issues/22" && !("url" in p.differences[1]), p.differences);
@@ -172,7 +176,7 @@ try {
 	t.check("the old value of a missing key is the default", log().filter((e) => e.type === "accepted_proposal").at(-1).from === "off", log().at(-1));
 
 	// Dismiss
-	await api("/api/db", { instance: "widgets", op: "set", path: "proposals/set-no", data: setting("set-no", { setting: { key: "fastTier", value: "shadow" }, reasons: ["agreement"], stats: { ...stats, recent: { answered: 40, sameSection: 30, needed: 38 } } }) });
+	await api("/api/db", { instance: "widgets", op: "set", path: "proposals/set-no", data: setting("set-no", { setting: { key: "fastTier", value: "shadow" }, reasons: ["agreement"], stats: { ...stats, recent: { answered: 40, sameCategory: 30, needed: 38 } } }) });
 	r = await act("dismiss_proposal", "set-no", "One bad day");
 	p = stored("set-no");
 	t.check("dismiss stores the reason and leaves the config", r.data.ok && p.status === "dismissed" && p.reason === "One bad day" && JSON.parse(readFileSync(configFile, "utf8")).fastTier === "on", p);
@@ -191,7 +195,7 @@ r = g2("shadow", "propose");
 t.check("propose writes nothing without a reason to switch back", json(r).written === false && /agrees with the standard tier/.test(json(r).why), r.stdout + r.stderr);
 g2("shadow", "record", file([
 	...Array.from({ length: 30 }, (_, k) => pair({ itemId: `pr-s${k}`, sampled: true }, { sampled: true })).flat(),
-	...Array.from({ length: 10 }, (_, k) => pair({ itemId: `pr-d${k}`, section: "active", sampled: true }, { sampled: true })).flat(),
+	...Array.from({ length: 10 }, (_, k) => pair({ itemId: `pr-d${k}`, category: "unblock", sampled: true }, { sampled: true })).flat(),
 	// Older than the week the proposal looks at
 	...Array.from({ length: 5 }, (_, k) => pair({ at: ago(20), run: "run-old", itemId: `pr-o${k}` }, { at: ago(20) })).flat(),
 ]));
@@ -206,9 +210,9 @@ const backId = `learn-${today}-fast-tier-shadow`;
 p = json(r).written ? stored(backId, join(second.home, "state", "board")) : {};
 t.check("propose writes the proposal to switch back", json(r).written === true && json(r).id === backId && p.setting?.value === "shadow" && p.title === "Go back to the standard model for all items", r.stdout + r.stderr);
 t.check("it names both reasons", JSON.stringify(p.reasons) === JSON.stringify(["agreement", "overrides"]), p.reasons);
-t.check("it carries the recent agreement and both override rates", JSON.stringify(p.stats?.recent) === JSON.stringify({ answered: 40, sameSection: 30, needed: 38 })
+t.check("it carries the recent agreement and both override rates", JSON.stringify(p.stats?.recent) === JSON.stringify({ answered: 40, sameCategory: 30, needed: 38 })
 	&& JSON.stringify(p.stats?.overrides) === JSON.stringify({ fast: { items: 20, changed: 8 }, standard: { items: 25, changed: 2 } }) && p.stats.pairs === 40, p.stats);
-t.check("the differences leave out the equal answers", p.differences?.length === 10 && p.differences.every((x) => x.runs === 1 && x.fast.section === "active" && x.standard.section === "easy"), p.differences);
+t.check("the differences leave out the equal answers", p.differences?.length === 10 && p.differences.every((x) => x.runs === 1 && x.fast.category === "unblock" && x.standard.category === "land"), p.differences);
 
 // gary shadow convert
 const third = makeHome(join(T, "third"), { fastTier: "shadow" });
@@ -229,7 +233,7 @@ writeFileSync(join(board3, "proposals", rule.id + ".json"), JSON.stringify(rule)
 g3("shadow", "record", file([
 	...Array.from({ length: 4 }, (_, k) => pair({ itemId: `pr-b${k}` })).flat(),
 	...Array.from({ length: 3 }, (_, k) => pair({ itemId: `pr-c${k}`, ...handedUp })).flat(),
-	...["run-2", "run-3"].flatMap((id) => pair({ run: id, itemId: "issue-22", section: "deferred", recommendedType: "follow_up" }, { section: "deferred", hasRoutes: false, recommendedType: null })),
+	...["run-2", "run-3"].flatMap((id) => pair({ run: id, itemId: "issue-22", category: "decide", recommendedType: "follow_up" }, { category: "decide", hasRoutes: false, recommendedType: null })),
 ]));
 r = g3("shadow", "propose");
 t.check("an open fast tier proposal in the rule shape also blocks a new one", json(r).written === false && json(r).why === `${oldId} is still open`, r.stdout);
@@ -239,7 +243,7 @@ r = g3("shadow", "convert", oldId);
 p = stored(oldId, board3);
 t.check("convert rebuilds the proposal as a setting proposal under the same id", json(r).written === true && p.id === oldId && p.kind === "setting" && p.setting.key === "fastTier" && p.setting.value === "on", r.stdout + r.stderr);
 t.check("it keeps the time and the status and drops the rule fields", p.createdAt === old.createdAt && p.status === "open" && ["target", "file", "heading", "text", "why", "evidence"].every((k) => !(k in p)), p);
-t.check("its numbers and differences come from the report", JSON.stringify(p.stats) === JSON.stringify({ pairs: 9, handedUp: 3, answered: 6, sameSection: 6, sameRouteType: 4 }) && p.differences.length === 1 && p.differences[0].runs === 2, p);
+t.check("its numbers and differences come from the report", JSON.stringify(p.stats) === JSON.stringify({ pairs: 9, handedUp: 3, answered: 6, sameCategory: 6, sameRouteType: 4 }) && p.differences.length === 1 && p.differences[0].runs === 2, p);
 r = g3("shadow", "convert", oldId);
 t.check("a second convert changes nothing", json(r).written === false && /setting proposal already/.test(json(r).why), r.stdout);
 r = g3("shadow", "convert", rule.id);

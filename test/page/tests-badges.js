@@ -54,5 +54,5 @@
   document.getElementById("fpanel").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await wait(5);
   ok("panel closes on Escape and dot shows", document.getElementById("fpanel").hidden && ctl.dataset.active === "true");
-  [...document.querySelectorAll("#fpanel .chip")].find((b) => b.textContent === "Section order").click();
+  [...document.querySelectorAll("#fpanel .chip")].find((b) => b.textContent === "Board order").click();
   ok("dot clears", ctl.dataset.active === "false");

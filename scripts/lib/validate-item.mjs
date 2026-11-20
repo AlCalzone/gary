@@ -3,11 +3,12 @@ import { ID_PATTERN } from "./board-store.mjs";
 import { fixBlock } from "./fixes.mjs";
 import { apiEditProblems } from "./api-edit.mjs";
 import { FINDING_ID } from "./findings.mjs";
+import { CATEGORIES, normalizeCategory } from "./categories.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
 const AUTHOR_TYPES = ["maintainer", "bot", "copilot", "contributor"];
-const SECTIONS = ["active", "easy", "almost", "review", "deferred", "hardware"];
+const WAITING_ON = ["us", "them", "nobody"];
 const EFFORTS = [1, 2, 5, 10, 15, 30, 60, 120];
 const DEPTHS = ["quick", "full", "pending"];
 export const CLASSIFIERS = ["fast", "standard", "full"];
@@ -36,16 +37,18 @@ const isString = (v) => typeof v === "string" && v.trim().length > 0;
  * the PR's snapshot entry lists sensitive files: true, false, or undefined without an entry. `sensitiveOurs` says
  * that the entry also marks the PR as ours alone.
  */
-export function validateItem(id, item, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false }) {
+export function validateItem(id, doc, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
 	const warn = (code, message) => warnings.push({ code, message });
 
-	if (!isObject(item)) {
+	if (!isObject(doc)) {
 		err("not-object", "the item must be a JSON object");
 		return { errors, warnings };
 	}
+	// An item may still carry the old `section`, which maps to a category
+	const item = normalizeCategory(doc);
 
 	// Fields and enums
 	if (!KINDS.includes(item.kind)) err("kind", `kind must be one of ${KINDS.join(", ")}`);
@@ -56,7 +59,12 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 	else if (!repos.some((r) => r.toLowerCase() === item.repo.toLowerCase())) err("repo", `${item.repo} is not a repository of this instance (${repos.join(", ")})`);
 	for (const key of ["title", "url", "author", "state"]) if (!isString(item[key])) err(`missing-${key}`, `${key} is required`);
 	if (!AUTHOR_TYPES.includes(item.authorType)) err("authorType", `authorType must be one of ${AUTHOR_TYPES.join(", ")}`);
-	if (!SECTIONS.includes(item.section)) err("section", `section must be one of ${SECTIONS.join(", ")}`);
+	if (item.section !== undefined) err("section", `section ${JSON.stringify(item.section)} is unknown. Items carry category: ${CATEGORIES.join(", ")}`);
+	else if (!CATEGORIES.includes(item.category)) err("category", `category must be one of ${CATEGORIES.join(", ")}${item.category === undefined ? "" : `, not ${JSON.stringify(item.category)}`}`);
+	if (item.needsHardware !== undefined && typeof item.needsHardware !== "boolean") err("needsHardware", "needsHardware must be true or false");
+	if (item.waitingOn !== undefined && !WAITING_ON.includes(item.waitingOn)) err("waitingOn", `waitingOn must be one of ${WAITING_ON.join(", ")}, copied from facts.waitingOn`);
+	checkDue(item, err);
+	checkSeries(item, err);
 	// The routine ranks only items with routes, so an item without routes may have no priority
 	const ranked = Array.isArray(item.routes) && item.routes.length > 0;
 	if ((ranked || item.priority != null) && (!Number.isInteger(item.priority) || item.priority < 0)) err("priority", "priority must be a whole number");
@@ -68,7 +76,7 @@ export function validateItem(id, item, { mode, profile, repos: repoList, fix = n
 	if (item.reviewDecision !== undefined && !DECISIONS.includes(item.reviewDecision)) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);
 	}
-	if (item.category !== undefined && !(item.kind === "discussion" && isString(item.category))) err("category", "category is the discussion's category name, from the snapshot, and only discussions have one");
+	if (item.discussionCategory !== undefined && !(item.kind === "discussion" && isString(item.discussionCategory))) err("discussionCategory", "discussionCategory is the discussion's category name, from the snapshot, and only discussions have one");
 	if (item.analyzedBy !== undefined && item.analyzedBy !== "fallback") err("analyzedBy", 'analyzedBy must be "fallback" when present');
 	if (item.lastEventUrl !== undefined && !(typeof item.lastEventUrl === "string" && typeof item.url === "string" && item.lastEventUrl.startsWith(item.url + "#"))) {
 		err("lastEventUrl", "lastEventUrl must be a URL of the item's own thread, its url followed by #anchor");
@@ -382,6 +390,21 @@ function checkAutofix(item, err) {
 }
 
 // `wants` is the label and assignee state the agent would set. Only the profile's autoLabels are allowed in it
+// `dueAt` and `dueSource` come from the snapshot together: a milestone's due date or a date field of a project item
+function checkDue(item, err) {
+	if (item.dueAt === undefined && item.dueSource === undefined) return;
+	const ok = Number.isFinite(Date.parse(item.dueAt ?? "")) && isString(item.dueSource) && item.dueSource.length <= 200;
+	if (!ok) err("due", "dueAt and dueSource come together from facts.dueAt and facts.dueSource: an ISO date and where GitHub has it, at most 200 characters");
+}
+
+function checkSeries(item, err) {
+	if (item.series === undefined) return;
+	const s = item.series;
+	const ok = isObject(s) && Object.keys(s).every((k) => ["id", "title", "position", "size"].includes(k)) && typeof s.id === "string" && ID_PATTERN.test(s.id)
+		&& typeof s.title === "string" && s.title.length <= 300 && Number.isInteger(s.size) && s.size >= 2 && Number.isInteger(s.position) && s.position >= 1 && s.position <= s.size;
+	if (!ok) err("series", "series is { id, title, position, size }, copied from facts.series: the first item's id and title, and this item's place among size items");
+}
+
 function checkWants(item, profile, err) {
 	if (item.wants === undefined) {
 		if (item.wantsReason !== undefined) err("wants-reason", "wantsReason needs wants");

@@ -6,9 +6,9 @@ import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
-import { aiFacts, buildTimeline, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, sizeFacts, speakerFacts } from "./lib/facts.mjs";
+import { aiFacts, buildTimeline, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { activityOf } from "./lib/since.mjs";
-import { graphql, writeLogin } from "./lib/gh.mjs";
+import { canReadProjects, graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
@@ -73,6 +73,8 @@ const PR_FIELDS = `
 				assignees(first: 10) { nodes { login } }
 				headRefOid headRefName baseRefName isCrossRepository reviewDecision mergeable
 				additions deletions
+				milestone { title dueOn }
+				closingIssuesReferences(first: 5) { nodes { number } }
 				commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 				recentCommits: commits(last: 20) { nodes { commit { oid committedDate author { user { login } } committer { user { login } } } } }
 				allCommits: commits(first: ${MAX_COMMITS}) { totalCount nodes { commit { message signature { isValid wasSignedByGitHub } author { name email user { login } } committer { name email user { login } } } } }
@@ -96,11 +98,17 @@ const PR_FIELDS = `
 				reviewThreads(last: ${THREAD_PAGE}) { ${THREAD_FIELDS} }
 `;
 
-const PR_QUERY = `query($owner: String!, $name: String!, $after: String) {
+// Date fields of the item's projects, for its due date. Reading them needs the read:project scope
+const PROJECT_FIELDS = `
+				projectItems(first: 5) { nodes { project { title } fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldDateValue { date field { ... on ProjectV2FieldCommon { name } } } } } } }
+`;
+const withProjects = (fields, projects) => (projects ? fields + PROJECT_FIELDS : fields);
+
+const prQuery = (projects) => `query($owner: String!, $name: String!, $after: String) {
 	repository(owner: $owner, name: $name) {
 		pullRequests(states: OPEN, first: 25, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
 			pageInfo { hasNextPage endCursor }
-			nodes { ${PR_FIELDS} }
+			nodes { ${withProjects(PR_FIELDS, projects)} }
 		}
 	}
 }`;
@@ -138,14 +146,16 @@ const ISSUE_FIELDS = `
 				${TIMELINE_COMMENTS}
 				${statusEvents(ISSUE_STATUS)}
 				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft title author { login } } }
+				milestone { title dueOn }
+				parent { number }
 `;
 
-const ISSUE_QUERY = `query($owner: String!, $name: String!, $after: String) {
+const issueQuery = (projects) => `query($owner: String!, $name: String!, $after: String) {
 	repository(owner: $owner, name: $name) {
 		issues(states: OPEN, first: 50, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
 			totalCount
 			pageInfo { hasNextPage endCursor }
-			nodes { ${ISSUE_FIELDS} }
+			nodes { ${withProjects(ISSUE_FIELDS, projects)} }
 		}
 	}
 }`;
@@ -249,10 +259,11 @@ export async function main(argv = []) {
 	const classify = authorClassifier(maintainerLogins(), botLogins());
 	const sensitive = loadProfile().sensitivePaths;
 	const ctx = factsContext();
+	const projects = (await canReadProjects()).ok;
 
 	const [prs, issues, discussions] = await Promise.all([
-		fetchAll(PR_QUERY, "pullRequests"),
-		fetchAll(ISSUE_QUERY, "issues", cutoff),
+		fetchAll(prQuery(projects), "pullRequests"),
+		fetchAll(issueQuery(projects), "issues", cutoff),
 		fetchAll(DISCUSSION_QUERY, "discussions", cutoff),
 	]);
 
@@ -266,9 +277,11 @@ export async function main(argv = []) {
 	]);
 	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
+	const series = seriesOf(readyPrs, issues.nodes);
+	const linked = (id, n) => ({ ...dueOf(n), ...(series.has(id) && { series: series.get(id) }) });
 	const items = [
-		...readyPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }) }, ctx)),
-		...issues.nodes.map((n) => withFacts("issue", n, toIssue(n, classify), ctx)),
+		...readyPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }), ...linked(`pr-${n.number}`, n) }, ctx)),
+		...issues.nodes.map((n) => withFacts("issue", n, { ...toIssue(n, classify), ...linked(`issue-${n.number}`, n) }, ctx)),
 		...discussions.nodes.map((n) => withFacts("discussion", n, { ...toDiscussion(n, classify), ...(references.has(n.number) && { referencingPrs: references.get(n.number) }) }, ctx)),
 	];
 
@@ -294,7 +307,10 @@ export async function main(argv = []) {
 		else if (
 			old.updatedAt !== entry.updatedAt ||
 			(old.lastReviewAt ?? null) !== entry.lastReviewAt ||
-			(old.openThreadCount ?? 0) !== entry.openThreadCount
+			(old.openThreadCount ?? 0) !== entry.openThreadCount ||
+			// A new due date or series can change the item's category, also without a new comment
+			(old.dueAt ?? null) !== (entry.dueAt ?? null) ||
+			JSON.stringify(old.series ?? null) !== JSON.stringify(entry.series ?? null)
 		) {
 			reason = "updated";
 		}
@@ -333,7 +349,8 @@ export async function fetchItem(kind, number, repo = loadProfile().repo, { allFi
 	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
 	if (!allowedRepo(instanceName(), repo)) throw new Error(`${repo} is not a repository of instance ${instanceName()}`);
 	const id = `${kind} #${number}`;
-	const [field, fields] = ITEM_QUERIES[kind];
+	const [field, base] = ITEM_QUERIES[kind];
+	const fields = kind === "discussion" ? base : withProjects(base, (await canReadProjects()).ok);
 	const { owner, name } = repoParts(repo);
 	let data;
 	try {
@@ -351,14 +368,17 @@ export async function fetchItem(kind, number, repo = loadProfile().repo, { allFi
 	if (!node) throw new Error(`${id} not found in ${owner}/${name}`);
 	const classify = authorClassifier(maintainerLogins(), botLogins());
 	const ctx = factsContext();
+	// A series needs every open item, so a single read takes it from the last snapshot
+	const staged = (readJson(PENDING()) ?? readJson(BASELINE()))?.items?.[`${{ pr: "pr", issue: "issue", discussion: "disc" }[kind]}-${number}`];
+	const linked = { ...(kind === "discussion" ? {} : dueOf(node)), ...(repo === loadProfile().repo && staged?.series && { series: staged.series }) };
 	if (kind === "pr") {
 		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node), attachAutoReviews([node])]);
 		if (allFiles && (node.files.totalCount ?? 0) > node.files.nodes.length) node.files = await fetchAllFiles(owner, name, number);
 		// Fix PRs are recorded by number for the instance's own repo
 		const fixItem = repo === loadProfile().repo ? fixPrNumbers(await readFixRecords()).get(number) : undefined;
-		return withFacts("pr", node, { ...toPr(node, classify, loadProfile().sensitivePaths), ...(fixItem && { garyFix: { itemId: fixItem } }) }, ctx);
+		return withFacts("pr", node, { ...toPr(node, classify, loadProfile().sensitivePaths), ...(fixItem && { garyFix: { itemId: fixItem } }), ...linked }, ctx);
 	}
-	if (kind === "issue") return withFacts("issue", node, toIssue(node, classify), ctx);
+	if (kind === "issue") return withFacts("issue", node, { ...toIssue(node, classify), ...linked }, ctx);
 	await fetchRemainingReplies(node);
 	return withFacts("discussion", node, toDiscussion(node, classify), ctx);
 }
@@ -407,6 +427,10 @@ function baselineEntry(item) {
 		...(item.kind === "pr" && { feedback: Object.fromEntries(["lastMeAt", "lastMeKind", "lastOthersAt", "ourLastCommitAt", "reviewBotReviews"].filter((k) => item.facts?.[k] != null).map((k) => [k, item.facts[k]])) }),
 		// The validator and the board server decide from these which routes may push to the PR
 		...(item.sensitiveFiles && { sensitiveFiles: item.sensitiveFiles, ...(item.facts?.sensitiveOurs && { sensitiveOurs: true }) }),
+		// The board server serves these from the snapshot, so a new due date shows without a new triage
+		...(item.dueAt && { dueAt: item.dueAt, dueSource: item.dueSource }),
+		...(item.series && { series: item.series }),
+		...(item.facts?.waitingOn && { waitingOn: item.facts.waitingOn }),
 		// The board shows a discussion's category also on items written before the routine copied it
 		...(item.kind === "discussion" && typeof item.category === "string" && { category: item.category }),
 		// The board reads these to tell whether a PR with an automatic review still waits for its contributor
@@ -496,6 +520,8 @@ function withFacts(kind, node, entry, ctx) {
 	const facts = {
 		timeline,
 		...(timelineTruncated && { timelineTruncated }),
+		...(entry.dueAt && { dueAt: entry.dueAt, dueSource: entry.dueSource }),
+		...(entry.series && { series: entry.series }),
 		...(lastEventUrl && { lastEventUrl }),
 		...speakerFacts(timeline),
 		...(kind === "pr" ? { ...prFacts(entry), ...sizeFacts(node), ...aiFacts(node, ctx.ai) } : issueFacts(entry, timeline)),
@@ -643,6 +669,10 @@ async function withRetry(fn, attempts = 3) {
 			await new Promise((r) => setTimeout(r, 2000 * i));
 		}
 	}
+}
+
+function dueOf(node) {
+	return dueFacts(node, loadProfile().dueDateFields);
 }
 
 function authorClassifier(maintainers, bots) {

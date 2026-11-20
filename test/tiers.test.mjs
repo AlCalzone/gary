@@ -100,14 +100,14 @@ r = gary("put", "meta", file({ rulesPending: ["PR 12"] }));
 t.check("put meta refuses an id that is not one", r.status === 1 && /rulesPending must be a list of item ids/.test(r.stdout) && JSON.parse(readFileSync(metaFile, "utf8")).rulesPending.length === 2, r.stdout);
 
 // shadow record and report
-const entry = (over) => ({ at: "2026-11-18T10:00:00Z", run: "run-1", itemId: "pr-12", repo: "acme/widgets", tier: "fast", model: "small", section: "easy", hasRoutes: true, recommendedType: "merge", handedUp: false, reason: "Clean and approved.", ...over });
+const entry = (over) => ({ at: "2026-11-18T10:00:00Z", run: "run-1", itemId: "pr-12", repo: "acme/widgets", tier: "fast", model: "small", category: "land", hasRoutes: true, recommendedType: "merge", handedUp: false, reason: "Clean and approved.", ...over });
 r = gary("shadow", "record", file([
 	entry(),
 	entry({ tier: "standard", model: "big" }),
 	entry({ itemId: "issue-22", recommendedType: "reply" }),
-	entry({ itemId: "issue-22", tier: "standard", model: "big", section: "active", recommendedType: "request_logs", reason: "Needs a log first." }),
-	entry({ itemId: "disc-31", section: null, hasRoutes: false, recommendedType: null, handedUp: true, reason: "Too long a thread." }),
-	entry({ itemId: "disc-31", tier: "standard", model: "big", section: "active", recommendedType: "reply" }),
+	entry({ itemId: "issue-22", tier: "standard", model: "big", category: "unblock", recommendedType: "request_logs", reason: "Needs a log first." }),
+	entry({ itemId: "disc-31", category: null, hasRoutes: false, recommendedType: null, handedUp: true, reason: "Too long a thread." }),
+	entry({ itemId: "disc-31", tier: "standard", model: "big", category: "unblock", recommendedType: "reply" }),
 	entry({ itemId: "pr-17", tier: "standard", model: "big" }),
 ]));
 t.check("shadow record appends valid entries", r.status === 0 && json(r).recorded === 7 && readFileSync(join(home, "state", "shadow.jsonl"), "utf8").trim().split("\n").length === 7, r.stdout + r.stderr);
@@ -116,21 +116,28 @@ const problems = json(r).problems ?? [];
 t.check("shadow record refuses the whole file for one bad entry", r.status === 1 && problems.some((p) => /\[1\] tier must be one of fast, standard/.test(p)) && problems.some((p) => /\[1\] handedUp must be true or false/.test(p)) && problems.some((p) => /\[1\] unknown field "extra"/.test(p)) && readFileSync(join(home, "state", "shadow.jsonl"), "utf8").trim().split("\n").length === 7, problems);
 r = gary("shadow", "record", file(entry({ tier: "standard", handedUp: true })));
 t.check("only the fast tier hands up", r.status === 1 && /only the fast tier hands up/.test(r.stdout), r.stdout);
-r = gary("shadow", "record", file(entry({ section: null })));
-t.check("an answer needs a section", r.status === 1 && /section is required/.test(r.stdout), r.stdout);
+r = gary("shadow", "record", file(entry({ category: null })));
+t.check("an answer needs a category", r.status === 1 && /category is required/.test(r.stdout), r.stdout);
+r = gary("shadow", "record", file(entry({ section: "easy" })));
+t.check("an entry has category or the old section, not both", r.status === 1 && /not both/.test(r.stdout), r.stdout);
 
 let rep = json(gary("shadow", "report", "--json"));
 t.check("shadow report pairs fast and standard per run and item", rep.pairs === 3 && rep.handedUp === 1 && rep.compared === 2, rep);
-t.check("shadow report counts the agreement", rep.sectionAgreement?.same === 1 && rep.sectionAgreement.share === 0.5 && rep.routeAgreement.same === 1, rep);
+t.check("shadow report counts the agreement", rep.categoryAgreement?.same === 1 && rep.categoryAgreement.share === 0.5 && rep.routeAgreement.same === 1, rep);
 const d = rep.disagreements ?? [];
 t.check("shadow report lists the disagreements with both answers", d.length === 1 && d[0].itemId === "issue-22" && d[0].fast.recommendedType === "reply" && d[0].standard.recommendedType === "request_logs" && d[0].standard.reason === "Needs a log first.", d);
 gary("shadow", "record", file([entry({ at: "2026-11-18T12:00:00Z", run: "run-2", itemId: "pr-12" }), entry({ at: "2026-11-18T12:01:00Z", run: "run-2", itemId: "pr-12", tier: "standard", model: "big" })]));
 rep = json(gary("shadow", "report", "--since", "2026-11-18T11:00:00Z", "--json"));
-t.check("shadow report --since keeps the later entries only", rep.pairs === 1 && rep.sectionAgreement.share === 1 && rep.disagreements.length === 0, rep);
+t.check("shadow report --since keeps the later entries only", rep.pairs === 1 && rep.categoryAgreement.share === 1 && rep.disagreements.length === 0, rep);
 r = gary("shadow", "report");
-t.check("the plain report prints the counts and the disagreements", /^4 pairs/m.test(r.stdout) && /fast tier handed up: 1 \(25%\)/.test(r.stdout) && /same section:\s+2 of 3 \(67%\)/.test(r.stdout) && /issue-22 \(acme\/widgets\), run run-1/.test(r.stdout) && /standard active \/ request_logs \(big\): Needs a log first\./.test(r.stdout), r.stdout);
+t.check("the plain report prints the counts and the disagreements", /^4 pairs/m.test(r.stdout) && /fast tier handed up: 1 \(25%\)/.test(r.stdout) && /same category:\s+2 of 3 \(67%\)/.test(r.stdout) && /issue-22 \(acme\/widgets\), run run-1/.test(r.stdout) && /standard unblock \/ request_logs \(big\): Needs a log first\./.test(r.stdout), r.stdout);
 r = gary("shadow", "report", "--since", "yesterday");
 t.check("shadow report refuses a bad --since", r.status !== 0 && /--since needs an ISO time/.test(r.stderr + r.stdout), r.stderr);
+// Entries written before categories carry the old section and still pair
+const { category: _c, ...oldEntry } = entry({ at: "2026-11-18T12:02:00Z", run: "run-2", itemId: "issue-23" });
+gary("shadow", "record", file([{ ...oldEntry, section: "easy" }, { ...oldEntry, at: "2026-11-18T12:03:00Z", tier: "standard", model: "big", section: "almost" }]));
+rep = json(gary("shadow", "report", "--since", "2026-11-18T12:02:00Z", "--json"));
+t.check("old entries with a section pair and compare like categories", rep.pairs === 1 && rep.categoryAgreement.same === 0 && rep.disagreements[0]?.fast.category === "easy" && rep.disagreements[0]?.standard.category === "almost", rep);
 
 // lastEventUrl on items
 r = gary("put", "items", "pr-12", file({ ...BASE, url: "https://github.com/acme/widgets/pull/12", lastEventUrl: "https://github.com/acme/widgets/pull/12#issuecomment-9" }));
@@ -188,26 +195,26 @@ t.check("classifiedBy is fast, standard or full", r.status === 1 && /classifiedB
 const second = makeHome(join(T, "second"));
 const g2 = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: second.env, encoding: "utf8" });
 const ago = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-const pairsOf = (count, { days, sameSection = () => true, sampled = false, prefix = "x" }) => Array.from({ length: count }, (_, k) => [
-	entry({ at: ago(days), run: `run-${prefix}`, itemId: `pr-${prefix}${k}`, section: sameSection(k) ? "easy" : "active", ...(sampled && { sampled: true }) }),
+const pairsOf = (count, { days, sameCategory = () => true, sampled = false, prefix = "x" }) => Array.from({ length: count }, (_, k) => [
+	entry({ at: ago(days), run: `run-${prefix}`, itemId: `pr-${prefix}${k}`, category: sameCategory(k) ? "land" : "unblock", ...(sampled && { sampled: true }) }),
 	entry({ at: ago(days), run: `run-${prefix}`, itemId: `pr-${prefix}${k}`, tier: "standard", model: "big" }),
 ]).flat();
 r = g2("shadow", "record", file(entry({ sampled: "yes" })));
 t.check("sampled must be a boolean", r.status === 1 && /sampled must be true or false/.test(r.stdout), r.stdout);
-r = g2("shadow", "record", file([...pairsOf(10, { days: 20, prefix: "old" }), ...pairsOf(40, { days: 2, sameSection: (k) => k % 10 !== 0, sampled: true, prefix: "new" })]));
+r = g2("shadow", "record", file([...pairsOf(10, { days: 20, prefix: "old" }), ...pairsOf(40, { days: 2, sameCategory: (k) => k % 10 !== 0, sampled: true, prefix: "new" })]));
 t.check("sampled entries are recorded", r.status === 0 && readFileSync(join(second.home, "state", "shadow.jsonl"), "utf8").includes('"sampled":true'), r.stdout);
 rep = json(g2("shadow", "report", "--json"));
 t.check("the report counts the sampled pairs", rep.pairs === 50 && rep.sampledPairs === 40, rep);
-t.check("the recent agreement covers the last 40 pairs the fast tier decided", rep.recentSectionAgreement?.pairs === 40 && rep.recentSectionAgreement.same === 36 && rep.recentSectionAgreement.share === 0.9 && rep.recentSectionAgreement.warning === true, rep.recentSectionAgreement);
+t.check("the recent agreement covers the last 40 pairs the fast tier decided", rep.recentCategoryAgreement?.pairs === 40 && rep.recentCategoryAgreement.same === 36 && rep.recentCategoryAgreement.share === 0.9 && rep.recentCategoryAgreement.warning === true, rep.recentCategoryAgreement);
 r = g2("shadow", "report");
-t.check("the plain report says how many pairs came from sampling and warns", /^50 pairs, 40 of them from sampling/m.test(r.stdout) && /Warning: the fast tier picked the standard tier's section in only 36 of the last 40 pairs it decided itself \(90%, below 95%\)/.test(r.stdout), r.stdout);
+t.check("the plain report says how many pairs came from sampling and warns", /^50 pairs, 40 of them from sampling/m.test(r.stdout) && /Warning: the fast tier picked the standard tier's category in only 36 of the last 40 pairs it decided itself \(90%, below 95%\)/.test(r.stdout), r.stdout);
 rep = json(g2("shadow", "report", "--week", "--json"));
 t.check("--week keeps the last 7 days", rep.pairs === 40 && Date.parse(rep.since) > Date.now() - 8 * 24 * 60 * 60 * 1000 && Date.parse(rep.since) < Date.now() - 6 * 24 * 60 * 60 * 1000, { pairs: rep.pairs, since: rep.since });
 t.check("no warning at 95 percent or more", (() => {
 	const third = makeHome(join(T, "third"));
 	const g3 = (...args) => spawnSync(process.execPath, [GARY, ...args], { env: third.env, encoding: "utf8" });
-	g3("shadow", "record", file(pairsOf(40, { days: 1, sameSection: (k) => k !== 0, prefix: "ok" })));
-	const recent = json(g3("shadow", "report", "--json")).recentSectionAgreement;
+	g3("shadow", "record", file(pairsOf(40, { days: 1, sameCategory: (k) => k !== 0, prefix: "ok" })));
+	const recent = json(g3("shadow", "report", "--json")).recentCategoryAgreement;
 	return recent.share === 0.975 && recent.warning === false && !/Warning/.test(g3("shadow", "report").stdout);
 })());
 r = g2("shadow", "report", "--week", "--since", ago(3));

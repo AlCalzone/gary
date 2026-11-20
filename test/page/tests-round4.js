@@ -2,7 +2,7 @@
   {
     const rows = (g) => [...document.querySelectorAll("#group-" + g + " .row")].map((r) => r.dataset.id);
     // A finished re-analysis hands the item back: it keeps its place by priority
-    const eight = Array.from({ length: 8 }, (_, i) => ["r4-" + (i + 1), simple(i + 1, "easy", 10, i + 1)]);
+    const eight = Array.from({ length: 8 }, (_, i) => ["r4-" + (i + 1), simple(i + 1, "land", 2, i + 1)]);
     items(eight); await wait(10);
     window.__subs["actions"](__mkSnap([["widgets/a-1", { instance: "widgets", itemId: "r4-2", action: "reanalyze", status: "done", via: "queue", createdAt: new Date().toISOString() }]])); await wait(10);
     ok("a finished re-analysis keeps the item at its place by priority", rows("quick").join() === "r4-1,r4-2,r4-3,r4-4,r4-5");
@@ -13,7 +13,7 @@
 
     // The list stays still while a dialog is open and marks what moved when it closes
     openDetail("r4-3"); await wait(10);
-    const moved = eight.map(([k, d]) => [k, k === "r4-1" ? { ...d, section: "deferred" } : d]);
+    const moved = eight.map(([k, d]) => [k, k === "r4-1" ? { ...d, category: "decide", effortMinutes: 5 } : d]);
     items(moved); await wait(10);
     ok("an open dialog freezes the list", rows("quick")[0] === "r4-1" && !rows("later").includes("r4-1"));
     document.getElementById("d-close").click(); await wait(10);
@@ -22,7 +22,7 @@
     ok("a row that moved is marked briefly with a soft fade", mv.classList.contains("moved") && /moved/.test(getComputedStyle(mv).animationName));
     ok("rows that only shifted up are not marked", ["r4-2", "r4-3", "r4-4", "r4-5"].every((k) => !document.querySelector('.row[data-id="' + k + '"]').classList.contains("moved")));
     openDetail("r4-3"); await wait(10);
-    items(eight.map(([k, d]) => [k, k === "r4-1" ? { ...d, section: "deferred" } : k === "r4-4" ? { ...d, priority: 0 } : d])); await wait(10);
+    items(eight.map(([k, d]) => [k, k === "r4-1" ? { ...d, category: "decide", effortMinutes: 5 } : k === "r4-4" ? { ...d, priority: 0 } : d])); await wait(10);
     document.getElementById("d-close").click(); await wait(10);
     ok("a row that moved up within its group is marked", rows("quick")[0] === "r4-4" && document.querySelector('.row[data-id="r4-4"]').classList.contains("moved")
       && !document.querySelector('.row[data-id="r4-2"]').classList.contains("moved"));
@@ -239,8 +239,8 @@
 
   // A fix or a push in flight: obvious, and nothing starts it twice
   {
-    items(F); await wait(5);
     localHandled.clear();
+    items(F); await wait(5);
     for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
     await wait(5);
     const chipOf = (k) => document.querySelector('.row[data-id="' + k + '"] .r-titleline .agent-chip');
@@ -402,14 +402,14 @@
     items(F); await wait(5);
   }
 
-  // Order comes from the stored priority only, never from the author
+  // Outside contributors and reporters come before his own and bot work. The stored priority orders within each
   {
-    const mk = (n, authorType, priority) => ["o-" + n, simple(n, "easy", 5, priority, { authorType, author: authorType === "bot" ? "widgets-bot" : authorType === "maintainer" ? "octocat" : "someone" })];
+    const mk = (n, authorType, priority) => ["o-" + n, simple(n, "land", 2, priority, { authorType, author: authorType === "bot" ? "widgets-bot" : authorType === "maintainer" ? "octocat" : "someone" })];
     items([mk(1, "maintainer", 1), mk(2, "bot", 2), mk(3, "contributor", 3)]); await wait(10);
     const order = () => [...document.querySelectorAll("#group-quick .row")].map((r) => r.dataset.id).join();
-    ok("guard: with lower priorities the maintainer's and the bot's rows come first", order() === "o-1,o-2,o-3");
+    ok("ranking: the contributor comes first even with a lower priority, then his own and the bot's by priority", order() === "o-3,o-1,o-2", order());
     items([mk(1, "maintainer", 3), mk(2, "bot", 2), mk(3, "contributor", 1)]); await wait(10);
-    ok("guard: the contributor comes first only through its priority", order() === "o-3,o-2,o-1");
+    ok("ranking: the priority orders his own and the bot's rows", order() === "o-3,o-2,o-1", order());
     items(F); await wait(5);
   }
 

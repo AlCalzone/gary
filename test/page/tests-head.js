@@ -9,7 +9,8 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
   const iso = (ms) => new Date(Date.now() - ms).toISOString();
   const item = (title, text, extra) => ({ kind: "pr", number: 9488, title, url: "https://github.com/acme/widgets/pull/9488", author: "someone", authorType: "contributor", labels: ["config"], ci: "failing", section: "easy", priority: 1, updatedAt: iso(0), reviewDepth: "full", effortMinutes: 5, waitingDays: 12, state: "Looks fine.", findings: [{ severity: "minor", text: "nit", ref: "a.ts:1" }], routes: [{ id: "r1", type: "reply", as: "bot", title: "Reply: thanks", text, recommended: true }, { id: "r2", type: "merge", as: "me", title: "Merge" }], links: [], ...extra });
   // Every item on the board has a route. The untitled chore keeps rows without a hint.
-  const simple = (n, section, effort, priority, extra) => ({ kind: "issue", number: n, title: "Item " + n, section, effortMinutes: effort, priority, updatedAt: iso(n * 1000), routes: [{ id: "r0", type: "chore", as: "bot", title: "", params: { action: "update_branch" }, recommended: true }], ...extra });
+  // `place` is a category, or an old section for items written before categories
+  const simple = (n, place, effort, priority, extra) => ({ kind: "issue", number: n, title: "Item " + n, ...(["act", "unblock", "land", "decide"].includes(place) ? { category: place } : { section: place }), effortMinutes: effort, priority, updatedAt: iso(n * 1000), routes: [{ id: "r0", type: "chore", as: "bot", title: "", params: { action: "update_branch" }, recommended: true }], ...extra });
   const items = (list) => window.__subs["items"](__mkSnap(list));
   const actions = (list) => window.__subs["actions"](__mkSnap(list));
   const todayIds = () => [...document.querySelectorAll("#today .row")].map((r) => r.dataset.id);
@@ -26,41 +27,60 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
   const revLabel = (id) => { const r = document.querySelector('.row[data-id="' + id + '"]'); const s = r && r.querySelector(".r-rev svg"); return s ? s.getAttribute("aria-label") : ""; };
   const future = new Date(Date.now() + 3 * 86400000).toISOString();
 
-  // Grouping by section, snoozed and dismissed items in the third group
-  items([["i1", simple(1, "active", 5, 1)], ["i2", simple(2, "easy", 5, 1)], ["i3", simple(3, "almost", 5, 1)], ["i4", simple(4, "review", 5, 1)], ["i5", simple(5, "deferred", 5, 1)], ["i6", simple(6, "hardware", 5, 1)], ["i7", simple(7, "active", 5, 1, { snoozedUntil: future })], ["i8", simple(8, "easy", 5, 1, { hidden: true })]]);
+  // Groups follow category, effort and due date. Snoozed and dismissed items go to the third group
+  const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  const due = (n) => ({ dueAt: day(n), dueSource: "milestone 2026.12" });
+  items([
+    ["i1", simple(1, "unblock", 5, 1)], ["i2", simple(2, "land", 5, 1)], ["i3", simple(3, "act", 5, 1)], ["i4", simple(4, "decide", 5, 1, { waitingOn: "us" })],
+    ["i5", simple(5, "decide", 5, 1, { waitingOn: "them" })], ["i6", simple(6, "decide", 5, 1)], ["q1", simple(7, "decide", 2, 1)], ["q2", simple(8, "act", 30, 1, due(1))],
+    ["q3", simple(9, "act", 30, 1, due(-2))], ["x1", simple(10, "act", 30, 1, due(5))], ["i7", simple(11, "unblock", 5, 1, { snoozedUntil: future })], ["i8", simple(12, "land", 5, 1, { hidden: true })],
+  ]);
   await wait(10);
-  ok("quick holds active and easy: " + ids("quick"), ids("quick").join(",") === "i1,i2");
-  ok("afterwards holds almost and review: " + ids("after"), ids("after").join(",") === "i3,i4");
-  ok("later holds deferred and hardware: " + ids("later"), ids("later").join(",") === "i5,i6");
-  ok("snoozed not planned, behind show more", !moreBtn("later").hidden && moreBtn("later").textContent === "Show more");
-  moreBtn("later").click(); await wait(5);
-  ok("snoozed lands in later with chip: " + ids("later"), ids("later").join(",") === "i5,i6,i7" && document.querySelector('.row[data-id="i7"] .cat').textContent === "Snoozed");
-  ok("category chips", ["Active", "Easy", "Almost", "Review", "Later", "Hardware"].every((t, i) => document.querySelector('.row[data-id="i' + (i + 1) + '"] .cat').textContent === t));
+  await openAll();
+  ok("quick holds effort 2 of any category and Act due within 2 days or overdue, the most overdue first: " + ids("quick"), ids("quick").join(",") === "q3,q2,q1");
+  ok("afterwards holds Act, Unblock and Land, and Decide while someone outside waits, due items first: " + ids("after"), ids("after")[0] === "x1" && ids("after").slice(1).sort().join(",") === "i1,i2,i3,i4");
+  ok("later holds the other Decide items and snoozed ones last: " + ids("later"), ids("later").join(",") === "i5,i6,i7");
+  ok("snoozed has its chip", document.querySelector('.row[data-id="i7"] .cat').textContent === "Snoozed");
+  ok("category chips", [["i1", "Unblock"], ["i2", "Land"], ["i3", "Act"], ["i4", "Decide"]].every(([id, t]) => document.querySelector('.row[data-id="' + id + '"] .cat').textContent === t));
   ok("dismissed hidden by default", !ids("later").includes("i8"));
   document.getElementById("show-hidden").click(); await wait(5); await openAll();
   ok("dismissed shows in later with show dismissed", ids("later").includes("i8"));
   document.getElementById("show-hidden").click(); await wait(5);
   state.reveal.clear();
 
+  // Items written before categories, with a section, land where their category puts them
+  items([["o1", simple(1, "active", 5, 1)], ["o2", simple(2, "easy", 1, 1)], ["o3", simple(3, "almost", 5, 1)], ["o4", simple(4, "review", 5, 1, { authorType: "contributor" })],
+    ["o5", simple(5, "review", 5, 1, { authorType: "bot" })], ["o6", simple(6, "deferred", 5, 1)], ["o7", simple(7, "hardware", 5, 1)]]);
+  await wait(10);
+  await openAll();
+  const chipOf = (id) => document.querySelector('.row[data-id="' + id + '"] .cat').textContent;
+  ok("old sections: groups " + ids("quick") + "|" + ids("after") + "|" + ids("later"), ids("quick").join(",") === "o2" && ids("after").slice().sort().join(",") === "o1,o3,o4,o5" && ids("later").join(",") === "o6,o7");
+  ok("old sections: chips", chipOf("o1") === "Unblock" && chipOf("o2") === "Land" && chipOf("o3") === "Land" && chipOf("o4") === "Unblock" && chipOf("o5") === "Land" && chipOf("o6") === "Decide" && chipOf("o7") === "Decide");
+  ok("old sections: hardware keeps its flag", document.querySelector('.row[data-id="o7"] .r-flag.hw')?.textContent === "hardware" && !document.querySelector('.row[data-id="o6"] .r-flag.hw'));
+  state.reveal.clear();
+
   // Budget fill across groups with skip
-  items([["q1", simple(1, "active", 300, 1)], ["a1", simple(2, "almost", 120, 1)], ["a2", simple(3, "review", 45, 1)], ["l1", simple(4, "deferred", 15, 1)], ["l2", simple(5, "hardware", 30, 1)]]);
+  items([["q1", simple(1, "act", 300, 1, due(-1))], ["a1", simple(2, "land", 120, 1)], ["a2", simple(3, "unblock", 45, 1)], ["l1", simple(4, "decide", 15, 1)], ["l2", simple(5, "decide", 30, 1)]]);
   await wait(10);
   ok("budget fill: " + ids("quick") + "|" + ids("after") + "|" + ids("later"), ids("quick").join(",") === "q1" && ids("after").join(",") === "a2" && ids("later").join(",") === "l1");
   ok("skipped item behind show more", !moreBtn("after").hidden && !moreBtn("later").hidden);
   ok("progress text " + spentText(), spentText() === "0 h of 6 h");
   const legend = () => [...document.querySelectorAll("#plan .split-key")].map((k) => k.textContent).join(" | ");
-  ok("split lists only today's planned work per section: " + legend(), legend() === "Active 5 h | Review 45 min | Later 15 min");
-  ok("split has one segment per planned section", document.querySelectorAll("#plan .split-seg").length === 3);
+  ok("split lists only today's planned work per category: " + legend(), legend() === "Act 5 h | Unblock 45 min | Decide 15 min");
+  ok("split has one segment per planned category in its ink color", document.querySelectorAll("#plan .split-seg").length === 3 && document.querySelector("#plan .split-seg").style.background === "var(--cat-act-ink)");
   ok("no backlog numbers in default view", !/240|stale|pending/i.test(document.querySelector("header").textContent));
+  items([["s1", simple(1, "act", 5, 1, due(-1))], ["s2", simple(2, "unblock", 5, 1)], ["s3", simple(3, "land", 5, 1)], ["s4", simple(4, "decide", 5, 1, { waitingOn: "us" })]]);
+  await wait(10);
+  ok("split shows the four labels: " + legend(), legend() === "Act 5 min | Unblock 5 min | Land 5 min | Decide 5 min");
 
   // Quick & Easy shows 5 rows and the next planned item moves up
-  items(Array.from({ length: 8 }, (_, i) => ["e" + (i + 1), simple(i + 1, "easy", 10, i + 1)]));
+  items(Array.from({ length: 8 }, (_, i) => ["e" + (i + 1), simple(i + 1, "land", 2, i + 1)]));
   await wait(10);
   ok("quick capped at 5: " + ids("quick"), ids("quick").join(",") === "e1,e2,e3,e4,e5" && !moreBtn("quick").hidden);
-  items(Array.from({ length: 8 }, (_, i) => ["e" + (i + 1), simple(i + 1, "easy", 10, i + 1, i === 0 ? { handled: { at: iso(60000), routeId: "r0", routeType: "chore", verified: null } } : {})]));
+  items(Array.from({ length: 8 }, (_, i) => ["e" + (i + 1), simple(i + 1, "land", 2, i + 1, i === 0 ? { handled: { at: iso(60000), routeId: "r0", routeType: "chore", verified: null } } : {})]));
   await wait(10);
   ok("next planned moves up: " + ids("quick"), ids("quick").join(",") === "e2,e3,e4,e5,e6");
-  ok("handled counts as spent: " + spentText(), spentText() === "10 min of 6 h");
+  ok("handled counts as spent: " + spentText(), spentText() === "2 min of 6 h");
   actions([]);
 
   // Show more reveals 10 at a time
@@ -139,7 +159,7 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
 
   // Bold action in hints
   const hints = { b1: "Merge", b2: "Reply: point to widgets-desktop", b3: "Request changes for the style nits", b4: "Looks fine to me", b5: "Start fix now", b6: "Reviewer asked twice" };
-  items(Object.entries(hints).map(([id, hint], i) => [id, simple(i + 1, i < 3 ? "easy" : "almost", 1, i + 1, { hint })]));
+  items(Object.entries(hints).map(([id, hint], i) => [id, simple(i + 1, i < 3 ? "easy" : "almost", i < 3 ? 1 : 5, i + 1, { hint })]));
   await wait(10);
   const boldOf = (id) => { const r = document.querySelector('.row[data-id="' + id + '"] .r-hint'); return [r.querySelector(".h-act").textContent, r.textContent]; };
   const boldExpect = { b1: "Merge", b2: "Reply", b3: "Request changes", b4: "Looks", b5: "Start fix", b6: "Reviewer" };

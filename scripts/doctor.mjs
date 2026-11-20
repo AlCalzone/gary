@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { ROOT, autoReviewOf, fixReviewOf, homePath, instanceName, instanceNames, loadConfig, loadProfile, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
-import { readLogin } from "./lib/gh.mjs";
+import { canReadProjects, readLogin } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
 
 const run = promisify(execFile);
@@ -83,6 +83,12 @@ async function checkInstance() {
 		} else {
 			add("bot", "ok", `no bot, ${config.allowOwnTokenPushes ? "bot routes run under your own gh login" : "bot routes become text you post yourself"}`);
 		}
+		await attempt("due dates", async () => {
+			const fields = loadProfile().dueDateFields;
+			const access = await canReadProjects();
+			if (access.ok) return ["ok", `from milestones and from the project fields ${fields.map((f) => `"${f}"`).join(", ")}`];
+			return ["warn", `from milestones only. Project dates are skipped: ${access.reason}. \`gh auth refresh -s read:project\` adds it${config.bot ? " for your login. The bot's token needs it too" : ""}`];
+		});
 		add("fast tier", "ok", { off: "off, every item gets the standard tier", shadow: "shadow, both tiers run and `gary shadow report` compares them", on: "on, simple items get the fast tier" }[config.fastTier]);
 		await attempt("models", async () => {
 			const { models, fallback } = modelsOf(config);

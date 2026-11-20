@@ -5,7 +5,7 @@
   ok("row has no inputs", row && !document.querySelector("#board textarea, #board input"));
   ok("row icons " + [...row.querySelectorAll(".r-meta svg")].map((s) => s.getAttribute("aria-label")).join("|"), [...row.querySelectorAll(".r-meta svg")].map((s) => s.getAttribute("aria-label")).join("|") === "CI failing" && row.querySelector(".r-age .wait").lastChild.textContent === "12d" && /^Waited 12 days for an answer\. Updated /.test(row.querySelector(".r-age svg").getAttribute("aria-label")));
   ok("titles and hints have no ellipsis", [...document.querySelectorAll(".r-title, .r-hint")].every((e) => getComputedStyle(e).textOverflow !== "ellipsis" && getComputedStyle(e).whiteSpace !== "nowrap"));
-  ok("dialog-less row has category chip", row.querySelector(".cat").textContent === "Easy");
+  ok("dialog-less row has category chip", row.querySelector(".cat").textContent === "Land");
   ok("effort cell", row.querySelector(".r-effort").textContent === "5min");
   row.click();
   const dlg = document.getElementById("detail");

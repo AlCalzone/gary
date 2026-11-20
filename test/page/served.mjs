@@ -503,7 +503,8 @@ try {
 	const rowOf = (id) => `(document.querySelector('.row[data-id="widgets/${id}"]')?.closest("[id^=group-]")?.id ?? "none")`;
 	const before26 = JSON.stringify(await ev(`return ${rowOf("issue-26")};`));
 	await put("issue-24", { reviewedAt: new Date().toISOString(), hint: "Reply: thanks, it is fixed", routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks, it is fixed", recommended: true, text: "Thanks, this is fixed." }] });
-	await put("issue-26", { section: "deferred" });
+	// An old section in a merge maps to its category: deferred is Decide, and nobody waits
+	await put("issue-26", { section: "deferred", effortMinutes: 30 });
 	ok("a rewrite shows the update line with the previous hint", await until(`!document.getElementById("d-updated").hidden && /Before: Reply: thanks/.test(document.getElementById("d-updated").textContent)`, 8000));
 	ok("the list does not move while the dialog is open", await ev(`return ${rowOf("issue-26")} === ${before26};`));
 	await closeItem();
@@ -601,7 +602,7 @@ try {
 			"disc-32": { kind: "discussion", number: 32, category: "Feature Requests" },
 			"pr-25": { kind: "pr", number: 25, sensitiveFiles: [".github/copilot-instructions.md", "a/package.json", "b/package.json", "c/package.json", "d/package.json", "e/package.json"] },
 		} }));
-		ok("category: the server serves it from the snapshot", await until(`state.items.get("widgets/disc-32")?.category === "Feature Requests"`, 8000));
+		ok("category: the server serves it from the snapshot", await until(`state.items.get("widgets/disc-32")?.discussionCategory === "Feature Requests"`, 8000));
 		await openItem("disc-32");
 		const escBtn = (text) => `[...document.querySelectorAll("#d-routes .card .card-actions button")].find((b) => b.textContent === ${JSON.stringify(text)})`;
 		ok("category: the dialog shows it", await ev(`return document.querySelector("#d-meta .tag.category")?.textContent === "Feature Requests";`));
@@ -776,7 +777,7 @@ try {
 
 	// Synthetic data written as files, like the routine does
 	const iso = (ms) => new Date(Date.now() - ms).toISOString();
-	const simple = (n, section, effort, priority, extra) => ({ kind: "issue", number: n, title: "Item " + n, url: "https://github.com/acme/widgets/issues/" + n, author: "user" + n, authorType: "contributor", section, effortMinutes: effort, priority, updatedAt: iso(n * 1000), routes: [{ id: "r0", type: "chore", as: "bot", title: "", params: { action: "update_branch" }, recommended: true }], ...extra });
+	const simple = (n, place, effort, priority, extra) => ({ kind: "issue", number: n, title: "Item " + n, url: "https://github.com/acme/widgets/issues/" + n, author: "user" + n, authorType: "contributor", ...(["act", "unblock", "land", "decide"].includes(place) ? { category: place } : { section: place }), effortMinutes: effort, priority, updatedAt: iso(n * 1000), routes: [{ id: "r0", type: "chore", as: "bot", title: "", params: { action: "update_branch" }, recommended: true }], ...extra });
 	const setItems = (list) => {
 		for (const n of readdirSync(join(BOARD, "items"))) rmSync(join(BOARD, "items", n));
 		for (const [id, d] of list) writeFileSync(itemFile(id), JSON.stringify(d));
@@ -789,26 +790,27 @@ try {
 	const settle = () => sleep(700);
 	setActions([]);
 	const future = new Date(Date.now() + 3 * 86400000).toISOString();
-	setItems([["issue-1", simple(1, "active", 5, 1)], ["issue-2", simple(2, "easy", 5, 1)], ["issue-3", simple(3, "almost", 5, 1)], ["issue-4", simple(4, "review", 5, 1)], ["issue-5", simple(5, "deferred", 5, 1)], ["issue-6", simple(6, "hardware", 5, 1)], ["issue-7", simple(7, "active", 5, 1, { snoozedUntil: future })], ["issue-8", simple(8, "easy", 5, 1, { hidden: true })]]);
+	const tomorrow = (() => { const d = new Date(Date.now() + 86400000); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); })();
+	setItems([["issue-1", simple(1, "land", 2, 1)], ["issue-2", simple(2, "act", 30, 1, { dueAt: tomorrow, dueSource: "milestone 2026.12" })], ["issue-3", simple(3, "unblock", 5, 1)], ["issue-4", simple(4, "decide", 5, 1, { waitingOn: "us" })], ["issue-5", simple(5, "decide", 5, 1)], ["issue-6", simple(6, "hardware", 5, 1)], ["issue-7", simple(7, "unblock", 5, 1, { snoozedUntil: future })], ["issue-8", simple(8, "easy", 5, 1, { hidden: true })]]);
 	await settle();
-	ok("grouping by section", (await ids("quick")) === "issue-1,issue-2" && (await ids("after")) === "issue-3,issue-4" && (await ids("later")) === "issue-5,issue-6");
+	ok("grouping by category, effort and due date", (await ids("quick")) === "issue-2,issue-1" && (await ids("after")) === "issue-3,issue-4" && (await ids("later")) === "issue-5,issue-6");
 	await ev(`document.querySelector("#group-later .show-all").click();`);
 	ok("snoozed item in third group", (await ids("later")) === "issue-5,issue-6,issue-7");
 	ok("dismissed hidden by default", !(await ids("later")).includes("issue-8"));
 	await ev(`state.reveal.clear(); render();`);
 
-	setItems([["issue-1", simple(1, "active", 300, 1)], ["issue-2", simple(2, "almost", 120, 1)], ["issue-3", simple(3, "review", 45, 1)], ["issue-4", simple(4, "deferred", 15, 1)], ["issue-5", simple(5, "hardware", 30, 1)]]);
+	setItems([["issue-1", simple(1, "act", 300, 1, { dueAt: tomorrow, dueSource: "milestone 2026.12" })], ["issue-2", simple(2, "land", 120, 1)], ["issue-3", simple(3, "unblock", 45, 1)], ["issue-4", simple(4, "decide", 15, 1)], ["issue-5", simple(5, "hardware", 30, 1)]]);
 	await settle();
 	ok("budget fill across groups with skip", (await ids("quick")) === "issue-1" && (await ids("after")) === "issue-3" && (await ids("later")) === "issue-4");
 
-	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "easy", 10, i + 1)]));
+	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "land", 2, i + 1)]));
 	await settle();
 	ok("quick capped at 5", (await ids("quick")) === "issue-1,issue-2,issue-3,issue-4,issue-5");
-	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "easy", 10, i + 1, i === 0 ? { handled: { at: iso(60000), routeId: "r0", routeType: "chore", verified: null } } : {})]));
+	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "land", 2, i + 1, i === 0 ? { handled: { at: iso(60000), routeId: "r0", routeType: "chore", verified: null } } : {})]));
 	await settle();
 	ok("next planned item moves up", (await ids("quick")) === "issue-2,issue-3,issue-4,issue-5,issue-6");
-	ok("handled time counts as spent", await ev(`return document.querySelector("#plan .sum").textContent === "10 min of 6 h";`));
-	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "easy", 10, i + 1)]));
+	ok("handled time counts as spent", await ev(`return document.querySelector("#plan .sum").textContent === "2 min of 6 h";`));
+	setItems(Array.from({ length: 8 }, (_, i) => ["issue-" + (i + 1), simple(i + 1, "land", 2, i + 1)]));
 	setActions([["issue-1-2", { itemId: "issue-1", action: "reanalyze", status: "done", via: "queue", createdAt: iso(60000), finishedAt: iso(30000), params: {}, text: "", result: "" }]]);
 	await settle();
 	ok("a finished re-analysis returns the item to its place by priority", (await ids("quick")) === "issue-1,issue-2,issue-3,issue-4,issue-5");
@@ -858,7 +860,7 @@ try {
 	await sleep(2500);
 	ok("wrapped rows keep columns on the first title line", await ev(`const rows = [...document.querySelectorAll("#board .row")].filter((r) => r.querySelector(".r-title").getBoundingClientRect().height > 30);
 		return rows.length > 0 && rows.every((r) => { const t = r.querySelector(".r-title").getBoundingClientRect().top; return [".r-num", ".r-cat", ".r-effort", ".r-age"].every((s) => Math.abs(r.querySelector(s).getBoundingClientRect().top - t) < 1.5); });`));
-	ok("short category chips", await ev(`return [...document.querySelectorAll("#board .cat")].every((c) => ["Active", "Easy", "Almost", "Review", "Later", "Hardware", "Snoozed"].includes(c.textContent));`));
+	ok("short category chips", await ev(`return [...document.querySelectorAll("#board .cat")].every((c) => ["Act", "Unblock", "Land", "Decide", "Snoozed"].includes(c.textContent));`));
 	if (SHOT) {
 		const shot = await cmd("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 		writeFileSync(SHOT, Buffer.from(shot.result.data, "base64"));

@@ -10,6 +10,8 @@
 //   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
 //   FAKE_GH_LOGIN          the stored login without GH_TOKEN, default octocat. Empty means not logged in
 //   FAKE_GH_LOG            a file that gets one line per call, for tests that check what ran
+//   FAKE_GH_NO_PROJECTS    "1" makes every read of GitHub Projects fail like a token without the read:project scope.
+//                          A node's `projectItems` reach only a query that asks for them
 //   FAKE_GH_OVERRIDES      a JSON file { "issue-22": { …fields } } merged into the full nodes of `gary item`, read on every call.
 //                          "requests-<n>" is merged into the PR that a review request for the maintainer reads
 import { createHash } from "node:crypto";
@@ -93,7 +95,17 @@ const overrides = (() => {
 		return {};
 	}
 })();
-const withOverride = (key, node) => (node && overrides[key] ? { ...node, ...overrides[key] } : node);
+const withProjects = (node) => {
+	if (!node || query.includes("projectItems")) return node;
+	const { projectItems, ...rest } = node;
+	return rest;
+};
+const withOverride = (key, node) => withProjects(node && overrides[key] ? { ...node, ...overrides[key] } : node);
+
+if (/projectsV2|projectItems/.test(query) && process.env.FAKE_GH_NO_PROJECTS === "1") {
+	fail("Your token has not been granted the required scopes to execute this query. The 'projectsV2' field requires one of the following scopes: ['read:project'], but your token has only been granted the: ['repo'] scopes.", undefined);
+}
+if (query.includes("projectsV2(first: 1)")) repository({ projectsV2: { totalCount: 1 } });
 
 // The PR a review request for the maintainer reads: its author, its draft flag and the pending review requests
 if (query.includes("reviewRequests(first:") && query.includes("user(login: $me)")) {

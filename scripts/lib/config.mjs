@@ -137,6 +137,7 @@ export const PROFILE_DEFAULTS = {
 	aiAuthors: [],
 	autoReviewPaths: {},
 	formatCommand: null,
+	dueDateFields: ["Due", "Due date", "Target date", "Deadline", "End date"],
 };
 
 // The longest comment text an automatedComments pattern runs against. It bounds the cost of a slow pattern
@@ -467,6 +468,8 @@ export function checkProfile(data) {
 			}
 		}
 	}
+	const due = data.dueDateFields;
+	check(errors, due === undefined || (isStringList(due) && due.length <= 20 && due.every((f) => f.trim().length > 0 && f.length <= 100)), `"dueDateFields" must be a list of at most 20 project field names, each at most 100 characters`);
 	const cmd = data.formatCommand;
 	check(errors, cmd === undefined || cmd === null || (typeof cmd === "string" && cmd.trim().length > 0 && cmd.length <= 200 && !/[`\n\r]/.test(cmd)), `"formatCommand" must be the one-line command a contributor runs to format, at most 200 characters, without backticks`);
 	return { errors, unknown };

@@ -10,6 +10,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
+import { normalizeCategory } from "../scripts/lib/categories.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyProposal, applySetting, cut, isSettingProposal, logDecision } from "../scripts/lib/learning.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
@@ -64,6 +65,11 @@ export function draftHash(route, item) {
 	const params = JSON.stringify(route?.params ?? {});
 	const reviewedAt = typeof item?.reviewedAt === "string" ? item.reviewedAt : "";
 	return createHash("sha256").update(text + "\u0000" + params + "\u0000" + reviewedAt).digest("hex").slice(0, 16);
+}
+
+function discussionCategoryOf(item) {
+	const c = normalizeCategory(item)?.discussionCategory;
+	return typeof c === "string" ? c : null;
 }
 
 function routesOf(item) {
@@ -1015,7 +1021,18 @@ export async function startBoardServer({
 		};
 		const autoReviews = await readAutoReviews(name);
 		const autoReviewOf = (id, data) => (data.kind === "pr" ? autoReviewState(data, autoReviews[id], fixSources.snapshot[id]) : null);
-		const categoryOf = (id, data) => (data.kind === "discussion" && typeof data.category !== "string" ? fixSources.snapshot[id]?.category : undefined);
+		const categoryOf = (id, data) => (data.kind === "discussion" && typeof data.discussionCategory !== "string" ? fixSources.snapshot[id]?.category : undefined);
+		// The snapshot is fresher than the item for these: a milestone or a project date changes without touching the thread
+		const withSnapshotFields = (id, data) => {
+			const entry = fixSources.snapshot[id];
+			if (!entry) return data;
+			const next = { ...data };
+			for (const key of ["dueAt", "dueSource", "series", "waitingOn"]) {
+				if (entry[key] !== undefined && entry[key] !== null) next[key] = entry[key];
+				else if (key !== "waitingOn") delete next[key];
+			}
+			return next;
+		};
 		// The changed files of a PR that match the profile's sensitivePaths, so the dialog can say what may push to it
 		const sensitiveOf = (id, data) => {
 			const { sensitiveFiles: files, sensitiveFileCount: total } = data.kind === "pr" ? sensitiveFacts(fixSources.snapshot[id]) : {};
@@ -1032,14 +1049,14 @@ export async function startBoardServer({
 		for (const { data: a } of actions) if (typeof a?.itemId === "string") actionsOf.set(a.itemId, [...(actionsOf.get(a.itemId) ?? []), a]);
 		// What happened on GitHub since his last choice on the item, for the timeline at the top of the dialog
 		const sinceOf = (id, data) => sinceSummary(fixSources.snapshot[id]?.activity, sinceAnchor(data, actionsOf.get(id)), { me: instance.config.me, bot: instance.config.bot?.login, actions: actionsOf.get(id) });
-		return items.map(({ id, data }) => ({
+		return items.map(({ id, data: stored }) => [id, withSnapshotFields(id, normalizeCategory(stored))]).map(([id, data]) => ({
 			...data,
 			...(sinceOf(id, data) && { since: sinceOf(id, data) }),
 			...(sensitiveOf(id, data) && { sensitive: sensitiveOf(id, data) }),
 			...(origins.has(id) && { origin: origins.get(id) }),
 			...(holds.has(id) && { hold: holds.get(id) }),
 			// An item written before the routine copied the category gets it from the snapshot
-			...(typeof categoryOf(id, data) === "string" && { category: categoryOf(id, data) }),
+			...(typeof categoryOf(id, data) === "string" && { discussionCategory: categoryOf(id, data) }),
 			liveState: liveStates.get(`${name}/${id}`),
 			...(autoReviewOf(id, data) && { autoReview: autoReviewOf(id, data) }),
 			...(working.has(id) && { working: working.get(id) }),
@@ -1544,7 +1561,7 @@ export async function startBoardServer({
 		});
 		if (outcome.ok) {
 			logRouteDecisions(name, itemId, item, route, "", body.input, false);
-			decide(name, "escalated", itemId, item, { route: { type: route.type, title: route.title ?? "" }, issueKind: typeof issueKind === "string" ? issueKind : null, category: typeof item.category === "string" ? item.category : null });
+			decide(name, "escalated", itemId, item, { route: { type: route.type, title: route.title ?? "" }, issueKind: typeof issueKind === "string" ? issueKind : null, category: discussionCategoryOf(item) });
 			doneKeys.add(key);
 			refusals.delete(key);
 			await setHandled(name, itemId, route, "commented");
@@ -1682,7 +1699,7 @@ export async function startBoardServer({
 			if (entry.mergeable !== undefined) next.mergeable = MERGEABLE_STATES[entry.mergeable] ?? "unknown";
 			if (entry.ci !== undefined) next.ci = entry.ci;
 			if (entry.facts?.lastEventUrl) next.lastEventUrl = entry.facts.lastEventUrl;
-			if (cur.kind === "discussion" && typeof entry.category === "string") next.category = entry.category;
+			if (cur.kind === "discussion" && typeof entry.category === "string") next.discussionCategory = entry.category;
 			if (isObject(cur.handled)) next.handled = { ...cur.handled, verified: verify(cur, cur.handled, entry, state) };
 			await writeAtomic(file, next);
 		});

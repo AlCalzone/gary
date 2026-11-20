@@ -4,6 +4,7 @@ import { appendFile, lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { ID_PATTERN, PROPOSAL_ID, writeAtomic } from "./board-store.mjs";
+import { normalizeCategory } from "./categories.mjs";
 import { CONFIG_DEFAULTS, checkConfig, instanceDir, instanceName, loadInstance, personalFile } from "./config.mjs";
 
 const run = promisify(execFile);
@@ -29,7 +30,7 @@ export function itemSummary(item) {
 	return {
 		kind: item?.kind,
 		authorType: item?.authorType,
-		section: item?.section,
+		category: normalizeCategory(item ?? {}).category,
 		labels: Array.isArray(item?.labels) ? item.labels : [],
 		title: item?.title ?? "",
 		// `gary shadow report` groups the maintainer's decisions by the tier that classified the item
@@ -94,27 +95,37 @@ const isGithubUrl = (v) => typeof v === "string" && /^https:\/\/github\.com\/[\w
 
 export const isSettingProposal = (p) => p?.kind === "setting";
 
+// Proposals written before categories name a `section` in place of the `category`
 function answerProblems(a, at) {
-	if (!isPlainObject(a)) return [`${at} must be { section, recommendedType }`];
+	if (!isPlainObject(a)) return [`${at} must be { category, recommendedType }`];
 	const errors = [];
-	for (const key of Object.keys(a)) if (!["section", "recommendedType"].includes(key)) errors.push(`${at} has the unknown field "${key}"`);
-	for (const key of ["section", "recommendedType"]) {
+	for (const key of Object.keys(a)) if (!["category", "section", "recommendedType"].includes(key)) errors.push(`${at} has the unknown field "${key}"`);
+	const keys = ["recommendedType", Object.hasOwn(a, "section") ? "section" : "category"];
+	for (const key of keys) {
 		if (a[key] !== null && !(isString(a[key]) && a[key].length <= 40)) errors.push(`${at}.${key} must be null or a string of at most 40 characters`);
 	}
 	return errors;
 }
 
+// Stats written before categories count `sameSection`. They are checked as `sameCategory`
+function oldStats(s) {
+	if (!isPlainObject(s)) return s;
+	const rename = (o) => (isPlainObject(o) && Object.hasOwn(o, "sameSection") && !Object.hasOwn(o, "sameCategory") ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k === "sameSection" ? "sameCategory" : k, v])) : o);
+	const out = rename(s);
+	return isPlainObject(out.recent) ? { ...out, recent: rename(out.recent) } : out;
+}
+
 function statsProblems(p) {
-	const s = p.stats;
-	if (!isPlainObject(s)) return ["stats must be { pairs, handedUp, answered, sameSection, sameRouteType }"];
+	const s = oldStats(p.stats);
+	if (!isPlainObject(s)) return ["stats must be { pairs, handedUp, answered, sameCategory, sameRouteType }"];
 	const errors = [];
-	const known = ["pairs", "handedUp", "answered", "sameSection", "sameRouteType", "recent", "overrides"];
+	const known = ["pairs", "handedUp", "answered", "sameCategory", "sameRouteType", "recent", "overrides"];
 	for (const key of Object.keys(s)) if (!known.includes(key)) errors.push(`stats has the unknown field "${key}"`);
-	const counts = ["pairs", "handedUp", "answered", "sameSection", "sameRouteType"];
+	const counts = ["pairs", "handedUp", "answered", "sameCategory", "sameRouteType"];
 	if (!counts.every((k) => isCount(s[k]))) errors.push(`stats.${counts.join(", stats.")} must be whole numbers`);
 	else {
 		if (s.handedUp + s.answered !== s.pairs) errors.push("stats.handedUp and stats.answered must add up to stats.pairs");
-		if (s.sameSection > s.answered || s.sameRouteType > s.answered) errors.push("stats.sameSection and stats.sameRouteType cannot exceed stats.answered");
+		if (s.sameCategory > s.answered || s.sameRouteType > s.answered) errors.push("stats.sameCategory and stats.sameRouteType cannot exceed stats.answered");
 	}
 	const reasons = p.reasons;
 	if (p.setting?.value !== "shadow") {
@@ -127,8 +138,8 @@ function statsProblems(p) {
 	}
 	if (reasons.includes("agreement")) {
 		const r = s.recent;
-		if (!isPlainObject(r) || !isCount(r.answered) || !isCount(r.sameSection) || !isCount(r.needed) || r.sameSection > r.answered || r.needed > r.answered || r.answered < 1) {
-			errors.push("stats.recent must be { answered, sameSection, needed } for the reason agreement");
+		if (!isPlainObject(r) || !isCount(r.answered) || !isCount(r.sameCategory) || !isCount(r.needed) || r.sameCategory > r.answered || r.needed > r.answered || r.answered < 1) {
+			errors.push("stats.recent must be { answered, sameCategory, needed } for the reason agreement");
 		}
 	}
 	if (reasons.includes("overrides")) {

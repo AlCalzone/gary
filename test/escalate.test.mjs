@@ -68,7 +68,12 @@ writeItems(prefill.home, { "disc-31": disc(31, "acme/prefill") });
 writeItems(nocmd.home, { "disc-31": disc(31, "acme/nocmd") });
 // An item without a stored category gets it from the snapshot
 writeItems(widgets.home, { "disc-35": { ...disc(35), category: undefined } });
-writeFileSync(join(widgets.home, "state", "snapshot.json"), JSON.stringify({ items: { "disc-35": { kind: "discussion", number: 35, category: "Ideas" } } }));
+writeItems(widgets.home, { "disc-34": { ...disc(34), dueAt: "2026-01-01", dueSource: "milestone old" } });
+writeFileSync(join(widgets.home, "state", "snapshot.json"), JSON.stringify({ items: {
+	"disc-35": { kind: "discussion", number: 35, category: "Ideas" },
+	"disc-34": { kind: "discussion", number: 34 },
+	"issue-21": { kind: "issue", number: 21, dueAt: "2026-11-24", dueSource: "milestone 2026.12", series: { id: "issue-20", title: "Feature", position: 2, size: 3 }, waitingOn: "us" },
+} }));
 const stub = join(dryDir, "stub.json");
 writeFileSync(stub, JSON.stringify({
 	"*": { state: "OPEN" },
@@ -84,8 +89,13 @@ try {
 	const inst = (name) => board.instances.find((i) => i.name === name);
 	t.check("the board says who posts the command", inst("widgets").escalateAs === "me" && inst("prefill").escalateAs === "prefill", board.instances.map((i) => i.escalateAs));
 	const stateItems = (await dry.api("/api/state")).data.items;
-	t.check("the stored category is served", stateItems.find((i) => i.instance === "widgets" && i.id === "disc-31").category === "Feature Requests");
-	t.check("a missing category comes from the snapshot", stateItems.find((i) => i.id === "disc-35").category === "Ideas");
+	const d31 = stateItems.find((i) => i.instance === "widgets" && i.id === "disc-31");
+	t.check("an old item's discussion category is served as discussionCategory, next to its board category", d31.discussionCategory === "Feature Requests" && d31.category === "land" && d31.section === undefined, d31);
+	const i21 = stateItems.find((i) => i.id === "issue-21");
+	t.check("the due date, the series and who we wait on come from the snapshot", i21.dueAt === "2026-11-24" && i21.dueSource === "milestone 2026.12" && i21.series?.position === 2 && i21.waitingOn === "us", i21);
+	const d34 = stateItems.find((i) => i.id === "disc-34");
+	t.check("a due date the snapshot no longer has is not served", d34.dueAt === undefined && d34.dueSource === undefined, d34);
+	t.check("a missing category comes from the snapshot", stateItems.find((i) => i.id === "disc-35").discussionCategory === "Ideas");
 	t.check("the route is still served as his own", (await dry.route("widgets", "disc-31", "r2")).actor === "me");
 
 	let r = await dry.click("prefill", "disc-31");

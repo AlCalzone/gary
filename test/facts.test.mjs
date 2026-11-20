@@ -132,5 +132,61 @@ const act12 = pending.items["pr-12"]?.activity;
 t.check("the staged snapshot keeps the activity of a PR for the timeline", act12?.events.filter((e) => e.kind === "review").map((e) => e.state).join() === "approved,commented" && act12.openThreads.length === 3 && !act12.events.some((e) => e.kind === "thread_reply") && act12.ci.map((c) => c.state).join() === "passing", act12);
 t.check("the work list leaves the activity out", out.changed?.every((e) => e.activity === undefined));
 
+// Due dates come from GitHub only: a milestone's dueOn or a project date field named in dueDateFields
+const ms = { title: "2026.12", dueOn: "2026-12-01T08:00:00Z" };
+const project = (title, fields) => ({ nodes: [{ project: { title }, fieldValues: { nodes: [...fields.map(([name, date]) => ({ date, field: { name } })), {}] } }] });
+t.check("a milestone's due date counts", JSON.stringify(f.dueFacts({ milestone: ms })) === JSON.stringify({ dueAt: "2026-12-01", dueSource: "milestone 2026.12" }));
+t.check("a project date field counts, matched without case, and the earliest date wins", JSON.stringify(f.dueFacts({ milestone: ms, projectItems: project("Roadmap", [["target DATE", "2026-11-24"], ["Start date", "2026-11-01"]]) })) === JSON.stringify({ dueAt: "2026-11-24", dueSource: 'project "Roadmap" · target DATE' }));
+t.check("a profile's own field names replace the defaults", f.dueFacts({ projectItems: project("Roadmap", [["Target date", "2026-11-24"]]) }, ["Ship by"]).dueAt === undefined && f.dueFacts({ projectItems: project("Roadmap", [["Ship by", "2026-11-25"]]) }, ["Ship by"]).dueAt === "2026-11-25");
+t.check("text never sets a due date", f.dueFacts({ title: "Due 2026-11-21", body: "Deadline: 2026-11-21", milestone: null }).dueAt === undefined);
+
+// Series: stacked PRs, sub-issues and the PRs that close them. Wording alone never makes one
+const stackPr = (number, head, base, extra) => ({ number, title: "PR " + number, headRefName: head, baseRefName: base, isCrossRepository: false, ...extra });
+let series = f.seriesOf([stackPr(40, "part-1", "main"), stackPr(41, "part-2", "part-1")]);
+t.check("a stacked pair is a series in base order", JSON.stringify(series.get("pr-40")) === JSON.stringify({ id: "pr-40", title: "PR 40", position: 1, size: 2 }) && series.get("pr-41")?.position === 2 && series.get("pr-41").id === "pr-40", [...series]);
+series = f.seriesOf([stackPr(42, "a", "main", { title: "Part 1 of 2" }), stackPr(43, "b", "main", { title: "Part 2 of 2, part of #42" })]);
+t.check("an unrelated pair is no series, whatever the titles say", series.size === 0, [...series]);
+series = f.seriesOf([stackPr(44, "x", "part-1", { isCrossRepository: true }), stackPr(45, "part-1", "main", { isCrossRepository: true })]);
+t.check("a fork's branch name stacks nothing", series.size === 0, [...series]);
+series = f.seriesOf([stackPr(46, "fix", "main", { closingIssuesReferences: { nodes: [{ number: 51 }] } }), stackPr(47, "other", "main", { closingIssuesReferences: { nodes: [{ number: 60 }] } })], [{ number: 50, title: "Feature" }, { number: 51, parent: { number: 50 } }, { number: 52, parent: { number: 50 } }, { number: 60 }]);
+t.check("sub-issues follow their parent, and a PR that closes one joins the series", ["issue-50", "issue-51", "issue-52", "pr-46"].every((id) => series.get(id)?.id === "issue-50" && series.get(id).size === 4) && series.get("issue-50").position === 1 && series.get("pr-46").position > series.get("issue-51").position && !series.has("pr-47") && !series.has("issue-60"), [...series]);
+
+const overrides = join(T, "overrides.json");
+writeFileSync(overrides, JSON.stringify({
+	"pr-12": { projectItems: project("Roadmap", [["Target date", "2026-11-24"]]) },
+	"issue-23": { milestone: ms },
+	"issue-22": { body: "Please fix this by 2026-11-21, the deadline for the release." },
+	"pr-25": { baseRefName: "claude/restore-timeout" },
+}));
+const snapWith = (extra) => {
+	const r = spawnSync(process.execPath, [GARY, "snapshot"], { env: { ...env, FAKE_GH_OVERRIDES: overrides, ...extra }, encoding: "utf8" });
+	try {
+		return JSON.parse(r.stdout);
+	} catch {
+		return { error: r.stdout + r.stderr };
+	}
+};
+out = snapWith({});
+const entryOf = (id) => out.changed?.find((e) => e.id === id) ?? {};
+t.check("the snapshot reads a project date field", entryOf("pr-12").dueAt === "2026-11-24" && entryOf("pr-12").dueSource === 'project "Roadmap" · Target date' && entryOf("pr-12").facts?.dueAt === "2026-11-24", entryOf("pr-12"));
+t.check("the snapshot reads a milestone's due date", entryOf("issue-23").dueAt === "2026-12-01" && entryOf("issue-23").facts?.dueSource === "milestone 2026.12", entryOf("issue-23"));
+t.check("a date in the thread text is no due date", entryOf("issue-22").dueAt === undefined && entryOf("issue-22").facts && !("dueAt" in entryOf("issue-22").facts), entryOf("issue-22"));
+t.check("the snapshot finds the stacked pair", entryOf("pr-18").series?.position === 1 && entryOf("pr-25").series?.id === "pr-18" && entryOf("pr-25").series.position === 2 && entryOf("pr-25").facts?.series?.size === 2, [entryOf("pr-18").series, entryOf("pr-25").series]);
+t.check("PRs on the default branch form no series", entryOf("pr-12").series === undefined && entryOf("pr-17").series === undefined);
+let staged = JSON.parse(readFileSync(join(root, "instances", "widgets", "state", "snapshot.pending.json"), "utf8")).items;
+t.check("the staged snapshot keeps the due date, the series and who we wait on for the board", staged["pr-12"]?.dueAt === "2026-11-24" && staged["pr-12"].dueSource && staged["pr-25"]?.series?.position === 2 && staged["issue-23"]?.waitingOn === "us", [staged["pr-12"], staged["issue-23"]?.waitingOn]);
+t.check("gary item takes the series from the staged snapshot", spawnSync(process.execPath, [GARY, "item", "pr", "25"], { env: { ...env, FAKE_GH_OVERRIDES: overrides }, encoding: "utf8" }).stdout.includes('"position": 2'));
+
+out = snapWith({ FAKE_GH_NO_PROJECTS: "1" });
+t.check("without read:project the snapshot runs and skips project dates", !out.error && entryOf("pr-12").dueAt === undefined && entryOf("issue-23").dueAt === "2026-12-01", out.error ?? entryOf("pr-12"));
+const doctorLine = (extra) => JSON.parse(spawnSync(process.execPath, [GARY, "doctor", "--json"], { env: { ...env, ...extra }, encoding: "utf8" }).stdout).find((c) => c.name === "due dates");
+t.check("doctor says once that project dates are skipped", doctorLine({ FAKE_GH_NO_PROJECTS: "1" })?.status === "warn" && /read:project/.test(doctorLine({ FAKE_GH_NO_PROJECTS: "1" }).detail), doctorLine({ FAKE_GH_NO_PROJECTS: "1" }));
+t.check("doctor names the project fields it reads", doctorLine({})?.status === "ok" && /"Target date"/.test(doctorLine({}).detail), doctorLine({}));
+
+// A due date that appears makes the item changed, also without a new comment
+spawnSync(process.execPath, [GARY, "snapshot", "--commit"], { env, encoding: "utf8" });
+out = snapWith({});
+t.check("a new due date counts as a change", entryOf("pr-12").reason === "updated" && out.unchanged?.includes("pr-17"), { changed: out.changed?.map((e) => e.id), unchanged: out.unchanged });
+
 removeDir(T);
 t.done();

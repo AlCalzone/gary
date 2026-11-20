@@ -287,7 +287,7 @@ window.makeProposalFixtures = (iso) => [
 window.makeTwoInstanceFixtures = (iso) => {
   const item = (instance, kind, n, extra) => [instance + "/" + (kind === "pr" ? "pr-" : "issue-") + n, {
     instance, kind, number: n, url: "https://github.com/" + (instance === "widgets" ? "acme/widgets" : "contoso/gadgets") + (kind === "pr" ? "/pull/" : "/issues/") + n,
-    author: "someone", authorType: "contributor", section: "easy", effortMinutes: 5, priority: 1, updatedAt: iso(n * 60000), reviewDepth: "full", ...extra,
+    author: "someone", authorType: "contributor", category: "land", effortMinutes: 2, priority: 1, updatedAt: iso(n * 60000), reviewDepth: "full", ...extra,
   }];
   const reply = (title, text) => [{ id: "r1", type: "reply", as: "me", title, text, recommended: true, draftHash: "h1" }];
   return [

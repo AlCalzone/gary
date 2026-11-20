@@ -15,11 +15,12 @@ import { isSettingProposal, readDecisions, validateProposal } from "./lib/learni
 import { CLASSIFIERS } from "./lib/validate-item.mjs";
 
 export const TIERS = ["fast", "standard"];
-const FIELDS = ["at", "run", "itemId", "repo", "tier", "model", "section", "hasRoutes", "recommendedType", "handedUp", "reason", "sampled"];
+// `section` is the field of entries written before categories. The report compares it like a category
+const FIELDS = ["at", "run", "itemId", "repo", "tier", "model", "category", "section", "hasRoutes", "recommendedType", "handedUp", "reason", "sampled"];
 // Below this many items per tier the decision rates say nothing
 export const MIN_ITEMS = 20;
 export const RECENT_PAIRS = 40;
-export const MIN_SECTION_AGREEMENT = 0.95;
+export const MIN_CATEGORY_AGREEMENT = 0.95;
 // A proposal to turn the fast tier on needs this many pairs
 export const MIN_PAIRS = 40;
 // The fast tier's override rate must exceed the standard tier's by this much before Gary proposes to switch back
@@ -30,8 +31,9 @@ const shadowFile = () => join(stateDir(), "shadow.jsonl");
 
 const isString = (v) => typeof v === "string" && v.trim().length > 0;
 const isStringOrNull = (v) => v === null || isString(v);
+const categoryOf = (e) => e.category ?? e.section ?? null;
 
-/** The problems of one entry. A fast answer that handed up may leave section and recommendedType null. */
+/** The problems of one entry. A fast answer that handed up may leave category and recommendedType null. */
 export function validateShadowEntry(e) {
 	if (!e || typeof e !== "object" || Array.isArray(e)) return ["an entry must be a JSON object"];
 	const p = [];
@@ -45,7 +47,8 @@ export function validateShadowEntry(e) {
 	if (typeof e.handedUp !== "boolean") p.push("handedUp must be true or false");
 	if (e.tier === "standard" && e.handedUp === true) p.push("only the fast tier hands up");
 	if (typeof e.hasRoutes !== "boolean") p.push("hasRoutes must be true or false");
-	if (!isStringOrNull(e.section ?? null) || (!e.handedUp && !isString(e.section))) p.push("section is required unless the fast tier handed up");
+	if (e.category !== undefined && e.section !== undefined) p.push("an entry has category or the old section, not both");
+	if (!isStringOrNull(categoryOf(e)) || (!e.handedUp && !isString(categoryOf(e)))) p.push("category is required unless the fast tier handed up");
 	if (!isStringOrNull(e.recommendedType ?? null)) p.push("recommendedType must be a route type or null");
 	if (e.hasRoutes === true && !e.handedUp && !isString(e.recommendedType)) p.push("recommendedType is required when the answer has routes");
 	if (e.reason !== undefined && !isStringOrNull(e.reason)) p.push("reason must be a string or null");
@@ -84,25 +87,25 @@ export function buildReport(entries, { since } = {}) {
 	}
 	const pairs = [...groups.values()].filter((g) => g.fast && g.standard).sort((a, b) => Date.parse(a.standard.at) - Date.parse(b.standard.at));
 	const answered = pairs.filter((p) => !p.fast.handedUp);
-	const sameSection = answered.filter((p) => p.fast.section === p.standard.section).length;
+	const sameCategory = answered.filter((p) => categoryOf(p.fast) === categoryOf(p.standard)).length;
 	const sameRoute = answered.filter((p) => (p.fast.recommendedType ?? null) === (p.standard.recommendedType ?? null)).length;
-	const answer = (e) => ({ model: e.model, section: e.section ?? null, hasRoutes: e.hasRoutes, recommendedType: e.recommendedType ?? null, reason: e.reason ?? null });
+	const answer = (e) => ({ model: e.model, category: categoryOf(e), hasRoutes: e.hasRoutes, recommendedType: e.recommendedType ?? null, reason: e.reason ?? null });
 	const recent = answered.slice(-RECENT_PAIRS);
-	const recentSame = recent.filter((p) => p.fast.section === p.standard.section).length;
+	const recentSame = recent.filter((p) => categoryOf(p.fast) === categoryOf(p.standard)).length;
 	const recentShare = share(recentSame, recent.length);
 	return {
 		pairs: pairs.length,
 		sampledPairs: pairs.filter((p) => p.fast.sampled === true || p.standard.sampled === true).length,
-		// The fast tier decided these itself, so a wrong section there reaches the board
-		recentSectionAgreement: { pairs: recent.length, same: recentSame, share: recentShare, warning: recentShare !== null && recentShare < MIN_SECTION_AGREEMENT },
+		// The fast tier decided these itself, so a wrong category there reaches the board
+		recentCategoryAgreement: { pairs: recent.length, same: recentSame, share: recentShare, warning: recentShare !== null && recentShare < MIN_CATEGORY_AGREEMENT },
 		handedUp: pairs.length - answered.length,
 		handedUpShare: share(pairs.length - answered.length, pairs.length),
 		// Agreement counts only the pairs where the fast tier answered itself
 		compared: answered.length,
-		sectionAgreement: { same: sameSection, share: share(sameSection, answered.length) },
+		categoryAgreement: { same: sameCategory, share: share(sameCategory, answered.length) },
 		routeAgreement: { same: sameRoute, share: share(sameRoute, answered.length) },
 		disagreements: answered
-			.filter((p) => p.fast.section !== p.standard.section || (p.fast.recommendedType ?? null) !== (p.standard.recommendedType ?? null))
+			.filter((p) => categoryOf(p.fast) !== categoryOf(p.standard) || (p.fast.recommendedType ?? null) !== (p.standard.recommendedType ?? null))
 			.map((p) => ({ run: p.standard.run, itemId: p.standard.itemId, repo: p.standard.repo, fast: answer(p.fast), standard: answer(p.standard) })),
 	};
 }
@@ -199,7 +202,7 @@ const SETTING_TITLES = { on: "Use the faster model for obvious items", shadow: "
 /** Why the report speaks for switching back to shadow: `agreement`, `overrides`, both or neither. */
 export function switchBackReasons(report) {
 	const reasons = [];
-	const recent = report.recentSectionAgreement;
+	const recent = report.recentCategoryAgreement;
 	if (recent.warning && recent.pairs >= MIN_ITEMS) reasons.push("agreement");
 	const { fast, standard } = report.decisions ?? {};
 	if (fast && standard && !fast.tooFew && !standard.tooFew && fast.any.rate >= standard.any.rate + OVERRIDE_MARGIN) reasons.push("overrides");
@@ -211,7 +214,7 @@ export function differencesOf(report, boardItems = []) {
 	const items = new Map(boardItems.map((i) => [i.id, i.data]));
 	const groups = new Map();
 	for (const d of report.disagreements) {
-		const answer = (a) => ({ section: a.section ?? null, recommendedType: a.recommendedType ?? null });
+		const answer = (a) => ({ category: categoryOf(a), recommendedType: a.recommendedType ?? null });
 		const diff = { itemId: d.itemId, fast: answer(d.fast), standard: answer(d.standard) };
 		const key = JSON.stringify(diff);
 		const item = items.get(d.itemId);
@@ -235,12 +238,12 @@ export function buildSettingProposal({ id, createdAt, value, report, boardItems,
 		pairs: report.pairs,
 		handedUp: report.handedUp,
 		answered: report.compared,
-		sameSection: report.sectionAgreement.same,
+		sameCategory: report.categoryAgreement.same,
 		sameRouteType: report.routeAgreement.same,
 	};
 	if (reasons.includes("agreement")) {
-		const recent = report.recentSectionAgreement;
-		stats.recent = { answered: recent.pairs, sameSection: recent.same, needed: Math.ceil(recent.pairs * MIN_SECTION_AGREEMENT) };
+		const recent = report.recentCategoryAgreement;
+		stats.recent = { answered: recent.pairs, sameCategory: recent.same, needed: Math.ceil(recent.pairs * MIN_CATEGORY_AGREEMENT) };
 	}
 	if (reasons.includes("overrides")) {
 		const tier = (t) => ({ items: t.items, changed: t.any.count });
@@ -298,11 +301,11 @@ async function propose(argv) {
 	const from = value === "on" ? last : Math.max(last, Date.now() - WEEK_MS);
 	const since = Number.isFinite(from) ? new Date(from).toISOString() : undefined;
 	const report = await fullReport(since);
-	const counts = { since: since ?? null, pairs: report.pairs, handedUp: report.handedUp, answered: report.compared, sameSection: report.sectionAgreement.same, sectionAgreement: report.sectionAgreement.share };
+	const counts = { since: since ?? null, pairs: report.pairs, handedUp: report.handedUp, answered: report.compared, sameCategory: report.categoryAgreement.same, categoryAgreement: report.categoryAgreement.share };
 	let reasons = [];
 	if (value === "on") {
 		if (report.pairs < MIN_PAIRS) return console.log(JSON.stringify({ ok: true, written: false, why: `${report.pairs} pairs, fewer than ${MIN_PAIRS}`, ...counts }));
-		if (!(report.sectionAgreement.share >= MIN_SECTION_AGREEMENT)) return console.log(JSON.stringify({ ok: true, written: false, why: `section agreement ${pct(report.sectionAgreement.share)} is below ${pct(MIN_SECTION_AGREEMENT)}`, ...counts }));
+		if (!(report.categoryAgreement.share >= MIN_CATEGORY_AGREEMENT)) return console.log(JSON.stringify({ ok: true, written: false, why: `category agreement ${pct(report.categoryAgreement.share)} is below ${pct(MIN_CATEGORY_AGREEMENT)}`, ...counts }));
 	} else {
 		reasons = switchBackReasons(report);
 		if (!reasons.length) return console.log(JSON.stringify({ ok: true, written: false, why: "the fast tier agrees with the standard tier and with the maintainer's decisions", ...counts }));
@@ -350,18 +353,18 @@ async function report(argv) {
 	if (argv.includes("--json")) return console.log(JSON.stringify({ since: since ?? null, ...r }, null, 2));
 	console.log(`${r.pairs} pairs${since ? ` since ${since}` : ""}, ${r.sampledPairs} of them from sampling`);
 	console.log(`fast tier handed up: ${r.handedUp} (${pct(r.handedUpShare)})`);
-	console.log(`same section:        ${r.sectionAgreement.same} of ${r.compared} (${pct(r.sectionAgreement.share)})`);
+	console.log(`same category:       ${r.categoryAgreement.same} of ${r.compared} (${pct(r.categoryAgreement.share)})`);
 	console.log(`same route type:     ${r.routeAgreement.same} of ${r.compared} (${pct(r.routeAgreement.share)})`);
 	for (const d of r.disagreements) {
 		console.log(`\n${d.itemId} (${d.repo}), run ${d.run}`);
 		for (const tier of TIERS) {
 			const a = d[tier];
-			console.log(`  ${tier.padEnd(8)} ${a.section ?? "-"} / ${a.recommendedType ?? "no route"} (${a.model})${a.reason ? `: ${a.reason}` : ""}`);
+			console.log(`  ${tier.padEnd(8)} ${a.category ?? "-"} / ${a.recommendedType ?? "no route"} (${a.model})${a.reason ? `: ${a.reason}` : ""}`);
 		}
 	}
-	const recent = r.recentSectionAgreement;
+	const recent = r.recentCategoryAgreement;
 	if (recent.warning) {
-		console.log(`\nWarning: the fast tier picked the standard tier's section in only ${recent.same} of the last ${recent.pairs} pairs it decided itself (${pct(recent.share)}, below ${pct(MIN_SECTION_AGREEMENT)})`);
+		console.log(`\nWarning: the fast tier picked the standard tier's category in only ${recent.same} of the last ${recent.pairs} pairs it decided itself (${pct(recent.share)}, below ${pct(MIN_CATEGORY_AGREEMENT)})`);
 	}
 
 	console.log("\nYour decisions by tier");
