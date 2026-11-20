@@ -109,6 +109,7 @@ gary put --merge items pr-412 patch.json  # change only these fields, null remov
 gary put items pr-412 --delete            # remove the item
 gary put meta meta.json                   # replace meta.json
 gary put proposals <id> <file>            # write a proposal
+gary put --check proposals <id> <file>    # validate a proposal, write nothing
 gary put learn <file>                     # write the learning cursor
 ```
 
@@ -120,7 +121,7 @@ It sends the write through the board server, so it queues behind clicks on the s
 
 ### gary watch-queue
 
-`gary watch-queue` prints one line like `{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued. For every drive that waits for its review bot it reads the PR once a minute and prints one more line with `"event": "review-arrived"`, or `"review-timeout"` after 30 minutes, so the next round starts without the hourly run. For every watched PR, the bot's open PRs and the taken-over PRs, it reads the PR every 3 minutes and once at its start, and prints a line with `"event": "maintainer-feedback"` when the maintainer reviewed or commented after our last push and no round handled it yet. A bot PR whose origin session was active in the last 30 minutes gets no line. Feedback that `gary pr-watch round` refused for that session, recorded as `held` in the drive file, prints once more after the session has been quiet for 30 minutes.
+`gary watch-queue` prints one line like `{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued. For every drive that waits for its review bot it reads the PR once a minute and prints one more line with `"event": "review-arrived"`, or `"review-timeout"` after 30 minutes, so the next round starts without the hourly run. For every watched PR, the bot's open PRs and the taken-over PRs, it reads the PR every 3 minutes and once at its start, and prints a line with `"event": "maintainer-feedback"` when the maintainer reviewed or commented after our last push and no round handled it yet. A bot PR whose origin session was active in the last 30 minutes gets no line. Feedback that `gary pr-watch round` refused for that session, recorded as `held` in the drive file, prints once more after the session has been quiet for 30 minutes. A reconcile pass the maintainer asked for prints `{"instance":"widgets","id":"reconcile","itemId":null,"action":"reconcile","at":"…"}` once per request, until a pass ran.
 
 ### gary api-edit
 
@@ -137,6 +138,19 @@ It sends the write through the board server, so it queues behind clicks on the s
 ### gary decisions and gary proposals
 
 `gary decisions --since <ISO> --json` prints the entries of the decision log. `gary proposals` lists every proposal with its status. See [Learning](#learning).
+
+### gary reconcile
+
+```sh
+gary reconcile                 # ask for a pass. The master starts it from the queue
+gary reconcile due --json      # { due, reasons, running, removed, … }
+gary reconcile names --json    # the names rules may use, the retired ones, the ones gone since the last pass
+gary reconcile files --json    # the profile, personal and core files a pass reads
+gary reconcile start           # exit 3 while another pass runs
+gary reconcile done --until <ISO>
+```
+
+See [Learning](#learning).
 
 ## Setup in scripts
 
@@ -304,11 +318,12 @@ Everything under the instance's `state/` (`<home>/state/`):
 ```
 board/items/<id>.json       item docs
 board/actions/<id>.json     action docs, incl. queued agent requests
-board/proposals/<id>.json   rule and setting proposals
+board/proposals/<id>.json   rule, setting and edit proposals
 board/meta.json             run status
 control.json                the pause switch
 decisions.jsonl             the decision log
 learn.json                  the learning cursor
+reconcile.json              the last reconcile pass, the names it knew, a pending request
 opened.json                 the prefill buttons he used, per item and route
 failures.json               failed analyses per item
 drive/<itemId>.json         waiting drives and watched PRs
@@ -325,10 +340,14 @@ The `triage-learn` skill reads new entries with `gary decisions --since <ISO>`, 
 
 A setting proposal (`kind: "setting"`) changes one value in the instance's `config.json`. The only one today is `fastTier`, to `on` or back to `shadow`. `gary shadow propose` writes it from the shadow report, with numbers and no prose: `stats` and `differences`. The board builds the card's sentences from them in `settingParagraphs` and `differenceLine` (`board/board.html`), in plain words: "faster model", "standard model", "passed on", "kind of card", "board category". A proposal written before categories still shows "board section" with the old section names. Accepting it runs `applySetting` (`scripts/lib/learning.mjs`): validate the proposal against the allow-list `PROPOSAL_SETTINGS`, set the key, check the resulting config with `checkConfig`, write atomically with the file's indentation. The config loader notices the changed file on its next read. The server logs `accepted_proposal`. `gary shadow convert <id>` rebuilds a fast tier proposal that an older version stored as a rule proposal.
 
+The learn pass only adds rules. The `triage-reconcile` skill changes and removes them, with edit proposals (`kind: "edit"`): one block of one file as `before`, its replacement as `after`, empty to delete. It reads the profile's rules and templates, the `personal.md` files, the core references, the decision log since its last pass and the names in `scripts/lib/reconcile.mjs`. That file keeps the categories, the route types, the agent actions and a hand-kept list of item fields, plus the retired names like the old sections. `reconcileDue` decides when a pass runs: 7 days after the last one, when a name the last pass stored in `reconcile.json` is gone from the code, or when the maintainer asked with `gary reconcile` or the "Check rules" button. A state without stored names counts as changed, so the first pass starts on its own. The hourly worker checks it after the learn check. A request also reaches the master through `gary watch-queue`.
+
+Accepting an edit runs `applyEdits` (`scripts/lib/learning.mjs`) for the proposal and every open member of its `group`. Each `before` must occur exactly once at that moment, checked with `occurrences`, else nothing changes and the server answers "The file changed since this proposal. Run reconcile again." `replaceBlock` swaps the block and, for a delete, collapses the blank lines around it. The files are written atomically, put back when a later write fails, and committed together as `Reconcile rules: <title>` in a git profile, without hooks and without a push. Dismissing a group logs one `dismissed_proposal` per member. The board draws the diff with `lineDiff` and `ruleDiff` (`board/board.html`), one card per group.
+
 ## Tests
 
 ```sh
-npm test            # actions, server, accounts, learning, sharing, validate, api-edit, ours. Needs node and zsh
+npm test            # actions, server, accounts, learning, reconcile, sharing, validate, api-edit, ours. Needs node and zsh
 npm run test:page   # the board page, mocked and served. Needs Chrome or Chromium
 ```
 

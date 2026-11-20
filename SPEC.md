@@ -47,7 +47,8 @@ Gary has three layers, one place for each kind of change.
   mcp-server/index.mjs   stdio MCP server "gary"
   server/server.mjs      board server: serves the page, runs clicked routes, watches the board store
   board/board.html       the board page
-  skills/                triage-master, triage-routine, triage-review-pr, triage-issue, triage-setup, triage-learn
+  skills/                triage-master, triage-routine, triage-review-pr, triage-issue, triage-setup, triage-learn,
+                         triage-reconcile
   profiles/template/     the skeleton `gary setup` copies for a new project
 
 <root>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
@@ -64,6 +65,7 @@ Gary has three layers, one place for each kind of change.
     control.json         the pause switch, see Pause
     decisions.jsonl      the decision log, see Learning
     learn.json           the learning cursor
+    reconcile.json       when the last reconcile pass ran and the names it knew, see "Reconcile"
     opened.json          the `as: "me"` buttons he used, per item and route, see Routes
     failures.json        failed triage count per item, kept by the routine
     auto-reviews.json    the automatic reviews Gary posted and their format offers, see "Automatic first review"
@@ -123,11 +125,11 @@ Three levels of sessions run, and `models` names the model of each role:
 }
 ```
 
-The values shown are the defaults. The `review` role covers full PR reviews, full issue and discussion triages, fixes, every `triage-review-pr` mode (`address_review`, `take_over`, `revise`, `format`, `drive`, `offer-reply`) and the learn pass.
+The values shown are the defaults. The `review` role covers full PR reviews, full issue and discussion triages, fixes, every `triage-review-pr` mode (`address_review`, `take_over`, `revise`, `format`, `drive`, `offer-reply`), the learn pass and the reconcile pass.
 
 - **Layers.** `models` can stand in the root `config.json` and in an instance's `config.json`, each with any subset of the roles. Per role the instance's value wins, then the root's, then the default. `models.master` in an instance config is an error, because one master session serves every instance.
 - **Values.** `master` and `worker` take an alias (`haiku`, `sonnet`, `opus`, `fable`) or a full model id that matches `^claude-[a-z0-9-]+$`. Both are sessions, and `claude --model` takes either. `review`, `standard` and `fast` take an alias only. They are subagents, and the Agent tool's `model` takes no full id. Another value is an error. An unknown role is an unknown field.
-- **Who applies them.** The master starts each worker on the instance's `worker` model: `claude -p --model <worker> "<job line>"`, or the model option of the tool that starts a child session. A worker that only runs `triage-learn` starts on `review`. The worker passes `model` on every subagent start, with the value of the subagent's role. A skill the maintainer starts himself uses the same roles for its subagents. No job line and no scheduled-task prompt names a model.
+- **Who applies them.** The master starts each worker on the instance's `worker` model: `claude -p --model <worker> "<job line>"`, or the model option of the tool that starts a child session. A worker that only runs `triage-learn` or `triage-reconcile` starts on `review`. The worker passes `model` on every subagent start, with the value of the subagent's role. A skill the maintainer starts himself uses the same roles for its subagents. No job line and no scheduled-task prompt names a model.
 - **The master's own model.** No skill can change the model of a running session. `models.master` is applied where the scheduled task or its thread is created: the `triage-setup` skill sets the model there when the host has a tool for it, or tells the maintainer which model to pick. The master compares its own model with `models.master` on every start and says so in its reply when they differ. `gary doctor` prints the value and cannot check it.
 - **Fallback.** A `review` subagent that the provider's safety filter stopped is retried once on the `standard` model. The item then carries `analyzedBy: "fallback"` and a finding that says so. The finding says "smaller model" only when both are among `haiku`, `sonnet` and `opus` and `standard` comes earlier in that order. Otherwise it names the model. When `review` and `standard` are the same model there is no retry, and the item is blocked right away.
 - **`gary models [--json] [--all]`** prints what applies. For the resolved instance: `{ instance, models, sources, fallback }`, where `sources` names the layer per role (`instance`, `root` or `default`) and `fallback` is `{ model, relation: "smaller" | "other" }` or `null`. With `--all`: `{ master, instances: { <name>: { models, sources, fallback } } }`, with `{ error }` for an instance whose config is invalid. The master reads `--all`, a worker reads its instance.
@@ -192,7 +194,7 @@ Two older layouts are moved by commands, never silently:
 - `gary put items <id> <file>`, `gary put --merge items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run. Without `--merge` the file is the complete item and replaces the stored one. The maintainer's fields carry over: `hidden`, `snoozedUntil`, `dismissedRoutes`, `handled`, `seenAt` and `findingAnswers`, and `priority` when the file has none. With `--merge` only the fields in the file change, and `null` removes a field. Both modes validate the resulting item, see Validation. A merge that touches none of `routes`, `threads`, `hint`, `findings`, `wants` and `wantsReason` is not validated. `gary put meta` checks `rulesHash` and `rulesPending`. `--no-validate` skips the check, for migrations.
 - `gary validate [<id> ...] [--json]`: run the same validation over the stored items, read-only. Without ids it checks all of them and groups the problems.
 - `gary action [--dry-run] [--check-fresh] [--autonomous] [file]`: run one GitHub action from a JSON file or stdin. `--autonomous` marks an action nobody clicked: only `label` within `autoLabels` and `assign` may run.
-- `gary watch-queue [--all] [--once]`: print queued agent requests as JSON lines, `{ "instance", "id", "itemId", "action" }`. `--all` follows every instance, also ones added later, and is what the master runs. It also prints the drive events of "Fix review rounds" and "Watched PRs" and the `auto_review` lines of "Automatic first review".
+- `gary watch-queue [--all] [--once]`: print queued agent requests as JSON lines, `{ "instance", "id", "itemId", "action" }`. `--all` follows every instance, also ones added later, and is what the master runs. It also prints the drive events of "Fix review rounds" and "Watched PRs", the `auto_review` lines of "Automatic first review" and the reconcile requests of "Reconcile".
 - `gary serve [--watch] [--dry-run]`: run the one board server in the foreground.
 - `gary migrate`: move instances to the single-server layout, see Instances. Safe to run again.
 - `gary pause [--all]`, `gary resume [--all]`: set and clear the pause switch of the instance, or of every instance, see Pause.
@@ -218,7 +220,8 @@ Two older layouts are moved by commands, never silently:
 - `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
 - `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
 - `gary proposals [--json]`: list every proposal with its status and dismissal reason.
-- `gary put proposals <id> <file>`: write one proposal, validated. `gary put learn <file>`: write the learn cursor.
+- `gary put proposals <id> <file>`: write one proposal, validated. With `--check` it validates and writes nothing. `gary put learn <file>`: write the learn cursor.
+- `gary reconcile [request] | due | names | files | start | done [--until <ISO>]`, each with `--json`: the reconcile pass, see "Reconcile". `request` is what the maintainer runs.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
 - `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
@@ -252,7 +255,7 @@ While paused:
 - `gary action` refuses every action with the same result, also with `--dry-run` and `--autonomous`,
 - agent routes are still queued, but `gary watch-queue` and `gary watch-queue --all` print nothing of that instance, so the master session starts nothing for it. The requests appear when the pause ends,
 - `gary auto-review post` posts nothing and records the step in the run's `would-have.json`. `accept`, `reply --agrees yes` and `rerequest` queue nothing and exit 4,
-- board-only actions keep working: dismiss, snooze, `dismiss_route`, `accept_proposal`, `dismiss_proposal` and `/api/decision`.
+- board-only actions keep working: dismiss, snooze, `dismiss_route`, `accept_proposal`, `dismiss_proposal`, `request_reconcile` and `/api/decision`. A reconcile request waits until the pause ends, like an agent request.
 
 `board.instances[].paused` in `/api/state` and in `use("board")` shows the switch per instance. The event stream sends a `board` event with the full board object when a `control.json` changes. `gary doctor` reports the state.
 
@@ -532,7 +535,7 @@ The page talks to the server only through `window.claude`, which the server inje
 
 - `use("board")` returns the `board` object above plus `refresh({ instance, itemId })`, see `/api/refresh`, and `decision(body)`, which posts `{ instance, itemId, routeId, text }` to `/api/decision` when he uses a route he does on GitHub himself. It resolves quietly, also when the post fails.
 - `use("db")` returns `collection("items" | "actions" | "proposals").orderBy(field, dir).limit(n).onSnapshot(cb)`, with the docs of all instances, each doc with `instance` and keyed `<instance>/<id>`, and `doc("meta/status").onSnapshot(cb)`. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`, whose paths gain the instance. The event stream names the instance in every event, sends a `board` event with the full `board` object when a pause changes, and `reload` when `board.html` changed.
-- `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ instance, action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ instance, itemId, routeId, text, draftHash, force, input }`. The board-only calls are `dismiss_route` with `{ instance, itemId, routeId, text }`, and `accept_proposal` and `dismiss_proposal` with `{ instance, proposalId, text }`.
+- `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ instance, action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ instance, itemId, routeId, text, draftHash, force, input }`. The board-only calls are `dismiss_route` with `{ instance, itemId, routeId, text }`, `accept_proposal` and `dismiss_proposal` with `{ instance, proposalId, text }`, and `request_reconcile` with `{ instance }`.
 
 The page keeps filters and drafts in localStorage under keys prefixed `gary:<instance>:`, after a one-time move of the per-repo keys. Tabs, groups and header markers are described under "One server, one master".
 
@@ -983,6 +986,7 @@ Board-only actions, no GitHub call. The page applies them to the item file throu
 | `snooze` | `params.days`, sets `snoozedUntil` |
 | `dismiss_route` | removes one route, see Routes. The server applies it through `/api/action` |
 | `accept_proposal`, `dismiss_proposal` | decide a proposal, see Learning. The server applies them through `/api/action` |
+| `request_reconcile` | ask for a reconcile pass, see "Reconcile". The server applies it through `/api/action` |
 
 Agent requests. The server writes them as queued action docs when their route is clicked. The page writes only the `reanalyze` doc of "Analyze again" without answers. With answers the server writes it, see "Answers to findings". The master session watches the queue between runs (`gary watch-queue` under the Monitor tool) and starts them within seconds. If the master is not running, the next hourly run picks them up:
 
@@ -1003,7 +1007,7 @@ Every action returns `{ ok, result }` and never throws past the entry point. `--
 
 ## Learning
 
-Gary learns from where the maintainer deviates from the agent's proposals. The server keeps a decision log. A daily skill turns patterns in it into rule proposals. The maintainer accepts or dismisses each proposal on the board, and an accepted one is appended to a rules file. A second kind, the setting proposal, changes one value in the instance config when he accepts it.
+Gary learns from where the maintainer deviates from the agent's proposals. The server keeps a decision log. A daily skill turns patterns in it into rule proposals. The maintainer accepts or dismisses each proposal on the board, and an accepted one is appended to a rules file. A second kind, the setting proposal, changes one value in the instance config when he accepts it. A third kind, the edit proposal, comes from the reconcile pass: it changes or deletes one block of a rules file, see "Reconcile".
 
 ### Decision log
 
@@ -1028,8 +1032,8 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `agent_note` | `text` | the note of "Analyze again", or the instruction text of an agent route |
 | `answered_finding` | `finding: { key, severity, text }`, `text`, both texts cut at 8000 characters | one entry per answer he sent to a finding, see "Answers to findings" |
 | `snoozed` | `days`, or `untilActivity: true` | the maintainer snoozed or hid the item |
-| `dismissed_proposal` | `proposal: { id, title, target, file }`, or `{ id, title, kind: "setting", setting }` for a setting proposal, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
-| `accepted_proposal` | `proposal: { id, title, kind: "setting", setting }`, `from` | `accept_proposal` changed a setting. `from` is the value before. An accepted rule proposal writes no entry |
+| `dismissed_proposal` | `proposal: { id, title, target, file }`, or `{ id, title, kind: "setting", setting }` for a setting proposal, or `{ id, title, kind: "edit", finding, target, file, group }` for an edit proposal, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again. A dismissed group writes one entry per member |
+| `accepted_proposal` | `proposal: { id, title, kind: "setting", setting }`, `from` | `accept_proposal` changed a setting. `from` is the value before. An accepted rule or edit proposal writes no entry |
 | `changed_event` | `route: { type, title }`, `from`, `to` | a `review` ran with another event than the route's `params.event` |
 | `auto_review` | `review: { url, sha, event, reason, comments, offer }`, `findings: [{ severity, text, ref }]` | `gary auto-review post` posted an automatic review. It is the agent's work, never the maintainer's decision. `triage-learn` compares it with what he does on the item afterwards |
 | `escalated` | `route: { type, title }`, `issueKind`, `category` | the escalate button posted the profile's escalate command on a discussion. `issueKind` and `category` are `null` when the route or the item has none |
@@ -1100,6 +1104,32 @@ It writes nothing while a fast tier proposal is open. Once one was accepted or d
 
 `gary shadow convert <id>` rebuilds a fast tier proposal that an older version stored as a rule proposal: a doc without `kind` whose `text` names `` `fastTier` `` and the value in backticks. It keeps `id`, `createdAt`, `status`, `decidedAt` and `reason`, and takes the numbers from the report, the whole log for `on` and the last 7 days for `shadow`. Any other rule proposal is refused and stays as it is.
 
+### Edit proposals
+
+A proposal with `kind: "edit"` changes one block of one rules file or deletes it. Only the `triage-reconcile` skill writes them:
+
+```jsonc
+{
+  "id": "reconcile-2026-11-20-config-prs-land",      // reconcile-<YYYY-MM-DD>-<slug>, matches ^[a-z0-9-]{1,80}$
+  "createdAt": "ISO",
+  "kind": "edit",
+  "title": "Name the category land for config PRs",  // at most 60 characters
+  "why": "One or two sentences on what is wrong.",
+  "finding": "stale",              // duplicate | contradiction | stale | overruled | vague
+  "evidence": [ { "type": "name", "gist": "…", "file": "rules/classification.md", "quote": "into `easy`" } ],
+  "target": "profile",             // profile | personal, with the same files as a rule proposal
+  "file": "rules/classification.md",
+  "before": "Config PRs with a passing CI go into `easy`.",   // one block, exactly once in the file
+  "after": "Config PRs with a passing CI go into `land`.",    // empty deletes the block
+  "group": "2026-11-20-test-rule", // optional. Edits with the same group are accepted or dismissed together
+  "status": "open", "decidedAt": null, "reason": ""
+}
+```
+
+Each evidence entry is `{ type, gist }`, with `type` one of `text` (a rule's own text), `name` (a name that no longer exists), `log` (decision log entries) or `core` (a core rule), and optional `file`, `quote`, `at`, `itemId`, `entry` (a log entry type) and `count`. At least one is required. `before` and `after` hold at most 20000 characters each and must differ. Any other field is refused. `gary put proposals` also refuses an edit whose `before` occurs zero times or more than once in its file now.
+
+The board shows each edit as a diff of `before` and `after`: removed lines in the page's bad color with a minus, added lines in its ok color with a plus, unchanged lines muted. A delete shows only the removed lines. The edits of one group share one card with one "Apply" and one "Not this", and the lightbulb counts the group once.
+
 ### Writing and listing
 
 The skill writes rule proposals with `gary put proposals <id> <file>`, which validates them. `gary proposals [--json]` lists every proposal with its status and the dismissal reason. `/api/state` serves the open proposals as `proposals`, and the event stream pushes their changes.
@@ -1110,7 +1140,8 @@ Both go through `/api/action` with `{ proposalId, text }`.
 
 - `accept_proposal` appends `text`, the edited rule, to the target file: under `heading` when the file has that heading, at the end of the file otherwise. The path must resolve inside the profile's `rules/` or `templates/` directory, or be exactly the shared `<root>/personal.md`. Symlinks that lead elsewhere are refused, and the write is atomic. When the profile directory is a git repository, the server commits that one file there with the message `Add rule: <title>` and does not push. Then it sets `status: "accepted"` and `decidedAt`.
 - `accept_proposal` on a setting proposal ignores `text`. The server validates the stored proposal again, reads the instance's `config.json`, sets the one key and writes the file atomically. The other keys, their order and the indentation stay. The server answers `{ ok: true, result: <config file>, setting: { key, value }, changed: true }`, sets `status: "accepted"` and `decidedAt`, and logs an `accepted_proposal` entry. The config loader reads the file again on its next call, so the server and the next run use the new value without a restart. It refuses with `ok: false` and changes nothing when the proposal is invalid, when the config is not a JSON object, or when the config would have errors afterwards. When the config already has the value, it writes no config and no log entry, marks the proposal accepted with `note` and answers `changed: false`.
-- `dismiss_proposal` sets `status: "dismissed"`, `decidedAt` and `reason` from `text`, and logs a `dismissed_proposal` entry.
+- `accept_proposal` on an edit proposal ignores `text`. It decides the proposal together with every open edit proposal of the same `group`, sorted by id. The server validates each one again and resolves its file by the path rules above: inside the profile's `rules/` or `templates/`, or exactly the shared `personal.md`, and no symlink at the file or its directory. Then it applies the edits in that order, in memory: each `before` must occur exactly once in its file at that moment, also after the earlier edits of the same file. An empty `after` deletes the block and the blank lines it leaves. When any `before` occurs zero times or more than once, or a file is missing, it refuses with `ok: false` and `result: "The file changed since this proposal. Run reconcile again."` and changes nothing. Otherwise it writes every changed file atomically and puts the files back when a write fails. When the profile is a git repository, it commits the changed profile files in one commit with the message `Reconcile rules: <title>`, the title of the first member, and does not push. It sets `status: "accepted"` and `decidedAt` on every member and answers `{ ok: true, result, files, committed, ids }`, plus `warning` when the commit failed.
+- `dismiss_proposal` sets `status: "dismissed"`, `decidedAt` and `reason` from `text`, and logs a `dismissed_proposal` entry. On an edit proposal it does that for every open member of its group.
 - Only a click on the board sends either action. No skill and no `gary` command accepts a proposal.
 
 Both run in dry-run mode too, because they change only local files and never GitHub.
@@ -1118,6 +1149,24 @@ Both run in dry-run mode too, because they change only local files and never Git
 ### Cursor
 
 `<state>/learn.json` is `{ "reviewedUntil": "ISO", "lastLearnAt": "ISO" }`. The skill writes it with `gary put learn <file>`. `reviewedUntil` is the `at` of the newest log entry it read, `lastLearnAt` the time of its last pass.
+
+### Reconcile
+
+The learn pass only adds rules. The `triage-reconcile` skill cleans them up per instance. It reads every rules file and template of the profile, the `personal.md` files, the core references they add to or override, the decision log since its last pass and the names below. It looks for duplicates, contradictions, rules that name things that no longer exist, rules the maintainer's later decisions keep going against, and rules too vague to act on. Every finding needs evidence: the texts, the stale name, or log entries. It writes at most five edit proposals per pass. It never proposes a change to a core file and reports a conflict with core in its summary.
+
+`scripts/lib/reconcile.mjs` keeps the names a rule can refer to: the categories, the flag `needsHardware`, the route types, the agent actions and a hand-kept list of item fields, plus the retired names with what replaced them, like the six old sections. `gary reconcile names --json` prints `{ current, retired, removed, hash }`.
+
+`<state>/reconcile.json` is `{ lastReconcileAt, reviewedUntil, names, namesHash, requestedAt, startedAt }`. Only `gary reconcile` writes it, and the server writes `requestedAt`. `names` is the list of `<kind>:<name>` the last pass knew.
+
+A pass is due, by `gary reconcile due --json`, which prints `{ due, reasons, running, removed, lastReconcileAt, reviewedUntil, namesHash, storedNamesHash }`, for any of these reasons:
+
+- `interval`: `lastReconcileAt` is missing or at least 7 days old.
+- `names`: `names` is missing, or holds a name the code no longer has. Those names are in `removed`. A new name alone is no reason. A state without `names`, like every instance before the first pass, is due, so the rename of the sections starts the first pass.
+- `requested`: `requestedAt` is later than `lastReconcileAt`. `gary reconcile` and the board's "Check rules" button in the suggestions dialog, through `request_reconcile`, set it.
+
+`gary reconcile start` sets `startedAt` and exits 3 while another pass started in the last 2 hours and did not finish. Such a pass makes `due` false and `running` true. `gary reconcile done [--until <ISO>]` sets `lastReconcileAt` to `startedAt`, so a request during the pass stays due, stores today's `names` and `namesHash`, sets `reviewedUntil` and removes `startedAt`.
+
+The `triage-routine` worker checks `gary reconcile due` after the learn check of every hourly run and starts the pass on the `review` model when it is due, or notes `Reconcile due.` for the master. `gary watch-queue` prints `{ instance, id: "reconcile", itemId: null, action: "reconcile", at }` once per request while it is due, and the master starts the pass on that line. Both skip a paused instance.
 
 ## MCP server
 

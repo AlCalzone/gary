@@ -38,7 +38,7 @@ Reference files, read when you reach the step that needs them:
 Run `gary models --json` right after `gary paths`. It prints `{ instance, models, sources, fallback }`. `models` names one model per role, from the instance's `config.json`, then the root `config.json`, then the defaults:
 
 - `worker`: you. The master started you on it.
-- `review`: every subagent that reads code or writes text that gets posted. That is a full PR review, a full issue or discussion triage, a fix, every `triage-review-pr` mode (`address_review`, `take_over`, `revise`, `format`, `drive`, `offer-reply`) and the learn pass.
+- `review`: every subagent that reads code or writes text that gets posted. That is a full PR review, a full issue or discussion triage, a fix, every `triage-review-pr` mode (`address_review`, `take_over`, `revise`, `format`, `drive`, `offer-reply`), the learn pass and the reconcile pass.
 - `standard`: the standard tier of the quick classification.
 - `fast`: the fast tier of the quick classification.
 
@@ -304,6 +304,10 @@ When `fastTier` is not `off`, add `Fast tier: decided N, handed up M, sampled S,
 ### 9a. Learn
 
 After the reply of step 9, check whether a learning pass is due: this is the first run of the day (the previous `lastRunAt` in `meta.json` is from an earlier day), or `gary decisions --since <reviewedUntil from <state>/learn.json> --json` returns 20 or more entries. If it is due, start one background subagent with the `triage-learn` skill, `model: <review>` and the paths. Do not wait for it, and do not let its failure fail the run. Its one-line results go into the next run's summary. Without subagents, skip the pass and note `Learning due.` in `summary.txt`, so the master can start it.
+
+### 9b. Reconcile
+
+Then run `gary reconcile due --json`. It prints `{ due, reasons, running, removed, … }`. `due` is true when the last reconcile pass is 7 days old or missing (`interval`), when a name rules can refer to was renamed or removed in the core since the last pass (`names`), or when the maintainer asked for a pass (`requested`). In a paused run, skip this step. If it is due, start one background subagent with the `triage-reconcile` skill, `model: <review>` and the paths. Do not wait for it, and do not let its failure fail the run. The skill runs `gary reconcile start` itself, which refuses a second pass while one runs. Without subagents, skip the pass and note `Reconcile due.` in `summary.txt`, so the master can start it.
 
 ### 10. Request jobs
 

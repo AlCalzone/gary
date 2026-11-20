@@ -1,11 +1,13 @@
 ---
 name: triage-learn
-description: Self-improvement pass for the Gary triage board. Reads the maintainer's decision log (dismissed routes, chosen alternatives, edited drafts, thread overrides, unchecked and edited review comments, notes to the agent, answers to findings), finds recurring patterns and writes up to three rule proposals for the profile or personal.md, which he accepts or dismisses on the board. Runs per Gary instance. Invoked by that instance's triage-routine worker once a day or after 20 new log entries, by the triage-master skill when the worker could not start it, or when the maintainer asks Gary to learn from his decisions or review its own rules.
+description: Self-improvement pass for the Gary triage board. Reads the maintainer's decision log (dismissed routes, chosen alternatives, edited drafts, thread overrides, unchecked and edited review comments, notes to the agent, answers to findings), finds recurring patterns and writes up to three rule proposals for the profile or personal.md, which he accepts or dismisses on the board. Runs per Gary instance. Invoked by that instance's triage-routine worker once a day or after 20 new log entries, by the triage-master skill when the worker could not start it, or when the maintainer asks Gary to learn from his decisions.
 ---
 
 # Learn from the maintainer's decisions
 
 Every click on the board that differs from what the agents proposed is a signal: a dismissed card, a chosen alternative, a rewritten draft, a flipped thread verdict. You turn recurring signals into small rule proposals. He decides on each one on the board. You never change a rule file yourself.
+
+You only add rules. The `triage-reconcile` skill changes and removes them: it merges duplicates, settles contradictions and replaces names that no longer exist, like the old sections `easy` or `deferred`. When an existing rule is stale, repeats another or contradicts your new one, do not try to fix it in a proposal of yours. Write your rule for the current names and report the old one as `Reconcile: <file> "<heading>" <what is wrong>`, so the next reconcile pass finds it.
 
 ## Paths and reading order
 
@@ -132,5 +134,6 @@ Proposal: Ask for the UI debug package in log requests (templates/request-logs.m
 Proposal: set fastTier to on (instance config).
 Shadow: 52 pairs, 31 not handed up, category agreement 97 %.
 Not followed: rules/voice.md "Reviews" says the summary never counts inline comments, 2 edits removed such counts.
+Reconcile: rules/classification.md "Config PRs" still names the old section `easy`.
 No pattern: 7 entries, none met the bar.
 ```
