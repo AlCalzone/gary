@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { boardDir, readJson } from "./lib/board-store.mjs";
 import { listClaims } from "./lib/claims.mjs";
 import { instanceName, loadInstance, paths } from "./lib/config.mjs";
-import { focusAttachNote, focusBriefing, parseDoneMessage } from "./lib/focus-brief.mjs";
+import { OWN_ID, focusAttachNote, focusBriefing, parseDoneMessage } from "./lib/focus-brief.mjs";
 import { FOCUS_MATCHES, MAX_SUMMARY, checkFocus, endFocus, failFocus, readFocus, readFocuses, startFocus } from "./lib/focus.mjs";
 import { readSnapshotItems } from "./lib/fixes.mjs";
 import { readOrigins } from "./lib/origins.mjs";
@@ -84,7 +84,7 @@ async function brief(itemId, out) {
 	const actions = await itemActions(itemId);
 	const since = sinceSummary(entry?.activity, sinceAnchor(item, actions), { me: instance.config.me, bot: instance.config.bot?.login, actions });
 	const p = paths();
-	const focusSession = out.session ?? "<this session's id>";
+	const focusSession = out.session ?? OWN_ID;
 	// A job that started before the focus finishes. The session waits for it before it pushes
 	const working = [...new Set((await listClaims()).filter((c) => c.itemId === itemId && !c.expired).map((c) => c.kind))];
 	const ctx = { instance: instance.name, item: { ...item, id: itemId }, since, harness: out.harness, master: out.master ?? null, bot: instance.config.bot?.login ?? null, paths: p, focusSession, working };
