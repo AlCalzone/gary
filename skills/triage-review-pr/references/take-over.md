@@ -16,6 +16,7 @@ The normal mode. Continue in the contributor's PR with our commits, pushed under
 2. Apply the review's findings that block a merge, plus the instructions in `text`. Take every fact from the PR thread, the maintainer's comments, the action's `text` or files on the default branch. If a finding needs something only the contributor knows, like a detail of their hardware, leave it and say so in the returned `state`.
 3a. When the item's `autofix.changes` is true, run `format-check.md` against the current head and apply its patch in the same commit, so the PR needs no separate format step.
 3. When the action carries `params.decisions`, handle the threads exactly as `address-review.md` describes in its steps 2 to 5, including its replies for dismissed and optional threads: fix the threads marked `fix`, push one commit with these fixes and the ones from step 2, reply in every handled thread, give dismissed ones a short reason, resolve them. Without decisions, commit and push as `push-to-pr.md` describes.
+3b. After the push, request the first Copilot review with `gary pr-watch review --after <your action id>`, as `push-to-pr.md`, "Review bot round after a push", describes. Your take-over doc makes the PR count as taken over before the item records it. Copilot reviews the push, and the drive rounds of `drive.md` address that review.
 4. Return as `push-to-pr.md` describes, with `takenOver: true` on the item. Handled threads leave `threads`. From now on the PR can get `drive`, `address_review` and `revise` routes, and never a second `take_over`. The routes follow "Routes after a push" in `push-to-pr.md`: the item offers the decision, usually a `merge` as `me`. A note to the contributor, like `I pushed the missing fields from the sibling file, so this is ready to merge.`, is that route's `text`, never a route of its own.
 
 ## `mode: "replace"`
@@ -41,7 +42,7 @@ The exception. The route's `callout` said why pushing to the branch is not possi
    - a `state` that names the replacement PR,
    - `takenOver: true`.
 
-The new PR is a draft. The maintainer marks it ready himself.
+The new PR is a draft. The maintainer marks it ready himself. The replace mode requests no Copilot review.
 
 The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
 

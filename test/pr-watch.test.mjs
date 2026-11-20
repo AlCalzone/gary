@@ -214,6 +214,70 @@ setOverrides(pr19({ reviews: [review(user("octocat"), at(19, 9))], state: "MERGE
 r = gary("watch-queue", "--once");
 t.check("a merged PR prints nothing and its watch is removed", r.stdout.trim() === "" && !existsSync(driveFile), r.stdout);
 
+// A job that pushed to a watched PR requests the next review bot round
+reset();
+setFixes({});
+setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, feedback: {} } });
+setOverrides({});
+const NEW = "b".repeat(40);
+const job = (id, action, extra = {}) => writeFileSync(join(actionsDir, id + ".json"), JSON.stringify({ itemId: "pr-19", action, params: {}, text: "Rename the option.", status: "queued", via: "queue", createdAt: at(19, 8), finishedAt: null, result: "claimed by run req-1", ...extra }));
+job("pr-19-revise", "revise");
+r = gary("pr-watch", "review", "--pr", "19", "--sha", SHA, "--after", "pr-19-revise", "--run", "req-1");
+t.check("a job that pushed nothing requests no review bot round", r.status === 3 && /nothing was pushed/.test(json(r).result) && writes().length === 0 && !existsSync(driveFile) && actions().length === 1, r.stdout);
+r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-revise", "--run", "req-1", "--dry-run");
+t.check("a dry run names the request and the drive doc and writes nothing", r.status === 0 && json(r).dryRun === true && /requestCopilotCodeReview/.test(json(r).invocations?.[0]?.stdin.query) && json(r).wouldWrite.action.action === "drive" && !existsSync(driveFile) && actions().length === 1, r.stdout);
+r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-revise", "--run", "req-1");
+o = json(r);
+drive = existsSync(driveFile) ? read(driveFile) : null;
+doc = actions().find((a) => a.id === o.actionId);
+t.check("a revise push on a bot PR without review bot rounds requests the first one", r.status === 0 && o.requested === true && o.round === 1 && writes().length === 1 && writes()[0].mutation === "requestCopilotCodeReview" && writes()[0].as === "octocat" && writes()[0].variables.id === "PR_19", [o, writes()]);
+t.check("the PR enters the stage review with a new drive doc claimed by the job's run", drive?.stage === "review" && drive.by === "watch" && drive.copilotRounds === 1 && drive.lastPushedSha === NEW && drive.actionId === o.actionId && doc?.action === "drive" && doc.status === "queued" && doc.result === "claimed by run req-1" && doc.params.after === "revise" && doc.params.maxRounds === 3 && actions().find((a) => a.id === "pr-19-revise").status === "queued", [drive, doc]);
+r = gary("watch-queue", "--once");
+t.check("the claimed drive doc prints no new request", r.stdout.trim() === "", r.stdout);
+r = gary("pr-watch", "review", "--pr", "19", "--sha", "c".repeat(40), "--after", "pr-19-revise", "--run", "req-1");
+t.check("a second job request while the round waits is refused", r.status === 3 && /already waits/.test(json(r).result) && writes().length === 1, r.stdout);
+
+reset();
+setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, feedback: { reviewBotReviews: 3 } } });
+job("pr-19-revise", "revise");
+r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-revise", "--run", "req-1");
+t.check("a PR with 3 review bot rounds used gets none after a revise push", r.status === 3 && /3 of 3/.test(json(r).result) && writes().length === 0 && !existsSync(driveFile) && actions().length === 1, r.stdout);
+
+reset();
+setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, feedback: {} } });
+job("pr-19-format", "format");
+r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-format", "--run", "req-1");
+t.check("a format job requests no review bot round", r.status === 3 && /format job requests no review bot round/.test(json(r).result) && writes().length === 0, r.stdout);
+job("pr-19-done", "revise", { status: "done", result: "https://github.com/acme/widgets/pull/19/commits/x" });
+r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-done", "--run", "req-1");
+t.check("a finished job doc is no proof of a push", r.status === 1 && /not a running job/.test(json(r).result) && writes().length === 0, r.stdout);
+gary("pause");
+job("pr-19-revise", "revise");
+r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-revise", "--run", "req-1");
+t.check("paused: a job's push requests nothing", r.status === 4 && json(r).paused === true && writes().length === 0 && !existsSync(driveFile), r.stdout);
+gary("resume");
+
+// A take-over push counts before the item records takenOver
+reset();
+setSnapshot({ "pr-25": { author: "hubot", headSha: "5".repeat(40), feedback: {} } });
+writeFileSync(join(itemsDir, "pr-25.json"), JSON.stringify({ kind: "pr", repo: "acme/widgets", number: 25, author: "hubot", authorType: "contributor", reviewedSha: "5".repeat(40) }));
+writeFileSync(join(actionsDir, "pr-25-take.json"), JSON.stringify({ itemId: "pr-25", action: "take_over", params: { mode: "push" }, status: "queued", via: "queue", createdAt: at(19, 8), result: "claimed by run req-2" }));
+r = gary("pr-watch", "review", "--pr", "25", "--sha", NEW, "--run", "req-2", "--after", "pr-19-revise");
+t.check("another item's job doc is refused", r.status === 1 && /no request for pr-25/.test(json(r).result) && writes().length === 0, r.stdout);
+r = gary("pr-watch", "review", "--pr", "25", "--sha", NEW, "--after", "pr-25-take", "--run", "req-2");
+t.check("a take-over push requests the first review bot round", r.status === 0 && json(r).requested === true && writes()[0]?.variables.id === "PR_25" && read(join(driveDir, "pr-25.json")).stage === "review", [r.stdout, writes()]);
+reset();
+writeFileSync(join(itemsDir, "pr-25.json"), JSON.stringify({ kind: "pr", repo: "acme/widgets", number: 25, author: "hubot", authorType: "contributor", reviewedSha: "5".repeat(40) }));
+writeFileSync(join(actionsDir, "pr-25-take.json"), JSON.stringify({ itemId: "pr-25", action: "take_over", params: { mode: "replace" }, status: "queued", via: "queue", createdAt: at(19, 8), result: "claimed by run req-2" }));
+r = gary("pr-watch", "review", "--pr", "25", "--sha", NEW, "--after", "pr-25-take", "--run", "req-2");
+t.check("a take-over in the replace mode requests none on the old PR", r.status === 3 && /replace mode/.test(json(r).result) && writes().length === 0, r.stdout);
+setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, sensitiveFiles: [".github/workflows/ci.yml"], feedback: {} } });
+setOverrides(pr19({ isCrossRepository: false, files: { totalCount: 1, nodes: [{ path: ".github/workflows/ci.yml", additions: 1, deletions: 0 }] }, allCommits: foreign }));
+job("pr-19-revise", "revise");
+r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-revise", "--run", "req-1");
+t.check("a sensitive PR that is not ours alone gets no review bot round", r.status === 3 && /sensitive files/.test(json(r).result) && writes().length === 0, r.stdout);
+setOverrides({});
+
 // The clean end of a round requests his review
 reset();
 setFixes({ "issue-23": [record] });

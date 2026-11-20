@@ -69,6 +69,19 @@ git -C <checkout> worktree remove --force <scratch>/fix-pr-<n>
 git -C <checkout> update-ref -d refs/triage/fix-pr-<n>
 ```
 
+## Review bot round after a push
+
+On a watched PR, the push of a `revise`, a `take_over` in the push mode or an `address_review` is followed by a Copilot review while the PR has review bot rounds left. A watched PR is an open PR by the instance's bot, Gary's fix PRs among them, a PR whose item has `takenOver: true`, and the PR your take-over just pushed to. Right after the push, before you set your action doc to `done`, run:
+
+```bash
+gary pr-watch review --pr <n> --sha <the head you pushed> --after <your action id> --run <run>
+```
+
+- Exit code 0: Copilot reviews the push. The PR is now in the drive's stage `review`, and the drive rounds of `drive.md` take over when the review arrives. Say it in the returned `state`, like `Copilot reviews the new head, round 1 of 3.`
+- Exit code 3: a rule said no. The PR had its 3 review bot rounds, it changes sensitive files and is not ours alone, or the head is the one from before your job. Exit code 1 for a PR that is not watched. Exit code 4 while the instance is paused. In each case go on as before.
+
+Run it only after a push. A job that pushed nothing runs no command. `format` never runs it. A `drive` round requests its next review through step 9 of `drive.md`.
+
 ## Return
 
 Your final report is one JSON object and nothing else:
@@ -98,6 +111,7 @@ Your final report is one JSON object and nothing else:
   A `reply` that only reports what you pushed is never a route of its own. You already replied in the review threads. When a word to the contributor is useful, like `I moved the compat block, so this is ready.`, it is the `text` of the merge or approve route.
   The item is never left with only a comment to post, and never without routes. The validator refuses an item whose `pushed.sha` is its `reviewedSha` and that has none of `merge`, `review`, `revise`, `address_review` and `close`.
   Our push can dismiss an earlier approval. When the PR had one, `state` says it needs a new approval.
+  When a review bot round follows the push, the item still ends in a route that decides the PR. His clicks wait while the round runs. The drive round that ends the rounds writes the item again, and a clean end requests his review on GitHub.
 - **AI-written PRs**: the profile's rule for AI-written PRs still wins, so on such a PR `merge` is not the recommended route and the estimate follows the size. Our own commits do not make a PR AI-written: `facts.aiAuthored` leaves out the bot's commits on a PR someone else opened and counts them in `facts.ourCommits`. A contributor's PR with one take-over commit is judged like the contributor's PR it is.
 - **CI on the new head**: CI usually still runs when you return. Offer the decision route anyway, with the `callout` `CI is still running on the new head`, and set `ci: "pending"`. The server's checks at click time stay as they are. Then keep watching, so the item does not wait for the hourly run: after you returned the item and the caller wrote it, poll `gh pr checks <n> --repo <owner>/<repo>` once a minute for up to 20 minutes. Release the push claim before you start to poll, so he can decide in the meantime. When CI finished:
   - green: write the item again with `gary put --merge items <id>`: `ci: "passing"` and the same routes without the callout.

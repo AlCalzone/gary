@@ -198,6 +198,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await expand(3);
   ok("take_over replace shows its callout prominently and a teal button", openCard().querySelector(".callout.strong")?.textContent.includes("does not allow edits") && cardBtn("Open a replacement PR")?.classList.contains("intent-agent"));
   ok("take_over says the bot commits", /Commits as widgets-bot/.test(openCard().querySelector(".card-actions").textContent) && !!cardBtn("Open a replacement PR").querySelector(".actor-icon"));
+  ok("take_over says a Copilot review follows the push while rounds are left", /keeps watching the PR\. Copilot reviews the push while the PR has review rounds left, up to 3\. Your next review on GitHub starts the next round\./.test(openCard().querySelector(".card-actions").textContent));
 
   // address_review, approve, reopen as bot, take_over push
   await openItem("pr-9474");

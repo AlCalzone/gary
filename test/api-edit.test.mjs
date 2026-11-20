@@ -1,7 +1,7 @@
 // The API edit: a take_over or revise route whose text edits the server commits through the GitHub API, the only
 // push to a PR that changes sensitive files. Runs on temp roots with the fake gh, so nothing reaches GitHub.
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { GARY, PROFILE, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
@@ -333,6 +333,7 @@ try {
 	t.check("the board shows the queued review as work in progress", served.working?.kind === "review", served.working);
 	const queue = spawnSync(process.execPath, [GARY, "watch-queue", "--once"], { env: { ...live.env, GARY_INSTANCE: "widgets" }, encoding: "utf8" });
 	t.check("the queue watcher prints the review request", queue.stdout.split("\n").filter(Boolean).map((l) => JSON.parse(l)).some((l) => l.itemId === "pr-26" && l.action === "full_review"), queue.stdout);
+	t.check("an API edit on a sensitive PR that is not ours alone requests no review bot round", !existsSync(join(live.home, "state", "drive", "pr-26.json")) && !docs.some((a) => a.action === "drive") && reviewDoc?.params.reviewBotRound === undefined, docs);
 	res = await server.click("pr-26");
 	t.check("a second click is refused", res.status === 409 && writesOf(writes).length === 2, res);
 } finally {
@@ -360,6 +361,28 @@ try {
 	t.check("a change sets no takenOver", after.takenOver === undefined && after.pushed?.action === "revise" && after.pushed.sha === NEW_HEAD, after);
 } finally {
 	ownServer.child.kill();
+}
+
+// An API edit on a PR without sensitive files makes it watched, and the next review bot round follows
+const roundDir = join(T, "round");
+const roundPort = await freePort();
+const round = makeHome(roundDir, { port: roundPort });
+writeItems(round.home, { "pr-26": pr(26, [apiRoute()]) });
+const roundWrites = join(roundDir, "writes.log");
+const roundStub = join(roundDir, "stub.json");
+writeFileSync(roundStub, JSON.stringify({ "*": { state: "OPEN" } }));
+const roundServer = await startServer(round, roundPort, [], { GARY_GUARD_STUB: roundStub, FAKE_GH_WRITES: roundWrites });
+try {
+	const res = await roundServer.click("pr-26");
+	const sent = writesOf(roundWrites);
+	t.check("after the commit the Copilot review is requested under the maintainer's login", res.data.ok === true && sent.length === 3 && sent[2].mutation === "requestCopilotCodeReview" && sent[2].as === ME && sent[2].variables.id === "PR_26", sent);
+	const drive = JSON.parse(readFileSync(join(round.home, "state", "drive", "pr-26.json"), "utf8"));
+	const docs = actionsOf(round.home);
+	const driveDoc = docs.find((a) => a.action === "drive");
+	t.check("the PR waits in the stage review with a claimed drive doc", drive.stage === "review" && drive.copilotRounds === 1 && drive.lastPushedSha === NEW_HEAD && drive.actionId && driveDoc?.status === "queued" && driveDoc.result === "claimed by run server" && driveDoc.params.after === "api_edit" && driveDoc.params.by === "watch", [drive, driveDoc]);
+	t.check("the queued full review names the round", docs.find((a) => a.action === "full_review")?.params.reviewBotRound === 1, docs);
+} finally {
+	roundServer.child.kill();
 }
 
 // A dry-run server shows the writes and commits nothing

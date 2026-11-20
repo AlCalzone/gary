@@ -1,12 +1,16 @@
 // The watch on the PRs we control: every open PR by the instance's bot, Gary's fix PRs in fixes.json among them,
 // and every PR whose item has `takenOver: true`. Their drive file in <state>/drive/ has the stage "review" while a review bot round waits, and
 // "watch" while only the maintainer's feedback is awaited. A watched PR without a drive file counts as "watch".
-import { readdir, unlink } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdir, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { runAction } from "./actions.mjs";
 import { ID_PATTERN, boardDir, readJson, writeAtomic } from "./board-store.mjs";
 import { ACTION_KINDS, listClaims } from "./claims.mjs";
-import { instanceName } from "./config.mjs";
+import { fixReviewOf, instanceName, loadInstance } from "./config.mjs";
+import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
+import { sensitiveOurs, touchesSensitive } from "./facts.mjs";
+import { accountMode, writeLogin } from "./gh.mjs";
 import { driveDir, fixRecordOf, prItemId, readDrives, readFixRecords, readSnapshotItems } from "./fixes.mjs";
 
 // No PR gets more review bot rounds than this over its whole life
@@ -209,4 +213,120 @@ export async function dropWatch(itemId, instance = instanceName()) {
 		if (e.code !== "ENOENT") throw e;
 	});
 	return true;
+}
+
+/** A rule refused the step. The commands exit 3 on it. */
+export class Refused extends Error {}
+
+/**
+ * The watched PR `number` with its fix review settings and its cap on review bot rounds. Throws for any other PR.
+ * With `takingOver` a contributor PR counts as taken over, because the take-over that pushed to it is not recorded yet.
+ */
+export async function watchContext(number, { takingOver = false } = {}) {
+	const instance = loadInstance(instanceName());
+	const repo = instance.repos[0];
+	let pr = await watchedPr(number, instanceName(), repo, instance.config.bot?.login ?? null);
+	if (!pr && takingOver) {
+		const itemId = prItemId(number);
+		const item = await readJson(join(boardDir(), "items", itemId + ".json"));
+		if (item?.kind === "pr") pr = { itemId, number, repo: item.repo ?? repo, why: "taken_over", fixFor: null, drive: await readJson(driveFile(itemId)), item, entry: (await readSnapshotItems())[itemId] ?? null };
+	}
+	if (!pr) throw new Error(`PR #${number} is no PR by the bot, no fix PR Gary recorded in fixes.json and no PR it took over. Only those are watched.`);
+	const settings = fixReviewOf(instance.config, instance.profile);
+	return { ...pr, settings, cap: pr.why === "fix" ? Math.min(settings.maxRounds ?? REVIEW_ROUND_CAP, REVIEW_ROUND_CAP) : REVIEW_ROUND_CAP };
+}
+
+/** The drive file a watched PR starts from when it has none yet. */
+export function baseDrive(c) {
+	return {
+		repo: c.repo,
+		number: c.number,
+		by: c.why === "fix" ? "fix" : "watch",
+		...(c.fixFor && { fixFor: c.fixFor }),
+		watch: true,
+		stage: "watch",
+		maxRounds: c.cap,
+		reviewBot: c.why === "fix" && c.settings.reviewer !== "off" ? c.settings.reviewer : "copilot",
+		...(c.why === "fix" && { markReady: c.settings.markReady }),
+		rounds: [],
+		lastPushedSha: c.entry?.headSha ?? c.item?.reviewedSha ?? null,
+		seenAt: {},
+	};
+}
+
+export const feedbackOf = (c) => c.entry?.feedback ?? c.entry?.facts ?? {};
+
+// In the own mode our replies post under his login, so a round marks all his feedback up to now as seen
+export function marksFor(seen) {
+	return accountMode() === "own" ? { ...seen, me: new Date().toISOString() } : seen;
+}
+
+// The agent jobs that push to a PR and are followed by a review bot round. `format` pushes only formatter output
+export const PUSH_JOBS = ["revise", "take_over", "address_review"];
+
+/** The clicked job doc `id` that just pushed to PR item `itemId`. It must still be queued and claimed. */
+async function pushJob(id, itemId) {
+	if (typeof id !== "string" || !ID_PATTERN.test(id)) throw new Error("--after must name the action doc of the job that pushed");
+	const doc = await readJson(join(boardDir(), "actions", id + ".json"));
+	if (!doc || doc.itemId !== itemId) throw new Error(`Action ${id} is no request for ${itemId}`);
+	if (!PUSH_JOBS.includes(doc.action)) throw new Refused(`A ${doc.action} job requests no review bot round. Only ${PUSH_JOBS.join(", ")} do.`);
+	if (doc.action === "take_over" && (doc.params?.mode ?? "push") !== "push") throw new Refused("A take-over in the replace mode opens a new PR and requests no review bot round on this one.");
+	if (doc.status !== "queued" || typeof doc.result !== "string" || !doc.result.startsWith("claimed by")) throw new Error(`Action ${id} is not a running job`);
+	return doc;
+}
+
+/**
+ * Requests the next review bot round on a watched PR and puts its drive file into the stage "review".
+ * A drive round names its action doc with `actionId`, or the drive file has one. A job that pushed outside a drive
+ * passes `after`, the id of its own action doc, or `apiEdit` for an API edit of the server. Then a new `drive` action
+ * doc is written, claimed by `run`, and `sha` must be a new head. Throws `Refused` when a rule says no.
+ * Returns `{ ok: false, paused: true }` while the instance is paused.
+ */
+export async function requestReviewRound({ number, sha, actionId, after, apiEdit = false, run, seen = {}, dryRun = false }) {
+	if (typeof sha !== "string" || !/^[0-9a-f]{7,64}$/.test(sha)) throw new Error("--sha must be the PR's head commit");
+	const fromJob = after !== undefined || apiEdit;
+	if (fromJob && actionId !== undefined) throw new Error("--action and --after exclude each other");
+	if (fromJob && (typeof run !== "string" || !run.trim() || run.length > 200)) throw new Error("--run must name the run that pushed");
+	const itemId = prItemId(number);
+	const job = after !== undefined ? await pushJob(after, itemId) : null;
+	const c = await watchContext(number, { takingOver: job?.action === "take_over" });
+	if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
+	if (!writeLogin()) throw new Refused("No account may push: the instance has no bot and allowOwnTokenPushes is off.");
+	if (c.entry && touchesSensitive(c.entry) && !sensitiveOurs(c.entry)) throw new Refused(`PR #${c.number} changes sensitive files and is not ours alone, so it gets no review bot rounds.`);
+	const drive = c.drive ?? baseDrive(c);
+	if (fromJob) {
+		if (stageOf(drive) === "review") throw new Refused(`A review bot round already waits on PR #${c.number}.`);
+		const before = [c.entry?.headSha, c.item?.reviewedSha, drive.lastPushedSha].filter((x) => typeof x === "string");
+		if (before.some((x) => x.startsWith(sha) || sha.startsWith(x))) throw new Refused(`${sha.slice(0, 7)} is the head from before the job, so nothing was pushed and no review bot round is requested.`);
+	}
+	const id = fromJob ? `${itemId}-${Date.now()}-${randomBytes(2).toString("hex")}` : actionId ?? drive.actionId;
+	if (typeof id !== "string") throw new Error("--action must name the drive's action doc, because the PR has no running drive");
+	const used = reviewRoundsUsed(drive, feedbackOf(c));
+	const cap = c.why === "fix" ? Math.min(reviewRoundCap(drive), c.cap) : REVIEW_ROUND_CAP;
+	if (used >= cap) throw new Refused(`PR #${c.number} had ${used} of ${cap} review bot rounds. No more are requested.`);
+	const reviewer = drive.reviewBot ?? "copilot";
+	const request = await runAction({ action: "request_review", kind: "pr", number: c.number, repo: c.repo, params: { reviewer, as: c.why === "fix" ? c.settings.requestAs : "me" }, dryRun });
+	if (request.paused) return { ok: false, paused: true, result: PAUSED_MESSAGE };
+	if (!request.ok) return { ok: false, result: `The review was not requested: ${request.result}` };
+	const now = new Date().toISOString();
+	const doc = fromJob && {
+		itemId: c.itemId,
+		action: "drive",
+		params: { by: drive.by ?? (c.why === "fix" ? "fix" : "watch"), ...(c.fixFor && { fixFor: c.fixFor }), maxRounds: cap, after: job?.action ?? "api_edit" },
+		text: "",
+		status: "queued",
+		via: "queue",
+		createdAt: now,
+		finishedAt: null,
+		result: `claimed by run ${run}`,
+	};
+	const next = enterReview(drive, { sha, actionId: id, seen: marksFor(seen), used, now });
+	if (dryRun) return { ok: true, dryRun: true, invocations: request.result.invocations, wouldWrite: { ...(doc && { action: doc }), drive: next } };
+	if (doc) {
+		await mkdir(join(boardDir(), "actions"), { recursive: true });
+		await writeAtomic(join(boardDir(), "actions", id + ".json"), doc);
+	}
+	await mkdir(driveDir(), { recursive: true });
+	await writeDrive(c.itemId, next);
+	return { ok: true, requested: true, round: next.copilotRounds, cap, actionId: id, itemId: c.itemId };
 }

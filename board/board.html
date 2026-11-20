@@ -3065,7 +3065,7 @@ function watchedAfterPush(d, r) {
 
 function pushNote(d, r) {
   const who = instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you";
-  return "Commits as " + who + ". Then Gary reviews the new head" + (watchedAfterPush(d, r) ? " and keeps watching the PR: your next review on GitHub starts the next round." : ".");
+  return "Commits as " + who + ". Then Gary reviews the new head" + (watchedAfterPush(d, r) ? " and keeps watching the PR." + ((instOf(d).reviewBots || []).includes("copilot") ? " Copilot reviews the push while the PR has review rounds left, up to 3." : "") + " Your next review on GitHub starts the next round." : ".");
 }
 
 function instOf(d) {

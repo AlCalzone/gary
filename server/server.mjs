@@ -16,7 +16,7 @@ import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
 import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
-import { stageOf } from "../scripts/lib/watch.mjs";
+import { requestReviewRound, stageOf } from "../scripts/lib/watch.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
@@ -1523,10 +1523,12 @@ export async function startBoardServer({
 				const links = [...(Array.isArray(cur.links) ? cur.links : []), { label: "Our commit", url: outcome.url }];
 				await writeAtomic(file, { ...cur, pushed: { action: plan.action, sha: outcome.sha, at }, ...(plan.action === "take_over" && { takenOver: true }), links });
 			});
+			// A watched PR gets its next review bot round on the new head. A refusal, like a used-up cap, leaves it out
+			const round = await withInstance(name, () => requestReviewRound({ number, sha: outcome.sha, apiEdit: true, run: "server" })).catch((e) => ({ ok: false, result: e.message }));
 			// Queue the review of the new head now because the card that decides the PR comes from it
 			await logClick(name, itemId, {
 				action: "full_review",
-				params: { repo, number, by: "api_edit", pushed: { action: plan.action, sha: outcome.sha } },
+				params: { repo, number, by: "api_edit", pushed: { action: plan.action, sha: outcome.sha }, ...(round.requested && { reviewBotRound: round.round }) },
 				text: `Gary committed a text edit to this PR through the API. Review the new head ${outcome.sha.slice(0, 7)}.`,
 				status: "queued",
 				via: "queue",

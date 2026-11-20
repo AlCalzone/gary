@@ -106,6 +106,14 @@ Append each round to the state file before you request the next review, so the i
 
 The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
 
+## A drive after a push by another job
+
+A `revise`, `take_over` or `address_review` job that pushed to a watched PR requests a Copilot review with `gary pr-watch review --after`. That writes a `drive` action doc with `params.after` naming the job, or `api_edit` after the server's API edit, and puts the state file into the stage `review`. The master starts your first round when the review arrived. Everything above holds, with these differences:
+
+- Your first round starts with a review to address. `n` is the number of rounds in the state file plus 1.
+- The head must equal `lastPushedSha`, the job's push.
+- `params.by` is `fix` on a fix PR, and the drive ends through `gary fix-review finish`. Otherwise it is `watch`, and the drive ends with `gary pr-watch done` as above.
+
 ## A round for feedback on a watched PR
 
 `gary pr-watch round` queues such a round without a click. Its action doc has `params.trigger`: `maintainer` when the maintainer reviewed or commented, `others` when the hourly run found reviews or comments by other people. `params.at` is the time of the newest feedback that started it, and `params.by` is `fix` on a fix PR and `watch` otherwise. The state file exists with `stage: "watch"`. The caller passes the item file when the PR has one. Everything above holds, with these differences:
@@ -114,7 +122,7 @@ The routes of the returned item follow "Routes after a push" in `push-to-pr.md`:
 - "Who may push to a PR" holds: the PR is by the bot or has `takenOver: true`, as `gary pr-watch` checked. The preconditions of `push-to-pr.md` hold, with the PR's current head as the SHA for `gary push-check`. A head other than `lastPushedSha` is fine when every newer commit is by the maintainer or the bot. A commit by anyone else stops the round. A bot PR can carry commits by other people, and then it is not ours alone: `gary push-check` decides that, never you.
 - The maintainer's threads and comments follow "The maintainer's threads" below. Other people's follow "Other people's threads", and only with `params.trigger: "others"`.
 - A plain PR comment that asks for a change counts like a thread. Answer such comments in one PR comment as the writing identity, saying what you changed or why not. Post nothing else.
-- When review bot rounds remain and the round pushed, you may request the next one with `gary pr-watch review`, as step 9 says. The drive then continues as above.
+- When review bot rounds remain and the round pushed, request the next one with `gary pr-watch review`, as step 9 says. The drive then continues as above.
 - When the round ends without a next review bot round: on a fix PR, end through `gary fix-review finish` as in the section above. On any other PR, return `{ status: "done", result, resultParts, item }` as `push-to-pr.md` describes, with the round appended to `rounds`, and run `gary pr-watch done`, with `--request-maintainer` when the round ended cleanly. Its item is the PR reviewed again on the new head, with a card for every thread that stayed open for his decision.
 
 ### The maintainer's threads

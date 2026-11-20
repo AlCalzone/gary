@@ -23,6 +23,7 @@ This mode builds on the `address-review-comments` skill when it is installed. Re
 
 The board starts every thread on dismiss except the `valid` ones. A dismissed thread is the maintainer's decision, also when he only kept the default.
 5. Resolve each replied thread under the writing identity: `gh api graphql -f query='mutation($id: ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' -f id=<threadId>`.
+5a. When you pushed, request the next Copilot review on a watched PR with `gary pr-watch review --after <your action id>`, as `push-to-pr.md`, "Review bot round after a push", describes. Without a push, request none.
 6. Remove the worktree and return as described in `push-to-pr.md`. Handled threads leave `threads`. `result` is the commit URL, or the number of threads handled when nothing was pushed.
 
 A failure after the push still returns `status: "done"` with what happened in `state`, like `Pushed the fix. Replying to 1 of 3 threads failed: API error 502.` The push cannot be undone, so the item has to show the real state.
