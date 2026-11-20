@@ -131,6 +131,8 @@ For the hourly job, read all action files, keep those with `status: "queued"`, a
 
 Run `gary snapshot > <run>/snapshot.json`. It prints `changed`, `unchanged`, `closed` and `stale`. It does not save a new baseline. Never pass `--commit` here.
 
+Then run `gary pr-origin`. It finds the local Claude Code session that opened each open bot PR outside `fixes.json` and caches it in `<state>/origins.json`. A PR it already knows costs one file check. The board shows the origin in the PR's dialog, and the watch waits while that session is active. Never read the transcripts yourself. A failure here goes into the summary and stops nothing.
+
 The item files in `<state>/board/items/` hold the previous review results and the maintainer's fields. Subagents read them. You need only their ids and `reviewDepth`.
 
 ### 4. Closed items
@@ -180,7 +182,7 @@ Run `gary pr-watch list --json`. It lists every watched PR: the bot's open PRs, 
 gary pr-watch round --pr <number> --by others --at <others> --run <run>
 ```
 
-It prints `{ ok, actionId }` and the action doc is claimed by your run. Start the round like a `drive` request of step 2, with the action file, the item file when one exists, and the state file path `<state>/drive/<itemId>.json`. Take the PR out of `changed` for this run: the round judges the feedback and reviews the item again when it ends. Exit code 3 means a rule refused, like a sensitive PR that is not ours alone: the PR then goes through steps 5 and 6 like any changed PR, and its feedback shows on the board as usual. Exit code 4 means paused: record the step in `would-have.json` with `action: "pr_watch_round"`.
+It prints `{ ok, actionId }` and the action doc is claimed by your run. Start the round like a `drive` request of step 2, with the action file, the item file when one exists, and the state file path `<state>/drive/<itemId>.json`. Take the PR out of `changed` for this run: the round judges the feedback and reviews the item again when it ends. Exit code 3 means a rule refused, like a sensitive PR that is not ours alone or a bot PR whose session was active in the last 30 minutes: the PR then goes through steps 5 and 6 like any changed PR, and its feedback shows on the board as usual. Exit code 4 means paused: record the step in `would-have.json` with `action: "pr_watch_round"`.
 
 The maintainer's own feedback never waits for this step. The queue watcher starts its round within minutes.
 

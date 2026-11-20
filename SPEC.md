@@ -37,6 +37,7 @@ Gary has three layers, one place for each kind of change.
     auto-review.mjs      gary auto-review
     api-edit.mjs         gary api-edit
     push-check.mjs       gary push-check
+    pr-origin.mjs        gary pr-origin
     setup.mjs            gary setup
     migrate.mjs          gary migrate
     serve.mjs            gary serve
@@ -50,7 +51,8 @@ Gary has three layers, one place for each kind of change.
   profiles/template/     the skeleton `gary setup` copies for a new project
 
 <root>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
-  config.json            the machine-wide settings: { "port": 7878, "models": { … } }, see "Models"
+  config.json            the machine-wide settings: { "port": 7878, "models": { … }, "sessionsDir": "…" }, see "Models"
+                         and "PR origins"
   personal.md            the maintainer's own rules for every instance
   state/                 server-wide files: server-token, server.log
   instances/<name>/      one instance per repository. The name matches ^[a-z0-9][a-z0-9-]{0,39}$
@@ -65,6 +67,7 @@ Gary has three layers, one place for each kind of change.
     opened.json          the `as: "me"` buttons he used, per item and route, see Routes
     failures.json        failed triage count per item, kept by the routine
     auto-reviews.json    the automatic reviews Gary posted and their format offers, see "Automatic first review"
+    origins.json         the local session that opened each bot PR outside fixes.json, see "PR origins"
     runs/<run>/          one directory per worker run, named by its UTC timestamp, which the master picks. summary.txt is the
                          worker's result, would-have.json the writes a paused run intended
     drive/<itemId>.json  a drive: its round state plus repo and number, which the queue watcher polls. On a watched PR it
@@ -209,6 +212,7 @@ Two older layouts are moved by commands, never silently:
 - `gary pr-watch list [--json]`, `gary pr-watch round --pr <n> --by me|others --at <ISO> [--run <run>] [--dry-run]`, `gary pr-watch review --pr <n> --sha <head> [--action <id> | --after <id> --run <run>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run]` and `gary pr-watch done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]`: the watch on the bot's PRs and the taken-over PRs, see "Watched PRs". Each refuses a PR that is not watched. Exit 3 means a rule refused, exit 4 that the instance is paused.
 - `gary auto-review check|post|accept|reply|rerequest|list`: the one automatic first review on a contributor PR and its format offer, see "Automatic first review". Exit 3 means a rule refused, exit 4 that the instance is paused.
 - `gary api-edit --pr <n> [--route <id>]` and `gary api-edit --pr <n> --sha <head sha> --file <route.json>`: check the API edit of a `take_over` or `revise` route against GitHub and print what the click would commit, see "API edit". The first form reads the route from the stored item, the second a draft route `{ params, text }` before it is stored. It prints `{ ok, dryRun, message, files, diff, invocations }` or the refusal as `{ ok: false, result }`, and exits 1 on a refusal and 4 while paused. It has no mode that commits: only the click on the board does.
+- `gary pr-origin [--json] [--refresh]`: find the local Claude Code session that opened each open bot PR outside `fixes.json` and cache it in `<state>/origins.json`, see "PR origins". It prints one line per PR, or `{ ok, sessions, origins }` with `--json`. `--refresh` searches every PR again.
 - `gary push-check --pr <n> [--sha <head sha>] [--repo <owner/name>]`: say from GitHub's state right now whether an agent may work in a checkout of the PR and push to it, see "PRs that are ours alone". It prints `{ ok, pr, repo, headSha, sensitiveFiles, sensitiveOurs, refused }`. The exit code is 0 when the push is allowed and 3 when it is refused. Three things are refused: a PR that is not open, a head other than `--sha`, and a PR with sensitive files that is not ours alone. It reads every changed file of the PR, also beyond the snapshot's first 50. It writes nothing.
 - `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
 - `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
@@ -489,7 +493,7 @@ The risks that remain:
 One page serves every instance. `GET /api/state` returns `{ board, items, proposals }`:
 
 - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos, repoUrl, bot, accountMode, paused, relatedRepos, botCommands, escalateAs, reviewBots } ] }`. `title` is the profile's `name`, `bot` is `{ login, avatarUrl }` or `null`. The page takes links, avatars, bot names, bot commands and new-issue URLs from the item's own instance entry, never from one global repo.
-- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working` and `fix` when there are any. A PR whose snapshot entry has `sensitiveFiles` carries `sensitive: { files, total }`, with the first 5 paths and their full count, plus `ours: true` when the entry has `sensitiveOurs`. A discussion without a stored `category` gets the one from the snapshot. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
+- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working`, `fix` and `origin` when there are any. A PR whose snapshot entry has `sensitiveFiles` carries `sensitive: { files, total }`, with the first 5 paths and their full count, plus `ours: true` when the entry has `sensitiveOurs`. A discussion without a stored `category` gets the one from the snapshot. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
 - `proposals[]`: the open proposals, each with `instance`.
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
@@ -700,6 +704,29 @@ After the state change, the command runs `request_review` with `reviewer: "maint
 - his review is already requested.
 
 The output's `maintainerReview` is `{ requested: true, url }`, `{ requested: false, skipped }` or `{ requested: false, error }`, and in a dry run it names the mutation in `invocations`. A failed request does not fail the command, and the round still ends. While the instance is paused, both commands exit 4 with the flag and write nothing. No text names him with an @-mention. The review request is the notification.
+
+#### PR origins
+
+The bot account also opens PRs from interactive Claude Code sessions. Gary watches such a PR like its own, so the board says where it came from. `gary pr-origin` finds the session for each open PR by `bot.login` in the snapshot that is not in `fixes.json`. The snapshot's PR entries keep `createdAt` and `headRef` for this.
+
+Claude Code keeps one JSONL transcript per session at `<sessions>/<project dir>/<session id>.jsonl`. `<sessions>` is `GARY_SESSIONS_DIR`, then `sessionsDir` in the root `config.json`, then `~/.claude/projects`. The search reads only transcripts changed after the PR was created, and parses only those that name the PR's URL. The session that opened the PR is the one with one of these before the PR's creation time, with 5 minutes of slack:
+
+- a `gh pr create` call whose result names the PR's URL,
+- an MCP tool call named like `create_pull_request` whose result names the URL,
+- a `git push` whose command or result names the head branch, followed by a tool result that names the URL.
+
+A session that only reads, mentions or later pushes to the PR, like a Gary worker or a chat about the board, is no origin. Transcripts are read as data, and nothing from them runs. They can hold secrets, so `origins.json` keeps only this per item id:
+
+```json
+{ "pr-9508": { "found": true, "sessionId": "9d269cae-…", "cwd": "/home/me/repositories/project/master", "transcript": "<project dir>/<session id>.jsonl",
+  "startedAt": "<first timestamp>", "lastActiveAt": "<transcript mtime>", "prompt": "<first prompt, at most 100 characters>", "via": "gh_pr_create" | "mcp" | "push", "checkedAt": "<ISO>" } }
+```
+
+A PR without a found session is cached as `{ "found": false, "checkedAt" }`. The origin of a PR never changes, so each PR is searched once. Later runs only move `lastActiveAt`, and the cache drops PRs that left the snapshot. `lastActiveAt` is the time the transcript last changed. The hourly run calls `gary pr-origin` after the snapshot.
+
+The board server serves `origin` on such a PR item: `{ found: true, sessionId, dir, resume, startedAt, lastActiveAt, prompt }`, with `dir` as `~/…`, `resume` as `cd <dir> && claude --resume <session id>` and `lastActiveAt` read from the transcript at that moment. Without a found session it serves `{ found: false }`. The dialog then shows "Opened by a Claude Code session in <dir> on <day>, last active <day>, <time>.", the first prompt and the resume command with a copy button, or "Opened by <bot> outside Gary. No local session found." The Change, Take over, Address review and Drive cards say that the agent continues the PR that session started and pushes on top of its commits. While the session was active in the last 30 minutes, they also warn that it may still be working and that its next push could conflict.
+
+While the origin session was active in the last 30 minutes, nothing of the watch acts on the PR. `gary watch-queue` prints no `maintainer-feedback` line for it, and `gary pr-watch round` refuses with exit 3 and names the session. Both read the transcript's time at that moment. Once the session has been quiet for 30 minutes, the watch acts as usual, and feedback no round handled starts its round.
 
 #### Automatic first review
 
@@ -1062,7 +1089,7 @@ The `triage-routine` skill is the worker for one instance. In short:
 
 1. Run `gary paths` and `gary models`, and read `config.json` and the profile. Take the run lock. Check the profile's `requiredTools`.
 2. Process queued action files in `<state>/board/actions/` that the master handed it. They are agent requests and go onto this run's work list. Write back status and result.
-3. Run `gary snapshot`.
+3. Run `gary snapshot`, then `gary pr-origin`.
 4. Delete the items for `closed` ids with `gary put items <id> --delete`. Queue a round for other people's feedback on each watched PR that has some no round handled, with `gary pr-watch list --json` and `gary pr-watch round --by others`, and take those PRs out of `changed` for this run, see "Watched PRs".
 5. Quick-classify every `changed` item. Pick up to `maxFullReviewsPerRun` for a full review: first items that need analysis, then contributor PRs, then items in `active`, then the rest by updatedAt.
 6. Run full reviews as parallel subagents on the `review` model. PRs use `triage-review-pr`, issues and discussions use `triage-issue`.
