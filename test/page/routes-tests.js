@@ -198,7 +198,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await expand(3);
   ok("take_over replace shows its callout prominently and a teal button", openCard().querySelector(".callout.strong")?.textContent.includes("does not allow edits") && cardBtn("Open a replacement PR")?.classList.contains("intent-agent"));
   ok("take_over says the bot commits", /Commits as widgets-bot/.test(openCard().querySelector(".card-actions").textContent) && !!cardBtn("Open a replacement PR").querySelector(".actor-icon"));
-  ok("take_over says a Copilot review follows the push while rounds are left", /keeps watching the PR\. Copilot reviews the push while the PR has review rounds left, up to 3\. Your next review on GitHub starts the next round\./.test(openCard().querySelector(".card-actions").textContent));
+  ok("take_over says Gary keeps driving the PR", /Commits as widgets-bot\. Gary keeps driving this PR afterwards\./.test(openCard().querySelector(".card-actions").textContent));
 
   // address_review, approve, reopen as bot, take_over push
   await openItem("pr-9474");
@@ -368,7 +368,6 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("revise: an agent card with the proposal in the instructions field", openCard().classList.contains("intent-agent") && openCard().querySelector("textarea").value === "Drop the 0x00c8 file, the 0x00c9 file covers both."
     && openCard().querySelector(".card-label").textContent === "Instructions for the agent");
   ok("revise: the button says Change and the quiet line names who commits", !!cardBtn("Change") && cardBtn("Change").classList.contains("intent-agent") && /Commits as widgets-bot/.test(openCard().querySelector(".card-actions").textContent));
-  ok("revise: the quiet line says what follows the push", /Then Gary reviews the new head/.test(openCard().querySelector(".card-actions").textContent));
   ok("revise: no take-over wording and no thread list on the card", !/Continues in the contributor's PR/.test(openCard().textContent) && !/Take over/.test(openCard().textContent) && !openCard().querySelector(".decisions"));
   ok("revise: the open threads keep their own list", !document.getElementById("d-threads").hidden && /Guard the empty list/.test(document.getElementById("d-threads").textContent));
   openCard().querySelector("textarea").value = "  "; openCard().querySelector("textarea").dispatchEvent(new Event("input"));
