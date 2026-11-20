@@ -166,16 +166,17 @@ export function hasFlatLayout() {
 	return !!data && typeof data === "object" && "profile" in data;
 }
 
-/** The machine-wide settings in <root>/config.json: `{ port, models }`. `models` holds only the roles the file sets. */
+/** The machine-wide settings in <root>/config.json: `{ port, models, sessionsDir }`. `models` holds only the roles the file sets. */
 export function rootConfig() {
 	const file = rootConfigFile();
 	const data = existsSync(file) && !hasFlatLayout() ? readSettings(file, "Root config") : {};
 	const errors = [];
-	for (const key of Object.keys(data)) check(errors, ["port", "models"].includes(key), `unknown field "${key}"`);
+	for (const key of Object.keys(data)) check(errors, ["port", "models", "sessionsDir"].includes(key), `unknown field "${key}"`);
 	check(errors, data.port === undefined || isInt(data.port, 1, 65535), `"port" must be a port number`);
+	check(errors, data.sessionsDir === undefined || (typeof data.sessionsDir === "string" && data.sessionsDir.length > 0), `"sessionsDir" must name the directory of the Claude Code session transcripts`);
 	checkModels(data.models, "root", errors, errors);
 	if (errors.length) throw new SettingsError(`Root config ${file} is invalid:\n- ${errors.join("\n- ")}`);
-	return { port: data.port ?? DEFAULT_PORT, models: data.models ?? {} };
+	return { port: data.port ?? DEFAULT_PORT, models: data.models ?? {}, ...(data.sessionsDir && { sessionsDir: data.sessionsDir }) };
 }
 
 export class SettingsError extends Error {}

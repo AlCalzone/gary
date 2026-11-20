@@ -17,9 +17,12 @@ export function tempDir(prefix = "gary-test-") {
 	return mkdtempSync(join(tmpdir(), prefix));
 }
 
-/** Environment with the fake gh first on PATH and no real token. */
+// No test reads the real Claude Code session transcripts. A suite that needs some passes its own directory
+const NO_SESSIONS = join(tmpdir(), "gary-test-no-sessions");
+
+/** Environment with the fake gh first on PATH, no real token and no real session transcripts. */
 export function testEnv(extra = {}) {
-	const env = { ...process.env, PATH: FAKE_GH_DIR + delimiter + process.env.PATH, ...extra };
+	const env = { ...process.env, PATH: FAKE_GH_DIR + delimiter + process.env.PATH, GARY_SESSIONS_DIR: NO_SESSIONS, ...extra };
 	for (const name of ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]) delete env[name];
 	return env;
 }

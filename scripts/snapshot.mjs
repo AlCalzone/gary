@@ -379,6 +379,8 @@ function baselineEntry(item) {
 		lastThemAt: item.facts?.lastThemAt ?? null,
 		// The fix state of issues and discussions reads these
 		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
+		// `gary pr-origin` searches the session transcripts for the PR's branch and reads only those changed since its creation
+		...(item.kind === "pr" && { createdAt: item.createdAt, headRef: item.headRef }),
 		// The watch on our PRs compares these with the feedback a round already handled
 		...(item.kind === "pr" && { feedback: Object.fromEntries(["lastMeAt", "lastOthersAt", "ourLastCommitAt", "reviewBotReviews"].filter((k) => item.facts?.[k] != null).map((k) => [k, item.facts[k]])) }),
 		// The validator and the board server decide from these which routes may push to the PR
@@ -758,6 +760,7 @@ function toPr(n, classify, sensitivePaths) {
 		isDraft: n.isDraft,
 		assignees: n.assignees.nodes.map((a) => a.login),
 		headSha: n.headRefOid,
+		headRef: n.headRefName,
 		baseRef: n.baseRefName,
 		ci: CI_STATES[rollup] ?? "none",
 		reviewDecision: n.reviewDecision,

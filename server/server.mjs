@@ -17,7 +17,8 @@ import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
 import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
 import { requestReviewRound, stageOf } from "../scripts/lib/watch.mjs";
-import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
+import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
+import { lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
@@ -933,6 +934,29 @@ export async function startBoardServer({
 		return out;
 	}
 
+	/**
+	 * Where each bot PR outside fixes.json came from, from <state>/origins.json, by item id. A found origin is served with
+	 * the session's directory as `~/…`, its resume command and the transcript's current time as `lastActiveAt`.
+	 */
+	async function originsOf(name, instance, items, records) {
+		const out = new Map();
+		const bot = String(instance.config.bot?.login ?? "").toLowerCase();
+		if (!bot) return out;
+		const fixes = fixPrNumbers(records);
+		const cache = await withInstance(name, readOrigins);
+		for (const { id, data } of items) {
+			const o = cache[id];
+			if (data.kind !== "pr" || !o || fixes.has(data.number) || String(data.author ?? "").toLowerCase() !== bot) continue;
+			if (o.found !== true) {
+				out.set(id, { found: false });
+				continue;
+			}
+			if (typeof o.cwd !== "string" || typeof o.sessionId !== "string") continue;
+			out.set(id, { found: true, sessionId: o.sessionId, dir: shortDir(o.cwd), resume: resumeCommand(o), startedAt: o.startedAt ?? null, lastActiveAt: await lastActive(o), prompt: o.prompt ?? null });
+		}
+		return out;
+	}
+
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
 	async function readItems(name) {
 		const { instance, mode: current } = settingsOf(name);
@@ -959,9 +983,11 @@ export async function startBoardServer({
 			const { sensitiveFiles: files, sensitiveFileCount: total } = data.kind === "pr" ? sensitiveFacts(fixSources.snapshot[id]) : {};
 			return files ? { files, total, ...(sensitiveOurs(fixSources.snapshot[id]) && { ours: true }) } : null;
 		};
+		const origins = await originsOf(name, instance, items, fixSources.records);
 		return items.map(({ id, data }) => ({
 			...data,
 			...(sensitiveOf(id, data) && { sensitive: sensitiveOf(id, data) }),
+			...(origins.has(id) && { origin: origins.get(id) }),
 			// An item written before the routine copied the category gets it from the snapshot
 			...(typeof categoryOf(id, data) === "string" && { category: categoryOf(id, data) }),
 			liveState: liveStates.get(`${name}/${id}`),

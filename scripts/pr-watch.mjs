@@ -19,6 +19,7 @@ import { instanceName, loadInstance } from "./lib/config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { driveDir } from "./lib/fixes.mjs";
+import { busyOrigin, readOrigins, shortDir } from "./lib/origins.mjs";
 import { writeLogin } from "./lib/gh.mjs";
 import { REVIEW_ROUND_CAP, Refused, WATCH_TRIGGERS, baseDrive, enterWatch, feedbackOf, marksFor, pushWork, requestMaintainerReview, requestReviewRound, reviewRoundCap, reviewRoundsUsed, seenMarks, stageOf, unhandledFeedback, watchContext, watchedPrs, writeDrive } from "./lib/watch.mjs";
 
@@ -80,6 +81,8 @@ async function round(argv) {
 	if (!writeLogin()) throw new Refused("No account may push: the instance has no bot and allowOwnTokenPushes is off.");
 	if ((await pushWork()).has(c.itemId)) throw new Refused(`The agent already works on PR #${c.number}. Its round reads this feedback too.`);
 	if (c.entry && touchesSensitive(c.entry) && !sensitiveOurs(c.entry)) throw new Refused(`PR #${c.number} changes sensitive files and is not ours alone, so no agent works in its checkout.`);
+	const live = c.why === "bot" ? await busyOrigin((await readOrigins())[c.itemId]) : null;
+	if (live) throw new Refused(`PR #${c.number} comes from the Claude Code session ${live.sessionId} in ${shortDir(live.cwd)}. That session was active at ${live.lastActiveAt} and may still push to the PR. No round starts until it has been quiet for 30 minutes.`);
 	const at = new Date(out.at).toISOString();
 	const unhandled = unhandledFeedback(out.by, { drive: c.drive, feedback: { ...feedbackOf(c), [out.by === "me" ? "lastMeAt" : "lastOthersAt"]: at }, item: c.item, record: c.record });
 	if (!unhandled) throw new Refused(`A round already handled the feedback on PR #${c.number} up to ${at}.`);

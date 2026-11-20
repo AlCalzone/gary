@@ -7,7 +7,8 @@
 // there, or "review-timeout" after 30 minutes. The watcher reads the PR once a minute per waiting drive.
 // A watched PR, a PR by the bot or a taken-over PR, gets a line with "action": "drive", "event": "maintainer-feedback",
 // "pr" and "at" when the maintainer reviewed or commented after our last push and no round handled it yet. The
-// watcher reads at most 20 such PRs every 3 minutes, the first time right at its start.
+// watcher reads at most 20 such PRs every 3 minutes, the first time right at its start. A bot PR whose origin session
+// in <state>/origins.json was active in the last 30 minutes gets no such line until the session is quiet.
 // A PR with an automatic review gets lines with "action": "auto_review": "event": "offer-accepted" when its author
 // reacted positively to the format offer, "offer-reply" with "at" when he commented after it, and "re-requested"
 // with "at" when he re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
@@ -21,6 +22,7 @@ import { autoReviewOf, instanceName, instanceNames, instancesDir, loadInstance, 
 import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
+import { busyOrigin, readOrigins } from "./lib/origins.mjs";
 import { dropWatch, pushWork, stageOf, unhandledFeedback, watchedPrs } from "./lib/watch.mjs";
 import { fetchItem, fetchOfferFacts } from "./snapshot.mjs";
 
@@ -131,6 +133,7 @@ export async function main(argv) {
 			if (isInstancePaused(instance)) continue;
 			let candidates = [];
 			let me;
+			let origins = {};
 			try {
 				const i = loadInstance(instance);
 				me = i.config.me;
@@ -140,10 +143,13 @@ export async function main(argv) {
 				candidates = (await withInstance(instance, () => watchedPrs(instance, i.repos[0], i.config.bot?.login ?? null)))
 					.filter((p) => stageOf(p.drive) === "watch" && !busy.has(p.itemId) && !gone.has(`${instance}/${p.itemId}`))
 					.slice(0, MAX_WATCHED);
+				origins = await withInstance(instance, readOrigins);
 			} catch (e) {
 				console.error(`Reading the watched PRs of ${instance} failed: ${e.message}`);
 			}
 			for (const p of candidates) {
+				// The session that opened the PR may still push to it. Its feedback prints once the session was quiet for 30 minutes
+				if (p.why === "bot" && (await busyOrigin(origins[p.itemId]))) continue;
 				let entry;
 				try {
 					entry = await withInstance(instance, () => fetchItem("pr", p.number, p.repo));
