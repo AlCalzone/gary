@@ -152,11 +152,12 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
   ],
   "aiAuthors": ["devin"],          // extra names of AI agents for facts.aiAuthored, matched as case-insensitive parts of a commit author's name or login
   "autoReviewPaths": { "config": ["config/devices/**"] },   // globs per kind of PR that may get an automatic review. A PR is of a kind when every changed file matches one of its globs
-  "formatCommand": "npm run fmt"   // or null: the one-line command a contributor runs to format. The automatic review names it when it cannot offer to push
+  "formatCommand": "npm run fmt",  // or null: the one-line command a contributor runs to format. The automatic review names it when it cannot offer to push
+  "dueDateFields": ["Due", "Due date", "Target date", "Deadline", "End date"]   // date fields of a GitHub Projects item that give the item its due date, matched without regard to case. The default is shown
 }
 ```
 
-`name` and `repo` are required. Unknown fields are handled like in config.json. An `automatedComments` entry has `name`, `pattern` and an optional `origin`. `pattern` is a JavaScript regular expression of at most 500 characters, without flags, tested against the first 20000 characters of the comment body with leading white space removed. Validation compiles it and refuses one that does not compile or nests quantifiers like `(a+)+`. `autoReviewPaths` maps a kind to a list of globs. A kind this version does not know is an unknown field. `formatCommand` has at most 200 characters, one line, no backtick.
+`name` and `repo` are required. Unknown fields are handled like in config.json. An `automatedComments` entry has `name`, `pattern` and an optional `origin`. `pattern` is a JavaScript regular expression of at most 500 characters, without flags, tested against the first 20000 characters of the comment body with leading white space removed. Validation compiles it and refuses one that does not compile or nests quantifiers like `(a+)+`. `autoReviewPaths` maps a kind to a list of globs. A kind this version does not know is an unknown field. `formatCommand` has at most 200 characters, one line, no backtick. `dueDateFields` holds at most 20 names of at most 100 characters each.
 
 A long-running process, like the board server, keeps the last valid settings of an instance when its config.json or profile.json breaks. `loadInstance` then returns them with `settingsError` naming the problem, and `settingsWarnings` lists unknown fields. An instance whose settings were never valid in the process is listed by `listInstances` with `valid: false`, no repos and its `settingsError`, and serves no items.
 
@@ -198,10 +199,10 @@ Two older layouts are moved by commands, never silently:
 - `gary models [--json] [--all]`: print the model of every role for the resolved instance, or the master's model and every instance's, see "Models".
 - `gary instances [--json]`: list every instance with `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `valid`, `served` (the board server lists it) and `current` (the working directory resolves to it), plus `settingsError` and `settingsWarnings` when there are any.
 - `gary wants [--json]`: list, per item with `wants`, the labels to add, the labels to remove and the assignees to add that GitHub does not show yet, with `wantsReason`. GitHub's state comes from the labels and assignees in the staged snapshot, or in the baseline when nothing is staged. Items without a snapshot entry are listed as `unknown`. Read-only.
-- `gary shadow record <file>`: append shadow comparison entries, one object or a list, to `<state>/shadow.jsonl`. Each is `{ at, run, itemId, repo, tier: "fast" | "standard", model, section, hasRoutes, recommendedType, handedUp, reason, sampled }`. `sampled` is optional, true for a pair the routine sampled in `on` mode. `section` and `recommendedType` may be null when the fast tier handed up, and only the fast tier hands up. An invalid entry refuses the whole file.
-- `gary shadow report [--since <ISO> | --week] [--json]`: pair the latest fast and standard entry per run and item, and print the number of pairs and how many came from sampling, how often the fast tier handed up, the agreement on section and on the recommended route type over the pairs the fast tier answered, and every disagreement with both answers. It warns when the section agreement over the last 40 pairs the fast tier answered is below 95 percent. `--week` means `--since` 7 days ago.
-  The second part, "Your decisions by tier", counts per `classifiedBy` value the items of that tier: board items reviewed since `--since` plus the items the decision log names with that tier since then. For each tier it counts the items with a `dismissed_route` of the recommended route, a `chose_alternative`, an `edited_text`, and any of the three, with rates. It says when a tier has fewer than 20 items. `--json` adds the item ids, under `decisions.<tier>`: `{ items, itemIds, tooFew, dismissedRecommended, choseAlternative, editedText, any }`, each count as `{ count, rate, itemIds }`. The pair counts are `sampledPairs` and `recentSectionAgreement: { pairs, same, share, warning }`.
-- `gary shadow propose [--dry-run]`: write the setting proposal for `fastTier` when the numbers meet the bar, see "Setting proposals". It prints one JSON line, `{ ok, written, id, value, since, pairs, handedUp, answered, sameSection, sectionAgreement }`, or `{ ok, written: false, why, … }`. `--dry-run` prints the proposal as `proposal` and writes nothing.
+- `gary shadow record <file>`: append shadow comparison entries, one object or a list, to `<state>/shadow.jsonl`. Each is `{ at, run, itemId, repo, tier: "fast" | "standard", model, category, hasRoutes, recommendedType, handedUp, reason, sampled }`. `sampled` is optional, true for a pair the routine sampled in `on` mode. `category` and `recommendedType` may be null when the fast tier handed up, and only the fast tier hands up. Entries written before categories carry `section` in place of `category`. The report compares the two the same way, and an entry with both is refused. An invalid entry refuses the whole file.
+- `gary shadow report [--since <ISO> | --week] [--json]`: pair the latest fast and standard entry per run and item, and print the number of pairs and how many came from sampling, how often the fast tier handed up, the agreement on category and on the recommended route type over the pairs the fast tier answered, and every disagreement with both answers. It warns when the category agreement over the last 40 pairs the fast tier answered is below 95 percent. `--week` means `--since` 7 days ago.
+  The second part, "Your decisions by tier", counts per `classifiedBy` value the items of that tier: board items reviewed since `--since` plus the items the decision log names with that tier since then. For each tier it counts the items with a `dismissed_route` of the recommended route, a `chose_alternative`, an `edited_text`, and any of the three, with rates. It says when a tier has fewer than 20 items. `--json` adds the item ids, under `decisions.<tier>`: `{ items, itemIds, tooFew, dismissedRecommended, choseAlternative, editedText, any }`, each count as `{ count, rate, itemIds }`. The pair counts are `sampledPairs` and `recentCategoryAgreement: { pairs, same, share, warning }`.
+- `gary shadow propose [--dry-run]`: write the setting proposal for `fastTier` when the numbers meet the bar, see "Setting proposals". It prints one JSON line, `{ ok, written, id, value, since, pairs, handedUp, answered, sameCategory, categoryAgreement }`, or `{ ok, written: false, why, … }`. `--dry-run` prints the proposal as `proposal` and writes nothing.
 - `gary shadow convert <id> [--dry-run]`: rebuild one fast tier proposal that was stored as a rule proposal, under the same id, see "Setting proposals".
 - `gary decisions [--since <ISO>] [--json]`: print the decision log, see Learning. `--since` is exclusive.
 - `gary claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>] [--request <action id>]`: claim work on an item before starting it. It creates `<state>/claims/<itemId>.<kind>.json` exclusively with `{ run, at, expiresAt }`, default ttl 60 minutes, and exits 3 with the holder when another run holds an unexpired claim. The same run renews its claim, an expired claim is taken over. A `fix` claim without `--request` is the routine's own fix: it also exits 3 with the numbers when `maxPendingAutoFixes` fixes of the routine are pending, see "Fix limit". `push` covers take_over, revise, address_review, drive rounds and format. A `fix` claim also exits 3 while a fix PR for the item is a draft or open, and while a `start_fix` request other than `--request` is queued for it: a request worker passes the id of its own action doc. A refused claim needs no item doc: the caller skips the item.
@@ -220,7 +221,7 @@ Two older layouts are moved by commands, never silently:
 - `gary put proposals <id> <file>`: write one proposal, validated. `gary put learn <file>`: write the learn cursor.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
+- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
 
 Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
@@ -255,16 +256,32 @@ While paused:
 
 `board.instances[].paused` in `/api/state` and in `use("board")` shows the switch per instance. The event stream sends a `board` event with the full board object when a `control.json` changes. `gary doctor` reports the state.
 
-## Sections
+## Categories
 
-Board order, top to bottom. `section` field values in parentheses.
+Each item has exactly one `category`. It names the kind of move the maintainer makes:
 
-1. Active communication (`active`): someone asked us something within the last `activeMaxWaitDays` days and waits for a reply. An older unanswered question is no longer a live conversation. It is classified by the other rules and keeps a `waitingDays` value.
-2. Easy wins (`easy`): PRs ready to merge, questions that can be answered or closed now.
-3. Almost ready (`almost`): PRs that need small refinement, items that only need a maintainer decision.
-4. Needs human review (`review`): PRs where the agent review is done and a human must look at the code.
-5. Deferred and larger projects (`deferred`).
-6. Needs real hardware (`hardware`): cannot be reproduced with the project's test setup.
+1. Act (`act`): something is due or time-critical. An item with a due date (see "Due dates"), a release blocker, a security report, a regression in the latest release.
+2. Unblock (`unblock`): someone outside our side waits on him and cannot go on without him. A reporter who waits for his answer or diagnosis, a contributor PR that waits for his review, a question an agent asked him.
+3. Land (`land`): the work is nearly done, and his final step finishes it. A merge, an approval, closing a solved issue, finishing what Gary pushed or a job he asked for. A series of related items that together finish a feature counts too, see "Series".
+4. Decide (`decide`): it needs his judgment, and nobody waits actively. Design questions, feature requests, fix or won't fix, backlog `Implement:` cards, and what only real hardware can settle. A contribution that needs a design decision before a code review makes sense is `decide` too, even while its contributor waits.
+
+`needsHardware: true` flags an item that cannot be reproduced with the project's test setup. It is no category. The row shows a quiet `hardware` chip.
+
+Items written before categories carry `section`. The validator, `gary put`, the server and the page map it: `active` to `unblock`, `easy` and `almost` to `land`, `review` to `unblock` for an item with `authorType: "contributor"` and to `land` otherwise, `deferred` to `decide`, and `hardware` to `decide` with `needsHardware: true`. `gary put` writes the mapped form. The routine's rule hash changes with the rule files, so every open item is classified again once (routine skill, step 4b).
+
+### Due dates
+
+A due date comes only from GitHub, attached to the issue or PR: its milestone's `dueOn`, or a date field of one of its GitHub Projects (v2) items whose name is in the profile's `dueDateFields`, matched without regard to case. The earliest one wins. Text in the thread never sets one. The snapshot puts `dueAt` (`YYYY-MM-DD`) and `dueSource`, like `milestone 2026.12` or `project "Roadmap" · Target date`, into the entry and its `facts`. Reading project items needs the `read:project` scope. The snapshot checks it with one small query per run and skips project dates without it. `gary doctor` says so. Discussions have neither milestones nor project items.
+
+### Series
+
+A series is a group of related open items that together finish one feature. The snapshot finds it from GitHub facts only:
+
+- Stacked PRs: a PR whose base branch is the head branch of another open PR in the repository builds on it.
+- Sub-issues: an issue follows its parent issue.
+- A PR that closes an issue of such a series joins it, after that issue.
+
+Wording like "part 2 of 3" or "part of #1234" never makes a series on its own. Each item of a series carries `series: { id, title, position, size }`: the id and title of its first item, its own place, and the number of items. The order follows the links: a base before the PR stacked on it, a parent before its sub-issues, and the number where the links leave it open. `gary item` takes the series from the last snapshot.
 
 ## Who acts
 
@@ -566,7 +583,17 @@ The query adds `oid` to the last 20 commits and `statusEvents`, the last 20 time
 
 ## Day plan
 
-The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`almost`, `review`) and "When you have time" (`deferred`, `hardware`, snoozed items). A chip on each row names the section. The page shows at most the time budget (6 hours by default, set on the board), filled in group order by `priority`, using `effortMinutes`. An item that does not fit is skipped. Items handled today count as spent time, shown as "<spent> of <budget>". "Quick & Easy" shows at most 5 rows at a time. More rows appear only on click. Above the groups, a bar splits the time of today's plan by section, with a legend like "Review 2 h". A click on a segment or a legend entry scrolls to its group. The board is for planning the day: the default view shows no backlog, neither item counts nor the time of items outside the plan.
+The board shows three groups, filled from category, effort and due date:
+
+- "Quick & Easy": every item with `effortMinutes` of 2 or less, whatever its category, and every `act` item due within 2 days or overdue.
+- "Afterwards": the other `act`, `unblock` and `land` items, and `decide` items someone outside waits on (`waitingOn: "us"`). Without `waitingOn`, a `waitingDays` counts as waiting.
+- "When you have time": the other `decide` items, and snoozed items.
+
+Within a group the page ranks: work he asked for that finished comes first (an agent job of his like a take-over, a change, an address-review, a drive, a format or a fix, done, or an item whose `pushed.sha` equals its `reviewedSha`). Then items with a due date, the earliest first. Then items by outside contributors and reporters before his own and bot work. Within those the lowest `effortMinutes` comes first, then `priority`, then the newest `updatedAt`. Snoozed items come last. The items of one series sit next to each other in their group, in series order, at the place of the series' first unfinished item. An item that is handled or gone no longer counts, so the next item gives the series its place.
+
+A chip on each row names the category: Act, Unblock, Land or Decide, or Snoozed. Each category has a soft tint for the chip background and a strong ink for the chip text and border, the legend dots and the bar segments, in light and dark mode. The chip text has a contrast of at least 4.5:1 against its tint, and a dot at least 3:1 against the page. After the title the row shows quiet chips: the due date (`due Nov 24`, `due today`, `overdue 2 d`, in the Act color within 2 days and in the error color when overdue, with `dueSource` in the tooltip), `hardware` for `needsHardware`, and the place in a series (`series 2/3`, with the first item's title in the tooltip).
+
+The page shows at most the time budget (6 hours by default, set on the board), filled in group order and rank, using `effortMinutes`. An item that does not fit is skipped. Items handled today count as spent time, shown as "<spent> of <budget>". "Quick & Easy" shows at most 5 rows at a time. More rows appear only on click. Above the groups, a bar splits the time of today's plan by category, with a legend like "Unblock 2 h". It counts only rows in today's plan. A click on a segment or a legend entry scrolls to the first group with planned work of that category. The board is for planning the day: the default view shows no backlog, neither item counts nor the time of items outside the plan.
 
 An issue or discussion whose served `fix` has `parked: true` is in no plan group and adds no minutes to the plan. The fix PR's own item, the one with `fixFor`, carries the work. Below the groups a quiet line "Has a fix in progress: N" lists these items. It expands to one row per item with the fix chip and an "Open" button, like the line "Handled, waiting for the next run". A handled item is listed only there.
 
@@ -582,7 +609,7 @@ The card of an API edit shows each edit as a diff under its path, rendered like 
 
 `gary put` and `gary validate` check an item against these rules. A broken rule refuses the write and lists every problem.
 
-- The required fields are present and every enum holds one of its values: `kind`, `number`, `title`, `url`, `author`, `authorType`, `section`, `priority`, `effortMinutes`, `reviewDepth`, `state`, and where present `ci`, `mergeable`, `reviewDecision`, `classifiedBy`, thread verdicts and finding severities. `repo` is present and one of the instance's repos. The id matches the opaque id pattern. An item without routes needs no `priority`, because the routine ranks only items with routes.
+- The required fields are present and every enum holds one of its values: `kind`, `number`, `title`, `url`, `author`, `authorType`, `category`, `priority`, `effortMinutes`, `reviewDepth`, `state`, and where present `ci`, `mergeable`, `reviewDecision`, `classifiedBy`, `waitingOn`, thread verdicts and finding severities. An old `section` is mapped first, see "Categories", and an unknown one is refused. `needsHardware` is true or false. `dueAt` and `dueSource` come together, an ISO date and a string of at most 200 characters. `series` is `{ id, title, position, size }` with `size` at least 2 and `position` from 1 to `size`. `repo` is present and one of the instance's repos. The id matches the opaque id pattern. An item without routes needs no `priority`, because the routine ranks only items with routes.
 - 0 to 4 routes with the ids `r1` to `r4`, each id once. With routes, exactly one is `recommended`, and `hint` equals its title and has at most 60 characters. An item without routes needs no hint.
 - No routes while a thread is `unjudged`.
 - Every route's `as` is allowed for its type and is not `unavailable` in the current account mode.
@@ -591,7 +618,7 @@ The card of an API edit shows each edit as a diff under its path, rendered like 
 - On a PR whose snapshot entry lists `sensitiveFiles` and no `sensitiveOurs`: no `address_review`, `drive` or `format`, and `take_over` and `revise` only as an API edit. On a PR whose entry lists no sensitive files, no API edit. The same holds when the entry lists them with `sensitiveOurs`: no API edit, with the checkout routes under their usual rules. Without an entry neither is checked. An API edit passes the limits in "API edit" that need no GitHub read, has `as: "bot"`, and needs a 40-character `reviewedSha`. A `revise` as an API edit may have an empty `text`.
 - `pushed` is `{ action, sha, at }` on a PR. While `pushed.sha` equals `reviewedSha`, the agent's push made the current head, and the item needs at least one route that decides the PR: `merge`, `review`, `revise`, `address_review` or `close`. A `reply` that reports the push is not one. This holds while CI still runs on the new head: the route then carries a callout that says so.
 - An item with `blocked` has exactly one route, of type `open`. An `open` route has no text and no params, and is allowed without `blocked` too.
-- No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. A `move` to `issue` needs a discussion that the refresh did not find closed, the profile's `botCommands.escalate`, and an `issueKind` of `bug` or `enhancement` when it has one. `category` is a non-empty string and only on a discussion. Chores name a chore action.
+- No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. A `move` to `issue` needs a discussion that the refresh did not find closed, the profile's `botCommands.escalate`, and an `issueKind` of `bug` or `enhancement` when it has one. `discussionCategory` is a non-empty string and only on a discussion. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
 - `findings[].id`, when present, is 1 to 40 letters, digits, `-` or `_`, and no two findings of an item share one.
@@ -630,8 +657,13 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "labels": ["bug"],
   "isDraft": false,
   "ci": "passing",                 // passing | failing | pending | none   (PRs)
-  "section": "easy",
-  "priority": 2,                   // 1 = top of its section
+  "category": "land",              // act | unblock | land | decide, see Categories
+  "needsHardware": false,          // optional: only real hardware can settle it
+  "dueAt": "2026-11-24",           // optional, from the snapshot: the due date GitHub has for the item
+  "dueSource": "milestone 2026.12",   // with dueAt: where GitHub has it
+  "series": { "id": "pr-511", "title": "…", "position": 2, "size": 3 },   // optional, from the snapshot, see Series
+  "waitingOn": "us",               // optional, from facts.waitingOn: us | them | nobody
+  "priority": 2,                   // the agent's rank, used after the page's own keys, see Day plan
   "effortMinutes": 5,              // estimated maintainer time to read up and decide: 1, 2, 5, 10, 15, 30, 60 or 120
   "waitingDays": 12,               // optional: days an outside question or request has gone unanswered
   "updatedAt": "ISO",              // GitHub updatedAt
@@ -653,7 +685,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   ],                               // verdict: valid | optional | wrong | unjudged
   "reviewDecision": "pending",     // PRs, from the snapshot: approved | changes_requested | pending
   "isAnswered": false,             // discussions, from the snapshot
-  "category": "Feature Requests",  // discussions, from the snapshot: the category's name on GitHub
+  "discussionCategory": "Feature Requests",   // discussions, from the snapshot: the category's name on GitHub. Items written before categories carry it in `category`
   "solved": false,                 // issues and discussions: the agent thinks it is resolved
   "findings": [                    // optional, full reviews only
     { "id": "f1", "severity": "blocker", "text": "…", "ref": "src/…:123", "routeId": "r2" },   // blocker | major | minor | idea | question. id and routeId are optional. id is 1 to 40 letters, digits, "-" or "_", unique in the item
@@ -693,6 +725,8 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
 The server serves derived state on items, never stored:
 
 - `findings[].key` on every finding: the key his answers name it by, see "Answers to findings".
+- The item in the current form: `category` for an old `section`, and `discussionCategory`, from the snapshot entry when the item has none.
+- `dueAt`, `dueSource`, `series` and `waitingOn` from the snapshot entry when it has one. The snapshot wins over the stored item, because a milestone or a project date changes without a new comment. A due date or series the entry lacks is not served.
 - `working: { kind: "fix" | "review" | "push", action, since }` while an unexpired claim, a queued or claimed agent request, or a drive that waits for its review bot (`<state>/drive/<itemId>.json` in the stage `review`) exists. A drive file in the stage `watch` is no work. Push work wins over other kinds, then the oldest. `action` is the agent action, missing for a bare claim.
 - `fix` on issues and discussions: `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy: "routine" | "maintainer" | "other", since, parked }`. `parked` says that the fix keeps the item out of the day plan: true for `working`, and for `draft` and `open` until the other side writes. That is the case when the snapshot entry's `lastThemAt` is later than `since`, the time Gary recorded the fix PR. A fix PR without a recorded time has no `since`, so it parks the item until it is merged or closed. `merged` and `closed` never park. Sources, strongest first: a `fix` claim or a queued `start_fix` request (`working`, the maintainer when a request is queued, else the routine), Gary's records in `fixes.json`, the snapshot's `closingPrs` of an issue in any state, and for a discussion the PRs that name it by URL or as `#<number>`. The PR's own snapshot entry gives its live fields. A recorded PR that no source shows counts as open. With several PRs an open or draft one wins, then merged, then closed.
 
@@ -978,7 +1012,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 ```jsonc
 { "at": "ISO", "instance": "widgets", "instanceKind": "maintainer", "repo": "acme/widgets",
   "type": "chose_alternative", "itemId": "pr-512",
-  "item": { "kind": "pr", "authorType": "contributor", "section": "easy", "labels": ["bug"], "title": "…", "classifiedBy": "fast", "reviewDepth": "quick" } }
+  "item": { "kind": "pr", "authorType": "contributor", "category": "land", "labels": ["bug"], "title": "…", "classifiedBy": "fast", "reviewDepth": "quick" } }
 ```
 
 `item` holds the item's fields at the time of the entry. `classifiedBy` and `reviewDepth` are `null` when the item has none. `repo` is the item's repo, `null` for entries without an item, like `dismissed_proposal`. The server writes every entry through `logDecision(instance, type, itemId, item, fields)`.
@@ -1039,27 +1073,27 @@ A proposal with `kind: "setting"` changes one value in the instance's `config.js
   "title": "Use the faster model for obvious items",  // for `gary proposals` and the log. The board has its own words
   "stats": {
     "pairs": 130, "handedUp": 76, "answered": 54,    // handedUp + answered = pairs
-    "sameSection": 54, "sameRouteType": 51,          // of the answered pairs
-    "recent": { "answered": 40, "sameSection": 30, "needed": 38 },   // required for the reason "agreement"
+    "sameCategory": 54, "sameRouteType": 51,         // of the answered pairs
+    "recent": { "answered": 40, "sameCategory": 30, "needed": 38 },  // required for the reason "agreement"
     "overrides": { "fast": { "items": 20, "changed": 8 }, "standard": { "items": 25, "changed": 2 } }   // required for the reason "overrides"
   },
   "reasons": ["agreement", "overrides"],             // only with value "shadow", at least one
   "differences": [                                    // at most 50, one per item and pair of answers
     { "itemId": "issue-9413", "number": 9413, "url": "https://github.com/…/issues/9413", "runs": 3,
-      "fast": { "section": "deferred", "recommendedType": "follow_up" },
-      "standard": { "section": "deferred", "recommendedType": null } }
+      "fast": { "category": "decide", "recommendedType": "follow_up" },
+      "standard": { "category": "decide", "recommendedType": null } }
   ],
   "status": "open", "decidedAt": null, "reason": "",
   "note": ""                                          // set by the server when the config already had the value
 }
 ```
 
-A setting proposal has no `why`, `evidence`, `target`, `file`, `heading` or `text`, and any field not listed here is refused. `number` and `url` of a difference are optional and come from the board item. The proposal carries numbers only. The board builds every sentence of the card from them, so no model writes its wording.
+A setting proposal has no `why`, `evidence`, `target`, `file`, `heading` or `text`, and any field not listed here is refused. `number` and `url` of a difference are optional and come from the board item. A proposal written before categories carries `sameSection` and `section` in place of `sameCategory` and `category`. It is still accepted, and the board names the old sections in their old words. The proposal carries numbers only. The board builds every sentence of the card from them, so no model writes its wording.
 
 `gary shadow propose` is the only writer. It reads `fastTier` from the instance config:
 
-- `shadow`: it proposes `on` when the report has at least 40 pairs and the section agreement over the answered pairs is at least 95 percent.
-- `on`: it takes the report of the last 7 days and proposes `shadow` for one or both reasons. `agreement`: `recentSectionAgreement` has at least 20 pairs and a share below 95 percent. `recent.needed` is 95 percent of `recent.answered`, rounded up. `overrides`: both `decisions.fast` and `decisions.standard` have at least 20 items, and the `any` rate of `fast` is at least 0.1 above the one of `standard`. `overrides.<tier>.changed` is that tier's `any.count`.
+- `shadow`: it proposes `on` when the report has at least 40 pairs and the category agreement over the answered pairs is at least 95 percent.
+- `on`: it takes the report of the last 7 days and proposes `shadow` for one or both reasons. `agreement`: `recentCategoryAgreement` has at least 20 pairs and a share below 95 percent. `recent.needed` is 95 percent of `recent.answered`, rounded up. `overrides`: both `decisions.fast` and `decisions.standard` have at least 20 items, and the `any` rate of `fast` is at least 0.1 above the one of `standard`. `overrides.<tier>.changed` is that tier's `any.count`.
 - `off`: it writes nothing.
 
 It writes nothing while a fast tier proposal is open. Once one was accepted or dismissed, the report starts at its `decidedAt`, so the next proposal rests only on pairs recorded since. The id is `learn-<YYYY-MM-DD>-fast-tier-<value>`, with `-2`, `-3` and so on when that id is taken.
@@ -1098,7 +1132,9 @@ gary snapshot            # prints JSON work list to stdout, stages <state>/snaps
 gary snapshot --commit   # after a successful run: save the staged snapshot as the new baseline
 ```
 
-Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, whether the head branch is in the repository, the first 100 commits with author, committer and signature, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too.
+Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, whether the head branch is in the repository, the first 100 commits with author, committer and signature, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too. They also keep `dueAt`, `dueSource`, `series` and `waitingOn` for the board server. A changed `dueAt` or `series` makes an item `changed` in the work list, also without a new comment.
+
+The PR and issue queries add `milestone { title dueOn }`, PRs `closingIssuesReferences` (first 5) and issues `parent`. When the token may read GitHub Projects they add `projectItems` (first 5) with their date field values (first 20).
 
 Every entry of the full snapshot and of `gary item` carries `facts`, computed by code:
 
@@ -1111,6 +1147,8 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   "lastUsAt": "ISO", "lastThemAt": "ISO",   // or null
   "waitingOn": "us",               // us when they spoke last, them when we did, nobody without a person in the timeline
   "waitingDays": 3,                // whole days since the last event of us or them, 0 for nobody
+  "dueAt": "2026-11-24", "dueSource": "project \"Roadmap\" · Target date",   // issues and PRs with a due date on GitHub, see Due dates. Absent otherwise
+  "series": { "id": "pr-511", "title": "…", "position": 2, "size": 3 },   // issues and PRs in a series, see Series. Absent otherwise
   // PRs
   "ciGreen": true, "dependencyOnly": false, "touchesSensitive": false, "openThreadCount": 0,
   "sensitiveFiles": [".github/workflows/ci.yml"], "sensitiveFileCount": 1,   // PRs that touch the profile's sensitivePaths: the first 5 matching paths and their full count. Absent otherwise

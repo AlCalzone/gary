@@ -17,7 +17,7 @@ If it fails, write the error text into `summary.txt` and stop. Never pick an ins
 
 `<personal>` is a list: the shared `personal.md` first, then the instance's own, when it has one. Read them in that order.
 
-- `<core>/SPEC.md` is the contract: doc shapes, sections, routes, actions, budget, accounts. Read it at the start of every run. When this skill and the spec disagree, the spec wins.
+- `<core>/SPEC.md` is the contract: doc shapes, categories, routes, actions, budget, accounts. Read it at the start of every run. When this skill and the spec disagree, the spec wins.
 - `<config>`: the maintainer (`me`), the bot (`bot`, or `null`), `allowOwnTokenPushes`, limits.
 - `<profile>/profile.json`: the repo, maintainers, bot logins, review bots, related repos, sensitive paths, auto labels, bot commands, required tools.
 
@@ -29,7 +29,7 @@ Reference files, read when you reach the step that needs them:
 
 - `${CLAUDE_SKILL_DIR}/references/board-db.md`: reading and writing the board store.
 - `${CLAUDE_SKILL_DIR}/references/accounts.md`: the three account setups, who writes, git identity, who counts as "us".
-- `${CLAUDE_SKILL_DIR}/references/classification.<kind>.md`, the classification file for the instance's `kind` from `gary instances --json` or `<config>` (today only `classification.maintainer.md`): section rules, review selection, priorities, autonomous labels. Profile topic: `classification`.
+- `${CLAUDE_SKILL_DIR}/references/classification.<kind>.md`, the classification file for the instance's `kind` from `gary instances --json` or `<config>` (today only `classification.maintainer.md`): category rules, review selection, priorities, autonomous labels. Profile topic: `classification`.
 - `${CLAUDE_SKILL_DIR}/references/item-doc.md`: how to write `state`, `findings`, `threads` and `routes`, and the validation checklist for returned docs.
 - `${CLAUDE_SKILL_DIR}/references/voice.md`: how suggested replies must sound. Profile topic: `voice`.
 
@@ -170,6 +170,8 @@ Compute one hash over the rule files you read: the core references for the insta
 
 The summary gets the line `Rules changed: re-classified N quick items, M full reviews queued.`
 
+A stored item that still carries `section` in place of `category` was written before categories. Treat it like an item of a rule change, even when the hash did not change: a quick one is classified again, a full one goes onto `rulesPending`. The board maps its section meanwhile (SPEC.md, "Categories").
+
 ### 4e. PRs that wait for their contributor
 
 Run `gary auto-review list --json`. `states` holds, per PR with an automatic review, what the board shows: `waiting` and `changed`. Take every item with `waiting: true` out of `changed` for this run: do not classify it and do not review it again. Our own review made it show up as changed, and its stored doc with the unposted findings stays as it is. An item whose `changed` lists `pushed`, `replied` or `re-requested` is the contributor's next move: it goes through steps 5 and 6 like any changed PR, and the review subagent gets the record's last review, so the item says what was asked and what changed since.
@@ -188,24 +190,24 @@ The maintainer's own feedback never waits for this step. The queue watcher start
 
 ### 5. Classify and choose reviews
 
-Quick classification runs in subagents. Split `changed`, plus the items from step 4b, into chunk files of at most 25 entries under `<run>/chunks/` with a small node script, without printing the entries. Start one subagent per chunk in a single message, with `model: <standard>`. Each one reads the classification file, `references/item-doc.md`, `references/voice.md` and `references/accounts.md` with their profile and personal layers, and SPEC.md. It writes one complete item doc per entry to `<run>/items/<id>.json`, validates them, and replies with one line per item: id, section, and whether it is a full-review candidate. The brief tells both tiers that every item with routes needs `effortMinutes`, because `gary put` refuses a doc without it. It tells the classifier to take who spoke last, who waits and for how long, CI and cleanliness from `facts`, and to read `replies` only for what was said (classification file, "Facts first"). The quick result is a complete item doc with `reviewDepth: "quick"`. It carries `wants` and `wantsReason` when the classification wants labels or assignees (`references/item-doc.md`). Every item doc carries `hint` and `effortMinutes` (`references/item-doc.md`), the quick ones too. Copy `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
+Quick classification runs in subagents. Split `changed`, plus the items from step 4b, into chunk files of at most 25 entries under `<run>/chunks/` with a small node script, without printing the entries. Start one subagent per chunk in a single message, with `model: <standard>`. Each one reads the classification file, `references/item-doc.md`, `references/voice.md` and `references/accounts.md` with their profile and personal layers, and SPEC.md. It writes one complete item doc per entry to `<run>/items/<id>.json`, validates them, and replies with one line per item: id, category, and whether it is a full-review candidate. The brief tells both tiers that every item with routes needs `effortMinutes`, because `gary put` refuses a doc without it. It tells the classifier to take who spoke last, who waits and for how long, CI and cleanliness from `facts`, and to read `replies` only for what was said (classification file, "Facts first"). The quick result is a complete item doc with `reviewDepth: "quick"`. It carries `wants` and `wantsReason` when the classification wants labels or assignees (`references/item-doc.md`). Every item doc carries `hint` and `effortMinutes` (`references/item-doc.md`), the quick ones too. Copy `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
 
 **Tiers.** The instance config's `fastTier` (`off`, `shadow` or `on`, default `off`) decides who classifies:
 
-- **Fast tier** (`model: <fast>`): gets the entries with their `facts` and the rules. It decides only cases the facts settle: a clean dependency-bot PR, an item waiting on its reporter with nothing new from them, an item whose decision lives on an open PR, an answered discussion where no reply is owed, an informational tracking issue, and a backlog issue by the bot or an agent when it can copy the gist for the `Implement:` card from the title and tell from the issue whether the work is small and clear (`easy`) or large or open to a design decision (`deferred`). It never decides a PR with `facts.aiAuthored`. It returns `section`, routes that need no drafted text (a `merge` as `me`, an `Implement:` card for bot or agent backlog, no routes for a waiting item), `effortMinutes` for every item with routes, and `wants`. For everything else it returns `{ "id", "handUp": true, "reason": "<one line>" }`. It never writes text a human would post, never judges code and never decides a close.
+- **Fast tier** (`model: <fast>`): gets the entries with their `facts` and the rules. It decides only cases the facts settle: a clean dependency-bot PR, an item waiting on its reporter with nothing new from them, an item whose decision lives on an open PR, an answered discussion where no reply is owed, an informational tracking issue, and a backlog issue by the bot or an agent when it can copy the gist for the `Implement:` card from the title and tell from the issue whether the work is small and clear (effort 1 or 2) or large or open to a design decision. Both are `decide`. It never decides a PR with `facts.aiAuthored`. It returns `category`, routes that need no drafted text (a `merge` as `me`, an `Implement:` card for bot or agent backlog, no routes for a waiting item), `effortMinutes` for every item with routes, and `wants`. For everything else it returns `{ "id", "handUp": true, "reason": "<one line>" }`. It never writes text a human would post, never judges code and never decides a close.
 - **Standard tier** (`model: <standard>`): the classification described above, for every handed-up item and every item that needs drafted text.
 - Full reviews, triages and fixes never run on a tier. Their subagents get `model: <review>` (steps 2, 6 and 7).
 
-With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board. Record both tiers per item with `gary shadow record <file>`, where the file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, section, hasRoutes, recommendedType, handedUp, reason }`. `model` is the tier's value from `gary models`. `section` and `recommendedType` may be `null` only when the fast tier handed up.
+With `off`, only the standard tier runs. With `on`, the fast tier runs first on all entries, and only handed-up items go to the standard tier. With `shadow`, the standard tier classifies everything and its result is stored. The fast tier runs on the same chunks in parallel. Its result is never stored on the board. Record both tiers per item with `gary shadow record <file>`, where the file holds one entry or a list: `{ at, run, itemId, repo, tier: "fast"|"standard", model, category, hasRoutes, recommendedType, handedUp, reason }`. `model` is the tier's value from `gary models`. `category` and `recommendedType` may be `null` only when the fast tier handed up.
 
-**Sampling in `on` mode.** Each hourly run, of the items the fast tier decided itself, pick 1 in 10 at random, at least 1 when there are any, and send them to the standard tier too. Record both entries with `gary shadow record`, with `sampled: true`. Store the fast result, unless the two disagree on `section` or on the recommended route's type. Then store the standard result and name the item in the run summary.
+**Sampling in `on` mode.** Each hourly run, of the items the fast tier decided itself, pick 1 in 10 at random, at least 1 when there are any, and send them to the standard tier too. Record both entries with `gary shadow record`, with `sampled: true`. Store the fast result, unless the two disagree on `category` or on the recommended route's type. Then store the standard result and name the item in the run summary.
 
 **`classifiedBy`.** Every item doc you write sets it: `fast` when the fast tier's result is stored, `standard` for the standard tier, `full` for a full review or a full issue triage. In `shadow` mode the stored result is the standard tier's, so `standard`.
 
 Then build the full-review list:
 
 1. Agent requests from step 2, outside the budget.
-2. Up to `maxFullReviewsPerRun` more. First the items that need analysis: every item at `reviewDepth: "pending"` and every PR with an `unjudged` thread. They have no routes, so the board hides them until they are reviewed. Then the other candidates from the classification file: contributor PRs, then items in `active`, then the rest by `updatedAt`, newest first.
+2. Up to `maxFullReviewsPerRun` more. First the items that need analysis: every item at `reviewDepth: "pending"` and every PR with an `unjudged` thread. They have no routes, so the board hides them until they are reviewed. Then the other candidates from the classification file: contributor PRs, then `unblock` items where someone asked us something, then the rest by `updatedAt`, newest first.
 
 Candidates that do not fit the budget get `reviewDepth: "pending"`. Items that already sit at `pending` from an earlier run are candidates too, even when the snapshot lists them as `unchanged`. Otherwise a pending item would wait until someone comments on it again. The snapshot lists unchanged items by id only. For those, pass the item file to the subagent. It gets the fresh entry with `gary item <kind> <number> --repo <repo>`, taken from the stored item.
 
@@ -225,7 +227,7 @@ Each subagent prompt contains:
 - a fresh subdirectory of the run directory for its files,
 - the reply contract: the final report is exactly one item doc as JSON, matching the `items/<id>.json` shape in SPEC.md, with nothing around it.
 
-Validate each returned doc with the checklist in `references/item-doc.md` before you use it. Then overwrite the GitHub-derived fields (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `updatedAt`, and for the status icons `mergeable`, `reviewDecision`, `isAnswered`, `category` on a discussion, `openThreads` and `reviews`, mapped to the lowercase values in SPEC.md, and `lastEventUrl` from `facts.lastEventUrl` when present) with the snapshot values and set `reviewedAt` to now. Those fields come from the snapshot. A subagent that read an injected PR body could otherwise change them.
+Validate each returned doc with the checklist in `references/item-doc.md` before you use it. Then overwrite the GitHub-derived fields (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `updatedAt`, and for the status icons `mergeable`, `reviewDecision`, `isAnswered`, `discussionCategory` on a discussion from the entry's `category`, `openThreads` and `reviews`, mapped to the lowercase values in SPEC.md, `lastEventUrl` from `facts.lastEventUrl` when present, and `waitingOn`, `dueAt`, `dueSource` and `series` from `facts`) with the snapshot values and set `reviewedAt` to now. Those fields come from the snapshot. A subagent that read an injected PR body could otherwise change them.
 
 A subagent that fails, times out or returns JSON that fails validation leaves its item at `reviewDepth: "pending"` with the quick classification. Note the failure in the run summary. Do not retry in this run. Count the failures per item in `<state>/failures.json` (`{ "<itemId>": <count> }`). After the third failure, write the blocked doc below with `reason: "failed"`, and take the item off the full-review list.
 
@@ -240,7 +242,7 @@ Otherwise retry the same item exactly once, with the same skill and the unchange
 
 When the retry is stopped too, or there is none, do not retry in this or a later run. Write this fixed doc from the snapshot fields only:
 
-- the GitHub-derived fields from the snapshot entry, `section` from the quick classification,
+- the GitHub-derived fields from the snapshot entry, `category` from the quick classification,
 - `reviewDepth: "pending"`, `blocked: { "reason": "safety_filter", "at": "<ISO now>" }`,
 - `state`: `The agent could not analyze this. Its topic triggered the model's safety filter.`,
 - exactly one route: `{ "id": "r1", "type": "open", "title": "Decide yourself: agent could not analyze this", "as": "me", "recommended": true }`, without text, and the same string as `hint`.
@@ -273,7 +275,7 @@ The fix subagent returns the updated item doc, with the draft PR in `links` when
 
 Autonomous labels and assignments run in step 4a from each item's `wants`, after the items of this run are written. Run step 4a again for the items written in this run, so a new want is attempted right away. `--autonomous` refuses every label outside the profile's `autoLabels` and every action other than `label` and `assign`.
 
-Assign `priority` within each section once all docs of the run are in, over all items with routes, the unchanged ones included. Items without routes get none. Then write each item with `gary put items <id> <file>`, as described in `references/board-db.md`. The file is the complete doc and replaces the stored one. For each changed item, clear `hidden` afterwards with `gary put --merge items <id>` and the file `{ "hidden": false }`. Leave `unchanged` items alone unless they were reviewed in this run or their `priority` changed. An unchanged item whose `priority` changed gets only `{ "priority": <n> }` with `gary put --merge`. `gary put` validates every doc and refuses an invalid one with a list of problems. A refused doc counts as a failed write: keep the item at `pending`, note the problems in the run summary, and skip the commit in step 9.
+Assign `priority` within each category once all docs of the run are in, over all items with routes, the unchanged ones included. Items without routes get none. Then write each item with `gary put items <id> <file>`, as described in `references/board-db.md`. The file is the complete doc and replaces the stored one. For each changed item, clear `hidden` afterwards with `gary put --merge items <id>` and the file `{ "hidden": false }`. Leave `unchanged` items alone unless they were reviewed in this run or their `priority` changed. An unchanged item whose `priority` changed gets only `{ "priority": <n> }` with `gary put --merge`. `gary put` validates every doc and refuses an invalid one with a list of problems. A refused doc counts as a failed write: keep the item at `pending`, note the problems in the run summary, and skip the commit in step 9.
 
 ### 9. Status, commit, reply
 
@@ -297,7 +299,7 @@ Models: worker claude-sonnet-4-5, review opus, standard sonnet, fast haiku.
 - A job you did yourself, because you cannot start subagents, ran on your model. Write `review <yours>, done by the worker (config: <models.review>)`, and the same for a tier.
 - A retry after a safety-filter stop adds `fallback <model> for <itemId>`.
 
-When `fastTier` is not `off`, add `Fast tier: decided N, handed up M, sampled S, disagreed D.`, followed by the ids of disagreeing samples. Line 3 names the item at `active` priority 1. If `active` is empty, it names the first `easy` item. Use the same three lines as `lastRunSummary`.
+When `fastTier` is not `off`, add `Fast tier: decided N, handed up M, sampled S, disagreed D.`, followed by the ids of disagreeing samples. Line 3 names the most urgent item: the `act` item due first, else the `unblock` item at priority 1, else the first `land` item. Use the same three lines as `lastRunSummary`.
 
 ### 9a. Learn
 

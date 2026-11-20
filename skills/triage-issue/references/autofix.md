@@ -40,13 +40,13 @@ Write the test the way the profile describes. It asserts the correct behavior, t
 
 The test must fail, and for the reported reason. A failure from an import error, a typo or a timeout in the harness proves nothing. Read the failure output and check that the assertion about the bug is the one failing.
 
-If you cannot make the bug happen in a test, stop here. Remove the worktree and the branch. Return the item doc with the `follow_up` route removed and a `state` that says plainly why, like `No repro in a test: the parser handles the reported input correctly, so the problem likely happens in the caller.` Move the item to `hardware` when the reason is hardware or environment behavior.
+If you cannot make the bug happen in a test, stop here. Remove the worktree and the branch. Return the item doc with the `follow_up` route removed and a `state` that says plainly why, like `No repro in a test: the parser handles the reported input correctly, so the problem likely happens in the caller.` Set `needsHardware: true` and the category `decide` when the reason is hardware or environment behavior.
 
 ## 3. Fix
 
 Make the smallest change that fixes the cause, following the project's instruction files. Then run the checks the profile lists before pushing. At least: the repro test passes, and the tests near the change still pass.
 
-If the fix does not work within reason, keep the worktree for the maintainer. Do not push. Return the doc in `almost` with `state` naming the test file path in the worktree and what you tried. Remove the `follow_up` route, so the routine does not retry the same attempt every hour.
+If the fix does not work within reason, keep the worktree for the maintainer. Do not push. Return the doc as `decide` with effort 5 or more and `state` naming the test file path in the worktree and what you tried. Remove the `follow_up` route, so the routine does not retry the same attempt every hour.
 
 ## 4. Commit and push
 
@@ -101,7 +101,7 @@ It answers one JSON object.
 
 Return the issue's item doc as one JSON object and nothing else:
 
-- `section`: `review`, because the maintainer has to read the draft PR.
+- `category`: `land`, because reading the draft PR is his step that finishes it.
 - `state`: what the fix changes and that the test failed before and passes after. Example: `Draft fix #431 stops the retry loop on a 413. The repro test failed on the default branch and passes with the fix.`
 - `links`: `{ "label": "Draft fix", "url": "<PR URL>" }`.
 - A fix that changed a file under the profile's `sensitivePaths`: `state` names the path and says to read that part of the diff with care, like `Draft fix #431 changes .github/bot-scripts/escalate.cjs. Read that diff with care.` Say nothing about the PR counting as sensitive or about limited pushes. The PR is ours alone while only the bot and the maintainer commit to it. `facts.sensitiveOurs` on its entry shows that.
