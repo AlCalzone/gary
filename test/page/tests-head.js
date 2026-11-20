@@ -48,6 +48,9 @@ window.addEventListener("unhandledrejection", (e) => log.push("REJECT " + (e.rea
   ok("budget fill: " + ids("quick") + "|" + ids("after") + "|" + ids("later"), ids("quick").join(",") === "q1" && ids("after").join(",") === "a2" && ids("later").join(",") === "l1");
   ok("skipped item behind show more", !moreBtn("after").hidden && !moreBtn("later").hidden);
   ok("progress text " + spentText(), spentText() === "0 h of 6 h");
+  const legend = () => [...document.querySelectorAll("#plan .split-key")].map((k) => k.textContent).join(" | ");
+  ok("split lists all open work per section, planned or not: " + legend(), legend() === "Active 5 h | Almost 2 h | Review 45 min | Later 15 min | Hardware 30 min");
+  ok("split has one segment per section", document.querySelectorAll("#plan .split-seg").length === 5);
   ok("no backlog numbers in default view", !/240|stale|pending/i.test(document.querySelector("header").textContent));
 
   // Quick & Easy shows 5 rows and the next planned item moves up

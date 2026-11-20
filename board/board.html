@@ -383,7 +383,12 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
   background: var(--surface-2);
 }
 .plan { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 2px 2px 4px; }
-.plan .bar { margin-left: 0; flex: 1 1 160px; max-width: 320px; }
+.plan .split { flex: 1 1 100%; display: flex; gap: 2px; height: 8px; border-radius: 999px; overflow: hidden; background: var(--bar-track); }
+.split-seg { display: block; height: 100%; min-width: 3px; padding: 0; border: 0; cursor: pointer; }
+.split-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.split-key { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.split-key:hover { color: var(--fg); }
+.split-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .plan .sum { margin-left: 0; }
 .plan-done { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; color: var(--muted); font-size: 13px; }
 .bar {
@@ -1797,9 +1802,9 @@ window.addEventListener("focus", onFocusBack);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onFocusBack(); });
 
 function buildSections() {
-  planEls.fill = h("span", { class: "bar-fill" });
-  planEls.bar = h("span", { class: "bar", role: "progressbar", "aria-label": "Time spent today", "aria-valuemin": "0" }, planEls.fill);
-  planEls.spent = h("span", { class: "sum" });
+  planEls.split = h("div", { class: "split", role: "img" });
+  planEls.legend = h("div", { class: "split-legend" });
+  planEls.spent = h("span", { class: "sum", title: "Time spent today of the day's budget. The budget picks the rows each group shows." });
   planEls.doneText = h("span", { text: "The plan for today is done." });
   planEls.add = h("button", { class: "btn small", type: "button", text: "Add more" });
   planEls.add.addEventListener("click", () => {
@@ -1810,7 +1815,7 @@ function buildSections() {
     render();
   });
   planEls.done = h("span", { class: "plan-done" }, planEls.doneText, planEls.add);
-  planEls.el = h("div", { class: "plan", id: "plan" }, planEls.bar, planEls.spent, planEls.done);
+  planEls.el = h("div", { class: "plan", id: "plan" }, planEls.split, planEls.legend, planEls.spent, planEls.done);
 
   Object.assign(handledEls, quietLine("handled"));
   Object.assign(fixParkedEls, quietLine("fix-parked"));
@@ -2419,6 +2424,39 @@ function longestIncreasing(a) {
   return out;
 }
 
+// The estimated time of all open work per section, planned or not. Snoozed and finished rows are not open work.
+function renderSplit(byGroup) {
+  const totals = new Map(SECTIONS.map((sec) => [sec.id, { min: 0, n: 0 }]));
+  for (const rows of byGroup.values()) {
+    for (const r of rows) {
+      if (r.dim || finishedBy(r.id)) continue;
+      const t = totals.get(sectionOf(r.data));
+      t.min += planEffort(r.data);
+      t.n++;
+    }
+  }
+  const open = SECTIONS.filter((sec) => totals.get(sec.id).n > 0);
+  const jump = (sec) => () => document.getElementById("group-" + GROUPS.find((g) => g.sections.includes(sec.id)).id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const label = (sec) => sec.category + " " + formatEffort(totals.get(sec.id).min);
+  planEls.split.replaceChildren(...open.map((sec) => {
+    const t = totals.get(sec.id);
+    const seg = h("button", { class: "split-seg", type: "button", title: label(sec), "aria-label": label(sec) });
+    seg.style.flexGrow = String(t.min);
+    seg.style.background = "var(--cat-" + sec.id + ")";
+    seg.addEventListener("click", jump(sec));
+    return seg;
+  }));
+  planEls.split.setAttribute("aria-label", "Open work: " + (open.map(label).join(", ") || "none"));
+  planEls.split.hidden = open.length === 0;
+  planEls.legend.replaceChildren(...open.map((sec) => {
+    const dot = h("span", { class: "split-dot" });
+    dot.style.background = "var(--cat-" + sec.id + ")";
+    const key = h("button", { class: "split-key", type: "button" }, dot, label(sec));
+    key.addEventListener("click", jump(sec));
+    return key;
+  }));
+}
+
 function renderListNow() {
   const a = document.activeElement;
   const focused = a && a.classList && a.classList.contains("row") ? [a.dataset.id, a.dataset.slot] : null;
@@ -2475,12 +2513,8 @@ function renderListNow() {
     }
   }
 
-  const ratio = budget > 0 ? Math.min(1, spent / budget) : 0;
-  planEls.fill.style.width = (ratio * 100).toFixed(1) + "%";
-  planEls.bar.setAttribute("aria-valuemax", String(budget));
-  planEls.bar.setAttribute("aria-valuenow", String(Math.min(spent, budget)));
+  renderSplit(byGroup);
   planEls.spent.textContent = formatSpent(spent) + " of " + formatEffort(budget);
-  planEls.bar.setAttribute("aria-valuetext", planEls.spent.textContent);
   planEls.done.hidden = !(planned === 0 && (spent > 0 || skipped) && state.loaded.items);
 
   for (const g of GROUPS) {
