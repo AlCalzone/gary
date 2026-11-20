@@ -13,6 +13,8 @@
 // A PR with an automatic review gets lines with "action": "auto_review": "event": "offer-accepted" when its author
 // reacted positively to the format offer, "offer-reply" with "at" when he commented after it, and "re-requested"
 // with "at" when he re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
+// A reconcile pass the maintainer asked for prints { "instance", "id": "reconcile", "itemId": null, "action": "reconcile", "at" },
+// once per request.
 import { mkdirSync, watch } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,6 +26,7 @@ import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { busyOrigin, readOrigins } from "./lib/origins.mjs";
+import { readReconcile, reconcileDue } from "./lib/reconcile.mjs";
 import { dropWatch, pendingHold, pushWork, stageOf, unhandledFeedback, watchedPrs } from "./lib/watch.mjs";
 import { fetchItem, fetchOfferFacts } from "./snapshot.mjs";
 
@@ -215,6 +218,22 @@ export async function main(argv) {
 	let reviewsRunning = Promise.resolve();
 	const queueAutoReviews = () => (reviewsRunning = reviewsRunning.then(scanAutoReviews));
 
+	async function scanReconcile(instance) {
+		if (isInstancePaused(instance)) return;
+		let state;
+		try {
+			state = await readReconcile(instance);
+		} catch (e) {
+			console.error(`Reading the reconcile state of ${instance} failed: ${e.message}`);
+			return;
+		}
+		const d = reconcileDue(state);
+		const key = `${instance}/reconcile/${state.requestedAt}`;
+		if (!d.due || !d.reasons.includes("requested") || printed.has(key)) return;
+		printed.add(key);
+		process.stdout.write(JSON.stringify({ instance, id: "reconcile", itemId: null, action: "reconcile", at: state.requestedAt }) + "\n");
+	}
+
 	async function scan() {
 		const found = (await Promise.all(instances().map(scanOne))).flat();
 		found.sort((a, b) => String(a.doc.createdAt ?? "").localeCompare(String(b.doc.createdAt ?? "")) || a.key.localeCompare(b.key));
@@ -222,6 +241,7 @@ export async function main(argv) {
 			printed.add(key);
 			process.stdout.write(JSON.stringify({ instance, id, itemId: doc.itemId, action: doc.action }) + "\n");
 		}
+		for (const instance of instances()) await scanReconcile(instance);
 	}
 
 	// Serialize scans so a burst of events never prints a doc twice

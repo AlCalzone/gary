@@ -43,7 +43,7 @@ export async function proposalsMain(argv) {
 	const list = (await Promise.all(names.map((n) => readJson(join(dir, n))))).filter(Boolean).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 	if (argv.includes("--json")) return console.log(JSON.stringify(list, null, 2));
 	for (const p of list) {
-		console.log(`${String(p.status).padEnd(9)} ${p.id}  ${p.title}  -> ${p.kind === "setting" ? `${p.setting?.key}=${p.setting?.value}` : `${p.target}:${p.file}`}${p.status === "dismissed" && p.reason ? `  (${p.reason})` : ""}`);
+		console.log(`${String(p.status).padEnd(9)} ${p.id}  ${p.title}  -> ${p.kind === "setting" ? `${p.setting?.key}=${p.setting?.value}` : `${p.target}:${p.file}${p.kind === "edit" ? ` (${p.after === "" ? "delete" : "edit"}${p.group ? `, group ${p.group}` : ""})` : ""}`}${p.status === "dismissed" && p.reason ? `  (${p.reason})` : ""}`);
 	}
 	console.log(`${list.length} proposals`);
 }

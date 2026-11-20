@@ -12,6 +12,7 @@ const SUITES = [
 	["node", "server-shim.test.mjs"],
 	["node", "accounts.test.mjs"],
 	["node", "learning.test.mjs"],
+	["node", "reconcile.test.mjs"],
 	["node", "answers.test.mjs"],
 	["node", "settings.test.mjs"],
 	["node", "models.test.mjs"],

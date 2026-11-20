@@ -17,6 +17,13 @@ const PROFILE_FILE = /^(rules|templates)\/[A-Za-z0-9._-]+\.md$/;
 export const PROPOSAL_SETTINGS = { fastTier: ["on", "shadow"] };
 const SETTING_FIELDS = ["id", "createdAt", "kind", "setting", "title", "stats", "differences", "reasons", "status", "decidedAt", "reason", "note"];
 const SETTING_REASONS = ["agreement", "overrides"];
+const EDIT_FIELDS = ["id", "createdAt", "kind", "title", "why", "evidence", "finding", "target", "file", "before", "after", "group", "status", "decidedAt", "reason"];
+// What a reconcile pass found in a rule
+export const EDIT_FINDINGS = ["duplicate", "contradiction", "stale", "overruled", "vague"];
+// What an edit proposal rests on: rule text, a name that no longer exists, log entries, or a core rule
+const EDIT_EVIDENCE = ["text", "name", "log", "core"];
+const EDIT_EVIDENCE_FIELDS = ["type", "gist", "file", "quote", "at", "itemId", "entry", "count"];
+export const STALE_EDIT = "The file changed since this proposal. Run reconcile again.";
 const MAX_DIFFERENCES = 50;
 
 const stateOf = (instance = instanceName()) => join(instanceDir(instance), "state");
@@ -94,6 +101,7 @@ const isPlainObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const isGithubUrl = (v) => typeof v === "string" && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(issues|pull|discussions)\/\d+$/.test(v);
 
 export const isSettingProposal = (p) => p?.kind === "setting";
+export const isEditProposal = (p) => p?.kind === "edit";
 
 // Proposals written before categories name a `section` in place of the `category`
 function answerProblems(a, at) {
@@ -177,7 +185,42 @@ function settingProblems(p) {
 	return errors;
 }
 
-/** Returns the problems of one proposal doc. A doc with `kind: "setting"` is a setting proposal, one without `kind` a rule proposal. */
+function targetProblems(p) {
+	if (p.target === "profile") return PROFILE_FILE.test(p.file ?? "") ? [] : ["file must be rules/<topic>.md or templates/<name>.md for the profile"];
+	if (p.target === "personal") return p.file === "personal.md" ? [] : ["file must be personal.md for target personal"];
+	return ['target must be "profile" or "personal"'];
+}
+
+function editProblems(p) {
+	const errors = [];
+	for (const key of Object.keys(p)) if (!EDIT_FIELDS.includes(key)) errors.push(`an edit proposal has no field "${key}"`);
+	if (!isString(p.why)) errors.push("why is required");
+	if (!EDIT_FINDINGS.includes(p.finding)) errors.push(`finding must be one of ${EDIT_FINDINGS.join(", ")}`);
+	if (!Array.isArray(p.evidence) || !p.evidence.length) errors.push("evidence must list at least one { type, gist }");
+	else {
+		p.evidence.forEach((e, i) => {
+			const at = `evidence[${i}]`;
+			if (!isPlainObject(e)) return errors.push(`${at} must be an object`);
+			for (const key of Object.keys(e)) if (!EDIT_EVIDENCE_FIELDS.includes(key)) errors.push(`${at} has the unknown field "${key}"`);
+			if (!EDIT_EVIDENCE.includes(e.type)) errors.push(`${at}.type must be one of ${EDIT_EVIDENCE.join(", ")}`);
+			if (!isString(e.gist)) errors.push(`${at}.gist is required`);
+			for (const key of ["file", "quote", "itemId", "entry"]) if (e[key] !== undefined && typeof e[key] !== "string") errors.push(`${at}.${key} must be a string`);
+			if (e.at !== undefined && !isIso(e.at)) errors.push(`${at}.at must be an ISO time`);
+			if (e.count !== undefined && !isCount(e.count)) errors.push(`${at}.count must be a whole number`);
+		});
+	}
+	errors.push(...targetProblems(p));
+	if (!isString(p.before) || p.before.length > MAX_RULE) errors.push(`before is required, at most ${MAX_RULE} characters`);
+	if (typeof p.after !== "string" || p.after.length > MAX_RULE) errors.push(`after must be a string of at most ${MAX_RULE} characters, empty to delete`);
+	else if (p.after === p.before) errors.push("after must differ from before");
+	if (p.group !== undefined && p.group !== null && !(typeof p.group === "string" && PROPOSAL_ID.test(p.group))) errors.push("group must match ^[a-z0-9-]{1,80}$");
+	return errors;
+}
+
+/**
+ * Returns the problems of one proposal doc. A doc with `kind: "setting"` is a setting proposal, one with `kind: "edit"`
+ * an edit proposal, one without `kind` a rule proposal.
+ */
 export function validateProposal(id, p) {
 	const errors = [];
 	if (!p || typeof p !== "object" || Array.isArray(p)) return ["the proposal must be a JSON object"];
@@ -185,18 +228,15 @@ export function validateProposal(id, p) {
 	if (p.id !== id) errors.push(`id "${p.id}" differs from the file name ${id}`);
 	if (!isIso(p.createdAt)) errors.push("createdAt must be an ISO time");
 	if (!isString(p.title) || p.title.length > MAX_TITLE) errors.push(`title is required, at most ${MAX_TITLE} characters`);
-	if (p.kind !== undefined && p.kind !== "setting") errors.push('kind must be "setting", or absent for a rule proposal');
+	if (p.kind !== undefined && p.kind !== "setting" && p.kind !== "edit") errors.push('kind must be "setting" or "edit", or absent for a rule proposal');
 	if (isSettingProposal(p)) errors.push(...settingProblems(p));
+	else if (isEditProposal(p)) errors.push(...editProblems(p));
 	else {
 		if (!isString(p.why)) errors.push("why is required");
 		if (!Array.isArray(p.evidence) || !p.evidence.every((e) => e && typeof e === "object" && isString(e.itemId) && isString(e.type))) {
 			errors.push("evidence must be a list of { at, itemId, type, gist }");
 		}
-		if (p.target === "profile") {
-			if (!PROFILE_FILE.test(p.file ?? "")) errors.push("file must be rules/<topic>.md or templates/<name>.md for the profile");
-		} else if (p.target === "personal") {
-			if (p.file !== "personal.md") errors.push("file must be personal.md for target personal");
-		} else errors.push('target must be "profile" or "personal"');
+		errors.push(...targetProblems(p));
 		if (p.heading !== undefined && p.heading !== null && typeof p.heading !== "string") errors.push("heading must be a string or null");
 		if (!isString(p.text) || p.text.length > MAX_RULE) errors.push(`text is required, at most ${MAX_RULE} characters`);
 	}
@@ -275,17 +315,44 @@ export function insertRule(content, heading, text) {
 	return before + "\n\n" + block + (after ? "\n" + after : "");
 }
 
+// A symlink at the target itself is refused, so a write never lands outside the allowed files
+async function targetFile(p, instance) {
+	const { file, repo } = await proposalTarget(p, instance);
+	let link = false;
+	try {
+		link = (await lstat(file)).isSymbolicLink();
+	} catch (e) {
+		if (e.code !== "ENOENT") throw e;
+	}
+	if (link) throw new Error(`${p.file} is a symlink`);
+	return { file, repo };
+}
+
+/** Commits `files` in the git repository at `repo`, without hooks and without pushing. Returns `{ committed, warning }`. */
+async function commitFiles(repo, files, message) {
+	let top;
+	try {
+		top = await realpath((await run("git", ["-C", repo, "rev-parse", "--show-toplevel"])).stdout.trim());
+	} catch {
+		return { committed: false };
+	}
+	const paths = files.map((f) => relative(top, f)).filter((p) => !p.startsWith("..") && !p.startsWith(sep));
+	if (!paths.length) return { committed: false };
+	try {
+		await run("git", ["-C", top, "-c", "core.hooksPath=/dev/null", "add", "--", ...paths]);
+		await run("git", ["-C", top, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", message, "--", ...paths]);
+		return { committed: true };
+	} catch (e) {
+		return { committed: false, warning: `The file is written, but the commit failed: ${(e.stderr || e.message).trim().slice(0, 300)}` };
+	}
+}
+
 /**
  * Appends an accepted proposal's text to its target file, and commits that one file when the profile is a git repo.
  * Returns `{ file, committed, warning }`.
  */
 export async function applyProposal(p, text, instance = instanceName()) {
-	const { file, repo } = await proposalTarget(p, instance);
-	try {
-		if ((await lstat(file)).isSymbolicLink()) throw new Error(`${p.file} is a symlink`);
-	} catch (e) {
-		if (e.code !== "ENOENT") throw e;
-	}
+	const { file, repo } = await targetFile(p, instance);
 	let content = "";
 	try {
 		content = await readFile(file, "utf8");
@@ -293,23 +360,81 @@ export async function applyProposal(p, text, instance = instanceName()) {
 		if (e.code !== "ENOENT") throw e;
 	}
 	await writeAtomic(file, insertRule(content, p.heading, text), { raw: true });
-
 	if (!repo) return { file, committed: false };
-	let top;
-	try {
-		top = (await run("git", ["-C", repo, "rev-parse", "--show-toplevel"])).stdout.trim();
-	} catch {
-		return { file, committed: false };
+	const { committed, warning } = await commitFiles(repo, [file], `Add rule: ${p.title}`);
+	return { file, committed, ...(warning && { warning: warning.replace("The file is written", "The rule is written") }) };
+}
+
+/** Counts the places `block` starts in `content`, up to 2. */
+export function occurrences(content, block) {
+	const first = content.indexOf(block);
+	if (first < 0) return 0;
+	return content.indexOf(block, first + 1) < 0 ? 1 : 2;
+}
+
+/** Replaces the one `before` block in `content` with `after`. An empty `after` deletes the block and the blank lines it leaves. */
+export function replaceBlock(content, before, after) {
+	const i = content.indexOf(before);
+	const left = content.slice(0, i);
+	const right = content.slice(i + before.length);
+	if (after !== "") return left + after + right;
+	const trailing = /\n*$/.exec(left)[0].length;
+	const leading = /^\n*/.exec(right)[0].length;
+	const body = right.slice(leading);
+	if (!left.slice(0, left.length - trailing)) return body;
+	const breaks = body ? Math.min(Math.max(trailing, leading), 2) : Math.min(Math.max(trailing, leading), 1);
+	return left.slice(0, left.length - trailing) + "\n".repeat(breaks) + body;
+}
+
+/**
+ * Applies edit proposals together: every `before` must occur exactly once at the moment of the change, also after
+ * the earlier edits of the same file. Any miss changes nothing and throws STALE_EDIT. A failed write puts the files
+ * written so far back. Then it commits the changed profile files in one commit. Returns `{ files, committed, warning }`.
+ */
+export async function applyEdits(list, instance = instanceName()) {
+	if (!list.length) throw new Error("No edit proposal to apply.");
+	for (const p of list) {
+		const problems = validateProposal(p?.id, p);
+		if (!isEditProposal(p) || problems.length) throw new Error(`The proposal ${p?.id} is invalid and was not applied: ${(problems.length ? problems : ["it is no edit proposal"]).join(", ")}.`);
 	}
-	const path = relative(await realpath(top), file);
-	if (path.startsWith("..") || path.startsWith(sep)) return { file, committed: false };
+	const files = new Map();
+	for (const p of list) {
+		const { file, repo } = await targetFile(p, instance);
+		let f = files.get(file);
+		if (!f) {
+			let original;
+			try {
+				original = await readFile(file, "utf8");
+			} catch (e) {
+				if (e.code === "ENOENT") throw new Error(STALE_EDIT);
+				throw e;
+			}
+			f = { repo, original, content: original };
+			files.set(file, f);
+		}
+		if (occurrences(f.content, p.before) !== 1) throw new Error(STALE_EDIT);
+		f.content = replaceBlock(f.content, p.before, p.after);
+	}
+	const written = [];
 	try {
-		await run("git", ["-C", top, "-c", "core.hooksPath=/dev/null", "add", "--", path]);
-		await run("git", ["-C", top, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", `Add rule: ${p.title}`, "--", path]);
-		return { file, committed: true };
+		for (const [file, f] of files) {
+			await writeAtomic(file, f.content, { raw: true });
+			written.push(file);
+		}
 	} catch (e) {
-		return { file, committed: false, warning: `The rule is written, but the commit failed: ${(e.stderr || e.message).trim().slice(0, 300)}` };
+		for (const file of written) await writeAtomic(file, files.get(file).original, { raw: true }).catch(() => {});
+		throw e;
 	}
+	const byRepo = new Map();
+	for (const [file, f] of files) if (f.repo) byRepo.set(f.repo, [...(byRepo.get(f.repo) ?? []), file]);
+	let committed = false;
+	let warning;
+	for (const [repo, paths] of byRepo) {
+		const r = await commitFiles(repo, paths, `Reconcile rules: ${list[0].title}`);
+		committed ||= r.committed;
+		warning ??= r.warning;
+	}
+	return { files: [...files.keys()], committed, ...(warning && { warning }) };
 }
 
 /** Validates and writes the learn cursor of an instance. */

@@ -12,7 +12,8 @@ import { parseArgs } from "node:util";
 import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { normalizeCategory } from "../scripts/lib/categories.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
-import { applyProposal, applySetting, cut, isSettingProposal, logDecision } from "../scripts/lib/learning.mjs";
+import { applyEdits, applyProposal, applySetting, cut, isEditProposal, isSettingProposal, logDecision } from "../scripts/lib/learning.mjs";
+import { requestReconcile } from "../scripts/lib/reconcile.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
@@ -1339,6 +1340,7 @@ export async function startBoardServer({
 		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
 		if (body.action === "dismiss_route") return handleDismissRoute(name, body);
 		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(name, body);
+		if (body.action === "request_reconcile") return handleReconcileRequest(name);
 		const { error: settingsError } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
 		if (body.action === "reanalyze") return handleReanalyze(name, body);
@@ -1984,7 +1986,54 @@ export async function startBoardServer({
 	}
 
 	// What a decision log entry says about the proposal it is about
-	const proposalRef = (p) => (isSettingProposal(p) ? { id: p.id, title: p.title, kind: "setting", setting: p.setting } : { id: p.id, title: p.title, target: p.target, file: p.file });
+	const proposalRef = (p) => {
+		if (isSettingProposal(p)) return { id: p.id, title: p.title, kind: "setting", setting: p.setting };
+		if (isEditProposal(p)) return { id: p.id, title: p.title, kind: "edit", finding: p.finding, target: p.target, file: p.file, group: p.group ?? null };
+		return { id: p.id, title: p.title, target: p.target, file: p.file };
+	};
+
+	// The open edit proposals decided together with `p`: its group, sorted by id, or `p` alone
+	async function editGroup(name, p) {
+		if (!p.group) return [p];
+		const docs = (await readCollection(name, "proposals")).map((d) => ({ ...d.data, id: d.id }));
+		return docs.filter((d) => isEditProposal(d) && d.group === p.group && d.status === "open").sort((a, b) => a.id.localeCompare(b.id));
+	}
+
+	// An edit proposal and the rest of its group are accepted or dismissed together, under one lock for all edit proposals
+	async function handleEdit(name, body, proposalId) {
+		const dir = join(served.get(name).board, "proposals");
+		const fileOf = (id) => join(dir, id + ".json");
+		const reply = await withLock(docLocks, dir, async () => {
+			const p = await readJson(fileOf(proposalId));
+			if (!p) return [200, { ok: false, result: "This proposal no longer exists. Reload the board." }];
+			if (p.status !== "open") return [409, { ok: false, result: `This proposal is already ${p.status}.` }];
+			const members = await editGroup(name, p);
+			const decidedAt = new Date().toISOString();
+			const ids = members.map((m) => m.id);
+			if (body.action === "dismiss_proposal") {
+				const reason = (body.text ?? "").trim();
+				for (const m of members) await writeAtomic(fileOf(m.id), { ...m, status: "dismissed", decidedAt, reason });
+				for (const m of members) await decide(name, "dismissed_proposal", null, null, { proposal: proposalRef(m), reason });
+				return [200, { ok: true, result: members.length > 1 ? `${members.length} proposals dismissed.` : "Proposal dismissed.", ids }];
+			}
+			let applied;
+			try {
+				applied = await applyEdits(members, name);
+			} catch (e) {
+				return [200, { ok: false, result: e.message }];
+			}
+			for (const m of members) await writeAtomic(fileOf(m.id), { ...m, status: "accepted", decidedAt });
+			return [200, { ok: true, result: applied.files.join(", "), files: applied.files, committed: applied.committed, ids, ...(applied.warning && { warning: applied.warning }) }];
+		});
+		schedulePush(name, "proposals");
+		return reply;
+	}
+
+	// The maintainer asks for a reconcile pass. The queue watcher prints it and the master starts the pass
+	async function handleReconcileRequest(name) {
+		const at = await requestReconcile(name);
+		return [200, { ok: true, result: "Reconcile requested.", requestedAt: at }];
+	}
 
 	async function acceptSetting(name, file, p, decidedAt) {
 		const configFile = join(instanceDir(name), "config.json");
@@ -2012,6 +2061,7 @@ export async function startBoardServer({
 			return [400, { ok: false, result: `text must be a string of at most ${max} characters.` }];
 		}
 		const file = join(served.get(name).board, "proposals", proposalId + ".json");
+		if (isEditProposal(await readJson(file))) return handleEdit(name, body, proposalId);
 		const reply = await withLock(docLocks, file, async () => {
 			const p = await readJson(file);
 			if (!p) return [200, { ok: false, result: "This proposal no longer exists. Reload the board." }];

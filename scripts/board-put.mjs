@@ -13,7 +13,7 @@ import { ID_PATTERN, applyWrite, docPath, mergeFields, readJson, replaceFields, 
 import { instanceName, loadInstance, loadProfile, rootConfig } from "./lib/config.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { accountMode } from "./lib/gh.mjs";
-import { validateProposal, writeLearn } from "./lib/learning.mjs";
+import { isEditProposal, occurrences, proposalTarget, validateProposal, writeLearn } from "./lib/learning.mjs";
 import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
 import { fixPrNumbers, fixStateOf, loadFixSources } from "./lib/fixes.mjs";
 
@@ -79,6 +79,24 @@ function parse(argv, merge) {
 	fail("Usage: gary put [--merge] [--no-validate] items <id> <json file> | items <id> --delete | meta <json file> | proposals <id> <json file> | learn <json file>");
 }
 
+// An edit proposal must match its file now, so a pass learns of a wrong `before` at once
+async function editTargetProblems(p, instance) {
+	let file;
+	try {
+		({ file } = await proposalTarget(p, instance));
+	} catch (e) {
+		return [e.message];
+	}
+	let content;
+	try {
+		content = readFileSync(file, "utf8");
+	} catch {
+		return [`${p.file} does not exist`];
+	}
+	const n = occurrences(content, p.before);
+	return n === 1 ? [] : [`before occurs ${n === 0 ? "nowhere" : "more than once"} in ${p.file}. It must be one block that occurs exactly once`];
+}
+
 /** Sends one board write through the board server, or applies it directly when no server answers. Returns `[status, body]`. */
 export async function sendWrite(instance, write) {
 	const { port } = rootConfig();
@@ -125,6 +143,7 @@ export async function main(argv) {
 	if (!docPath(instance, write.path)) fail(`Invalid document path ${write.path}`);
 	if (write.path.startsWith("proposals/")) {
 		const problems = validateProposal(write.path.slice("proposals/".length), write.data);
+		if (!problems.length && isEditProposal(write.data)) problems.push(...(await editTargetProblems(write.data, instance)));
 		if (problems.length) fail("The proposal is invalid, nothing was written", problems);
 	}
 	if (write.path === "meta") {
