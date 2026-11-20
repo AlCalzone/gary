@@ -81,14 +81,21 @@ async function round(argv) {
 	if (!writeLogin()) throw new Refused("No account may push: the instance has no bot and allowOwnTokenPushes is off.");
 	if ((await pushWork()).has(c.itemId)) throw new Refused(`The agent already works on PR #${c.number}. Its round reads this feedback too.`);
 	if (c.entry && touchesSensitive(c.entry) && !sensitiveOurs(c.entry)) throw new Refused(`PR #${c.number} changes sensitive files and is not ours alone, so no agent works in its checkout.`);
-	const live = c.why === "bot" ? await busyOrigin((await readOrigins())[c.itemId]) : null;
-	if (live) throw new Refused(`PR #${c.number} comes from the Claude Code session ${live.sessionId} in ${shortDir(live.cwd)}. That session was active at ${live.lastActiveAt} and may still push to the PR. No round starts until it has been quiet for 30 minutes.`);
 	const at = new Date(out.at).toISOString();
 	const unhandled = unhandledFeedback(out.by, { drive: c.drive, feedback: { ...feedbackOf(c), [out.by === "me" ? "lastMeAt" : "lastOthersAt"]: at }, item: c.item, record: c.record });
 	if (!unhandled) throw new Refused(`A round already handled the feedback on PR #${c.number} up to ${at}.`);
+	const live = c.why === "bot" ? await busyOrigin((await readOrigins())[c.itemId]) : null;
+	if (live) {
+		// Record the refused feedback, so the watcher prints it again once the session has been quiet for 30 minutes
+		if (out.by === "me" && !dryRun) {
+			await mkdir(driveDir(), { recursive: true });
+			await writeDrive(c.itemId, { ...(c.drive ?? baseDrive(c)), held: { feedbackAt: at, by: "me", session: live.sessionId, since: new Date().toISOString() } });
+		}
+		throw new Refused(`PR #${c.number} comes from the Claude Code session ${live.sessionId} in ${shortDir(live.cwd)}. That session was active at ${live.lastActiveAt} and may still push to the PR. No round starts until it has been quiet for 30 minutes.`);
+	}
 
 	const now = new Date().toISOString();
-	const drive = c.drive ?? baseDrive(c);
+	const { held: _, ...drive } = c.drive ?? baseDrive(c);
 	const params = { by: drive.by ?? (c.why === "fix" ? "fix" : "watch"), ...(c.fixFor && { fixFor: c.fixFor }), trigger: WATCH_TRIGGERS[out.by], at, maxRounds: c.cap };
 	const action = { itemId: c.itemId, action: "drive", params, text: "", status: "queued", via: "queue", createdAt: now, finishedAt: null, result: out.run ? `claimed by run ${out.run}` : "" };
 	const id = `${c.itemId}-${Date.now()}-${randomBytes(2).toString("hex")}`;

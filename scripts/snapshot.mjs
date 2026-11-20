@@ -404,7 +404,7 @@ function baselineEntry(item) {
 		// `gary pr-origin` searches the session transcripts for the PR's branch and reads only those changed since its creation
 		...(item.kind === "pr" && { createdAt: item.createdAt, headRef: item.headRef }),
 		// The watch on our PRs compares these with the feedback a round already handled
-		...(item.kind === "pr" && { feedback: Object.fromEntries(["lastMeAt", "lastOthersAt", "ourLastCommitAt", "reviewBotReviews"].filter((k) => item.facts?.[k] != null).map((k) => [k, item.facts[k]])) }),
+		...(item.kind === "pr" && { feedback: Object.fromEntries(["lastMeAt", "lastMeKind", "lastOthersAt", "ourLastCommitAt", "reviewBotReviews"].filter((k) => item.facts?.[k] != null).map((k) => [k, item.facts[k]])) }),
 		// The validator and the board server decide from these which routes may push to the PR
 		...(item.sensitiveFiles && { sensitiveFiles: item.sensitiveFiles, ...(item.facts?.sensitiveOurs && { sensitiveOurs: true }) }),
 		// The board shows a discussion's category also on items written before the routine copied it

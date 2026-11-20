@@ -8,7 +8,8 @@
 // A watched PR, a PR by the bot or a taken-over PR, gets a line with "action": "drive", "event": "maintainer-feedback",
 // "pr" and "at" when the maintainer reviewed or commented after our last push and no round handled it yet. The
 // watcher reads at most 20 such PRs every 3 minutes, the first time right at its start. A bot PR whose origin session
-// in <state>/origins.json was active in the last 30 minutes gets no such line until the session is quiet.
+// in <state>/origins.json was active in the last 30 minutes gets no such line until the session is quiet. Feedback that
+// `gary pr-watch round` refused for that session prints once more after the session has been quiet for 30 minutes.
 // A PR with an automatic review gets lines with "action": "auto_review": "event": "offer-accepted" when its author
 // reacted positively to the format offer, "offer-reply" with "at" when he commented after it, and "re-requested"
 // with "at" when he re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
@@ -23,7 +24,7 @@ import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { busyOrigin, readOrigins } from "./lib/origins.mjs";
-import { dropWatch, pushWork, stageOf, unhandledFeedback, watchedPrs } from "./lib/watch.mjs";
+import { dropWatch, pendingHold, pushWork, stageOf, unhandledFeedback, watchedPrs } from "./lib/watch.mjs";
 import { fetchItem, fetchOfferFacts } from "./snapshot.mjs";
 
 const RESCAN_MS = 5000;
@@ -167,8 +168,12 @@ export async function main(argv) {
 				const at = unhandledFeedback("me", { drive: p.drive, feedback: entry.facts, item: p.item, record: p.record });
 				if (!at || !me) continue;
 				const key = `${instance}/${p.itemId}/${at}`;
-				if (feedbackEvents.has(key)) continue;
+				// A round refused this feedback while the origin session was active. Print it once more per refusal
+				const held = pendingHold({ drive: p.drive, item: p.item, record: p.record });
+				const retry = held && Date.parse(held.feedbackAt) === Date.parse(at) ? `${key}/held/${held.since}` : null;
+				if (feedbackEvents.has(key) && (!retry || feedbackEvents.has(retry))) continue;
 				feedbackEvents.add(key);
+				if (retry) feedbackEvents.add(retry);
 				process.stdout.write(JSON.stringify({ instance, id: `watch-${p.itemId}`, itemId: p.itemId, action: "drive", event: "maintainer-feedback", pr: p.number, at }) + "\n");
 			}
 		}

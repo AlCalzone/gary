@@ -25,7 +25,7 @@ export function stageOf(drive) {
 	return typeof drive.reviewRequestedAt === "string" ? "review" : "watch";
 }
 
-const latest = (...times) => times.filter((t) => Number.isFinite(Date.parse(t ?? ""))).sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? null;
+export const latest = (...times) => times.filter((t) => Number.isFinite(Date.parse(t ?? ""))).sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? null;
 
 /**
  * The time up to which the feedback of `side` counts as handled: our last push, or the feedback the last round read,
@@ -42,6 +42,16 @@ export function unhandledFeedback(side, sources) {
 	if (!Number.isFinite(Date.parse(at ?? ""))) return null;
 	const until = handledUntil(side, sources);
 	return until && Date.parse(at) <= Date.parse(until) ? null : at;
+}
+
+/**
+ * The drive file's `held` record while the feedback it names is still unhandled, or null. `gary pr-watch round` writes
+ * `held: { feedbackAt, by: "me", session, since }` when it refused his feedback because the origin session was active.
+ */
+export function pendingHold(sources) {
+	const held = sources.drive?.held;
+	if (held?.by !== "me" || !Number.isFinite(Date.parse(held.feedbackAt ?? ""))) return null;
+	return unhandledFeedback("me", { ...sources, feedback: { lastMeAt: held.feedbackAt } }) ? held : null;
 }
 
 /** How many review bot rounds the PR had: the requests a drive recorded, or the bot's reviews on GitHub when more. */
@@ -145,7 +155,7 @@ function seenAfter(seenAt, marks) {
  * review request, no action doc. `sha` is the head after the round. A head other than `lastPushedSha` is our push.
  */
 export function enterWatch(drive, { sha, seen = {}, now = new Date().toISOString() }) {
-	const { reviewRequestedAt, actionId, ...rest } = drive;
+	const { reviewRequestedAt, actionId, held, ...rest } = drive;
 	const pushed = typeof sha === "string" && sha !== drive.lastPushedSha;
 	return {
 		...rest,
@@ -161,8 +171,9 @@ export function enterWatch(drive, { sha, seen = {}, now = new Date().toISOString
 /** The drive file of a watched PR after a review bot round was requested. */
 export function enterReview(drive, { sha, actionId, seen = {}, now = new Date().toISOString(), used }) {
 	const pushed = typeof sha === "string" && sha !== drive.lastPushedSha;
+	const { held, ...rest } = drive;
 	return {
-		...drive,
+		...rest,
 		watch: true,
 		stage: "review",
 		actionId,

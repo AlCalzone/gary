@@ -97,8 +97,9 @@ export function lastEventBy(timeline, author) {
 const FEEDBACK_KINDS = new Set(["comment", "reply", "review", "thread_comment"]);
 
 /**
- * Who gave feedback on a PR last, for the watch on the PRs we control: `{ lastMeAt, lastOthersAt, ourLastCommitAt,
- * reviewBotReviews }`, each left out when there is none. `lastMeAt` is the newest comment, reply or review by `me`.
+ * Who gave feedback on a PR last, for the watch on the PRs we control: `{ lastMeAt, lastMeKind, lastOthersAt,
+ * ourLastCommitAt, reviewBotReviews }`, each left out when there is none. `lastMeAt` is the newest comment, reply or
+ * review by `me`. `lastMeKind` is "review" for a review and "comment" for the others.
  * `lastOthersAt` is the newest one by a person who is neither `me` nor `bot`, co-maintainers included.
  * `ourLastCommitAt` is the commit time of the newest commit in `commits` that `writeLogin` authored or committed.
  * `reviewBotReviews` counts the reviews by an account whose login starts with one of `reviewBots`.
@@ -106,7 +107,8 @@ const FEEDBACK_KINDS = new Set(["comment", "reply", "review", "thread_comment"])
 export function feedbackFacts(timeline, commits, { me, bot, writeLogin, reviewBots = [] }) {
 	const low = (v) => String(v ?? "").toLowerCase();
 	const feedback = timeline.filter((e) => FEEDBACK_KINDS.has(e.kind) && e.side !== "automated");
-	const lastMeAt = feedback.filter((e) => me && low(e.author) === low(me)).at(-1)?.at;
+	const lastMe = feedback.filter((e) => me && low(e.author) === low(me)).at(-1);
+	const lastMeAt = lastMe?.at;
 	const others = feedback.filter((e) => e.side === "them" || (e.side === "us" && low(e.author) !== low(me) && low(e.author) !== low(bot)));
 	const lastOthersAt = others.at(-1)?.at;
 	const ours = (commits ?? [])
@@ -117,7 +119,7 @@ export function feedbackFacts(timeline, commits, { me, bot, writeLogin, reviewBo
 	const bots = reviewBots.map(low).filter(Boolean);
 	const reviewBotReviews = timeline.filter((e) => e.kind === "review" && bots.some((b) => low(e.author).startsWith(b))).length;
 	return {
-		...(lastMeAt && { lastMeAt }),
+		...(lastMeAt && { lastMeAt, lastMeKind: lastMe.kind === "review" ? "review" : "comment" }),
 		...(lastOthersAt && { lastOthersAt }),
 		...(ours.length && { ourLastCommitAt: ours.at(-1) }),
 		...(reviewBotReviews && { reviewBotReviews }),

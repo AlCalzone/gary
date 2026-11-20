@@ -74,7 +74,7 @@ const timeline = [
 	{ at: at(19, 11), author: "widgets-bot", side: "us", kind: "thread_comment" },
 ];
 const ff = facts.feedbackFacts(timeline, [ourCommit(at(18, 9))], { me: "octocat", bot: "widgets-bot", writeLogin: "widgets-bot", reviewBots: ["copilot"] });
-t.check("feedback facts name his last review, the last outside comment, our last commit and the review bot rounds", ff.lastMeAt === at(19, 9) && ff.lastOthersAt === at(19, 10) && ff.ourLastCommitAt === at(18, 9) && ff.reviewBotReviews === 1, ff);
+t.check("feedback facts name his last review and its kind, the last outside comment, our last commit and the review bot rounds", ff.lastMeAt === at(19, 9) && ff.lastMeKind === "review" && ff.lastOthersAt === at(19, 10) && ff.ourLastCommitAt === at(18, 9) && ff.reviewBotReviews === 1, ff);
 
 // Restart: a fix PR whose drive finished before the watch existed, with his review after our last push
 setFixes({ "issue-23": [record] });

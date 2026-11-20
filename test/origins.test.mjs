@@ -185,6 +185,55 @@ t.check("after 30 quiet minutes the unhandled feedback prints its line", JSON.st
 r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", reviewed);
 t.check("after 30 quiet minutes pr-watch round queues the round", r.status === 0 && json(r).queued === true && actions().length === 1, r.stdout + r.stderr);
 
+// ---------- feedback a round refused while the session was active ----------
+const driveFile = join(state, "drive", "pr-19.json");
+const reviewed2 = after(19, 150);
+const reviewed3 = after(19, 180);
+const reviewsOf = (...times) => writeFileSync(OVERRIDES, JSON.stringify({ "pr-19": { recentCommits: { nodes: [ourCommit(pushed)] }, allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: times.map(review) }, timelineComments: { totalCount: 0, nodes: [] } } }));
+const clearActions = () => {
+	for (const n of actions()) rmSync(join(actionsDir, n));
+};
+reviewsOf(reviewed, reviewed2);
+clearActions();
+touch("a", 31);
+const watcher = spawn(process.execPath, [GARY, "watch-queue"], { env: { ...env, GARY_WATCH_POLL_MS: "150" }, stdio: ["ignore", "pipe", "pipe"] });
+let out = "";
+watcher.stdout.on("data", (d) => (out += d));
+const printed = (when) => out.split("\n").filter((l) => /maintainer-feedback/.test(l) && JSON.parse(l).at === when).length;
+const waitFor = async (fn) => {
+	for (let i = 0; i < 50 && !fn(); i++) await sleep(100);
+	return fn();
+};
+try {
+	t.check("the watcher prints the new feedback once", await waitFor(() => printed(reviewed2) === 1), out);
+	touch("a", 5);
+	r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", reviewed2);
+	const held = read(driveFile).held;
+	t.check("a round refused for the live session records the feedback as held", r.status === 3 && held?.feedbackAt === reviewed2 && held.by === "me" && held.session === ID.a && typeof held.since === "string" && actions().length === 0, [r.stdout, held]);
+	await sleep(800);
+	t.check("while the session stays active, the watcher prints it no second time", printed(reviewed2) === 1, out);
+	touch("a", 31);
+	t.check("once the session has been quiet for 30 minutes, the watcher prints the held feedback again", await waitFor(() => printed(reviewed2) === 2), out);
+	r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", reviewed2);
+	t.check("the round then starts and clears the hold", r.status === 0 && json(r).queued === true && actions().length === 1 && !("held" in read(driveFile)), r.stdout + r.stderr);
+	await sleep(800);
+	r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", reviewed2);
+	t.check("the held feedback starts exactly one round", printed(reviewed2) === 2 && r.status === 3 && actions().length === 1, [out, r.stdout]);
+
+	// A refusal for another reason, here a running push job, records no hold and prints nothing again
+	clearActions();
+	reviewsOf(reviewed, reviewed2, reviewed3);
+	t.check("the watcher prints newer feedback once", await waitFor(() => printed(reviewed3) === 1), out);
+	writeFileSync(join(actionsDir, "pr-19-revise.json"), JSON.stringify({ itemId: "pr-19", action: "revise", status: "queued", createdAt: new Date().toISOString(), result: "" }));
+	r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", reviewed3);
+	t.check("a round refused because a job runs records no hold", r.status === 3 && /already works/.test(json(r).result) && !("held" in read(driveFile)), r.stdout);
+	clearActions();
+	await sleep(800);
+	t.check("feedback refused for another reason is not printed again", printed(reviewed3) === 1, out);
+} finally {
+	watcher.kill();
+}
+
 // ---------- the board server ----------
 const item = (number, author = BOT) => ({
 	kind: "pr", repo: "acme/widgets", number, title: `PR ${number}`, url: url(number), author, authorType: author === BOT ? "bot" : "contributor",
@@ -205,6 +254,20 @@ try {
 	t.check("the server serves the origin with the directory as ~/…, the resume command and the transcript's time", s19?.found === true && s19.sessionId === ID.a && s19.dir === "~/repositories/widgets/master" && s19.resume === `cd ~/repositories/widgets/master && claude --resume ${ID.a}` && s19.lastActiveAt === ago(7) && s19.startedAt === before(19, 2880) && !("transcript" in s19) && !("cwd" in s19), s19 ?? stderr);
 	t.check("a bot PR without a found session is served as not found", JSON.stringify(served("pr-45")?.origin) === JSON.stringify({ found: false }), served("pr-45"));
 	t.check("Gary's fix PR and a contributor's PR are served without an origin", served("pr-21") && !("origin" in served("pr-21")) && served("pr-50") && !("origin" in served("pr-50")));
+	t.check("without unhandled feedback the PR gets no hold", !("hold" in served("pr-19")), served("pr-19")?.hold);
+
+	// His review in the snapshot that no round handled, while the session was active 7 minutes ago
+	const stateNow = async () => (await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: { "X-Board-Token": token } })).json()).items ?? [];
+	writeFileSync(join(state, "snapshot.json"), JSON.stringify({ items: { "pr-19": bot(19, "fix/led-red", { headSha: SHA, feedback: { ourLastCommitAt: pushed, lastMeAt: reviewed3, lastMeKind: "review" } }) } }));
+	let hold = (await stateNow()).find((i) => i.id === "pr-19")?.hold;
+	t.check("while the session is active, the server serves the hold with his review, its time and when it ends", JSON.stringify(hold) === JSON.stringify({ feedbackAt: reviewed3, feedbackKind: "review", lastActiveAt: ago(7), until: ago(-23) }), hold);
+	const reviewed4 = after(19, 200);
+	writeFileSync(driveFile, JSON.stringify({ ...read(driveFile), held: { feedbackAt: reviewed4, by: "me", session: ID.a, since: ago(6) } }));
+	hold = (await stateNow()).find((i) => i.id === "pr-19")?.hold;
+	t.check("feedback a refused round recorded is served too, without a kind the snapshot does not know", hold?.feedbackAt === reviewed4 && hold.feedbackKind === null, hold);
+	touch("a", 31);
+	hold = (await stateNow()).find((i) => i.id === "pr-19")?.hold;
+	t.check("once the session has been quiet for 30 minutes, the server drops the hold", hold === undefined, hold);
 } finally {
 	child.kill();
 }

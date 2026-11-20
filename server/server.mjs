@@ -17,9 +17,9 @@ import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
 import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
 import { sinceAnchor, sinceSummary } from "../scripts/lib/since.mjs";
-import { requestReviewRound, stageOf } from "../scripts/lib/watch.mjs";
+import { latest, pendingHold, requestReviewRound, stageOf, unhandledFeedback } from "../scripts/lib/watch.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
-import { lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
+import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
@@ -843,6 +843,8 @@ export async function startBoardServer({
 	const refusals = new Map();
 	// Thread state from the latest guard read per item, so the page can show a thread that closed since the review
 	const liveStates = new Map();
+	// One timer per instance that pushes the items again when the earliest hold of a watched PR ends
+	const holdTimers = new Map();
 
 	const names = () => [...served.keys()].sort();
 	const boardNow = () => boardInfo(names(), { dryRun, log });
@@ -958,6 +960,37 @@ export async function startBoardServer({
 		return out;
 	}
 
+	/**
+	 * Why the watch holds back the round for his feedback on a bot PR: `{ feedbackAt, feedbackKind, lastActiveAt, until }`
+	 * while its origin session was active in the last 30 minutes and his feedback is unhandled, or null. The feedback is
+	 * the snapshot's or the one a refused round recorded in the drive file's `held`. `feedbackKind` is "review",
+	 * "comment" or null when the snapshot does not know it.
+	 */
+	function holdOf(origin, { drive, entry, item }, now = Date.now()) {
+		const until = Date.parse(origin?.found ? origin.lastActiveAt ?? "" : "") + ORIGIN_QUIET_MS;
+		if (!(until > now)) return null;
+		const feedback = entry?.feedback ?? {};
+		const sources = { drive, feedback, item, record: null };
+		const feedbackAt = latest(unhandledFeedback("me", sources), pendingHold(sources)?.feedbackAt);
+		if (!feedbackAt) return null;
+		const known = Date.parse(feedback.lastMeAt ?? "") === Date.parse(feedbackAt) && ["review", "comment"].includes(feedback.lastMeKind);
+		return { feedbackAt, feedbackKind: known ? feedback.lastMeKind : null, lastActiveAt: origin.lastActiveAt, until: new Date(until).toISOString() };
+	}
+
+	// The hold ends without a file change, so a timer pushes the items when the earliest one ends
+	function pushWhenHoldsEnd(name, holds) {
+		clearTimeout(holdTimers.get(name));
+		holdTimers.delete(name);
+		const next = Math.min(...holds.map((x) => Date.parse(x.until)));
+		if (!Number.isFinite(next)) return;
+		const t = setTimeout(() => {
+			holdTimers.delete(name);
+			schedulePush(name, "items");
+		}, Math.max(0, next - Date.now()) + 1000);
+		t.unref();
+		holdTimers.set(name, t);
+	}
+
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
 	async function readItems(name) {
 		const { instance, mode: current } = settingsOf(name);
@@ -985,6 +1018,12 @@ export async function startBoardServer({
 			return files ? { files, total, ...(sensitiveOurs(fixSources.snapshot[id]) && { ours: true }) } : null;
 		};
 		const origins = await originsOf(name, instance, items, fixSources.records);
+		const holds = new Map();
+		for (const { id, data } of items) {
+			const hold = origins.has(id) ? holdOf(origins.get(id), { drive: fixSources.drives[id] ?? null, entry: fixSources.snapshot[id], item: data }) : null;
+			if (hold) holds.set(id, hold);
+		}
+		pushWhenHoldsEnd(name, [...holds.values()]);
 		const actionsOf = new Map();
 		for (const { data: a } of actions) if (typeof a?.itemId === "string") actionsOf.set(a.itemId, [...(actionsOf.get(a.itemId) ?? []), a]);
 		// What happened on GitHub since his last choice on the item, for the timeline at the top of the dialog
@@ -994,6 +1033,7 @@ export async function startBoardServer({
 			...(sinceOf(id, data) && { since: sinceOf(id, data) }),
 			...(sensitiveOf(id, data) && { sensitive: sensitiveOf(id, data) }),
 			...(origins.has(id) && { origin: origins.get(id) }),
+			...(holds.has(id) && { hold: holds.get(id) }),
 			// An item written before the routine copied the category gets it from the snapshot
 			...(typeof categoryOf(id, data) === "string" && { category: categoryOf(id, data) }),
 			liveState: liveStates.get(`${name}/${id}`),
