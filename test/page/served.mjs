@@ -412,6 +412,25 @@ try {
 	await ev(`document.getElementById("learn-close").click();`);
 	ok("after the accept the lightbulb hides", await until(`document.getElementById("learn").hidden`));
 
+	// A grouped edit from the reconcile pass: one Apply changes both files
+	writeFileSync(join(PROFILE_COPY, "rules", "review.md"), "# widgets: review rules\n\n- Ask for a test on every bug fix.\n");
+	writeFileSync(join(PROFILE_COPY, "rules", "issues.md"), "# widgets: issue rules\n\nBug fixes need a test.\n\nLabel bugs.\n");
+	const editDoc = (id, extra) => ({ id, createdAt: new Date().toISOString(), kind: "edit", title: "Keep the test rule in one place", why: "Both files ask for a test.", finding: "duplicate",
+		evidence: [{ type: "text", gist: "The same rule in two files", file: "rules/issues.md" }], target: "profile", group: "tests", status: "open", decidedAt: null, reason: "", ...extra });
+	writeFileSync(join(BOARD, "proposals", "reconcile-tests-a.json"), JSON.stringify(editDoc("reconcile-tests-a", { file: "rules/review.md", before: "- Ask for a test on every bug fix.", after: "- Ask for a test on every bug fix, also in config PRs." })));
+	writeFileSync(join(BOARD, "proposals", "reconcile-tests-b.json"), JSON.stringify(editDoc("reconcile-tests-b", { file: "rules/issues.md", before: "Bug fixes need a test.\n", after: "" })));
+	ok("a grouped edit counts once on the lightbulb", await until(`!document.getElementById("learn").hidden && document.getElementById("learn").textContent === "1"`, 8000));
+	await ev(`document.getElementById("learn").click();`);
+	ok("the group is one card with both diffs", await until(`document.querySelectorAll("#learn-edit-cards .pcard").length === 1 && document.querySelectorAll("#learn-edit-cards .rdiff").length === 2`));
+	await ev(`[...${pcard("Keep the test rule")}.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Apply").click();`);
+	ok("Apply changes both files", await fileUntil(() => readFileSync(join(PROFILE_COPY, "rules", "review.md"), "utf8").includes("also in config PRs") && readFileSync(join(PROFILE_COPY, "rules", "issues.md"), "utf8") === "# widgets: issue rules\n\nLabel bugs.\n"));
+	ok("both edits are accepted on disk", ["a", "b"].every((x) => json(join(BOARD, "proposals", `reconcile-tests-${x}.json`)).status === "accepted"));
+	ok("the card says what changed", await until(`/Changed rules\\/review\\.md and rules\\/issues\\.md/.test(${pcard("Keep the test rule")}?.textContent ?? "")`));
+	await ev(`[...document.querySelectorAll("#learn-foot button")].find((b) => b.textContent === "Check rules").click();`);
+	ok("Check rules records the request", await fileUntil(() => !!json(join(HOME, "state", "reconcile.json"))?.requestedAt));
+	await ev(`document.getElementById("learn-close").click();`);
+	ok("after the edit the lightbulb hides", await until(`document.getElementById("learn").hidden`));
+
 	// An item the agent could not analyze: one "open" route and a notice
 	writeFileSync(itemFile("issue-28"), JSON.stringify(probe("issue", 28, "https://github.com/acme/widgets/issues/28", {
 		hint: "Open: read it yourself", blocked: { reason: "safety_filter", at: new Date().toISOString() },

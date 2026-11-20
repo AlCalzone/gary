@@ -784,6 +784,21 @@ textarea.short { min-height: 5.4em; }
 .pcard .card-head { cursor: default; }
 .diffs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-family: var(--font-read); font-size: 14.5px; line-height: 1.5; max-width: 64ch; }
 .p-title { font-weight: 600; font-size: 15px; line-height: 1.4; }
+/* Rule cleanup: a before and after diff that wraps, so a phone shows the whole rule */
+.p-finding { font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.rd-file { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; margin-bottom: -6px; }
+.rdiff { margin: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font: 12.5px/1.5 var(--font-mono); color: var(--fg); }
+.rd-line { display: flex; gap: 6px; padding: 0 10px 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rd-mark { flex: none; width: 1ch; text-align: center; user-select: none; }
+.rd-text { min-width: 0; }
+.rd-del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.rd-del .rd-mark { color: var(--bad); }
+.rd-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.rd-add .rd-mark { color: var(--ok); }
+.rd-ctx { color: var(--muted); }
+.learn-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.learn-foot .status { font-size: 12.5px; }
+.rd-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .evidence summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
 .evidence ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
 .evidence li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
@@ -1060,7 +1075,15 @@ textarea {
       </div>
       <div class="routes" id="learn-cards"></div>
     </section>
+    <section class="learn-group" id="learn-edits" aria-labelledby="learn-edits-title" hidden>
+      <div class="d-head">
+        <h2 class="d-title" id="learn-edits-title">Rule cleanup</h2>
+        <p class="learn-intro">Rules that repeat, conflict or name things that are gone.</p>
+      </div>
+      <div class="routes" id="learn-edit-cards"></div>
+    </section>
     <p class="farewell" id="learn-empty" hidden>No suggestions right now.</p>
+    <div class="learn-foot" id="learn-foot"></div>
   </div>
 </dialog>
 
@@ -4950,6 +4973,10 @@ const learn = {
   rules: document.getElementById("learn-rules"),
   settings: document.getElementById("learn-settings"),
   settingCards: document.getElementById("learn-setting-cards"),
+  edits: document.getElementById("learn-edits"),
+  editCards: document.getElementById("learn-edit-cards"),
+  foot: document.getElementById("learn-foot"),
+  checks: new Map(),
   empty: document.getElementById("learn-empty"),
   btn: document.getElementById("learn"),
   recs: new Map(),
@@ -5188,34 +5215,218 @@ function proposalButtons(p, rec) {
   ];
 }
 
+const isEdit = (p) => p.kind === "edit";
+
+// One entry per card. Edit proposals that share a group become one card with one Apply and one Dismiss
+function learnEntries(list) {
+  const entries = [];
+  const groups = new Map();
+  for (const p of list) {
+    if (!isEdit(p) || !str(p.group)) {
+      entries.push({ key: p.key, members: [p] });
+      continue;
+    }
+    const key = str(p.instance) + "/group/" + str(p.group);
+    let e = groups.get(key);
+    if (!e) {
+      e = { key, members: [] };
+      groups.set(key, e);
+      entries.push(e);
+    }
+    e.members.push(p);
+  }
+  for (const e of groups.values()) e.members.sort((a, b) => str(a.id).localeCompare(str(b.id)));
+  return entries;
+}
+
+const FINDING_WORDS = { duplicate: "Duplicate", contradiction: "Conflict", stale: "Old name", overruled: "Overruled", vague: "Vague" };
+const EVIDENCE_WORDS = { text: "rule", name: "name", log: "decisions", core: "core rule" };
+const editFileName = (p) => (p.target === "personal" ? "personal rules" : str(p.file));
+
+// Removed, kept and added lines of one block, from the longest common run of lines
+function lineDiff(before, after) {
+  const lines = (t) => {
+    const l = t === "" ? [] : t.split("\n");
+    if (l.length > 1 && l.at(-1) === "") l.pop();
+    return l;
+  };
+  const a = lines(before), b = lines(after);
+  if (a.length * b.length > 40000) return [...a.map((x) => ["del", x]), ...b.map((x) => ["add", x])];
+  const n = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) n[i][j] = a[i] === b[j] ? n[i + 1][j + 1] + 1 : Math.max(n[i + 1][j], n[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      out.push(["ctx", a[i]]);
+      i++;
+      j++;
+    } else if (i < a.length && (j === b.length || n[i + 1][j] >= n[i][j + 1])) out.push(["del", a[i++]]);
+    else out.push(["add", b[j++]]);
+  }
+  return out;
+}
+
+function ruleDiff(before, after) {
+  const marks = { del: ["\u2212", "Removed: "], add: ["+", "Added: "], ctx: [" ", ""] };
+  return h("div", { class: "rdiff" }, lineDiff(before, after).map(([t, x]) => h("div", { class: "rd-line rd-" + t },
+    h("span", { class: "rd-mark", "aria-hidden": "true", text: marks[t][0] }),
+    h("span", { class: "rd-text" }, marks[t][1] ? h("span", { class: "rd-sr", text: marks[t][1] }) : null, x || " "))));
+}
+
+function editEvidenceLine(x, p) {
+  const at = Date.parse(str(x.at));
+  const day = Number.isFinite(at) ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const itemId = str(x.itemId);
+  const key = itemId ? itemKeyOf(str(p.instance) || refOf(itemId).instance, itemId) : null;
+  const d = key ? state.items.get(key) : null;
+  const num = d ? "#" + str(d.number) : itemId;
+  const ref = !itemId ? null : key
+    ? h("button", { type: "button", class: "lane-switch ev-link", text: num, title: "Open " + num, onclick: () => { closeLearn(); openDetail(key); } })
+    : h("span", { class: "ev-ref", text: num });
+  const label = x.type === "log" && Number.isInteger(x.count) ? x.count + " decisions" : EVIDENCE_WORDS[x.type] || str(x.type);
+  return h("li", null,
+    day ? h("span", { class: "ev-day", text: day }) : null,
+    ref,
+    h("span", { class: "vlabel", text: label }),
+    str(x.file) ? h("span", { class: "ev-ref", text: str(x.file) }) : null,
+    h("span", { class: "ev-gist" }, richText(str(x.gist)), str(x.quote) ? [" ", h("q", { text: str(x.quote) })] : null));
+}
+
+function editApplied(e) {
+  const files = [...new Set(e.members.map(editFileName))];
+  return (e.members.every((m) => str(m.after) === "") ? "Removed from " : "Changed ") + files.join(" and ");
+}
+
+async function editAction(e, rec, action, text) {
+  if (learn.busy.has(e.key)) return;
+  learn.busy.add(e.key);
+  rec.status.replaceChildren(h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the board server" })));
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    const p = e.members[0];
+    await state.mcp.callTool(SERVER, action, { instance: str(p.instance), proposalId: p.id, text });
+    for (const m of e.members) {
+      if (action === "accept_proposal") learn.added.set(m.key, editApplied(e));
+      else learn.gone.add(m.key);
+    }
+    rec.status.replaceChildren();
+    rec.sig = null;
+  } catch (err) {
+    rec.status.replaceChildren(h("div", { class: "status failed" }, icon("alert"), h("span", { text: routeFailure(err, { type: "chore" }) })));
+  } finally {
+    learn.busy.delete(e.key);
+    renderLearn();
+  }
+}
+
+function buildEdit(e, rec) {
+  const p = e.members[0];
+  const seen = new Set();
+  const evidence = e.members.flatMap((m) => (Array.isArray(m.evidence) ? m.evidence : [])).filter((x) => {
+    if (!x || typeof x !== "object") return false;
+    const k = JSON.stringify(x);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const whys = [...new Set(e.members.map((m) => str(m.why)).filter(Boolean))];
+  rec.ta = null;
+  rec.status = h("div", { class: "z-status" });
+  rec.actions = h("div", { class: "card-actions" });
+  const why = h("input", { type: "text", class: "field", placeholder: "Why not? (optional)", "aria-label": "Why not? (optional)" });
+  rec.dismissBox = h("div", { class: "dismiss-box", hidden: true }, why,
+    h("div", { class: "dismiss-actions" },
+      h("button", { class: "btn quiet", type: "button", text: "Dismiss suggestion", onclick: () => editAction(e, rec, "dismiss_proposal", why.value.trim()) }),
+      h("button", { class: "btn quiet", type: "button", text: "Cancel", onclick: () => { rec.dismissBox.hidden = true; } })));
+  rec.card.replaceChildren(
+    h("div", { class: "card-head" }, h("span", { class: "p-title", text: str(p.title) }),
+      FINDING_WORDS[p.finding] ? h("span", { class: "p-finding", text: FINDING_WORDS[p.finding] }) : null,
+      multiInstance() ? h("span", { class: "p-instance", text: (instanceByName(str(p.instance)) || EMPTY_INSTANCE).title || str(p.instance) }) : null),
+    h("div", { class: "card-body" },
+      whys.map((w) => h("p", { class: "card-why" }, richText(w))),
+      evidence.length ? h("details", { class: "evidence" },
+        h("summary", null, "Evidence (" + evidence.length + ")"),
+        h("ul", null, evidence.map((x) => editEvidenceLine(x, p)))) : null,
+      e.members.map((m) => [h("div", { class: "rd-file", text: editFileName(m) }), ruleDiff(str(m.before), str(m.after))]),
+      rec.actions,
+      rec.dismissBox,
+      rec.status));
+}
+
+function editButtons(e, rec) {
+  const p = e.members[0];
+  if (learn.added.has(p.key)) {
+    return [h("span", { class: "status done step-done" }, icon("doneCheck"), h("span", { text: learn.added.get(p.key) }))];
+  }
+  return [
+    h("button", { class: "btn intent-think primary", type: "button", text: "Apply", onclick: () => editAction(e, rec, "accept_proposal") }),
+    h("button", { class: "btn quiet", type: "button", text: "Not this", onclick: () => { rec.dismissBox.hidden = false; rec.dismissBox.querySelector("input").focus(); } }),
+  ];
+}
+
+// The button that asks for a reconcile pass, per instance in view
+async function requestCheck(name) {
+  if (learn.checks.get(name)?.state === "busy") return;
+  learn.checks.set(name, { state: "busy" });
+  renderLearnFoot();
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    await state.mcp.callTool(SERVER, "request_reconcile", { instance: name });
+    learn.checks.set(name, { state: "queued" });
+  } catch (err) {
+    learn.checks.set(name, { state: "failed", text: routeFailure(err, { type: "chore" }) });
+  }
+  renderLearnFoot();
+}
+
+function renderLearnFoot() {
+  const scope = multiInstance() && state.tab !== "all" ? boardInfo.instances.filter((x) => x.name === state.tab) : boardInfo.instances;
+  const sig = JSON.stringify([scope.map((x) => [x.name, x.title]), [...learn.checks]]);
+  if (sig === learn.footSig) return;
+  learn.footSig = sig;
+  learn.foot.replaceChildren(...scope.map((x) => {
+    const name = x.title || x.name;
+    const st = learn.checks.get(x.name) || {};
+    if (st.state === "queued") return h("span", { class: "status done" }, icon("doneCheck"), h("span", { text: scope.length > 1 ? name + ": check requested" : "Check requested" }));
+    return h("span", { class: "learn-check" },
+      h("button", { class: "btn quiet", type: "button", text: scope.length > 1 ? "Check rules: " + name : "Check rules", title: "Look for rules that repeat, conflict or name things that are gone", disabled: st.state === "busy", onclick: () => requestCheck(x.name) }),
+      st.state === "failed" ? h("span", { class: "status failed", text: st.text }) : null);
+  }));
+}
+
 function renderLearn() {
   const list = openProposals();
-  const waiting = list.filter((p) => !learn.added.has(p.key)).length;
+  const entries = learnEntries(list);
+  const waiting = entries.filter((e) => !learn.added.has(e.members[0].key)).length;
   learn.btn.hidden = waiting === 0;
   learn.btn.replaceChildren(icon("lightbulb"), h("span", { class: "learn-count", text: String(waiting) }));
   const label = waiting === 1 ? "1 suggestion" : waiting + " suggestions";
   learn.btn.setAttribute("aria-label", label);
   learn.btn.title = label;
   if (!learn.el.open) return;
-  const keep = new Set(list.map((p) => p.key));
+  renderLearnFoot();
+  const keep = new Set(entries.map((e) => e.key));
   for (const k of [...learn.recs.keys()]) if (!keep.has(k)) learn.recs.delete(k);
-  const cardOf = (p) => {
-    let rec = learn.recs.get(p.key);
+  const cardOf = (e) => {
+    const p = e.members[0];
+    let rec = learn.recs.get(e.key);
     if (!rec) {
       rec = { card: h("section", { class: "card open intent-think pcard" }), core: null, sig: null, draft: null };
-      learn.recs.set(p.key, rec);
+      learn.recs.set(e.key, rec);
     }
-    const core = JSON.stringify(p);
+    const core = JSON.stringify(e.members);
     if (core !== rec.core) {
       rec.core = core;
       rec.sig = null;
       if (isSetting(p)) buildSetting(p, rec);
+      else if (isEdit(p)) buildEdit(e, rec);
       else buildProposal(p, rec);
     }
-    const sig = JSON.stringify([learn.added.get(p.key), learn.busy.has(p.key)]);
+    const sig = JSON.stringify([learn.added.get(p.key), learn.busy.has(e.key)]);
     if (sig !== rec.sig) {
       rec.sig = sig;
-      rec.actions.replaceChildren(...proposalButtons(p, rec));
+      rec.actions.replaceChildren(...(isEdit(p) ? editButtons(e, rec) : proposalButtons(p, rec)));
       if (learn.added.has(p.key)) {
         if (rec.ta) rec.ta.disabled = true;
         rec.dismissBox.hidden = true;
@@ -5223,12 +5434,15 @@ function renderLearn() {
     }
     return rec.card;
   };
-  const settings = list.filter(isSetting);
-  const rules = list.filter((p) => !isSetting(p));
+  const settings = entries.filter((e) => isSetting(e.members[0]));
+  const edits = entries.filter((e) => isEdit(e.members[0]));
+  const rules = entries.filter((e) => !isSetting(e.members[0]) && !isEdit(e.members[0]));
   placeChildren(learn.settingCards, settings.map(cardOf));
   placeChildren(learn.cards, rules.map(cardOf));
+  placeChildren(learn.editCards, edits.map(cardOf));
   learn.settings.hidden = settings.length === 0;
   learn.rules.hidden = rules.length === 0;
+  learn.edits.hidden = edits.length === 0;
   const one = settings.length === 1;
   document.getElementById("learn-settings-title").textContent = one ? "A setting Gary would change" : "Settings Gary would change";
   document.getElementById("learn-settings-intro").textContent = (one ? "Gary measured this itself." : "Gary measured these itself.") + " Nothing changes until you click.";
@@ -5257,6 +5471,7 @@ function forgetDecided() {
   if (reloadPending && !detail.el.open) location.reload();
   for (const id of learn.added.keys()) learn.gone.add(id);
   learn.recs.clear();
+  learn.checks.clear();
   renderLearn();
 }
 
