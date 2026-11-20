@@ -262,6 +262,21 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .callout.hold[hidden] { display: none; }
 .callout.hold p { margin: 0; }
 .hold-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+/* Focus: he works on the item 1 on 1 in its own agent session, and Gary holds it meanwhile */
+.focus-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.focus-chip.paused { background: var(--warn-soft); color: var(--fg); }
+.focus-chip.quiet { background: var(--accent-soft); color: var(--fg); }
+.focus-chip.failed { background: var(--bad-soft); color: var(--fg); }
+.focus-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 2px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); color: var(--fg); font-size: 14px; line-height: 1.5; }
+.focus-banner[hidden] { display: none; }
+.focus-banner > .i { width: 16px; height: 16px; flex: none; color: var(--accent); }
+.focus-banner.paused { background: var(--warn-soft); box-shadow: inset 0 0 0 1px var(--warn); }
+.focus-banner.paused > .i { color: var(--warn); }
+.focus-banner .fb-text { flex: 1; min-width: 14em; display: flex; flex-direction: column; gap: 2px; }
+.focus-banner .fb-text p { margin: 0; }
+.focus-banner .fb-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.foot-focus { display: inline-flex; align-items: center; gap: 5px; }
+.foot-focus .i { color: var(--accent); }
 /* The automatic review a contributor PR got: what was asked, and what happened since */
 .auto-review { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
 .auto-review[hidden] { display: none; }
@@ -1030,6 +1045,7 @@ textarea {
       <div class="meta" id="d-meta"></div>
       <div class="agent-banner" id="d-fix" role="status" hidden></div>
       <p class="fix-for" id="d-fix-for" hidden></p>
+      <div class="focus-banner" id="d-focus" role="status" hidden></div>
       <div class="callout strong hold" id="d-hold" role="status" hidden></div>
       <div class="origin" id="d-origin" hidden></div>
       <div class="since" id="d-since" hidden></div>
@@ -2201,6 +2217,8 @@ const pushActive = (d) => workingOf(d)?.kind === "push";
 // Routes that would start a second fix, or decide a PR the agent is still changing, are not offered at all
 const PUSH_HIDDEN = new Set(["review", "merge", "close", "take_over", "revise", "address_review", "drive", "format"]);
 function blockedRoute(d, r) {
+  // While the item is in focus, Gary starts no agent job on it
+  if (focusHeld(d) && actorOf(r) === "agent") return true;
   if (fixActive(d) && r.type === "follow_up" && actorOf(r) === "agent") return true;
   if (pushActive(d) && (PUSH_HIDDEN.has(r.type) || (r.type === "chore" && paramsOf(r).action === "ready"))) return true;
   return false;
@@ -2509,7 +2527,7 @@ function buildRow(id, d, dim, slot) {
   const rec = recommendedRoute(d);
   const hint = rec && blockedRoute(d, rec) ? str((visibleRoutes(d).find((r) => r.recommended) || visibleRoutes(d)[0])?.title).trim() : str(d.hint).trim() || str(rec?.title).trim();
   const chip = agentChip(d);
-  const held = holdChip(d);
+  const held = focusChip(d) || holdChip(d);
   const dcat = discussionCategory(d) ? h("span", { class: "r-dcat", title: "Discussion category", text: discussionCategory(d) }) : null;
   const flags = flagChips(d);
   const review = reviewStatus(d);
@@ -2708,6 +2726,11 @@ function renderListNow() {
     if (multiInstance() && state.tab !== "all" && str(d.instance) !== state.tab) continue;
     if (d.hidden === true && !state.filters.showHidden) continue;
     if (!matchesFilters(d)) continue;
+    // An item in focus stays in the plan, first in its group, until the focus ends
+    if (focusHeld(d)) {
+      byGroup.get(groupOf(d)).push({ id, data: d, dim: false, order: -1, planned: false, focus: true });
+      continue;
+    }
     if (handledOf(id, d)) {
       handledRows.push([id, d]);
       continue;
@@ -2739,6 +2762,12 @@ function renderListNow() {
   let planned = 0;
   for (const g of GROUPS) {
     for (const r of byGroup.get(g.id)) {
+      if (r.focus) {
+        left -= planEffort(r.data);
+        r.planned = true;
+        planned++;
+        continue;
+      }
       if (r.dim || finishedBy(r.id)) continue;
       const e = planEffort(r.data);
       if (e > left) {
@@ -2934,6 +2963,7 @@ function renderDetailInfo(d) {
   renderSensitive(d);
   renderOrigin(d);
   renderHold(d);
+  renderFocus(detail.id, d);
   renderRounds(d);
 
   const badges = reviewBadges(d);
@@ -3464,6 +3494,73 @@ function holdChip(d) {
   return x ? h("span", { class: "hold-chip", title: "Your " + x.kind + " waits for the session that opened this PR. Gary starts the round around " + holdTime(x.until) + ".", text: "Waits for session" }) : null;
 }
 
+// The server serves `focus` while he works on the item in its own session, while the master sets one up, and for a
+// day after the master could not start one
+const FOCUS_STATES = new Set(["active", "paused", "requested", "failed"]);
+const FOCUS_LINK = /^(https:\/\/|t3-thread:\/\/|claude:\/\/)/;
+
+function focusOf(d) {
+  const f = d && d.focus && typeof d.focus === "object" ? d.focus : null;
+  if (!f || !FOCUS_STATES.has(f.status)) return null;
+  const s = f.session && typeof f.session === "object" ? f.session : {};
+  return {
+    status: f.status, name: str(s.title) || str(s.id) || "its session", link: FOCUS_LINK.test(str(s.link)) ? str(s.link) : "",
+    startedAt: str(f.startedAt), lastActivity: str(f.lastActivity), reason: str(f.reason),
+  };
+}
+
+const focusHeld = (d) => { const f = focusOf(d); return !!f && (f.status === "active" || f.status === "paused"); };
+
+function focusChip(d) {
+  const f = focusOf(d);
+  if (!f) return null;
+  if (f.status === "active") return h("span", { class: "focus-chip", title: "You work on this in " + f.name + ". Gary holds the item until the focus ends.", text: "In focus" });
+  if (f.status === "paused") return h("span", { class: "focus-chip paused", title: f.name + " has been quiet since " + holdTime(f.lastActivity) + ". Gary still holds the item.", text: "Focus paused" });
+  if (f.status === "requested") return h("span", { class: "focus-chip quiet", title: "The master looks for a session that handles this item, or starts one", text: "Focus requested" });
+  return h("span", { class: "focus-chip failed", title: f.reason || "No focus session started", text: "No focus session" });
+}
+
+// The callout under the meta row: why Gary does not act on the item, and the way back to the session
+function renderFocus(key, d) {
+  const el = document.getElementById("d-focus");
+  const f = focusOf(d);
+  el.hidden = !f;
+  el.classList.toggle("paused", !!f && (f.status === "paused" || f.status === "failed"));
+  if (!f) return el.replaceChildren();
+  const open = (label, fkey) => (f.link ? h("a", { class: "btn small", href: f.link, target: "_blank", rel: "noopener noreferrer", "data-focus-key": fkey, text: label }) : null);
+  const end = h("button", { class: "btn small", type: "button", "data-focus-key": "focus:end", text: "End focus", title: "End the focus without a summary. Gary analyzes the item again.", onclick: () => focusRequest(key, "end_focus") });
+  const texts = {
+    active: ["In focus in " + f.name + (parseTime(f.startedAt) ? " since " + holdTime(f.startedAt) : "") + ".", "Gary holds everything on this item: no worker, review round or push touches it until the focus ends."],
+    paused: ["Focus paused: " + f.name + " has been quiet since " + holdTime(f.lastActivity) + ".", "Gary still holds the item and touches nothing until you resume the session or end the focus."],
+    requested: ["Focus requested.", "The master looks for a session that already handles this item, or starts one."],
+    failed: ["No focus session started.", f.reason || "The master could not start a session."],
+  }[f.status];
+  const actions = f.status === "active" ? [open("Open session", "focus:open")] : f.status === "paused" ? [open("Resume", "focus:resume"), end] : [];
+  el.replaceChildren(icon(f.status === "paused" ? "pause" : f.status === "failed" ? "alert" : "eye"),
+    h("div", { class: "fb-text" }, ...texts.map((t) => h("p", { text: t }))),
+    actions.some(Boolean) ? h("div", { class: "fb-actions" }, ...actions.filter(Boolean)) : null);
+}
+
+// The Focus button and End focus go to the server, which queues the request or ends the focus
+async function focusRequest(key, action) {
+  if (state.busy.has(key)) return;
+  detail.lastZone = "agent";
+  state.notes.delete(key);
+  state.busy.add(key);
+  render();
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    await state.mcp.callTool(SERVER, action, { instance: refOf(key).instance, itemId: refOf(key).id });
+    state.notes.set(key, { kind: "done", text: action === "focus" ? "Queued for the master session" : "Focus ended. The agent analyzes the item again." });
+  } catch (e) {
+    const p = e && e.code === "tool_error" ? refusalPayload(e) : null;
+    state.notes.set(key, refusalNote(e, key) || { kind: "failed", text: p ? resultString(p.result) || "Sending failed." : routeFailure(e, null) });
+  } finally {
+    state.busy.delete(key);
+    render();
+  }
+}
+
 // The origin line under the meta row, with the command that resumes the session
 function renderOrigin(d) {
   const el = document.getElementById("d-origin");
@@ -3685,6 +3782,7 @@ function refusalNote(e, key) {
   const p = refusalPayload(e);
   if (!p) return null;
   if (p.paused === true) return { kind: "info", text: str(p.result) || "Nothing was sent." };
+  if (p.focus === true) return { kind: "info", text: str(p.result) };
   // Races with work already in flight: the server's reason is the information
   if (p.working === true || p.fix || /already working on this|is changing this PR|fix is (already )?(running|open)|already (has )?a fix/i.test(str(p.result))) return { kind: "info", text: str(p.result) };
   if (p.settingsError) {
@@ -4753,12 +4851,15 @@ function buildZoneControls(id) {
   analyze.classList.add("foot-analyze");
   analyze.setAttribute("aria-expanded", "false");
   analyze.setAttribute("aria-controls", "d-analyze");
+  const focus = fbtn([icon("eye"), "Focus"], "Focus", "foot:focus", () => focusRequest(id, "focus"),
+    "Work on this item 1 on 1 in its own agent session. Gary holds the item until you are done.");
+  focus.classList.add("foot-focus");
   const status = h("div", { class: "foot-status" });
   detail.foot.replaceChildren(
     status,
-    h("span", { class: "foot-label" }, icon("moon"), "Snooze"), ...snoozes, dismiss, restore, analyze,
+    h("span", { class: "foot-label" }, icon("moon"), "Snooze"), ...snoozes, dismiss, restore, analyze, focus,
   );
-  return { review: send, input: note, inputDraft: draftKey(id, reKey), snoozes, dismiss, restore, analyze, status, panelLabel, label: null, locked: false };
+  return { review: send, input: note, inputDraft: draftKey(id, reKey), snoozes, dismiss, restore, analyze, focus, status, panelLabel, label: null, locked: false };
 }
 
 // An analysis of this item is queued or running, so "Analyze again" would only start a second one
@@ -4771,11 +4872,16 @@ function analyzing(id) {
 function updateFooter(d, locked) {
   const zc = detail.zoneCtl;
   if (!zc) return;
-  for (const c of [zc.review, zc.input, zc.analyze, ...zc.snoozes, zc.dismiss, zc.restore]) c.disabled = locked;
+  for (const c of [zc.review, zc.input, zc.analyze, zc.focus, ...zc.snoozes, zc.dismiss, zc.restore]) c.disabled = locked;
   zc.locked = locked;
   updateAnswerCount();
   zc.restore.hidden = !isHiddenItem(d);
   zc.dismiss.hidden = d.hidden === true;
+  // While the item is in focus, the session has it: no Analyze again, and no second focus
+  const f = focusOf(d);
+  zc.focus.hidden = !!f && f.status !== "failed";
+  zc.analyze.hidden = focusHeld(d);
+  if (zc.analyze.hidden) detail.analyze.hidden = true;
   // A sent instruction clears its draft, so the note empties as well
   if (!state.drafts.has(zc.inputDraft) && document.activeElement !== zc.input && zc.input.value !== "") zc.input.value = "";
 }
@@ -5750,7 +5856,8 @@ function subscribe(db) {
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
       // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
       // A PR that waits after its automatic review stays loaded too, so the waiting line can list it
-      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d) || autoWaiting(d))) next.set(doc.id, d);
+      // An item in focus stays loaded too, so its card stays in the plan while the session works on it
+      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d) || autoWaiting(d) || focusHeld(d))) next.set(doc.id, d);
       // Once the server carries the mark, it decides, including clearing it after the next run
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }

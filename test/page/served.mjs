@@ -870,6 +870,44 @@ try {
 	const bad = Object.entries(expect).filter(([id, v]) => JSON.stringify(labels[id]) !== JSON.stringify(v)).map(([id]) => id + "=" + JSON.stringify(labels[id]));
 	ok("status icon mapping " + bad.join(" "), bad.length === 0);
 
+	// Focus through the real server: the button queues the request, a paused focus shows its callout, End focus ends it
+	const FOCUS = join(HOME, "state", "focus");
+	setActions([]);
+	setItems([["issue-21", simple(21, "land", 5, 1, { repo: "acme/widgets" })]]);
+	await settle();
+	await ev(`openDetail("widgets/issue-21");`);
+	await until(`document.getElementById("detail").open`);
+	await ev(`document.querySelector("#d-foot .foot-focus").click();`);
+	const focusDoc = async () => {
+		for (let i = 0; i < 30; i++) {
+			const hit = readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8"))).find((a) => a.action === "focus");
+			if (hit) return hit;
+			await sleep(100);
+		}
+		return null;
+	};
+	const queued = await focusDoc();
+	ok("Focus queues a focus request on the server", queued?.itemId === "issue-21" && queued.status === "queued" && queued.via === "queue");
+	ok("the dialog then says the master sets it up", await until(`/The master looks for a session/.test(document.getElementById("d-focus").textContent)`));
+	// The master settles the request when it records the focus
+	const queuedName = readdirSync(join(BOARD, "actions")).find((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8")).action === "focus");
+	if (queuedName) writeFileSync(join(BOARD, "actions", queuedName), JSON.stringify({ ...queued, status: "done", finishedAt: iso(0), result: "In focus in Focus: issue 21." }));
+	mkdirSync(FOCUS, { recursive: true });
+	writeFileSync(join(FOCUS, "issue-21.json"), JSON.stringify({ itemId: "issue-21", harness: "t3code", how: "started", session: { id: "thread-21", title: "Focus: issue 21", link: "t3-thread://v2/env/thread-21" }, startedAt: iso(3600000), lastActivity: iso(2400000), status: "paused", pausedAt: iso(600000) }));
+	ok("a paused focus shows Resume and End focus", await until(`!document.getElementById("d-focus").hidden && document.getElementById("d-focus").classList.contains("paused") && document.querySelector("#d-focus a")?.textContent === "Resume" && [...document.querySelectorAll("#d-focus button")].some((x) => x.textContent === "End focus")`));
+	await ev(`[...document.querySelectorAll("#d-focus button")].find((x) => x.textContent === "End focus").click();`);
+	let ended = null;
+	for (let i = 0; i < 30 && ended?.status !== "ended"; i++) {
+		await sleep(100);
+		ended = JSON.parse(readFileSync(join(FOCUS, "issue-21.json"), "utf8"));
+	}
+	ok("End focus ends the record on the server", ended?.status === "ended" && ended.endedBy === "end");
+	ok("the callout goes once the focus ended", await until(`document.getElementById("d-focus").hidden`));
+	await ev(`document.getElementById("d-close").click();`);
+	// The page marks the item seen when the dialog closes, so wait for that write before the items go
+	await settle();
+	setActions([]);
+
 	// Restore the real items for the screenshot
 	setActions([]);
 	setItems([]);
