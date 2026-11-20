@@ -246,6 +246,9 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .origin .origin-resume { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .origin code { overflow-wrap: anywhere; color: var(--fg); }
 .origin-warn { color: var(--warn); }
+.callout.hold[hidden] { display: none; }
+.callout.hold p { margin: 0; }
+.hold-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
 /* The automatic review a contributor PR got: what was asked, and what happened since */
 .auto-review { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
 .auto-review[hidden] { display: none; }
@@ -984,6 +987,7 @@ textarea {
       <div class="meta" id="d-meta"></div>
       <div class="agent-banner" id="d-fix" role="status" hidden></div>
       <p class="fix-for" id="d-fix-for" hidden></p>
+      <div class="callout strong hold" id="d-hold" role="status" hidden></div>
       <div class="origin" id="d-origin" hidden></div>
       <div class="since" id="d-since" hidden></div>
       <div class="auto-review" id="d-auto" hidden></div>
@@ -2266,6 +2270,7 @@ function buildRow(id, d, dim, slot) {
   const rec = recommendedRoute(d);
   const hint = rec && blockedRoute(d, rec) ? str((visibleRoutes(d).find((r) => r.recommended) || visibleRoutes(d)[0])?.title).trim() : str(d.hint).trim() || str(rec?.title).trim();
   const chip = agentChip(d);
+  const held = holdChip(d);
   const dcat = discussionCategory(d) ? h("span", { class: "r-dcat", title: "Discussion category", text: discussionCategory(d) }) : null;
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
@@ -2283,7 +2288,7 @@ function buildRow(id, d, dim, slot) {
     h("span", { class: "r-main" },
       // The combined tab names the repo, so the full ref gets its own quiet line above the title
       combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
-      chip || dcat ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), dcat, chip) : h("span", { class: "r-title", title, text: title }),
+      chip || dcat || held ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), dcat, chip, held) : h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
     meta,
@@ -2656,6 +2661,7 @@ function renderDetailInfo(d) {
   renderAutoReview(d);
   renderSensitive(d);
   renderOrigin(d);
+  renderHold(d);
   renderRounds(d);
 
   const badges = reviewBadges(d);
@@ -3155,6 +3161,32 @@ function originNotes(d, r) {
     out.push(h("span", { class: "quiet-line origin-warn", text: "That session was active at " + hhmm(o.lastActiveAt) + " and may still be working. Its next push could conflict with the agent's." }));
   }
   return out;
+}
+
+// The server serves `hold` while the origin session holds back the round for his unhandled feedback
+function holdOf(d) {
+  const x = d && d.kind === "pr" && d.hold && typeof d.hold === "object" ? d.hold : null;
+  const o = originOf(d);
+  if (!x || !o || !o.found || !(parseTime(x.until) > Date.now()) || !parseTime(x.feedbackAt)) return null;
+  return { feedbackAt: str(x.feedbackAt), kind: x.feedbackKind === "review" || x.feedbackKind === "comment" ? x.feedbackKind : "feedback", lastActiveAt: str(x.lastActiveAt), until: str(x.until), dir: o.dir };
+}
+
+// A time of today shows as 10:00, an older one with its day
+const holdTime = (iso) => (dayOf(iso) === dayOf(new Date().toISOString()) ? "" : dayOf(iso) + ", ") + hhmm(iso);
+
+function renderHold(d) {
+  const el = document.getElementById("d-hold");
+  const x = holdOf(d);
+  el.hidden = !x;
+  if (!x) return el.replaceChildren();
+  el.replaceChildren(icon("clock"), h("div", null,
+    h("p", { class: "hold-line", text: "Your " + x.kind + " from " + holdTime(x.feedbackAt) + " waits: the session that opened this PR in " + x.dir + " was active at " + holdTime(x.lastActiveAt) + ". Gary starts the round after 30 quiet minutes, around " + holdTime(x.until) + "." }),
+    h("p", { class: "hold-sooner", text: "To act sooner, address it in that session yourself." })));
+}
+
+function holdChip(d) {
+  const x = holdOf(d);
+  return x ? h("span", { class: "hold-chip", title: "Your " + x.kind + " waits for the session that opened this PR. Gary starts the round around " + holdTime(x.until) + ".", text: "Waits for session" }) : null;
 }
 
 // The origin line under the meta row, with the command that resumes the session
