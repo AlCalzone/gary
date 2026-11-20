@@ -265,7 +265,7 @@ A `close` route on a discussion with `facts.answerable` and no `facts.answerChos
 
 ## AI-written PRs and backlog
 
-`facts.aiAuthored`, `facts.aiSignals`, `facts.changedLines` and `facts.changedFiles` describe AI-written PRs. The fast tier never decides them, and his reading time comes from the changed lines by the table in `item-doc.md`. Issues and discussions by the bot or an agent that describe doable work get one `Implement:` card in `deferred`, sorted last. Autonomous fixes take only `Start fix:` cards.
+`facts.aiAuthored`, `facts.aiSignals`, `facts.changedLines` and `facts.changedFiles` describe AI-written PRs. The fast tier never decides them, and his reading time comes from the changed lines by the table in `item-doc.md`. Issues and discussions by the bot or an agent that describe doable work get one `Implement:` card. Small, clear work goes to `easy`, and large work or work that needs a design decision goes to `deferred`. Within a section, outside contributors and reporters come first, then the maintainer's items and bot or agent items as one group. Autonomous fixes take only `Start fix:` cards.
 
 ## Handled items
 

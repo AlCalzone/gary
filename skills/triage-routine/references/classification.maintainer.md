@@ -63,6 +63,8 @@ The section follows his effort to decide, not the number of steps after his clic
 - A duplicate: `close` with reason `duplicate`, `params.duplicateOf` and a reply that links the original.
 - A report that belongs in a repo from the profile's `relatedRepos`: a `move` route to that repo (`item-doc.md`). A report for a project outside the org: `close` with reason `not_planned` and a reply that links the right place.
 
+- An issue or discussion by the bot or an agent that describes small, clear work that needs no design decision: one `Implement:` card (`item-doc.md`, "Delegate to an agent"). His part is one click, so it belongs here. Both tiers decide it the same way.
+
 - A PR whose only problem is formatting or lint autofix (`autofix.changes`, nothing else): recommended `format`, with `merge` as `me` as the alternative. A red CI from only the lint or format job does not count against it.
 
 ### `almost`: he has to think
@@ -85,7 +87,7 @@ He has to think about whether to act or about the content: a behavior change, se
 
 ### `deferred`: waiting on others, or large
 
-- An issue or discussion by the bot or an agent that describes doable work: one `Implement:` card (`item-doc.md`, "Delegate to an agent"). Both tiers decide it the same way.
+- An issue or discussion by the bot or an agent whose work is large or needs a design decision: one `Implement:` card (`item-doc.md`, "Delegate to an agent"). `state` names the open decision when there is one, like `Needs a decision whether the retry lives in the driver or in the app.` Both tiers decide it the same way.
 
 - We wait on the reporter: `facts.waitingOn` is `them`, because our last message asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`).
 - Changes requested, and no new commits since that review.
@@ -170,12 +172,12 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 Work the maintainer asked the agent for comes back first. An item whose agent job finished since he last handled it (a take-over, a change he asked for with `revise`, an address-review, a drive, a format, a fix he started) and that now only needs his decision goes to `easy`, at the very top, before everything else, newest result first. He asked for it and is waiting to finish it. Such an item always offers the decision, as "Routes after a push" in `push-to-pr.md` describes: a `merge`, a `review`, or another pass by the agent. A `reply` that only reports the push is no route. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
 
-After those, in every section, other people come before our own work: first items by outside contributors and reporters, then items by the maintainer himself, then items by bots and agents. Someone outside is waiting on the first group, and nobody waits on the others. Within each of these groups:
+After those, in every section, items by outside contributors and reporters come first, because someone outside waits on them. Items by the maintainer himself and items by bots and agents follow as one group, mixed by the section's own order. Within each of the two groups:
 
 - `active`: longest wait first.
 - `easy`: lowest `effortMinutes` first, then merges, closes, answers.
 - `almost` and `review`: lowest `effortMinutes` first, then highest `waitingDays`.
-- `deferred` and `hardware`: newest `updatedAt` first. Bot or agent backlog with an `Implement:` card comes after everything else in `deferred`.
+- `deferred` and `hardware`: newest `updatedAt` first. Bot or agent backlog with an `Implement:` card sorts like every other item there.
 
 ## Autonomous labels and assignments
 
