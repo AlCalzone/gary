@@ -57,7 +57,7 @@ The queue Monitor also reads the watched PRs, at most 20 per instance, every 3 m
 { "instance": "widgets", "id": "watch-pr-412", "itemId": "pr-412", "action": "drive", "event": "maintainer-feedback", "pr": 412, "at": "2026-11-19T09:00:00Z" }
 ```
 
-This line is no action doc. Run `gary --instance <instance> pr-watch round --pr <pr> --by me --at <at>` yourself. It queues a `drive` request for the round, which the Monitor prints a few seconds later like any other request. Start its worker as in step 5. Never read the feedback yourself. Exit code 3 means a rule refused, like a round that already runs or feedback a round handled. Exit code 4 means the instance is paused. Do nothing more in both cases.
+This line is no action doc. Run `gary --instance <instance> pr-watch round --pr <pr> --by me --at <at>` yourself. It queues a `drive` request for the round, which the Monitor prints a few seconds later like any other request. Start its worker as in step 5. Never read the feedback yourself. Exit code 3 means a rule refused, like a round that already runs or feedback a round handled. Exit code 4 means the instance is paused. Do nothing more in both cases. An exit 3 that names a Claude Code session means the session that opened the PR was active in the last 30 minutes. `round` then records the feedback as held, and the Monitor prints the same line again once the session has been quiet for 30 minutes. Run `round` again on that line as usual.
 
 ## 4a. Answers to an automatic review
 
