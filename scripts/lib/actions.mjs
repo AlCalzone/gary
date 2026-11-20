@@ -5,6 +5,8 @@ import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopi
 export const KINDS = ["pr", "issue", "discussion"];
 const BOARD_ACTIONS = ["dismiss", "snooze"];
 export const AGENT_ACTIONS = ["full_review", "reanalyze", "start_fix", "address_review", "take_over", "revise", "drive", "format"];
+// Requests the master session handles itself, without a worker
+export const MASTER_ACTIONS = ["focus"];
 const MERGE_METHODS = { squash: "SQUASH", merge: "MERGE", rebase: "REBASE" };
 const ISSUE_CLOSE_REASONS = { completed: "COMPLETED", not_planned: "NOT_PLANNED", duplicate: "DUPLICATE" };
 const DISCUSSION_CLOSE_REASONS = { completed: "RESOLVED", not_planned: "OUTDATED", duplicate: "DUPLICATE" };
@@ -488,7 +490,7 @@ function validate({ action, kind, number, params, text }) {
 	if (BOARD_ACTIONS.includes(action)) {
 		throw new Error(`"${action}" is a board-only action and makes no GitHub call`);
 	}
-	if (AGENT_ACTIONS.includes(action)) {
+	if (AGENT_ACTIONS.includes(action) || MASTER_ACTIONS.includes(action)) {
 		throw new Error(`"${action}" is an agent request for the master session and makes no GitHub call`);
 	}
 	if (!Object.hasOwn(ACTIONS, action)) throw new Error(`Unknown action "${action}"`);
