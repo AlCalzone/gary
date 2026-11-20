@@ -158,7 +158,7 @@ It writes `config.json`, an empty `personal.md` and `state/` into the home direc
 
 ## MCP server
 
-The stdio server `gary` has one tool per GitHub action and three tools for the board server. In a plugin install Claude Code starts it from `.mcp.json`. For a clone, `setup` prints the `claude mcp add` command.
+The stdio server `gary` has one tool per GitHub action and three tools for the board server. In a plugin install Claude Code starts it from the `mcpServers` entry in `.claude-plugin/plugin.json`. For a clone, `setup` prints the `claude mcp add` command.
 
 - `board_start` starts the board server inside this MCP process and returns its URL. When another process already serves the board, it returns `{ "running": true, "owner": false, "url": … }`. Calling it again is safe.
 - `board_stop` stops the board server if this MCP process started it.

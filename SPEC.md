@@ -25,8 +25,7 @@ Gary has three layers, one place for each kind of change.
 
 ```
 <core>/                  the tool itself. Nobody edits it to adapt the tool
-  .claude-plugin/        plugin.json and marketplace.json, so the repository is its own marketplace
-  .mcp.json              the gary MCP server for a plugin install
+  .claude-plugin/        plugin.json with the gary MCP server, and marketplace.json, so the repository is its own marketplace
   package.json           dependencies of the MCP server, with a lockfile
   bin/gary               the launcher, the one entry point for every command
   scripts/               Node ESM, no build step
@@ -76,7 +75,7 @@ Gary has three layers, one place for each kind of change.
                          and api-edit.md, the comment after an API edit
 ```
 
-The core contains no repo name, no account name and no absolute path. It works as a Claude Code plugin and from a plain git clone. In a plugin install Claude Code puts `bin/` on the Bash PATH and starts the MCP server from `.mcp.json`. For a clone, `gary setup` links the skills into `~/.claude/skills`, links the launcher into `~/.local/bin` and registers the MCP server with `claude mcp add --scope user gary`.
+The core contains no repo name, no account name and no absolute path. It works as a Claude Code plugin and from a plain git clone. In a plugin install Claude Code puts `bin/` on the Bash PATH and starts the MCP server from the `mcpServers` entry in `.claude-plugin/plugin.json`. For a clone, `gary setup` links the skills into `~/.claude/skills`, links the launcher into `~/.local/bin` and registers the MCP server with `claude mcp add --scope user gary`.
 
 ### config.json
 
@@ -942,7 +941,7 @@ Both run in dry-run mode too, because they change only local files and never Git
 
 ## MCP server
 
-Name `gary`, stdio, for interactive Claude sessions and for the master session. A plugin install starts it from `.mcp.json`. Its tools are then named `mcp__plugin_gary_gary__<tool>`. A clone registers it in user scope with `claude mcp add --scope user gary -- node <core>/mcp-server/index.mjs`, and the tools are named `mcp__gary__<tool>`. Skills find it with ToolSearch by the tool name `board_start`.
+Name `gary`, stdio, for interactive Claude sessions and for the master session. A plugin install starts it from the `mcpServers` entry in `.claude-plugin/plugin.json`. Its tools are then named `mcp__plugin_gary_gary__<tool>`. A clone registers it in user scope with `claude mcp add --scope user gary -- node <core>/mcp-server/index.mjs`, and the tools are named `mcp__gary__<tool>`. Skills find it with ToolSearch by the tool name `board_start`.
 
 One tool per GitHub action above, named like the action. Each takes `kind`, `number`, `params`, `text`, acts on the instance of the session's working directory and rejects anything outside the table. Three more tools control the one board server and work from any directory: `board_start` starts it inside the MCP process at the root port, or reports the one that already runs, with the instances it serves. `board_stop` stops it if this process started it. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`, plus `sessionInstanceError` when the session's directory resolves to no instance.
 
