@@ -7,7 +7,7 @@ import { ROOT, TEST_DIR, removeDir, tempDir } from "../lib.mjs";
 
 const PAGE = join(TEST_DIR, "page");
 const dir = tempDir();
-const parts = ["mock.js", process.env.BOARD_HTML ?? join(ROOT, "board", "board.html"), "fixtures.js", "tests-head.js", "tests-badges.js", "routes-tests.js", "tests-tabs.js", "tests-round4.js", "tests-round8.js", "tests-round9.js", "tests-round10.js", "tests-round11.js", "tests-dialog.js"];
+const parts = ["mock.js", process.env.BOARD_HTML ?? join(ROOT, "board", "board.html"), "fixtures.js", "tests-head.js", "tests-badges.js", "routes-tests.js", "tests-tabs.js", "tests-round4.js", "tests-round8.js", "tests-round9.js", "tests-round10.js", "tests-round11.js", "tests-round15.js", "tests-dialog.js"];
 const html = parts.map((p) => readFileSync(p.startsWith("/") ? p : join(PAGE, p), "utf8")).join("\n");
 const harness = join(dir, "harness.html");
 writeFileSync(harness, html);

@@ -239,6 +239,13 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .agent-banner.quiet { background: transparent; box-shadow: none; padding: 0; color: var(--muted); font-size: 13.5px; }
 .fix-for { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13.5px; color: var(--muted); }
 .fix-for[hidden] { display: none; }
+/* Where a bot PR outside Gary came from: the local session that opened it and how to resume it */
+.origin { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
+.origin[hidden] { display: none; }
+.origin p { margin: 0; }
+.origin .origin-resume { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.origin code { overflow-wrap: anywhere; color: var(--fg); }
+.origin-warn { color: var(--warn); }
 /* The automatic review a contributor PR got: what was asked, and what happened since */
 .auto-review { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
 .auto-review[hidden] { display: none; }
@@ -964,6 +971,7 @@ textarea {
       <div class="meta" id="d-meta"></div>
       <div class="agent-banner" id="d-fix" role="status" hidden></div>
       <p class="fix-for" id="d-fix-for" hidden></p>
+      <div class="origin" id="d-origin" hidden></div>
       <div class="auto-review" id="d-auto" hidden></div>
       <div class="story" id="d-story" hidden></div>
       <div class="reviews" id="d-reviews" hidden></div>
@@ -2602,6 +2610,7 @@ function renderDetailInfo(d) {
   detail.verdict.hidden = !verdict;
   renderAutoReview(d);
   renderSensitive(d);
+  renderOrigin(d);
   renderRounds(d);
 
   const badges = reviewBadges(d);
@@ -3066,6 +3075,68 @@ function watchedAfterPush(d, r) {
 function pushNote(d, r) {
   const who = instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you";
   return "Commits as " + who + ". Then Gary reviews the new head" + (watchedAfterPush(d, r) ? " and keeps watching the PR." + ((instOf(d).reviewBots || []).includes("copilot") ? " Copilot reviews the push while the PR has review rounds left, up to 3." : "") + " Your next review on GitHub starts the next round." : ".");
+}
+
+// The server serves `origin` only on a bot PR that Gary did not open: the local session that opened it, or `found: false`
+const ORIGIN_QUIET_MS = 30 * 60000;
+const ORIGIN_ROUTES = new Set(["take_over", "revise", "address_review", "drive"]);
+
+function originOf(d) {
+  const o = d && d.kind === "pr" && d.origin && typeof d.origin === "object" ? d.origin : null;
+  if (!o) return null;
+  if (o.found !== true) return { found: false };
+  if (!str(o.sessionId) || !str(o.dir)) return null;
+  return { found: true, sessionId: str(o.sessionId), dir: str(o.dir), resume: str(o.resume), startedAt: str(o.startedAt), lastActiveAt: str(o.lastActiveAt), prompt: str(o.prompt) };
+}
+
+const originActive = (o) => !!o && o.found && Date.now() - parseTime(o.lastActiveAt) < ORIGIN_QUIET_MS;
+const dayOf = (iso) => new Date(parseTime(iso)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+function originSummary(d, o) {
+  if (!o.found) return "Opened by " + botLogin(instOf(d)) + " outside Gary. No local session found.";
+  const started = parseTime(o.startedAt) ? " on " + dayOf(o.startedAt) : "";
+  const active = parseTime(o.lastActiveAt) ? ", last active " + dayOf(o.lastActiveAt) + ", " + hhmm(o.lastActiveAt) : "";
+  return "Opened by a Claude Code session in " + o.dir + started + active + ".";
+}
+
+// What a card that pushes says about the session that opened the PR, under the line of who commits
+function originNotes(d, r) {
+  const o = ORIGIN_ROUTES.has(r.type) ? originOf(d) : null;
+  if (!o) return [];
+  const out = [h("span", { class: "quiet-line origin-note", text: o.found
+    ? "The agent continues the PR that the Claude Code session in " + o.dir + " started. It pushes on top of that session's commits."
+    : "The agent continues a PR that " + botLogin(instOf(d)) + " opened outside Gary. It pushes on top of its commits." })];
+  if (originActive(o)) {
+    out.push(h("span", { class: "quiet-line origin-warn", text: "That session was active at " + hhmm(o.lastActiveAt) + " and may still be working. Its next push could conflict with the agent's." }));
+  }
+  return out;
+}
+
+// The origin line under the meta row, with the command that resumes the session
+function renderOrigin(d) {
+  const el = document.getElementById("d-origin");
+  const o = originOf(d);
+  el.hidden = !o;
+  if (!o) return el.replaceChildren();
+  const kids = [h("p", { class: "origin-line", text: originSummary(d, o) })];
+  if (o.found && o.prompt) kids.push(h("p", { class: "origin-prompt", text: "It started with: " + o.prompt }));
+  if (o.found && o.resume) {
+    const note = h("span", { class: "origin-copied", role: "status" });
+    const code = h("code", { class: "origin-cmd", text: o.resume });
+    kids.push(h("p", { class: "origin-resume" }, code, h("button", {
+      class: "btn small", type: "button", text: "Copy", "data-focus-key": "origin:copy", title: "Copy the command that resumes the session",
+      onclick: async () => {
+        try {
+          await navigator.clipboard.writeText(o.resume);
+          note.textContent = "Copied";
+        } catch {
+          getSelection().selectAllChildren(code);
+          note.textContent = "Press Ctrl+C to copy";
+        }
+      },
+    }), note));
+  }
+  el.replaceChildren(...kids);
 }
 
 function instOf(d) {
@@ -3950,6 +4021,7 @@ function buildCardActions(id, d, r, rec, locked) {
     out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
   }
   if (r.type === "take_over" || r.type === "revise") out.push(h("span", { class: "quiet-line", text: pushNote(d, r) }));
+  out.push(...originNotes(d, r));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   // The escalate row says under its title who posts
   const ownButtons = escalateRoute(r) ? [] : buttons.filter((b) => b.actor === "own");
