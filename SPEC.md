@@ -509,7 +509,7 @@ The snapshot sets `facts.sensitiveOurs: true` on such a PR. The stored entry kee
 
 What stays as on every PR with sensitive files:
 
-- The item goes to `review` at least and names the paths in `state`.
+- The item's effort is at least 5, and `state` names the paths.
 - The automatic first review skips it.
 - The dialog shows the banner with the files.
 - The maintainer reads the changes himself before he merges.
@@ -1248,7 +1248,7 @@ The `triage-routine` skill is the worker for one instance. In short:
 2. Process queued action files in `<state>/board/actions/` that the master handed it. They are agent requests and go onto this run's work list. Write back status and result.
 3. Run `gary snapshot`, then `gary pr-origin`.
 4. Delete the items for `closed` ids with `gary put items <id> --delete`. Queue a round for other people's feedback on each watched PR that has some no round handled, with `gary pr-watch list --json` and `gary pr-watch round --by others`, and take those PRs out of `changed` for this run, see "Watched PRs".
-5. Quick-classify every `changed` item. Pick up to `maxFullReviewsPerRun` for a full review: first items that need analysis, then contributor PRs, then items in `active`, then the rest by updatedAt.
+5. Quick-classify every `changed` item. Pick up to `maxFullReviewsPerRun` for a full review: first items that need analysis, then contributor PRs, then items in `unblock` and `act`, then the rest by updatedAt.
 6. Run full reviews as parallel subagents on the `review` model. PRs use `triage-review-pr`, issues and discussions use `triage-issue`.
 7. Attempt up to `maxAutoFixesPerRun` fixes that the issue triage marked as solvable.
 8. Write each item as a complete doc with `repo`, with `gary put`, which keeps the maintainer's fields. Clear `hidden` on changed items with `gary put --merge`. Apply the autonomous label and assignment changes with `gary action --autonomous`.

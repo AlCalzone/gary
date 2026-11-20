@@ -4,6 +4,7 @@ import { cpSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSyn
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { GARY, PROFILE, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
+import { insertRule } from "../scripts/lib/learning.mjs";
 
 const t = runner("learning");
 const T = tempDir();
@@ -250,6 +251,14 @@ const props = JSON.parse(gary("proposals", "--json").stdout);
 t.check("gary proposals lists all, also decided ones", props.length === 3 && props.some((p) => p.status === "dismissed" && p.reason === "We review those by hand") && props.some((p) => p.status === "accepted"), props.map((p) => p.status));
 r = gary("proposals");
 t.check("gary proposals shows status and reason", /dismissed .*\(We review those by hand\)/.test(r.stdout), r.stdout);
+
+// A heading matches with or without its #, and a new heading gets its own second-level heading
+const RULES = "# T\n\n## Config PRs\n\nold rule\n\n## Drive\n\ndrive rule\n";
+const UNDER_CONFIG = "# T\n\n## Config PRs\n\nold rule\n\nnew rule\n\n## Drive\n\ndrive rule\n";
+t.check("a rule lands under a heading given without #", insertRule(RULES, "Config PRs", "new rule") === UNDER_CONFIG);
+t.check("a rule lands under a heading given with #", insertRule(RULES, "## Config PRs", "new rule") === UNDER_CONFIG);
+t.check("a new heading is added as its own section", insertRule(RULES, "Brand new", "new rule").endsWith("## Drive\n\ndrive rule\n\n## Brand new\n\nnew rule\n"));
+t.check("a file without headings gets no heading", insertRule("just text\n", "Brand new", "new rule") === "just text\n\nnew rule\n");
 
 await sleep(200);
 removeDir(T);

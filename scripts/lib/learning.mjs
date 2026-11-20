@@ -299,8 +299,15 @@ export async function proposalTarget(p, instance = instanceName()) {
 export function insertRule(content, heading, text) {
 	const block = text.trim() + "\n";
 	const lines = content.split("\n");
-	const h = isString(heading) ? lines.findIndex((l) => l.trim() === heading.trim()) : -1;
-	if (h < 0) return (content.trimEnd() ? content.trimEnd() + "\n\n" : "") + block;
+	// Agents write a heading with or without its leading #
+	const bare = (l) => l.trim().replace(/^#+\s+/, "");
+	const wanted = isString(heading) ? bare(heading) : "";
+	const h = wanted ? lines.findIndex((l) => /^#+\s/.test(l.trim()) && bare(l) === wanted) : -1;
+	if (h < 0) {
+		// A new heading goes in as a second-level heading, so the rule does not land under the file's last section
+		const head = wanted && lines.some((l) => /^#+\s/.test(l.trim())) ? "## " + wanted + "\n\n" : "";
+		return (content.trimEnd() ? content.trimEnd() + "\n\n" : "") + head + block;
+	}
 	const level = /^#+/.exec(lines[h].trim())?.[0].length ?? 0;
 	let end = lines.length;
 	for (let i = h + 1; i < lines.length; i++) {
