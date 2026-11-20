@@ -94,7 +94,7 @@ Some items need nothing from the maintainer: informational issues, his own notes
 
 ## 5. Write the doc
 
-`findings` hold the evidence: one entry per finding from the logs or the code, with the identifier, timestamp or `path:line` in `text` or `ref`. Severity `question` marks what you could not settle, especially specification questions. Never guess an answer to them.
+`findings` hold the evidence: one entry per finding from the logs or the code, with the identifier, timestamp or `path:line` in `text` or `ref`. Severity `question` marks what you could not settle, especially specification questions. Never guess an answer to them. Give each finding an `id` and keep the ids of findings that carry over. The maintainer's answers to findings come in a `reanalyze` as `params.answers` and stay in the previous doc's `findingAnswers`. Each answer is his decision on that finding. Follow "Answers to findings" in `item-doc.md`: an answered question is settled and comes back only with new facts, and a finding he rejected comes back only with new evidence.
 
 Every route with text carries finished text that addresses the reporter. Do not repeat what the reporter wrote back to them.
 

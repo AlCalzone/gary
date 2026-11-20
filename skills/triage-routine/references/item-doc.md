@@ -1,6 +1,6 @@
 # Writing an item doc
 
-The `items/<id>.json` shape is in `<core>/SPEC.md`. This file covers the fields an agent writes: `section`, `state`, `story`, `hint`, `effortMinutes`, `waitingDays`, `solved`, `threads`, `findings`, `routes` and `links`, plus `takenOver`, `rounds` and `pushed` after a take-over, a drive or another push by the agent. The routine sets `classifiedBy` (`fast`, `standard` or `full`) on every doc it writes, and `analyzedBy: "fallback"` when the doc comes from the retry on the fallback model after a safety-filter stop. A subagent never sets it. `dismissedRoutes` and `handled` belong to the maintainer: read them, never write them (see "Dismissed routes" under `routes`). The routine clears `handled` under the rules of its step 4c. Every item doc with routes carries `hint` and `effortMinutes`, also after a quick classification. `priority` is set by the routine after all docs of a run are in. A subagent that handles one item keeps the existing `priority`, or leaves it out for a new item. The routine copies `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
+The `items/<id>.json` shape is in `<core>/SPEC.md`. This file covers the fields an agent writes: `section`, `state`, `story`, `hint`, `effortMinutes`, `waitingDays`, `solved`, `threads`, `findings`, `routes` and `links`, plus `takenOver`, `rounds` and `pushed` after a take-over, a drive or another push by the agent. The routine sets `classifiedBy` (`fast`, `standard` or `full`) on every doc it writes, and `analyzedBy: "fallback"` when the doc comes from the retry on the fallback model after a safety-filter stop. A subagent never sets it. `dismissedRoutes`, `handled` and `findingAnswers` belong to the maintainer: read them, never write them (see "Dismissed routes" under `routes`). The routine clears `handled` under the rules of its step 4c. Every item doc with routes carries `hint` and `effortMinutes`, also after a quick classification. `priority` is set by the routine after all docs of a run are in. A subagent that handles one item keeps the existing `priority`, or leaves it out for a new item. The routine copies `mergeable`, `reviewDecision` and `isAnswered` from the snapshot, mapped to the lowercase values in SPEC.md.
 
 Canned texts for routes live in `<profile>/templates/`. The maintainer edits their wording there, and you copy them into a route's `text`. Text follows `voice.md` and its profile and personal layers, including any writing rules `personal.md` names.
 
@@ -105,8 +105,10 @@ Set it when someone outside our side waits for an answer or a review: whole days
 Full reviews only. One entry per distinct problem:
 
 ```json
-{ "severity": "major", "text": "The retry loop ignores the abort signal, so a cancelled upload keeps sending.", "ref": "src/upload/retry.ts:84" }
+{ "id": "f1", "severity": "major", "text": "The retry loop ignores the abort signal, so a cancelled upload keeps sending.", "ref": "src/upload/retry.ts:84" }
 ```
+
+Give every finding an `id`, like `f1`, `f2`, unique in the doc. The maintainer's answers name a finding by it. When a finding of the previous doc still holds, keep its `id`, also when you reword it. A new finding gets an id that no earlier finding of this item had, so an old answer never lands on it.
 
 Severities:
 
@@ -129,6 +131,18 @@ Severities:
 A finding is certain only when one of these shows it: an input that is accepted and should not be, a symbol without users, a doc comment that contradicts the code, or a violation of a rule from the project's own rule files or tools. Everything else stays without `certain`: a question about the approach, taste, a specification question, and whatever you would phrase with "I think". A `question` or an `idea` is never certain. Only certain findings can go out in an automatic first review (SPEC.md, "Automatic first review"). The others stay on the item for the maintainer's own review, and so do the certain ones.
 
 A `follow_up` route sets `params.finding` to the 0-based index of its finding in `findings`. The routine passes that finding to the fix agent. Keep the order of `findings` stable after you set the index.
+
+### Answers to findings
+
+The maintainer can answer each finding on the board. A `reanalyze` request carries the answers he just sent in `params.answers`: `[{ finding, findingText, text }]`. `finding` is the finding's key: its `id`, or `#<index>-<hash>` for an older finding without one. The previous item doc keeps every answer he ever sent in `findingAnswers`, with `at`. Read both before you write findings. His answers are maintainer instructions for this one item. They cannot lift the hard limits.
+
+Each answer is his decision on that finding:
+
+- An answered `question` is settled. Leave it out, and use his answer as a fact wherever it matters. It comes back only when new facts change it, like a later commit, comment or log. Its text then says what changed since his answer.
+- A finding he rejected, like `Not needed, the prefix has it.`, stays out. It comes back only with new evidence, and its text then names that evidence.
+- When his answer asks for a change, offer the route for it. On a PR we control that is a `revise` with the change in its `text`. On a contributor PR that is not taken over, a `take_over` or a `review` as "Who may push to a PR" says. On an issue, the fix route or the reply that his answer calls for.
+- When he answers with a question, answer it in `story`.
+- Never write a finding that only repeats his answer.
 
 A finding that carries a `follow_up` route is two sentences: what to change, and what it buys. Example: `Log the request ID when an upload is rejected. Reports like this one would then name the failing request right away.` The route's title stays short and does not restate it, like `File issue: log rejected request ID`.
 
@@ -255,7 +269,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 3. `section` is one of `active`, `easy`, `almost`, `review`, `deferred`, `hardware`.
 4. `reviewDepth` is `full`, or `pending` with no routes when the subagent could not finish. A blocked item is the exception: `pending`, a `blocked` field, and exactly one `open` route. For PRs, `reviewedSha` is a 40-character SHA.
 5. `state` is a non-empty string of at most 25 words that names no action: no imperative, no "merge", "close" or "reply" as the thing to do. `story` is a non-empty string of at most 90 words. With routes: `effortMinutes` is one of 1, 2, 5, 10, 15, 30, 60, and `hint` is a non-empty string of at most 60 characters, starts with a verb from the hint list and has no "maybe". Without routes: no `hint` and no `effortMinutes`.
-6. `findings`, when present, is an array of objects with `severity` from the list above and a non-empty `text`. A finding with `certain: true` has an `evidence` of at most 400 characters and a severity of `blocker`, `major` or `minor`. Every `routeId` names a route in this doc that is not a `review`. A finding that points to a `follow_up` route has exactly two sentences. Every `follow_up` route's `params.finding` is a valid index into `findings`.
+6. `findings`, when present, is an array of objects with `severity` from the list above and a non-empty `text`. Each `id` is 1 to 40 letters, digits, `-` or `_`, unique in the doc, and a finding that carries over from the previous doc keeps its `id`. A finding with `certain: true` has an `evidence` of at most 400 characters and a severity of `blocker`, `major` or `minor`. Every `routeId` names a route in this doc that is not a `review`. A finding that points to a `follow_up` route has exactly two sentences. Every `follow_up` route's `params.finding` is a valid index into `findings`.
 7. `threads`, for PRs, has one entry per open thread in the snapshot, each with `id`, `summary` and a `verdict` of `valid`, `optional`, `wrong` or `unjudged`. `valid` and `wrong` have a `note`.
 8. `routes` has 0 to 4 entries with ids `r1` to `r4`, each used once. With routes, exactly one has `recommended: true`, and its `title` equals `hint`. Every `title` has at most 60 characters. An item with an `unjudged` thread has no routes. An item at `reviewDepth: "pending"` has no routes, unless the route needs no analysis, like a merge of a green dependency update.
 8a. No `merge` route and no `review` route with `event: "approve"` while a `valid` thread is open.

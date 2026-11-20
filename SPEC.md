@@ -188,7 +188,7 @@ Two older layouts are moved by commands, never silently:
 
 - `gary snapshot`, `gary snapshot --commit`: see Snapshot.
 - `gary item <id>`, `gary item <pr|issue|discussion> <number> [--repo <owner/name>]`: print the fresh snapshot entry of one item, read from GitHub with the same fields as the snapshot. With an id, kind, number and repo come from the stored item doc. The repo must be one of the instance's. It writes no state.
-- `gary put items <id> <file>`, `gary put --merge items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run. Without `--merge` the file is the complete item and replaces the stored one. Only the maintainer's `hidden` and `snoozedUntil` carry over, and `priority` when the file has none. With `--merge` only the fields in the file change, and `null` removes a field. Both modes validate the resulting item, see Validation. A merge that touches none of `routes`, `threads`, `hint`, `findings`, `wants` and `wantsReason` is not validated. `gary put meta` checks `rulesHash` and `rulesPending`. `--no-validate` skips the check, for migrations.
+- `gary put items <id> <file>`, `gary put --merge items <id> <file>`, `gary put items <id> --delete`, `gary put meta <file>`: write one board document through the board server, or directly when it does not run. Without `--merge` the file is the complete item and replaces the stored one. The maintainer's fields carry over: `hidden`, `snoozedUntil`, `dismissedRoutes`, `handled`, `seenAt` and `findingAnswers`, and `priority` when the file has none. With `--merge` only the fields in the file change, and `null` removes a field. Both modes validate the resulting item, see Validation. A merge that touches none of `routes`, `threads`, `hint`, `findings`, `wants` and `wantsReason` is not validated. `gary put meta` checks `rulesHash` and `rulesPending`. `--no-validate` skips the check, for migrations.
 - `gary validate [<id> ...] [--json]`: run the same validation over the stored items, read-only. Without ids it checks all of them and groups the problems.
 - `gary action [--dry-run] [--check-fresh] [--autonomous] [file]`: run one GitHub action from a JSON file or stdin. `--autonomous` marks an action nobody clicked: only `label` within `autoLabels` and `assign` may run.
 - `gary watch-queue [--all] [--once]`: print queued agent requests as JSON lines, `{ "instance", "id", "itemId", "action" }`. `--all` follows every instance, also ones added later, and is what the master runs. It also prints the drive events of "Fix review rounds" and "Watched PRs" and the `auto_review` lines of "Automatic first review".
@@ -303,6 +303,7 @@ Rules:
 - A finding with `routeId` belongs to that route. The card shows the finding as its reason. Findings without `routeId` stay in the collapsed findings list.
 - Routes never contain "hide", "dismiss" or "snooze". The dialog footer has those.
 - "Analyze again" is a footer action next to Snooze, never a route. A click reveals a full-width note field of 3 to 4 rows and a send button.
+- Every finding, in the findings list and on a route card, has a quiet "Reply" link. It opens a small box under the finding, see "Answers to findings". While answers are written, the footer button reads "Send 2 answers and analyze again" and one click sends them.
 - A card can have more than one button. Each button shows who acts. A card with buttons for different actors shows no actor on its header.
 - A route without inputs (no text, no choices) is a compact row. The row carries the button. It does not expand.
 - Canned texts come from `<profile>/templates/<name>.md`. The agent copies the template into the route's `text` and adapts it. The text stays editable on the card.
@@ -377,6 +378,20 @@ Routes with `as: "me"` never reach GitHub through the server and get no action d
 The server also keeps every such click per item and route in `<state>/opened.json`: `{ <itemId>: { <routeId>: { at, draftHash, text } } }`, with the text he copied. A click on another route of the item adds to it, and a repeat on the same route replaces its entry. The server serves the mark on the route as `opened: { at }` while the stored `draftHash` equals the route's current draft hash. So a triage that rewrites the route or reviews the item again clears it, like `done`. A click also drops the item's stored marks whose draft is gone. The mark survives a reload and every other click on the item.
 
 The card of a used `as: "me"` route says so in words where a bot card says "Done": a check and "Copied and opened on GitHub, 21:42", or "Opened on GitHub, 21:42" when the button copies nothing. Its button turns into a secondary "Copy again" or "Open again" that still works, and the collapsed card header carries the same check. It never says "Done", because he may have copied the text without posting it. This holds for every `as: "me"` route: `reply`, `request_logs`, `review`, `close`, `merge`, `reopen`, `follow_up`, `move` and `open`.
+
+### Answers to findings
+
+The maintainer answers a finding where the dialog shows it. "Reply" opens a box under the finding and focuses it. "Cancel" closes it and drops the draft. The page keeps the draft like a step draft, under `<item>|a:<finding key>|1`, so it survives a re-render and a reload. With at least one answer written, the footer button reads "Send N answers and analyze again". One click, or the send button of the note panel, sends `{ action: "reanalyze", itemId, text, input: { answers: [{ finding, text }] } }` to `/api/action`. `text` is the note of the panel, empty when he wrote none. Without answers "Analyze again" stays the page's own `reanalyze` doc write.
+
+`finding` is the finding's key: its `id`, or for a finding without one `#<index>-<hash>`, with the first 8 hex digits of the SHA-256 of its `text`. The server serves every finding with its `key`, so the page never computes it. A key with index and hash changes when the agent rewrites the finding.
+
+The server refuses an empty `answers` list, an unknown field, a key the item's current findings do not have, two answers to one finding, an empty answer, an answer over 4000 characters and an answer that contains a bot command of the profile. Nothing is posted, but the agent reads the answers. A page write of an action doc with `params.answers` is refused, so answers come only through this check. On success the server:
+
+- writes one queued `reanalyze` action doc with `params.answers: [{ finding, findingText, text }]` and the note as `text`,
+- appends `{ finding, findingText, text, at }` per answer to the item's `findingAnswers`, at most the newest 100,
+- logs an `answered_finding` decision per answer, and an `agent_note` for a note.
+
+It answers `{ ok: true, result: "Sent 2 answers to the agent." }`. `findingAnswers` is a maintainer field like `handled`: a replace keeps it, so a re-review keeps his answers. Under each finding the dialog shows his newest answer to its key as "You answered: … · Nov 20". Answers whose key no current finding has show in a collapsed "Earlier answers (N)" list under the findings, each with the finding's text. A finding on a card whose route is done takes no new answer.
 
 `dismiss_route` removes a suggested route the maintainer does not want: `{ itemId, routeId, text }` to `/api/action`, with `text` an optional reason of at most 500 characters. The server removes the route from the item and appends `{ type, title, reason, at }` to the item's `dismissedRoutes`. When the removed route was the recommended one and routes remain, the first remaining route becomes recommended and `hint` becomes its title. When no route remains, the server also writes a queued `reanalyze` action doc whose `text` names the dismissed route and the reason, so the agent proposes something else. The dismissal is logged as a done action doc with `via: "board"` and in the decision log.
 
@@ -579,6 +594,7 @@ The card of an API edit shows each edit as a diff under its path, rendered like 
 - No route whose type is in the item's `dismissedRoutes`. The message names the dismissed route and its reason. `move` targets are in `relatedRepos`. A `move` to `issue` needs a discussion that the refresh did not find closed, the profile's `botCommands.escalate`, and an `issueKind` of `bug` or `enhancement` when it has one. `category` is a non-empty string and only on a discussion. Chores name a chore action.
 - No text the bot would post contains a `botCommands` string.
 - Every `findings[].routeId` names a route of the item.
+- `findings[].id`, when present, is 1 to 40 letters, digits, `-` or `_`, and no two findings of an item share one.
 - `findings[].certain` is true or false. A finding with `certain: true` needs `evidence`, the concrete case that shows the problem, in at most 400 characters. A `question` or an `idea` is never certain.
 - `effortMinutes` is required and one of 1, 2, 5, 10, 15, 30, 60 and 120. The message names the allowed values.
 - `params.alsoAnswer` only on `close` routes of items with `kind: "discussion"`, with a node id, a `url` that starts with the item's `url` and `#`, and a `gist` of at most 200 characters.
@@ -640,7 +656,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "category": "Feature Requests",  // discussions, from the snapshot: the category's name on GitHub
   "solved": false,                 // issues and discussions: the agent thinks it is resolved
   "findings": [                    // optional, full reviews only
-    { "severity": "blocker", "text": "…", "ref": "src/…:123", "routeId": "r2" },   // blocker | major | minor | idea | question. routeId is optional
+    { "id": "f1", "severity": "blocker", "text": "…", "ref": "src/…:123", "routeId": "r2" },   // blocker | major | minor | idea | question. id and routeId are optional. id is 1 to 40 letters, digits, "-" or "_", unique in the item
     { "severity": "major", "text": "…", "ref": "…", "certain": true, "evidence": "The value 200 passes the range check and the device rejects it." }   // certain and evidence are optional. Only such a finding may go out in an automatic review
   ],
   "routes": [ … ],                // see Routes
@@ -659,6 +675,9 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "dismissedRoutes": [             // set by dismiss_route, never cleared by the routine
     { "type": "close", "title": "Close: fixed in 2.3.1", "reason": "Not fixed for him yet", "at": "ISO" }
   ],
+  "findingAnswers": [              // the maintainer's answers to findings, see "Answers to findings". Kept on replace
+    { "finding": "f1", "findingText": "…", "text": "Yes, 0x00 means off.", "at": "ISO" }
+  ],
   "wants": { "labels": { "add": ["needs-info"], "remove": [] }, "assignees": ["octocat"] },   // optional, the agent's: labels and assignees it would set. Replaced with the doc
   "wantsReason": "One sentence.",  // required with wants
   "handled": { "at": "ISO", "routeId": "r1", "routeType": "reply", "verified": null },   // the maintainer's, see below
@@ -673,6 +692,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
 
 The server serves derived state on items, never stored:
 
+- `findings[].key` on every finding: the key his answers name it by, see "Answers to findings".
 - `working: { kind: "fix" | "review" | "push", action, since }` while an unexpired claim, a queued or claimed agent request, or a drive that waits for its review bot (`<state>/drive/<itemId>.json` in the stage `review`) exists. A drive file in the stage `watch` is no work. Push work wins over other kinds, then the oldest. `action` is the agent action, missing for a bare claim.
 - `fix` on issues and discussions: `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy: "routine" | "maintainer" | "other", since, parked }`. `parked` says that the fix keeps the item out of the day plan: true for `working`, and for `draft` and `open` until the other side writes. That is the case when the snapshot entry's `lastThemAt` is later than `since`, the time Gary recorded the fix PR. A fix PR without a recorded time has no `since`, so it parks the item until it is merged or closed. `merged` and `closed` never park. Sources, strongest first: a `fix` claim or a queued `start_fix` request (`working`, the maintainer when a request is queued, else the routine), Gary's records in `fixes.json`, the snapshot's `closingPrs` of an issue in any state, and for a discussion the PRs that name it by URL or as `#<number>`. The PR's own snapshot entry gives its live fields. A recorded PR that no source shows counts as open. With several PRs an open or draft one wins, then merged, then closed.
 
@@ -930,12 +950,12 @@ Board-only actions, no GitHub call. The page applies them to the item file throu
 | `dismiss_route` | removes one route, see Routes. The server applies it through `/api/action` |
 | `accept_proposal`, `dismiss_proposal` | decide a proposal, see Learning. The server applies them through `/api/action` |
 
-Agent requests. The server writes them as queued action docs when their route is clicked. The page writes only the `reanalyze` doc of "Analyze again". The master session watches the queue between runs (`gary watch-queue` under the Monitor tool) and starts them within seconds. If the master is not running, the next hourly run picks them up:
+Agent requests. The server writes them as queued action docs when their route is clicked. The page writes only the `reanalyze` doc of "Analyze again" without answers. With answers the server writes it, see "Answers to findings". The master session watches the queue between runs (`gary watch-queue` under the Monitor tool) and starts them within seconds. If the master is not running, the next hourly run picks them up:
 
 | action | effect |
 | --- | --- |
 | `full_review` | run the full review for this item, outside the budget. With `params: { repo, number, by: "auto_review", reRequestedAt }` the PR's author re-requested the automatic review, and the worker ends with the post step of "Automatic first review". After the review rounds of a fix PR it carries `params: { repo, number, by: "fix", fixFor, outcome, ready, rounds, lastPushedSha }` and the reason the rounds ended as `text`, plus `trigger` after a round for feedback, see "Watched PRs". The PR may have no board item yet then, so the worker reads repo and number from the params. With `params: { repo, number, by: "api_edit", pushed: { action, sha } }` the server committed an API edit, and the review looks at the new head and ends in a route that decides the PR. `params.reviewBotRound` says that a review bot round on that head follows, and the item's `state` says so |
-| `reanalyze` | `text` holds an optional maintainer instruction for the agent |
+| `reanalyze` | `text` holds an optional maintainer instruction for the agent. `params.answers`, when present, holds his answers to findings: `[{ finding, findingText, text }]`. Each answer is his decision on that finding |
 | `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from. `params.askReporter` is true when he switched on "Ask the reporter to test": only then the PR body ends with one request to the reporter. A fix nobody clicked asks nobody |
 | `address_review` | `params.decisions` as sent by the card. The agent fixes or dismisses each thread and pushes to the PR branch as the bot |
 | `take_over` | `params.mode` `push` or `replace`, optional `params.decisions` as for `address_review`, optional `text` with instructions |
@@ -972,6 +992,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `unchecked_comment` | `comment: { path, text }` | one entry per inline review comment the maintainer unchecked |
 | `edited_comment` | `route: { type, title }`, `comment: { path, line }`, `draft`, `final`, each text cut at 8000 characters | one entry per checked inline review comment whose words the maintainer rewrote. `draft` is the agent's words without the suggestion block |
 | `agent_note` | `text` | the note of "Analyze again", or the instruction text of an agent route |
+| `answered_finding` | `finding: { key, severity, text }`, `text`, both texts cut at 8000 characters | one entry per answer he sent to a finding, see "Answers to findings" |
 | `snoozed` | `days`, or `untilActivity: true` | the maintainer snoozed or hid the item |
 | `dismissed_proposal` | `proposal: { id, title, target, file }`, or `{ id, title, kind: "setting", setting }` for a setting proposal, `reason` | `dismiss_proposal` ran, so the pattern is not proposed again |
 | `accepted_proposal` | `proposal: { id, title, kind: "setting", setting }`, `from` | `accept_proposal` changed a setting. `from` is the value before. An accepted rule proposal writes no entry |
@@ -980,7 +1001,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `escalated` | `route: { type, title }`, `issueKind`, `category` | the escalate button posted the profile's escalate command on a discussion. `issueKind` and `category` are `null` when the route or the item has none |
 | `skipped_label` | `route: { type, title }`, `labels: { add, remove }` | a bot `reply` or `request_logs` with `alsoLabel` ran with `input.alsoLabel: false` |
 
-The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", snooze and hide. Routes with `as: "me"` never reach `/api/action`, except the escalate button. The page reports the use of a prefill to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
+The server derives these entries itself when a bot or agent route is clicked, and for `dismiss_route`, "Analyze again", answers to findings, snooze and hide. Routes with `as: "me"` never reach `/api/action`, except the escalate button. The page reports the use of a prefill to `POST /api/decision` with `{ itemId, routeId, text }`, under the same token, origin and JSON checks. The server then logs `chose_alternative` and `edited_text` from the item file. It writes nothing to GitHub and no action doc.
 
 `gary decisions [--since <ISO>] [--json]` prints the entries. `--since` is exclusive: it prints entries whose `at` is later than the value.
 
