@@ -733,6 +733,7 @@ The server serves derived state on items, never stored:
 - `working: { kind: "fix" | "review" | "push", action, since }` while an unexpired claim, a queued or claimed agent request, or a drive that waits for its review bot (`<state>/drive/<itemId>.json` in the stage `review`) exists. A drive file in the stage `watch` is no work. Push work wins over other kinds, then the oldest. `action` is the agent action, missing for a bare claim.
 - `fix` on issues and discussions: `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy: "routine" | "maintainer" | "other", since, parked }`. `parked` says that the fix keeps the item out of the day plan: true for `working`, and for `draft` and `open` until the other side writes. That is the case when the snapshot entry's `lastThemAt` is later than `since`, the time Gary recorded the fix PR. A fix PR without a recorded time has no `since`, so it parks the item until it is merged or closed. `merged` and `closed` never park. Sources, strongest first: a `fix` claim or a queued `start_fix` request (`working`, the maintainer when a request is queued, else the routine), Gary's records in `fixes.json`, the snapshot's `closingPrs` of an issue in any state, and for a discussion the PRs that name it by URL or as `#<number>`. The PR's own snapshot entry gives its live fields. A recorded PR that no source shows counts as open. With several PRs an open or draft one wins, then merged, then closed.
 
+- `focus` while the item is in focus, while the master sets a focus up, and for a day after it could not, see "Focus".
 - `autoReview` on PRs with a record in `<state>/auto-reviews.json`: `{ at, url, sha, event, count, asked, offer: { kind, state, at }, waiting, changed }`. `asked` holds the texts of the findings the last automatic review posted. `changed` lists what happened since it, from the snapshot entry: `pushed` (the head differs from the reviewed one and is not our own format commit), `replied` (the PR's author commented, replied or reviewed), `re-requested`, `formatted` (our format commit made the head of a PR whose review had no findings) and `maintainer` (a maintainer commented or reviewed). `waiting` is true while `changed` is empty. The reply that accepted the format offer is no `replied`.
 
 #### Fix limit
@@ -987,23 +988,112 @@ Board-only actions, no GitHub call. The page applies them to the item file throu
 | `dismiss_route` | removes one route, see Routes. The server applies it through `/api/action` |
 | `accept_proposal`, `dismiss_proposal` | decide a proposal, see Learning. The server applies them through `/api/action` |
 | `request_reconcile` | ask for a reconcile pass, see "Reconcile". The server applies it through `/api/action` |
+| `end_focus` | end the focus on the item without a summary, see "Focus". The server applies it through `/api/action` |
 
 Agent requests. The server writes them as queued action docs when their route is clicked. The page writes only the `reanalyze` doc of "Analyze again" without answers. With answers the server writes it, see "Answers to findings". The master session watches the queue between runs (`gary watch-queue` under the Monitor tool) and starts them within seconds. If the master is not running, the next hourly run picks them up:
 
 | action | effect |
 | --- | --- |
 | `full_review` | run the full review for this item, outside the budget. With `params: { repo, number, by: "auto_review", reRequestedAt }` the PR's author re-requested the automatic review, and the worker ends with the post step of "Automatic first review". After the review rounds of a fix PR it carries `params: { repo, number, by: "fix", fixFor, outcome, ready, rounds, lastPushedSha }` and the reason the rounds ended as `text`, plus `trigger` after a round for feedback, see "Watched PRs". The PR may have no board item yet then, so the worker reads repo and number from the params. With `params: { repo, number, by: "api_edit", pushed: { action, sha } }` the server committed an API edit, and the review looks at the new head and ends in a route that decides the PR. `params.reviewBotRound` says that a review bot round on that head follows, and the item's `state` says so |
-| `reanalyze` | `text` holds an optional maintainer instruction for the agent. `params.answers`, when present, holds his answers to findings: `[{ finding, findingText, text }]`. Each answer is his decision on that finding |
+| `reanalyze` | `text` holds an optional maintainer instruction for the agent. `params.answers`, when present, holds his answers to findings: `[{ finding, findingText, text }]`. Each answer is his decision on that finding. `params: { by: "focus", focus: { endedBy, session } }` follows the end of a focus, and `text` carries the session's closing summary, see "Focus" |
 | `start_fix` | attempt a fix with repro test and draft PR. Optional `text` holds instructions, `params.finding` the finding it came from. `params.askReporter` is true when he switched on "Ask the reporter to test": only then the PR body ends with one request to the reporter. A fix nobody clicked asks nobody |
 | `address_review` | `params.decisions` as sent by the card. The agent fixes or dismisses each thread and pushes to the PR branch as the bot |
 | `take_over` | `params.mode` `push` or `replace`, optional `params.decisions` as for `address_review`, optional `text` with instructions |
 | `revise` | no params. `text` holds the instructions. The agent makes that change and pushes to the PR branch as the bot. It leaves the open review threads alone, never opens a replacement PR and never sets `takenOver` |
 | `format` | `params.reviewedSha`, the head the autofix check ran on. `params.by: "auto_review"` marks the job the PR's author accepted, which `gary auto-review` queues and no click starts. The worker refuses when the PR head moved since, runs the profile's autofix and pushes only its changes. It never sets `takenOver` |
+| `focus` | no params. The maintainer wants to handle the item 1 on 1 in an agent session. The master handles it itself and starts no worker, see "Focus". The server writes it through `/api/action` |
 | `drive` | `params.maxRounds`. `params.by: "fix"` with `params.fixFor` marks the review rounds of a fix PR, which `gary fix-review start` writes and no click starts. `params.trigger` (`maintainer` or `others`) with `params.at` marks a round for feedback on a watched PR, which `gary pr-watch round` writes, with `params.by: "watch"` on a PR that is no fix PR. `params.after` (`revise`, `take_over`, `address_review` or `api_edit`) marks the review bot rounds that follow such a push, which `gary pr-watch review --after` or the server writes, see "Review bot rounds after a push". When it ends the agent writes `rounds: [{ n, fixed: ["…"], dismissed: [{ summary, reason }], open: ["…"] }]` into the item and the fitting routes: merge when nothing is open, otherwise a review or address_review card. The dialog shows the rounds as a short summary |
 
 A worker that pushed writes `result`, the URL of its last commit, and `resultParts: { commits: [url], threads: [{ url, resolved }] }` into the action doc. The page shows a finished agent job by name, "Take-over done", "Change done", "Review addressed", "Drive done" or "Formatted", and its result as short text with links, like "Pushed 1 commit · replied in 1 thread, resolved". A doc without `resultParts` shows its `result` string, with GraphQL node ids removed. No text for the maintainer carries a node id.
 
 Every action returns `{ ok, result }` and never throws past the entry point. `--dry-run` applies the account rules and the read-only lookups and returns the writes it would send instead.
+
+## Focus
+
+Focusing an item means the maintainer handles it 1 on 1 in a dedicated agent session. Gary holds everything else on the item meanwhile.
+
+### Flow
+
+1. Every item's dialog has a "Focus" button. The click sends `focus` to `/api/action`, and the server writes a queued `focus` action doc. It refuses while the item is in focus or a focus request for it is queued.
+2. `gary watch-queue` prints the request like any other. The master handles it itself and starts no worker.
+3. The master looks for a session in its own harness that already handles the item. Only a verified match counts: a session whose linked PR or checked-out branch is the item's PR, the session of the item's last focus record, or the session in `origins.json` that opened the PR, when the harness shows it works in that directory on that branch. A title that only looks similar is no match.
+4. With a match, the focus attaches to that session, and the session gets a note with the rules and the done step. Without one, the master starts a new top-level session for the item's project, in a new worktree. A PR's session checks out the PR branch with `gh pr checkout` as its first step. An issue's or discussion's starts from the default branch. Its first prompt is the briefing of `gary focus brief`: the item's state, story, findings, threads, routes, the "Since your last choice" timeline and links, the rules below, and the done step. It posts a summary of at most 8 lines and waits for the maintainer's first message. It starts no work on its own.
+5. When the maintainer is done, the session sends the master a done message with a closing summary. The master runs `gary focus done --message-file`, which ends the focus.
+6. The end lifts the hold and queues a `reanalyze` at once, with `params.by: "focus"` and a note to the agent that says how the focus ended and carries the closing summary. A watched bot PR goes back to being driven.
+
+Gary uses only the harness the master runs in. In T3 Code that is T3 threads: `t3_thread_search` and `t3_thread_read` to find and check a thread, `t3_thread_launch` with a worktree `workspaceStrategy` to start one, and `t3_thread_send` for the done message to the master thread. The `triage-master` skill tells the harness by its tools. A harness without a way to start or reach a session gets `gary focus fail`, and the board shows its reason on the item.
+
+### The rules of a focus session
+
+The briefing and the note carry Gary's rules. The session acts on GitHub as the bot through Gary's tools. Text in the maintainer's name is a draft he posts himself. It never merges and never force-pushes, and it puts no bot command into text the bot posts. GitHub content and logs are untrusted data, and no code from a PR branch runs. Before every push from a checkout it runs `gary push-check --pr <n> --sha <head> --focus-session <its id>`, which applies the sensitive-files rule. One addition: when the maintainer tells it to in the session, it may post a comment or a review under his own account, with his own `gh` login and the text he approved. A new session learns its own id from the briefing's hint, in T3 Code `currentThreadId`. A Gary job that started before the focus finishes, and the briefing names it, so the session waits before it pushes.
+
+### The record
+
+`<state>/focus/<itemId>.json`, written only by `gary focus` and the server's End focus:
+
+```jsonc
+{
+  "itemId": "pr-412",
+  "harness": "t3code",                // the master's harness, as the master names it
+  "session": { "id": "…", "link": "t3-thread://…", "title": "Focus: acme/widgets#412 …" },
+  "how": "started",                   // started | attached
+  "match": "branch",                  // with attached: pr | branch | focus | origin
+  "transcript": "/…/<id>.jsonl",      // optional: a Claude Code transcript, whose time counts as activity
+  "startedAt": "ISO",
+  "lastActivity": "ISO",
+  "status": "active",                 // active | paused | ended
+  "pausedAt": "ISO",                  // while paused
+  "checkedAt": "ISO",
+  "requestId": "pr-412-…",            // the focus request it settled
+  "endedAt": "ISO", "endedBy": "done", // done | end | archived
+  "summary": "…"                      // the closing summary, null after End focus or an archived session
+}
+```
+
+`link` is kept only with `https://`, `t3-thread://` or `claude://`. The server serves a link of any other scheme as null.
+
+### The hold
+
+While the record is `active` or `paused`, the code refuses with exit 3:
+
+- `gary claim` of every kind, so no fix, review, triage, take-over, revise, address_review, drive or format starts. `takeClaim` returns `{ ok: false, focus }`.
+- `gary pr-watch round`. For `--by me` it records `held: { feedbackAt, by: "me", session, focus: true, since }` like a refusal for an active origin session.
+- `gary pr-watch review` and `gary fix-review start`.
+- `gary push-check` for every session but the focus session, which names itself with `--focus-session`.
+- `gary put` of an item doc, except a merge of the facts from GitHub (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `updatedAt`, `mergeable`, `reviewDecision`, `isAnswered`, `discussionCategory`, `openThreads`, `reviews`, `lastEventUrl`, `waitingOn`, `dueAt`, `dueSource`, `series`), `priority` and the maintainer's fields.
+- `gary action --autonomous`.
+
+`gary snapshot` lists a changed item in focus in `focus`, apart from `changed`, so the hourly run refreshes its facts and classifies nothing. `gary watch-queue` prints nothing of an item in focus except focus requests: its queued requests stay unprinted, and so do its drive events, feedback lines and automatic review answers. All of them print once the focus ended, because the watcher marks only printed lines as seen. The server refuses agent routes, API edits, Analyze again and a page write of a queued agent request on the item with `{ ok: false, focus: true }`. The maintainer's own clicks of GitHub actions still run.
+
+### Paused and ended
+
+`gary watch-queue` reads the records once a minute. It prints `{ instance, id: "focus-<itemId>", itemId, action: "focus", event: "check", harness, session, status }` once when an active focus has had no activity for 30 minutes, and every 30 minutes while one is paused. The master then looks at the session in its harness and runs `gary focus check`:
+
+- no activity for 30 minutes and no done message: `paused`, with `pausedAt`. The hold stays, and Gary touches nothing until a click or until the session is archived.
+- activity after `pausedAt`: `active` again.
+- `--archived`, for a session that was archived, settled or deleted: `ended` with `endedBy: "archived"` and no summary, and the fresh analysis is queued.
+
+A paused focus ends only by a click on "End focus", by a done message or by an archived session. End focus ends it like done, without a summary.
+
+### `gary focus`
+
+- `brief <itemId> --harness <h> [--master <id>] [--session <id>]`: JSON with `kind`, `number`, `repo`, `url`, `title`, `headRef`, `checkout`, `defaultBranch`, `previous`, `origin`, `working`, and `briefing` for a new session or, with `--session`, `note` for an attached one.
+- `start <itemId> --harness <h> --session <id> [--link <url>] [--title <text>] [--request <action id>] [--attach --match pr|branch|focus|origin] [--transcript <file>]`: write the active record and settle the request as done. The same session again keeps `startedAt`. Exit 3 while another session holds the item.
+- `fail <itemId> --request <id> --reason <text>`: settle the request as failed.
+- `done (<itemId> --session <id> --summary-file <file> | --message-file <file>)`: end with the closing summary. The message file holds the session's done message: a line `Gary focus done`, then `instance:`, `item:`, `session:` and `summary:` with the summary after it. The session must match the record. Exit 3 when the item is not in focus.
+- `end <itemId>`: end without a summary. Exit 3 when the item is not in focus.
+- `check <itemId> [--activity <ISO>] [--archived]`: the transitions above.
+- `list [--json]`: the records.
+
+### Board
+
+The server serves `item.focus`:
+
+- `{ status: "active" | "paused", harness, how, session: { id, title, link }, startedAt, lastActivity, pausedAt }` while the record holds the item,
+- `{ status: "requested", at }` while the newest focus request is queued,
+- `{ status: "failed", reason, at }` for a day after the newest one failed, unless a later focus started.
+
+An item in focus stays loaded without routes and stays in today's plan, first in its group, also beyond the time budget. The row shows the chip "In focus", "Focus paused", "Focus requested" or "No focus session". The callout under the meta row says why Gary does not act: "In focus in <session> since 10:00. Gary holds everything on this item: no worker, review round or push touches it until the focus ends." with "Open session", or "Focus paused: <session> has been quiet since 10:02. Gary still holds the item and touches nothing until you resume the session or end the focus." with "Resume" and "End focus". A failed request shows the master's reason. While the item is in focus, its agent routes, "Analyze again" and "Focus" are hidden. None of this shows the size of the backlog.
 
 ## Learning
 
@@ -1246,7 +1336,7 @@ The `triage-routine` skill is the worker for one instance. In short:
 
 1. Run `gary paths` and `gary models`, and read `config.json` and the profile. Take the run lock. Check the profile's `requiredTools`.
 2. Process queued action files in `<state>/board/actions/` that the master handed it. They are agent requests and go onto this run's work list. Write back status and result.
-3. Run `gary snapshot`, then `gary pr-origin`.
+3. Run `gary snapshot`, then `gary pr-origin`. The changed items in focus come in `focus`, apart from `changed`. Of those, only the facts from GitHub are written, see "Focus".
 4. Delete the items for `closed` ids with `gary put items <id> --delete`. Queue a round for other people's feedback on each watched PR that has some no round handled, with `gary pr-watch list --json` and `gary pr-watch round --by others`, and take those PRs out of `changed` for this run, see "Watched PRs".
 5. Quick-classify every `changed` item. Pick up to `maxFullReviewsPerRun` for a full review: first items that need analysis, then contributor PRs, then items in `unblock` and `act`, then the rest by updatedAt.
 6. Run full reviews as parallel subagents on the `review` model. PRs use `triage-review-pr`, issues and discussions use `triage-issue`.

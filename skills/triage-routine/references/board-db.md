@@ -31,6 +31,8 @@ Both modes validate the resulting item and refuse it with a list of problems.
 
 Action files are read and written directly. Find queued actions by reading every file in `actions/` and keeping those with `status: "queued"`. Sort them by `createdAt`.
 
+A `focus` request is the master's, and a request whose item is in focus waits until the focus ends. Leave both queued and unclaimed. `gary focus list --json` prints the focus records. One with `status` `active` or `paused` holds its item.
+
 Claim one before you work on it. Re-read the file and check that it is still `queued` with an empty `result`. Then rewrite it with `result: "claimed by run <timestamp>"`. A file that already carries another run's claim belongs to that run. When the work is done, rewrite it with `status` (`done` or `failed`), `finishedAt` (ISO) and `result` (URL or error message).
 
 Write action files atomically: write `<name>.tmp` in the same directory, then rename it over `<name>` with `mv`. The server and the page may read at any moment, and a direct write could hand them half a file. Never leave a `.tmp` file behind.

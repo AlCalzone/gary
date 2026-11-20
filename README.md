@@ -86,6 +86,8 @@ The card that starts a fix has a switch "Ask the reporter to test", off by defau
 
 When a suggestion is wrong, dismiss its card and say why. The agent never offers that kind of action on the item again and takes your reason into account. "Analyze again" sends the item back to the agent, optionally with a note.
 
+**Focus** works on one item 1 on 1 with an agent. The button sits in the footer of every item. The master session looks for a session that already works on the item, like the one that has its PR branch checked out, or starts a new one in a new worktree. In T3 Code that is a T3 thread. The new session reads Gary's analysis, posts a short summary and waits for you. It follows Gary's rules: it acts as the bot, drafts text in your name for you to post, never merges, and posts under your account only when you tell it to. Meanwhile Gary holds the item: no worker, review round or push touches it, and the hourly run only refreshes its facts. The item stays in your plan with the chip "In focus" and a link to the session. When you tell the session you are done, it sends Gary a summary, and Gary analyzes the item again with that summary. A session that has been quiet for 30 minutes shows as "Focus paused", with "Resume" and "End focus". Gary still touches nothing until you click one of them or archive the session.
+
 Items Gary could not analyze show one card that opens the thread on GitHub, so you decide yourself. That happens when the model's safety filter stopped the agent or the analysis failed three times. "Analyze again" retries.
 
 Gary learns from your decisions. When you often dismiss the same kind of card, pick the alternative, or rewrite drafts the same way, it proposes a small rule. Proposals appear on the board behind the lightbulb in the header. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`. Gary can also suggest a setting, like using the faster model for obvious items. That card shows what Gary measured, and one click changes the setting in the instance's `config.json`. Once a week Gary also checks its rules for ones that repeat, conflict or name things that no longer exist, and proposes a change as a before and after. "Check rules" in the suggestions dialog, or `gary reconcile`, runs that check sooner.
@@ -109,6 +111,7 @@ From a clone, `gary setup` links the command into `~/.local/bin`, which must be 
 - `gary reconcile`: ask Gary to check its rules now.
 - `gary validate`: check the stored items against the rules, read-only.
 - `gary auto-review list`: show the reviews Gary posted without a click, and which PRs still wait for their contributor.
+- `gary focus list`: show the items in focus with their sessions. `gary focus end <itemId>` ends a focus like the board's "End focus".
 
 While paused, every click that would post, review, label or transfer is refused with "Gary is paused. Nothing was sent." Agent requests still queue and start after `gary resume`. Snoozing, dismissing a suggestion and deciding proposals keep working. The board header shows the pause.
 

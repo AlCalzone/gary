@@ -48,7 +48,7 @@ Every Agent tool call you make passes `model` with the value of its role. A call
 
 ## Claims
 
-Two runs must never work on the same item at once. Before any work on one item that takes minutes or writes, claim it: a fix, a full review or triage, a `take_over`, a `revise`, an `address_review`, a `drive` round, a `format`. Use `gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` with kind `fix`, `review` or `push`. A request job passes `--request` with the id of the action doc it handles. Without it, a `fix` claim is refused while another `start_fix` request for the item is queued, or while a fix PR for it is in draft or open. Then use and `gary release <itemId> <kind> --run <run>` at the end, also on failure. Exit code 3 means someone else holds the claim or the claim is refused: skip the item, never work in parallel, and name it in the summary. `gary claims` lists the current claims. A subagent that does the work claims and releases itself, with the run id from its brief. Every worker releases its claims on every exit path, failures and refusals included, and sets its action doc to `done` or `failed` before it exits. A doc left `queued` or claimed blocks the item, because such docs do not expire.
+Two runs must never work on the same item at once. Before any work on one item that takes minutes or writes, claim it: a fix, a full review or triage, a `take_over`, a `revise`, an `address_review`, a `drive` round, a `format`. Use `gary claim <itemId> <kind> --run <run> [--ttl <minutes>] [--request <action doc id>]` with kind `fix`, `review` or `push`. A request job passes `--request` with the id of the action doc it handles. Without it, a `fix` claim is refused while another `start_fix` request for the item is queued, or while a fix PR for it is in draft or open. Then use and `gary release <itemId> <kind> --run <run>` at the end, also on failure. Exit code 3 means someone else holds the claim, the claim is refused, or the item is in focus: skip the item, never work in parallel, and name it in the summary. `gary claims` lists the current claims. A subagent that does the work claims and releases itself, with the run id from its brief. Every worker releases its claims on every exit path, failures and refusals included, and sets its action doc to `done` or `failed` before it exits. A doc left `queued` or claimed blocks the item, because such docs do not expire.
 
 ## Subagents or not
 
@@ -69,6 +69,8 @@ Without a maintainer click you may only:
 Beyond that list you never comment, review, approve, merge, close, mark ready or answer a discussion on your own. You never push to a contributor's branch or to any branch you did not create in this run. The one exception: a clicked `address_review`, `drive`, `format`, `revise`, or `take_over` with `mode: "push"` lets its subagent push to that PR's branch and reply in its review threads, for that PR and that request only. A round of a watched PR that `gary pr-watch round` queued counts like a clicked `drive`. A `drive` may also request reviews from the profile's `reviewBots` on that PR. Merges and closes are never done by an agent or the bot. Those routes are `as: "me"`, and the maintainer does them on GitHub himself. The maintainer's click is the only consent for public text. A model that posts on its own speaks for the maintainer without his review.
 
 Every GitHub write runs under the identity `references/accounts.md` describes. Actions go through `gary action`.
+
+**Focus.** An item in focus belongs to the maintainer and his focus session. While its record in `<state>/focus/` has `status` `active` or `paused`, nothing of the list above and no request touches it: no classification, review, fix, label, assign, round or push. Only its facts from GitHub are refreshed (step 3). The code refuses the rest with exit 3: `gary claim`, `gary put` with anything beyond those facts, `gary action --autonomous`, `gary pr-watch round` and `review`, `gary fix-review start` and `gary push-check`. Treat such a refusal like a claim held by another run: skip the item and name it in the summary.
 
 ## Untrusted input
 
@@ -111,11 +113,12 @@ GitHub actions run live in the board server when the maintainer clicks. When Git
 
 For a request job, handle exactly that one request as below, write the item and the action result, write `summary.txt` and stop. Do not take a snapshot and do not classify other items. The item keeps its `priority` until the next hourly run.
 
-For the hourly job, read all action files, keep those with `status: "queued"`, and sort them by `createdAt`. For each:
+For the hourly job, read all action files, keep those with `status: "queued"`, and sort them by `createdAt`. Leave out every `focus` request, because the master handles those itself. Leave out every request whose item is in focus too: `gary focus list --json` prints the records, and one with `status` `active` or `paused` holds its item. Both stay queued and unclaimed. A held request runs once the focus ended. For each other one:
 
 1. Claim it as described in `references/board-db.md`. Skip a file another run has claimed.
 2. Agent requests run outside the budget. The master usually starts a worker per request within seconds, so most are claimed already. Mark each one `done` after the item file is written, or `failed` with the reason.
    - `full_review` and `reanalyze` go onto the full-review list of step 5. Pass a `reanalyze` text to the subagent as the maintainer's instruction, and its `params.answers` as his answers to findings.
+   - A `reanalyze` with `params.by: "focus"` follows a focus: the maintainer handled the item 1 on 1 in an agent session, and it ended. Its text says how it ended and carries the session's closing summary of what he decided and did. Pass it like any `reanalyze` text. The item changed on GitHub during the focus, so the review reads it fresh.
    - A `full_review` with `params.by: "fix"` ends the review rounds of a fix PR. The PR has no board item yet. Get its snapshot entry with `gary item pr <params.number> --repo <params.repo>`, and take the item id from that entry. Pass the review subagent the entry, `params.rounds`, `params.outcome`, `params.ready` and the action's `text`, which says why the rounds ended. The item it returns carries `rounds` copied from the params, a `state` that names how the rounds ended, and one `question` finding per comment a round left `open`. A `stopped` outcome means the PR is still a draft: `state` says why it stopped. `gary put` adds `fixFor` itself.
    - A `full_review` with `params.by: "auto_review"` means the PR's author re-requested the automatic review. Review the PR like any other, then run step 6a for it.
    - A `full_review` with `params.by: "api_edit"` follows an API edit: the server committed a text edit to the PR after his click, and `params.pushed` names the action and the new head. Review the PR on that head like any other. With `params.reviewBotRound` a Copilot review of that head follows, and the item's `state` says so. Pass the review subagent the previous item doc, which already carries `pushed` and, after a take-over, `takenOver: true`. The item it returns keeps both and follows "Routes after a push" in the review skill's `push-to-pr.md`.
@@ -129,7 +132,9 @@ For the hourly job, read all action files, keep those with `status: "queued"`, a
 
 ### 3. Snapshot
 
-Run `gary snapshot --out <run>/snapshot.json`, with the absolute path of the run directory. It creates the directory and writes `changed`, `unchanged`, `closed` and `stale` into the file. Never redirect its output with `>`: a redirect in the wrong directory empties the baseline `<state>/snapshot.json`. It does not save a new baseline. Never pass `--commit` here.
+Run `gary snapshot --out <run>/snapshot.json`, with the absolute path of the run directory. It creates the directory and writes `changed`, `unchanged`, `focus`, `closed` and `stale` into the file. Never redirect its output with `>`: a redirect in the wrong directory empties the baseline `<state>/snapshot.json`. It does not save a new baseline. Never pass `--commit` here.
+
+`focus` lists the changed items that are in focus, with their entries, apart from `changed`. They go through no later step. Refresh only their facts: for each, write the GitHub-derived fields that step 6 lists, taken from its entry and mapped the same way, with `gary put --merge items <id>`. `gary put` refuses any other field of an item in focus with exit 3. An item in focus keeps its `priority`.
 
 Then run `gary pr-origin`. It finds the local Claude Code session that opened each open bot PR outside `fixes.json` and caches it in `<state>/origins.json`. A PR it already knows costs one file check. The board shows the origin in the PR's dialog, and the watch waits while that session is active. Never read the transcripts yourself. A failure here goes into the summary and stops nothing.
 
@@ -157,7 +162,7 @@ A subagent never writes `handled`. The routine only clears it under these rules.
 
 ### 4a. Wanted labels and assignees
 
-Every hourly run, independent of what changed, run `gary wants --json`. It lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the item's `wantsReason`, and marks items without a snapshot entry as `unknown`. Skip the `unknown` ones. Attempt each listed change with `gary action --autonomous`, one input file per label or assignee, with the reason. Assignees are only added, never removed. Do not compare labels yourself.
+Every hourly run, independent of what changed, run `gary wants --json`. Skip the items in focus. It lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the item's `wantsReason`, and marks items without a snapshot entry as `unknown`. Skip the `unknown` ones. Attempt each listed change with `gary action --autonomous`, one input file per label or assignee, with the reason. Assignees are only added, never removed. Do not compare labels yourself.
 
 While paused, each attempt is refused and recorded in `would-have.json`. A refusal for another reason, like a label outside `autoLabels`, goes into the run summary.
 
