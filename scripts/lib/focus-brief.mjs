@@ -4,7 +4,7 @@
 
 const DONE_MARK = "Gary focus done";
 export const OWN_ID = "<your session id>";
-// Where a new session finds its own id, by harness
+// `OWN_ID_HINT` says where a new session finds its own id in each harness
 const OWN_ID_HINT = {
 	t3code: "`currentThreadId` in the answer of any T3 thread tool, like `t3_thread_search`",
 };

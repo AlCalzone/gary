@@ -19,7 +19,7 @@ import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
 import { fixPrNumbers, fixStateOf, loadFixSources } from "./lib/fixes.mjs";
 import { focusHold, focusRefusal } from "./lib/focus.mjs";
 
-// The fields the hourly run refreshes on an item in focus: the facts from GitHub, its rank, and the maintainer's own
+// `FOCUS_FACT_FIELDS` names what a write may change on an item in focus: the facts from GitHub, the rank and the maintainer's fields
 export const FOCUS_FACT_FIELDS = [
 	"repo", "kind", "number", "title", "url", "author", "authorType", "labels", "isDraft", "ci", "updatedAt", "mergeable", "reviewDecision", "isAnswered",
 	"discussionCategory", "openThreads", "reviews", "lastEventUrl", "waitingOn", "dueAt", "dueSource", "series", "priority", "hidden", "snoozedUntil", "handled",

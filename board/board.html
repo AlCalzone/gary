@@ -262,7 +262,7 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .callout.hold[hidden] { display: none; }
 .callout.hold p { margin: 0; }
 .hold-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
-/* Focus: he works on the item 1 on 1 in its own agent session, and Gary holds it meanwhile */
+/* An item in focus is his to work on in its own agent session, and Gary holds it meanwhile */
 .focus-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
 .focus-chip.paused { background: var(--warn-soft); color: var(--fg); }
 .focus-chip.quiet { background: var(--accent-soft); color: var(--fg); }
@@ -3520,7 +3520,7 @@ function focusChip(d) {
   return h("span", { class: "focus-chip failed", title: f.reason || "No focus session started", text: "No focus session" });
 }
 
-// The callout under the meta row: why Gary does not act on the item, and the way back to the session
+// The callout under the meta row says why Gary does not act on the item and links the session
 function renderFocus(key, d) {
   const el = document.getElementById("d-focus");
   const f = focusOf(d);

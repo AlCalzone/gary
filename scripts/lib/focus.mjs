@@ -12,12 +12,12 @@ import { instanceDir, instanceName } from "./config.mjs";
 export const FOCUS_QUIET_MS = 30 * 60000;
 export const FOCUS_STATUSES = ["active", "paused", "ended"];
 export const FOCUS_HELD = ["active", "paused"];
-// How a focus ended: the session reported done, the board's "End focus", or the session was archived or deleted
+// A focus ends by the session's done message, the board's "End focus", or an archived or deleted session
 export const FOCUS_END_REASONS = ["done", "end", "archived"];
 export const FOCUS_MATCHES = ["pr", "branch", "focus", "origin"];
 export const MAX_SUMMARY = 8000;
 const MAX_FIELD = 500;
-// A session link the board may open. Anything else is served without a link
+// The board opens only session links of these schemes
 const LINK = /^(https:\/\/|t3-thread:\/\/|claude:\/\/)[^\s"'<>]{1,1000}$/;
 
 export const focusDir = (instance = instanceName()) => join(instanceDir(instance), "state", "focus");

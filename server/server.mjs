@@ -39,7 +39,7 @@ const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 export const HEALTH = { ok: true, name: "gary" };
 const OUTDATED = "The board is out of date, reload it.";
 const IN_FOCUS = [409, { ok: false, result: "This item is in focus. Gary starts no agent work on it until the focus ends.", focus: true }];
-// A failed focus request shows on its item for this long
+// `FAILED_FOCUS_MS` sets how long a failed focus request shows on its item
 const FAILED_FOCUS_MS = 24 * 3600000;
 const UNKNOWN_INSTANCE = "Unknown instance.";
 const ITEM_ID = idPattern("items");
