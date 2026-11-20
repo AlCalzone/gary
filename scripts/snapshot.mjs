@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
-import { aiFacts, buildTimeline, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, sizeFacts, speakerFacts } from "./lib/facts.mjs";
+import { aiFacts, buildTimeline, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
 
@@ -62,6 +62,7 @@ const PR_FIELDS = `
 				headRefOid headRefName baseRefName isCrossRepository reviewDecision mergeable
 				additions deletions
 				commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+				recentCommits: commits(last: 20) { nodes { commit { committedDate author { user { login } } committer { user { login } } } } }
 				allCommits: commits(first: ${MAX_COMMITS}) { totalCount nodes { commit { message signature { isValid wasSignedByGitHub } author { name email user { login } } committer { name email user { login } } } } }
 				files(first: ${MAX_FILES}) { totalCount nodes { path additions deletions } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
@@ -378,6 +379,8 @@ function baselineEntry(item) {
 		lastThemAt: item.facts?.lastThemAt ?? null,
 		// The fix state of issues and discussions reads these
 		...(item.kind === "pr" && { title: item.title, author: item.author, isDraft: item.isDraft ?? false, ci: item.ci ?? null, ...(item.garyFix && { garyFix: item.garyFix }) }),
+		// The watch on our PRs compares these with the feedback a round already handled
+		...(item.kind === "pr" && { feedback: Object.fromEntries(["lastMeAt", "lastOthersAt", "ourLastCommitAt", "reviewBotReviews"].filter((k) => item.facts?.[k] != null).map((k) => [k, item.facts[k]])) }),
 		// The validator and the board server decide from these which routes may push to the PR
 		...(item.sensitiveFiles && { sensitiveFiles: item.sensitiveFiles, ...(item.facts?.sensitiveOurs && { sensitiveOurs: true }) }),
 		// The board shows a discussion's category also on items written before the routine copied it
@@ -436,6 +439,8 @@ function factsContext() {
 		maintainers: maintainerLogins(),
 		writeLogin: writeLogin(),
 		me: loadConfig().me,
+		bot: bot ?? null,
+		reviewBots: profile.reviewBots ?? [],
 		patterns: profile.automatedComments ?? [],
 		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [], own: bot ?? null },
 	};
@@ -480,6 +485,7 @@ function withFacts(kind, node, entry, ctx) {
 	}
 	facts.maintainerCanModify = node.maintainerCanModify === true;
 	facts.lastAuthorAt = lastEventBy(timeline, node.author?.login);
+	Object.assign(facts, feedbackFacts(timeline, node.recentCommits?.nodes, { me: ctx.me, bot: ctx.bot, writeLogin: ctx.writeLogin, reviewBots: ctx.reviewBots }));
 	const requests = reviewRequestsFor(node, ctx.writeLogin);
 	if (requests.length) facts.reReviewRequests = requests;
 	const record = node.autoReviewRecord;

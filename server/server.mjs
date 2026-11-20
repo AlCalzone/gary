@@ -16,6 +16,7 @@ import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
 import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
+import { stageOf } from "../scripts/lib/watch.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
@@ -910,7 +911,8 @@ export async function startBoardServer({
 			const itemId = n.slice(0, -".json".length);
 			if (!ITEM_ID.test(itemId)) continue;
 			const d = await readJson(join(driveDir, n));
-			if (d) out.push({ itemId, kind: "push", action: "drive", since: d.reviewRequestedAt ?? d.startedAt ?? null });
+			// A watched PR that only waits for the maintainer's feedback is no push work
+			if (d && stageOf(d) === "review") out.push({ itemId, kind: "push", action: "drive", since: d.reviewRequestedAt ?? d.startedAt ?? null });
 		}
 		return out;
 	}

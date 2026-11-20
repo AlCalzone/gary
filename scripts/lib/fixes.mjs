@@ -51,7 +51,7 @@ export const driveDir = (instance = instanceName()) => join(instanceDir(instance
 /** The id of the board item of PR `number`. A drive file and its action doc are named by it. */
 export const prItemId = (number) => `pr-${number}`;
 
-/** The waiting drives of the instance by item id, from `<state>/drive/<itemId>.json`. */
+/** The drive files of the instance by item id, from `<state>/drive/<itemId>.json`: waiting drives and watched PRs. */
 export async function readDrives(instance = instanceName()) {
 	let names = [];
 	try {
@@ -153,13 +153,15 @@ export function fixStateOf(itemId, { claims, actions, records, snapshot, repo, d
 
 /**
  * The stage of the review rounds on a fix PR, from its drive file: `{ reviewer, round, maxRounds }`, or null
- * when no rounds run. `round` counts the review requested last.
+ * when no review bot round runs. `round` counts the review requested last over the PR's whole life.
+ * A drive file in the stage "watch" only waits for the maintainer's feedback, so it has no stage.
  */
 export function reviewStage(drive) {
 	if (!drive || drive.by !== "fix") return null;
+	if (drive.stage === "watch" || (drive.stage === undefined && typeof drive.reviewRequestedAt !== "string")) return null;
 	const maxRounds = Number.isInteger(drive.maxRounds) ? drive.maxRounds : FIX_REVIEW_DEFAULTS.maxRounds;
-	const done = Array.isArray(drive.rounds) ? drive.rounds.length : 0;
-	return { reviewer: drive.reviewBot ?? "copilot", round: Math.min(done + 1, maxRounds), maxRounds };
+	const requested = Number.isInteger(drive.copilotRounds) ? drive.copilotRounds : (Array.isArray(drive.rounds) ? drive.rounds.length : 0) + 1;
+	return { reviewer: drive.reviewBot ?? "copilot", round: Math.min(requested, maxRounds), maxRounds };
 }
 
 /**

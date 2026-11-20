@@ -62,8 +62,9 @@ t.check("a second start changes nothing", json(r).started === false && /already 
 // The stage on the issue's fix state
 let fx = json(gary("fixes", "--json"))["issue-23"];
 t.check("the fix state names the review round", fx.state === "draft" && JSON.stringify(fx.review) === '{"reviewer":"copilot","round":1,"maxRounds":3}', fx);
-writeFileSync(driveFile, JSON.stringify({ ...drive, rounds: [{ n: 1, fixed: ["Guard the empty list."], dismissed: [], open: [] }] }));
-t.check("a finished round moves the stage", json(gary("fixes", "--json"))["issue-23"].review.round === 2);
+t.check("start writes the watch fields", drive.watch === true && drive.stage === "review" && drive.copilotRounds === 1 && typeof drive.seenAt.me === "string", drive);
+writeFileSync(driveFile, JSON.stringify({ ...drive, copilotRounds: 2, rounds: [{ n: 1, fixed: ["Guard the empty list."], dismissed: [], open: [] }] }));
+t.check("the next requested review moves the stage", json(gary("fixes", "--json"))["issue-23"].review.round === 2);
 
 // The watcher notices the review within its poll
 r = gary("watch-queue", "--once");
@@ -116,7 +117,8 @@ let review = actions().find((a) => a.id === o.reviewId);
 t.check("done: a full review of the PR item is queued with the rounds", review?.itemId === "pr-19" && review.action === "full_review" && review.status === "queued" && review.result === "" && review.via === "queue" && review.params.outcome === "done" && review.params.ready === true && review.params.number === 19 && review.params.repo === "acme/widgets" && review.params.fixFor === "issue-23" && review.params.rounds[0].open[0] === "A test for the timeout branch." && review.params.lastPushedSha === "a".repeat(40) && /nothing new after round 1/.test(review.text), review);
 r = gary("watch-queue", "--once");
 t.check("done: the queue watcher prints the full review for the master", r.stdout.trim() === JSON.stringify({ instance: "widgets", id: o.reviewId, itemId: "pr-19", action: "full_review" }), r.stdout);
-t.check("done: the drive is over", !existsSync(driveFile) && actions().find((a) => a.id === drive.actionId).status === "done");
+t.check("done: the rounds are over and the PR stays watched", read(driveFile).stage === "watch" && read(driveFile).actionId === undefined && read(driveFile).reviewRequestedAt === undefined && read(driveFile).rounds.length === 1 && actions().find((a) => a.id === drive.actionId).status === "done", read(driveFile));
+t.check("done: the watch is no work on the PR item", gary("watch-queue", "--once").stdout.trim() === JSON.stringify({ instance: "widgets", id: o.reviewId, itemId: "pr-19", action: "full_review" }));
 fx = json(gary("fixes", "--json"))["issue-23"];
 t.check("done: the fix state is open and has no review stage", fx.state === "open" && fx.pr.isDraft === false && fx.review === undefined && typeof read(join(state, "fixes.json"))["issue-23"][0].readyAt === "string", fx);
 
@@ -127,7 +129,7 @@ gary("fix-review", "start", "--pr", "19", "--sha", SHA, "--run", "run-1");
 r = gary("fix-review", "finish", "--pr", "19", "--outcome", "stopped", "--reason", "The review did not arrive within 30 minutes.");
 o = json(r);
 review = actions().find((a) => a.id === o.reviewId);
-t.check("stopped: the PR stays a draft and the full review is queued anyway", r.status === 0 && o.ready === false && !writes().some((w) => w.mutation === "markPullRequestReadyForReview") && review?.action === "full_review" && review.params.outcome === "stopped" && review.params.ready === false && /did not arrive/.test(review.text) && !existsSync(driveFile), [o, review]);
+t.check("stopped: the PR stays a draft and the full review is queued anyway", r.status === 0 && o.ready === false && !writes().some((w) => w.mutation === "markPullRequestReadyForReview") && review?.action === "full_review" && review.params.outcome === "stopped" && review.params.ready === false && /did not arrive/.test(review.text) && read(driveFile).stage === "watch", [o, review]);
 t.check("stopped: the fix state stays a draft", json(gary("fixes", "--json"))["issue-23"].state === "draft");
 r = gary("fix-review", "finish", "--pr", "19", "--outcome", "done", "--reason", "Again.");
 t.check("finish without running rounds is refused", r.status === 1 && /no review rounds to end/.test(json(r).result), r.stdout);

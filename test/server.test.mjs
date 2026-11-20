@@ -47,6 +47,7 @@ const items = {
 			{ id: "r17", type: "review", title: "Review: approve later", as: "bot", params: { event: "approve" }, text: "" },
 			{ id: "r18", type: "revise", title: "Change: drop the file", as: "agent", text: "Drop the 0x00c8 file" },
 			{ id: "r19", type: "revise", title: "Change: no text", as: "agent" },
+			{ id: "r20", type: "review", title: "Review: comment while watched", as: "bot", params: { event: "comment" }, text: "WATCHED_REVIEW" },
 		],
 	},
 	"issue-21": {
@@ -371,6 +372,13 @@ await expect("a waiting drive blocks a review", "pr-12", "r17", {}, (r) => r.sta
 rmSync(join(home, "state", "drive", "pr-12.json"));
 st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
 check("a finished job leaves the item without working", st.working === undefined, st.working);
+// A watched PR that only waits for his feedback blocks none of his clicks
+writeFileSync(join(home, "state", "drive", "pr-12.json"), JSON.stringify({ repo: REPO, number: 12, by: "watch", watch: true, stage: "watch", copilotRounds: 1, rounds: [], seenAt: {} }));
+st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
+check("a watch is no push work", st.working === undefined, st.working);
+await expect("a watch does not block his merge click", "pr-12", "r3", {}, refused(/yours to do on GitHub/));
+await expect("a watch does not block a review", "pr-12", "r20", {}, (r) => r.data.ok === true && invocations(r).includes("WATCHED_REVIEW"));
+rmSync(join(home, "state", "drive", "pr-12.json"));
 await expect("take_over defaults to push", "pr-16", "r3", {}, (r) => r.data.ok && r.data.queued);
 await expect("revise is queued", "pr-12", "r18", {}, (r) => r.data.ok && r.data.queued);
 st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");

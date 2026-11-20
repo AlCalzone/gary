@@ -17,6 +17,7 @@ const COMMANDS = {
 	fixes: ["../scripts/fixes-cli.mjs", "fixesMain", "The fix state of every issue and discussion: a running fix job or a fix PR. --json"],
 	"fix-record": ["../scripts/fixes-cli.mjs", "recordMain", "Record a fix PR: fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer"],
 	"fix-review": ["../scripts/fix-review.mjs", "main", "The review rounds of a fix PR Gary opened: fix-review start --pr <n> --sha <sha> --run <run> | finish --pr <n> --outcome done|stopped --reason <text>. --dry-run"],
+	"pr-watch": ["../scripts/pr-watch.mjs", "main", "The watch on the bot's PRs, Gary's fix PRs among them, and taken-over PRs: pr-watch list [--json] | round --pr <n> --by me|others --at <ISO> [--run <run>] | review --pr <n> --sha <sha> [--action <id>] | done --pr <n> --sha <sha>. --seen-me, --seen-others, --dry-run"],
 	"api-edit": ["../scripts/api-edit.mjs", "main", "Check the API edit of a take_over or revise route and print what the click would commit: api-edit --pr <n> [--route <id>] | --pr <n> --sha <sha> --file <route.json>. Never commits"],
 	"auto-review": ["../scripts/auto-review.mjs", "main", "The one automatic first review on a contributor PR: auto-review check|post|accept|reply|rerequest --pr <n> … | list. Off unless config.json turns it on"],
 	"push-check": ["../scripts/push-check.mjs", "main", "Say from GitHub's state now whether an agent may push to a PR from a checkout: push-check --pr <n> [--sha <head sha>] [--repo <owner/name>]. Exit 3 when refused. Read-only"],

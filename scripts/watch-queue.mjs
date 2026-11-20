@@ -5,6 +5,9 @@
 // Each line is { "instance", "id", "itemId", "action" }.
 // A drive that waits for its review bot gets one more line with "event": "review-arrived" when the review is
 // there, or "review-timeout" after 30 minutes. The watcher reads the PR once a minute per waiting drive.
+// A watched PR, a PR by the bot or a taken-over PR, gets a line with "action": "drive", "event": "maintainer-feedback",
+// "pr" and "at" when the maintainer reviewed or commented after our last push and no round handled it yet. The
+// watcher reads at most 20 such PRs every 3 minutes, the first time right at its start.
 // A PR with an automatic review gets lines with "action": "auto_review": "event": "offer-accepted" when its author
 // reacted positively to the format offer, "offer-reply" with "at" when he commented after it, and "re-requested"
 // with "at" when he re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
@@ -17,6 +20,8 @@ import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
 import { autoReviewOf, instanceName, instanceNames, instancesDir, loadInstance, withInstance } from "./lib/config.mjs";
 import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
+import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
+import { dropWatch, pushWork, stageOf, unhandledFeedback, watchedPrs } from "./lib/watch.mjs";
 import { fetchItem, fetchOfferFacts } from "./snapshot.mjs";
 
 const RESCAN_MS = 5000;
@@ -26,6 +31,9 @@ const DRIVE_POLL_MS = Number(process.env.GARY_DRIVE_POLL_MS) || 60000;
 export const DRIVE_WAIT_MS = 30 * 60000;
 // GARY_OFFER_POLL_MS shortens the poll of the automatic reviews in tests
 const OFFER_POLL_MS = Number(process.env.GARY_OFFER_POLL_MS) || 180000;
+// GARY_WATCH_POLL_MS shortens the poll of the watched PRs in tests
+const WATCH_POLL_MS = Number(process.env.GARY_WATCH_POLL_MS) || 180000;
+const MAX_WATCHED = 20;
 
 /**
  * What a waiting drive waits for: "review-arrived" when its review bot reviewed or commented after the request,
@@ -94,6 +102,7 @@ export async function main(argv) {
 				console.error(`Reading the drives of ${instance} failed: ${e.message}`);
 			}
 			for (const [itemId, drive] of Object.entries(drives)) {
+				if (stageOf(drive) !== "review") continue;
 				const key = `${instance}/${itemId}/${drive.reviewRequestedAt}`;
 				if (typeof drive.reviewRequestedAt !== "string" || typeof drive.actionId !== "string" || driveEvents.has(key)) continue;
 				let event = driveEvent(drive, null);
@@ -113,6 +122,53 @@ export async function main(argv) {
 	}
 	let drivesRunning = Promise.resolve();
 	const queueDrives = () => (drivesRunning = drivesRunning.then(scanDrives));
+
+	// One line per piece of the maintainer's feedback on a watched PR. A merged or closed PR is not read again
+	const feedbackEvents = new Set();
+	const gone = new Set();
+	async function scanWatches() {
+		for (const instance of instances()) {
+			if (isInstancePaused(instance)) continue;
+			let candidates = [];
+			let me;
+			try {
+				const i = loadInstance(instance);
+				me = i.config.me;
+				// Without an account that may push no round can run
+				if (!i.config.bot && !i.config.allowOwnTokenPushes) continue;
+				const busy = await pushWork(instance);
+				candidates = (await withInstance(instance, () => watchedPrs(instance, i.repos[0], i.config.bot?.login ?? null)))
+					.filter((p) => stageOf(p.drive) === "watch" && !busy.has(p.itemId) && !gone.has(`${instance}/${p.itemId}`))
+					.slice(0, MAX_WATCHED);
+			} catch (e) {
+				console.error(`Reading the watched PRs of ${instance} failed: ${e.message}`);
+			}
+			for (const p of candidates) {
+				let entry;
+				try {
+					entry = await withInstance(instance, () => fetchItem("pr", p.number, p.repo));
+				} catch (e) {
+					// The next poll reads it again
+					console.error(`Reading PR #${p.number} of ${instance} failed: ${e.message}`);
+					continue;
+				}
+				if (entry.githubState !== "open") {
+					gone.add(`${instance}/${p.itemId}`);
+					await dropWatch(p.itemId, instance).catch((e) => console.error(`Removing the watch of PR #${p.number} of ${instance} failed: ${e.message}`));
+					continue;
+				}
+				if (touchesSensitive(entry) && !sensitiveOurs(entry)) continue;
+				const at = unhandledFeedback("me", { drive: p.drive, feedback: entry.facts, item: p.item, record: p.record });
+				if (!at || !me) continue;
+				const key = `${instance}/${p.itemId}/${at}`;
+				if (feedbackEvents.has(key)) continue;
+				feedbackEvents.add(key);
+				process.stdout.write(JSON.stringify({ instance, id: `watch-${p.itemId}`, itemId: p.itemId, action: "drive", event: "maintainer-feedback", pr: p.number, at }) + "\n");
+			}
+		}
+	}
+	let watchesRunning = Promise.resolve();
+	const queueWatches = () => (watchesRunning = watchesRunning.then(scanWatches));
 
 	// One line per answer to an automatic review
 	const reviewEvents = new Set();
@@ -164,6 +220,7 @@ export async function main(argv) {
 	await queueScan();
 	await queueDrives();
 	await queueAutoReviews();
+	await queueWatches();
 	if (once) process.exit(0);
 
 	let timer = null;
@@ -181,6 +238,7 @@ export async function main(argv) {
 	setInterval(queueScan, RESCAN_MS);
 	setInterval(queueDrives, DRIVE_POLL_MS);
 	setInterval(queueAutoReviews, OFFER_POLL_MS);
+	setInterval(queueWatches, WATCH_POLL_MS);
 	process.on("SIGTERM", () => process.exit(0));
 	process.on("SIGINT", () => process.exit(0));
 }
