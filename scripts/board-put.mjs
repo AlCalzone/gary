@@ -7,6 +7,7 @@
 //   gary put learn <json file>                write the learn cursor <state>/learn.json
 // A replace keeps the maintainer's `hidden` and `snoozedUntil`, and `priority` when the file has none.
 // An item write is validated against the result. --no-validate skips that, for migrations.
+// While a focus holds an item, only a merge of the facts from GitHub and the maintainer's fields goes through. Exit 3 otherwise.
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, applyWrite, docPath, mergeFields, readJson, replaceFields, tokenFile } from "./lib/board-store.mjs";
@@ -16,6 +17,24 @@ import { accountMode } from "./lib/gh.mjs";
 import { isEditProposal, occurrences, proposalTarget, validateProposal, writeLearn } from "./lib/learning.mjs";
 import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
 import { fixPrNumbers, fixStateOf, loadFixSources } from "./lib/fixes.mjs";
+import { focusHold, focusRefusal } from "./lib/focus.mjs";
+
+// The fields the hourly run refreshes on an item in focus: the facts from GitHub, its rank, and the maintainer's own
+export const FOCUS_FACT_FIELDS = [
+	"repo", "kind", "number", "title", "url", "author", "authorType", "labels", "isDraft", "ci", "updatedAt", "mergeable", "reviewDecision", "isAnswered",
+	"discussionCategory", "openThreads", "reviews", "lastEventUrl", "waitingOn", "dueAt", "dueSource", "series", "priority", "hidden", "snoozedUntil", "handled",
+];
+
+/** Why the write may not touch an item in focus, or null. */
+export function focusWriteRefusal(instance, write) {
+	if (!write.path?.startsWith("items/")) return null;
+	const id = write.path.slice("items/".length);
+	const focus = focusHold(id, instance);
+	if (!focus) return null;
+	const extra = write.op === "merge" ? Object.keys(write.data ?? {}).filter((k) => !FOCUS_FACT_FIELDS.includes(k)) : null;
+	if (extra && !extra.length) return null;
+	return `${focusRefusal(id, focus)} Only a merge of the facts from GitHub goes through${extra ? `, and ${extra.join(", ")} ${extra.length === 1 ? "is" : "are"} none` : ""}.`;
+}
 
 function fail(message, problems) {
 	console.log(JSON.stringify({ ok: false, error: message, ...(problems && { problems }) }));
@@ -151,6 +170,11 @@ export async function main(argv) {
 	if (write.path === "meta") {
 		const problems = validateMeta(write.data);
 		if (problems.length) fail("meta.json is invalid, nothing was written", problems);
+	}
+	const held = focusWriteRefusal(instance, write);
+	if (held) {
+		console.log(JSON.stringify({ ok: false, refused: true, error: held }));
+		process.exit(3);
 	}
 	if (!noValidate) await check(instance, write);
 

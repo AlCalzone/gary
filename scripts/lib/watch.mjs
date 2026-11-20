@@ -11,6 +11,7 @@ import { fixReviewOf, instanceName, loadInstance } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { sensitiveOurs, touchesSensitive } from "./facts.mjs";
 import { accountMode, writeLogin } from "./gh.mjs";
+import { focusHold, focusRefusal } from "./focus.mjs";
 import { driveDir, fixRecordOf, prItemId, readDrives, readFixRecords, readSnapshotItems } from "./fixes.mjs";
 
 // No PR gets more review bot rounds than this over its whole life
@@ -46,7 +47,8 @@ export function unhandledFeedback(side, sources) {
 
 /**
  * The drive file's `held` record while the feedback it names is still unhandled, or null. `gary pr-watch round` writes
- * `held: { feedbackAt, by: "me", session, since }` when it refused his feedback because the origin session was active.
+ * `held: { feedbackAt, by: "me", session, since }` when it refused his feedback because the origin session was active,
+ * and adds `focus: true` when a focus held the PR.
  */
 export function pendingHold(sources) {
 	const held = sources.drive?.held;
@@ -304,6 +306,8 @@ export async function requestReviewRound({ number, sha, actionId, after, apiEdit
 	if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 	if (!writeLogin()) throw new Refused("No account may push: the instance has no bot and allowOwnTokenPushes is off.");
 	if (c.entry && touchesSensitive(c.entry) && !sensitiveOurs(c.entry)) throw new Refused(`PR #${c.number} changes sensitive files and is not ours alone, so it gets no review bot rounds.`);
+	const focus = focusHold(c.itemId);
+	if (focus) throw new Refused(focusRefusal(c.itemId, focus));
 	const drive = c.drive ?? baseDrive(c);
 	if (fromJob) {
 		if (stageOf(drive) === "review") throw new Refused(`A review bot round already waits on PR #${c.number}.`);

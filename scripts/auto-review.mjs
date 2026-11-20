@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { runAction } from "./lib/actions.mjs";
 import { autoReviewState, autoReviewsFile, composeBody, actionComments, lastReview, maintainerJoinedAt, offerKind, reRequestedAt, readAutoReviews, refusal, templateText, TEMPLATE_DEFAULTS, updateAutoReview, validateAutoReview } from "./lib/auto-review.mjs";
 import { boardDir, readJson, writeAtomic } from "./lib/board-store.mjs";
-import { listClaims, releaseClaim, takeClaim } from "./lib/claims.mjs";
+import { claimRefusal, listClaims, releaseClaim, takeClaim } from "./lib/claims.mjs";
 import { autoReviewOf, instanceName, loadInstance, maintainerLogins } from "./lib/config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
 import { prItemId, readSnapshotItems } from "./lib/fixes.mjs";
@@ -142,7 +142,7 @@ async function post(argv) {
 	if (claims.some((x) => x.kind === "push")) throw new Refused("pushing", `An agent is changing PR #${c.number}.`);
 	const held = claims.some((x) => x.kind === "review" && x.run === out.run);
 	const claim = await takeClaim({ itemId: c.itemId, kind: "review", run: out.run });
-	if (!claim.ok) throw new Refused("claimed", `Run ${claim.holder?.run} holds the review claim on ${c.itemId}.`);
+	if (!claim.ok) throw new Refused(claim.focus ? "focus" : "claimed", claim.focus ? claimRefusal(c.itemId, "review", claim) : `Run ${claim.holder?.run} holds the review claim on ${c.itemId}.`);
 
 	try {
 		const templates = {};
@@ -203,7 +203,7 @@ async function acceptOffer(c, { by, at, run }) {
 
 	const holder = run ?? `auto-review-accept-${Date.now()}`;
 	const claim = await takeClaim({ itemId: c.itemId, kind: "push", run: holder, ttlMinutes: 5 });
-	if (!claim.ok) throw new Refused("pushing", `Run ${claim.holder?.run} is changing PR #${c.number}.`);
+	if (!claim.ok) throw new Refused(claim.focus ? "focus" : "pushing", claim.focus ? claimRefusal(c.itemId, "push", claim) : `Run ${claim.holder?.run} is changing PR #${c.number}.`);
 	try {
 		const now = new Date().toISOString();
 		const actionId = await writeAction(c.itemId, { action: "format", params: { reviewedSha: entry.headSha, by: "auto_review" }, text: "", status: "queued", via: "queue", createdAt: now, finishedAt: null, result: "" });

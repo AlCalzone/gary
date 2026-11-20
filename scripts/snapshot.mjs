@@ -1,5 +1,6 @@
 // gary snapshot           print the work list, stage the snapshot in <state>/snapshot.pending.json
 // gary snapshot --out <f> write the work list to <f> instead, creating its directory
+//                         Changed items in focus are listed in `focus`, apart from `changed`
 // gary snapshot --commit  promote the staged snapshot to the baseline <state>/snapshot.json
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, matchesGlob, resolve } from "node:path";
@@ -11,6 +12,7 @@ import { aiFacts, buildTimeline, dueFacts, feedbackFacts, issueFacts, lastEventB
 import { activityOf } from "./lib/since.mjs";
 import { canReadProjects, graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
+import { heldItemIds } from "./lib/focus.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
 const PENDING = () => join(stateDir(), "snapshot.pending.json");
@@ -339,8 +341,11 @@ export async function main(argv = []) {
 		JSON.stringify({ fetchedAt, items: current }, null, "\t") + "\n",
 	);
 
+	// An item in focus is the focus session's. The run refreshes only its facts, so it leaves `changed`
+	const held = heldItemIds();
 	const output = {
-		changed,
+		changed: changed.filter((c) => !held.has(c.id)),
+		focus: changed.filter((c) => held.has(c.id)),
 		unchanged,
 		closed,
 		stale: {

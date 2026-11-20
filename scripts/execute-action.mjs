@@ -1,13 +1,17 @@
 // Usage: gary action [--dry-run] [--check-fresh] [--autonomous] [action.json]
 // Reads the action from stdin when no file is given.
 // --check-fresh refuses when the thread moved since the item's review, like a click on the board does.
-// --autonomous marks an action nobody clicked: only label (within autoLabels) and assign may run.
+// --autonomous marks an action nobody clicked: only label (within autoLabels) and assign may run, and never on an
+// item in focus. Exit 3 then.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runAction } from "./lib/actions.mjs";
 import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
+import { focusHold, focusRefusal } from "./lib/focus.mjs";
 import { checkFresh } from "./lib/guard.mjs";
+
+const ID_PREFIX = { pr: "pr-", issue: "issue-", discussion: "disc-" };
 
 const FLAGS = ["--dry-run", "--check-fresh", "--autonomous"];
 
@@ -44,6 +48,14 @@ export async function main(args) {
 			kind ??= item.kind;
 			number ??= item.number;
 			repo ??= item.repo;
+		}
+		const heldId = itemId ?? (ID_PREFIX[kind] && Number.isSafeInteger(number) ? ID_PREFIX[kind] + number : null);
+		const focus = autonomous && heldId ? focusHold(heldId) : null;
+		if (focus) {
+			outcome = { ok: false, refused: true, result: focusRefusal(heldId, focus) };
+			process.stdout.write(JSON.stringify(outcome, null, 2) + "\n");
+			process.exitCode = 3;
+			return;
 		}
 		if (checkFreshness) {
 			if (!item) throw new Error("--check-fresh needs the itemId of a board item");

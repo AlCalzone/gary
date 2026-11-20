@@ -6,6 +6,7 @@
 //     With --request-maintainer and `done` the writing identity then requests the maintainer's review.
 //     The drive file stays in the stage "watch", so the maintainer's later feedback starts the next round.
 // Both refuse a PR that is not in <state>/fixes.json, and do nothing while the instance is paused.
+// start exits 3 while a focus holds the PR.
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ import { runAction } from "./lib/actions.mjs";
 import { boardDir, readJson, writeAtomic } from "./lib/board-store.mjs";
 import { fixReviewOf, instanceName, loadInstance } from "./lib/config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
+import { focusHold, focusRefusal } from "./lib/focus.mjs";
 import { driveDir, fixRecordOf, prItemId, readFixRecords, recordFixReady } from "./lib/fixes.mjs";
 import { accountMode } from "./lib/gh.mjs";
 import { enterWatch, requestMaintainerReview, seenMarks } from "./lib/watch.mjs";
@@ -56,6 +58,8 @@ async function start(argv) {
 	if (typeof out.sha !== "string" || !/^[0-9a-f]{7,64}$/.test(out.sha)) throw new Error("--sha must be the head commit of the fix PR");
 	const c = await context(out.pr);
 	if (c.settings.reviewer === "off") return { ok: true, started: false, reason: c.settings.reason ?? "fixReview is off" };
+	const focus = focusHold(c.itemId);
+	if (focus) return { ok: false, started: false, refused: true, result: focusRefusal(c.itemId, focus) };
 	if (isPaused()) return { ok: false, started: false, paused: true, result: PAUSED_MESSAGE };
 	const stateFile = join(driveDir(), c.itemId + ".json");
 	if (await readJson(stateFile)) return { ok: true, started: false, reason: `The review rounds of PR #${c.number} already run` };
@@ -147,5 +151,5 @@ export async function main(argv) {
 		outcome = { ok: false, result: e.message };
 	}
 	console.log(JSON.stringify(outcome));
-	process.exitCode = outcome.ok ? 0 : outcome.paused ? 4 : 1;
+	process.exitCode = outcome.ok ? 0 : outcome.paused ? 4 : outcome.refused ? 3 : 1;
 }

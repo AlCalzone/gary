@@ -19,6 +19,7 @@ import { instanceName, loadInstance } from "./lib/config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { driveDir } from "./lib/fixes.mjs";
+import { focusHold, focusRefusal } from "./lib/focus.mjs";
 import { busyOrigin, readOrigins, shortDir } from "./lib/origins.mjs";
 import { writeLogin } from "./lib/gh.mjs";
 import { REVIEW_ROUND_CAP, Refused, WATCH_TRIGGERS, baseDrive, enterWatch, feedbackOf, marksFor, pushWork, requestMaintainerReview, requestReviewRound, reviewRoundCap, reviewRoundsUsed, seenMarks, stageOf, unhandledFeedback, watchContext, watchedPrs, writeDrive } from "./lib/watch.mjs";
@@ -84,13 +85,20 @@ async function round(argv) {
 	const at = new Date(out.at).toISOString();
 	const unhandled = unhandledFeedback(out.by, { drive: c.drive, feedback: { ...feedbackOf(c), [out.by === "me" ? "lastMeAt" : "lastOthersAt"]: at }, item: c.item, record: c.record });
 	if (!unhandled) throw new Refused(`A round already handled the feedback on PR #${c.number} up to ${at}.`);
+	// Record refused feedback of his, so the watcher prints it again once the hold ends
+	const hold = async (held) => {
+		if (out.by !== "me" || dryRun) return;
+		await mkdir(driveDir(), { recursive: true });
+		await writeDrive(c.itemId, { ...(c.drive ?? baseDrive(c)), held: { feedbackAt: at, by: "me", ...held, since: new Date().toISOString() } });
+	};
+	const focus = focusHold(c.itemId);
+	if (focus) {
+		await hold({ session: focus.session?.id ?? null, focus: true });
+		throw new Refused(focusRefusal(c.itemId, focus));
+	}
 	const live = c.why === "bot" ? await busyOrigin((await readOrigins())[c.itemId]) : null;
 	if (live) {
-		// Record the refused feedback, so the watcher prints it again once the session has been quiet for 30 minutes
-		if (out.by === "me" && !dryRun) {
-			await mkdir(driveDir(), { recursive: true });
-			await writeDrive(c.itemId, { ...(c.drive ?? baseDrive(c)), held: { feedbackAt: at, by: "me", session: live.sessionId, since: new Date().toISOString() } });
-		}
+		await hold({ session: live.sessionId });
 		throw new Refused(`PR #${c.number} comes from the Claude Code session ${live.sessionId} in ${shortDir(live.cwd)}. That session was active at ${live.lastActiveAt} and may still push to the PR. No round starts until it has been quiet for 30 minutes.`);
 	}
 

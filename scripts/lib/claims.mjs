@@ -5,6 +5,7 @@ import { link, mkdir, readdir, rename, unlink, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { ID_PATTERN, readJson, writeAtomic } from "./board-store.mjs";
 import { instanceDir, instanceName } from "./config.mjs";
+import { focusHold, focusRefusal } from "./focus.mjs";
 
 export const CLAIM_KINDS = ["fix", "review", "push"];
 export const DEFAULT_TTL_MINUTES = 60;
@@ -32,12 +33,15 @@ function check(itemId, kind, run) {
 }
 
 /**
- * Takes the claim for `run`. Returns `{ ok: true, claim }`, or `{ ok: false, holder }` when another run holds
- * an unexpired claim. The same run takes it again with a new expiry. An expired claim is taken over.
+ * Takes the claim for `run`. Returns `{ ok: true, claim }`, `{ ok: false, holder }` when another run holds
+ * an unexpired claim, or `{ ok: false, focus }` while a focus holds the item. The same run takes it again with a new
+ * expiry. An expired claim is taken over.
  */
 export async function takeClaim({ instance = instanceName(), itemId, kind, run, ttlMinutes = DEFAULT_TTL_MINUTES, now = Date.now() }) {
 	check(itemId, kind, run);
 	if (!Number.isFinite(ttlMinutes) || ttlMinutes <= 0 || ttlMinutes > 24 * 60) throw new Error("--ttl must be 1 to 1440 minutes");
+	const focus = focusHold(itemId, instance);
+	if (focus) return { ok: false, focus };
 	const file = claimFile(instance, itemId, kind);
 	await mkdir(claimsDir(instance), { recursive: true });
 	const claim = { run, at: new Date(now).toISOString(), expiresAt: new Date(now + ttlMinutes * 60000).toISOString() };
@@ -77,6 +81,11 @@ export async function takeClaim({ instance = instanceName(), itemId, kind, run, 
 		await unlink(tomb).catch(() => {});
 	}
 	return { ok: false, holder: await readJson(file) };
+}
+
+/** The sentence for a refused `takeClaim`. */
+export function claimRefusal(itemId, kind, r) {
+	return r.focus ? focusRefusal(itemId, r.focus) : `${itemId} ${kind} is claimed by run ${r.holder?.run} until ${r.holder?.expiresAt}`;
 }
 
 /** Removes the claim when `run` holds it. Returns `{ released, holder }`. */

@@ -13,6 +13,10 @@
 // A PR with an automatic review gets lines with "action": "auto_review": "event": "offer-accepted" when its author
 // reacted positively to the format offer, "offer-reply" with "at" when he commented after it, and "re-requested"
 // with "at" when he re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
+// While a focus holds an item, nothing of it is printed except focus requests: its queued requests, drive events,
+// feedback lines and automatic review answers wait until the focus ends. A held focus gets a line with
+// "action": "focus", "event": "check", "harness" and "session" when its session has been quiet for 30 minutes, and
+// every 30 minutes while it is paused, so the master looks at the session. The watcher reads the records once a minute.
 // A reconcile pass the maintainer asked for prints { "instance", "id": "reconcile", "itemId": null, "action": "reconcile", "at" },
 // once per request.
 import { mkdirSync, watch } from "node:fs";
@@ -24,6 +28,7 @@ import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
 import { autoReviewOf, instanceName, instanceNames, instancesDir, loadInstance, withInstance } from "./lib/config.mjs";
 import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
+import { checkDue, heldItemIds, isHeld, readFocuses } from "./lib/focus.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { busyOrigin, readOrigins } from "./lib/origins.mjs";
 import { readReconcile, reconcileDue } from "./lib/reconcile.mjs";
@@ -40,6 +45,8 @@ const OFFER_POLL_MS = Number(process.env.GARY_OFFER_POLL_MS) || 180000;
 // GARY_WATCH_POLL_MS shortens the poll of the watched PRs in tests
 const WATCH_POLL_MS = Number(process.env.GARY_WATCH_POLL_MS) || 180000;
 const MAX_WATCHED = 20;
+// GARY_FOCUS_POLL_MS shortens the poll of the focus records in tests
+const FOCUS_POLL_MS = Number(process.env.GARY_FOCUS_POLL_MS) || 60000;
 
 /**
  * What a waiting drive waits for: "review-arrived" when its review bot reviewed or commented after the request,
@@ -80,6 +87,7 @@ export async function main(argv) {
 			return [];
 		}
 		const found = [];
+		const held = heldItemIds(instance);
 		for (const name of names) {
 			const id = name.slice(0, -5);
 			const key = `${instance}/${id}`;
@@ -91,7 +99,8 @@ export async function main(argv) {
 				continue;
 			}
 			skipped.delete(key);
-			if (isOpen(doc)) found.push({ instance, id, key, doc });
+			// A request on an item in focus stays unprinted, so it prints once the focus ends
+			if (isOpen(doc) && (doc.action === "focus" || !held.has(doc.itemId))) found.push({ instance, id, key, doc });
 		}
 		return found;
 	}
@@ -107,8 +116,9 @@ export async function main(argv) {
 			} catch (e) {
 				console.error(`Reading the drives of ${instance} failed: ${e.message}`);
 			}
+			const held = heldItemIds(instance);
 			for (const [itemId, drive] of Object.entries(drives)) {
-				if (stageOf(drive) !== "review") continue;
+				if (stageOf(drive) !== "review" || held.has(itemId)) continue;
 				const key = `${instance}/${itemId}/${drive.reviewRequestedAt}`;
 				if (typeof drive.reviewRequestedAt !== "string" || typeof drive.actionId !== "string" || driveEvents.has(key)) continue;
 				let event = driveEvent(drive, null);
@@ -144,8 +154,9 @@ export async function main(argv) {
 				// Without an account that may push no round can run
 				if (!i.config.bot && !i.config.allowOwnTokenPushes) continue;
 				const busy = await pushWork(instance);
+				const held = heldItemIds(instance);
 				candidates = (await withInstance(instance, () => watchedPrs(instance, i.repos[0], i.config.bot?.login ?? null)))
-					.filter((p) => stageOf(p.drive) === "watch" && !busy.has(p.itemId) && !gone.has(`${instance}/${p.itemId}`))
+					.filter((p) => stageOf(p.drive) === "watch" && !busy.has(p.itemId) && !held.has(p.itemId) && !gone.has(`${instance}/${p.itemId}`))
 					.slice(0, MAX_WATCHED);
 				origins = await withInstance(instance, readOrigins);
 			} catch (e) {
@@ -193,7 +204,8 @@ export async function main(argv) {
 			try {
 				const i = loadInstance(instance);
 				if (!autoReviewOf(i.config, i.profile).enabled) continue;
-				watched = watchedRecords(await readAutoReviews(instance));
+				const held = heldItemIds(instance);
+				watched = watchedRecords(await readAutoReviews(instance)).filter((w) => !held.has(w.itemId));
 			} catch (e) {
 				console.error(`Reading the automatic reviews of ${instance} failed: ${e.message}`);
 			}
@@ -217,6 +229,29 @@ export async function main(argv) {
 	}
 	let reviewsRunning = Promise.resolve();
 	const queueAutoReviews = () => (reviewsRunning = reviewsRunning.then(scanAutoReviews));
+
+	// One line per due look at a focus session
+	const focusEvents = new Set();
+	async function scanFocus() {
+		for (const instance of instances()) {
+			if (isInstancePaused(instance)) continue;
+			let records = {};
+			try {
+				records = await readFocuses(instance);
+			} catch (e) {
+				console.error(`Reading the focus records of ${instance} failed: ${e.message}`);
+			}
+			for (const [itemId, r] of Object.entries(records)) {
+				const due = isHeld(r) ? checkDue(r) : null;
+				const key = `${instance}/${itemId}/${r.startedAt}/${due}`;
+				if (!due || focusEvents.has(key)) continue;
+				focusEvents.add(key);
+				process.stdout.write(JSON.stringify({ instance, id: `focus-${itemId}`, itemId, action: "focus", event: "check", harness: r.harness ?? null, session: r.session?.id ?? null, status: r.status }) + "\n");
+			}
+		}
+	}
+	let focusRunning = Promise.resolve();
+	const queueFocus = () => (focusRunning = focusRunning.then(scanFocus));
 
 	async function scanReconcile(instance) {
 		if (isInstancePaused(instance)) return;
@@ -252,6 +287,7 @@ export async function main(argv) {
 	await queueDrives();
 	await queueAutoReviews();
 	await queueWatches();
+	await queueFocus();
 	if (once) process.exit(0);
 
 	let timer = null;
@@ -270,6 +306,7 @@ export async function main(argv) {
 	setInterval(queueDrives, DRIVE_POLL_MS);
 	setInterval(queueAutoReviews, OFFER_POLL_MS);
 	setInterval(queueWatches, WATCH_POLL_MS);
+	setInterval(queueFocus, FOCUS_POLL_MS);
 	process.on("SIGTERM", () => process.exit(0));
 	process.on("SIGINT", () => process.exit(0));
 }

@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
+import { ACTIONS, AGENT_ACTIONS, REVIEW_EVENTS, runAction } from "../scripts/lib/actions.mjs";
 import { normalizeCategory } from "../scripts/lib/categories.mjs";
 import { COLLECTIONS, PROPOSAL_ID, applyWrite, docPath, idPattern, readJson, tokenFile, writeAtomic } from "../scripts/lib/board-store.mjs";
 import { applyEdits, applyProposal, applySetting, cut, isEditProposal, isSettingProposal, logDecision } from "../scripts/lib/learning.mjs";
@@ -22,6 +22,7 @@ import { findingKey, findingsByKey } from "../scripts/lib/findings.mjs";
 import { sinceAnchor, sinceSummary } from "../scripts/lib/since.mjs";
 import { latest, pendingHold, requestReviewRound, stageOf, unhandledFeedback } from "../scripts/lib/watch.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
+import { endFocus, focusDir, focusHold, isHeld, readFocuses, safeLink } from "../scripts/lib/focus.mjs";
 import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
@@ -37,6 +38,9 @@ const HEARTBEAT_MS = 25000;
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 export const HEALTH = { ok: true, name: "gary" };
 const OUTDATED = "The board is out of date, reload it.";
+const IN_FOCUS = [409, { ok: false, result: "This item is in focus. Gary starts no agent work on it until the focus ends.", focus: true }];
+// A failed focus request shows on its item for this long
+const FAILED_FOCUS_MS = 24 * 3600000;
 const UNKNOWN_INSTANCE = "Unknown instance.";
 const ITEM_ID = idPattern("items");
 const MAX_TEXT = 65536;
@@ -988,6 +992,33 @@ export async function startBoardServer({
 		return { feedbackAt, feedbackKind: known ? feedback.lastMeKind : null, lastActiveAt: origin.lastActiveAt, until: new Date(until).toISOString() };
 	}
 
+	/**
+	 * What the board shows of a focus on the item: the held record as `{ status: "active" | "paused", session, … }`,
+	 * `{ status: "requested", at }` while the master has not handled the newest focus request, and
+	 * `{ status: "failed", reason, at }` for a day after the master could not start a session. Otherwise null.
+	 */
+	function focusStateOf(record, requests, now = Date.now()) {
+		if (isHeld(record)) {
+			const s = isObject(record.session) ? record.session : {};
+			return {
+				status: record.status,
+				harness: typeof record.harness === "string" ? record.harness : null,
+				how: record.how === "attached" ? "attached" : "started",
+				session: { id: typeof s.id === "string" ? s.id : null, title: typeof s.title === "string" ? s.title : null, link: safeLink(s.link) },
+				startedAt: record.startedAt ?? null,
+				lastActivity: record.lastActivity ?? null,
+				...(record.status === "paused" && { pausedAt: record.pausedAt ?? null }),
+			};
+		}
+		const newest = requests.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+		if (!newest) return null;
+		if (newest.status === "queued") return { status: "requested", at: newest.createdAt ?? null };
+		const at = newest.finishedAt ?? newest.createdAt;
+		const startedLater = Date.parse(record?.startedAt ?? "") > Date.parse(newest.createdAt ?? "");
+		if (newest.status === "failed" && !startedLater && now - Date.parse(at) < FAILED_FOCUS_MS) return { status: "failed", reason: typeof newest.result === "string" ? newest.result : "", at };
+		return null;
+	}
+
 	// The hold ends without a file change, so a timer pushes the items when the earliest one ends
 	function pushWhenHoldsEnd(name, holds) {
 		clearTimeout(holdTimers.get(name));
@@ -1048,6 +1079,12 @@ export async function startBoardServer({
 		pushWhenHoldsEnd(name, [...holds.values()]);
 		const actionsOf = new Map();
 		for (const { data: a } of actions) if (typeof a?.itemId === "string") actionsOf.set(a.itemId, [...(actionsOf.get(a.itemId) ?? []), a]);
+		const focusRecords = await readFocuses(name);
+		const focuses = new Map();
+		for (const { id } of items) {
+			const f = focusStateOf(focusRecords[id], (actionsOf.get(id) ?? []).filter((a) => a.action === "focus"));
+			if (f) focuses.set(id, f);
+		}
 		// What happened on GitHub since his last choice on the item, for the timeline at the top of the dialog
 		const sinceOf = (id, data) => sinceSummary(fixSources.snapshot[id]?.activity, sinceAnchor(data, actionsOf.get(id)), { me: instance.config.me, bot: instance.config.bot?.login, actions: actionsOf.get(id) });
 		return items.map(({ id, data: stored }) => [id, withSnapshotFields(id, normalizeCategory(stored))]).map(([id, data]) => ({
@@ -1056,6 +1093,7 @@ export async function startBoardServer({
 			...(sensitiveOf(id, data) && { sensitive: sensitiveOf(id, data) }),
 			...(origins.has(id) && { origin: origins.get(id) }),
 			...(holds.has(id) && { hold: holds.get(id) }),
+			...(focuses.has(id) && { focus: focuses.get(id) }),
 			// An item written before the routine copied the category gets it from the snapshot
 			...(typeof categoryOf(id, data) === "string" && { discussionCategory: categoryOf(id, data) }),
 			liveState: liveStates.get(`${name}/${id}`),
@@ -1185,6 +1223,9 @@ export async function startBoardServer({
 		// A claim taken or released changes item.working
 		mkdirSync(claimsDir(name), { recursive: true });
 		addWatch(w, claimsDir(name), () => schedulePush(name, "items"));
+		// A focus that starts, pauses or ends changes item.focus
+		mkdirSync(focusDir(name), { recursive: true });
+		addWatch(w, focusDir(name), () => schedulePush(name, "items"));
 		watchSettings(name);
 		const { instance, error } = settingsOf(name);
 		entry.settingsError = error;
@@ -1341,9 +1382,14 @@ export async function startBoardServer({
 		if (body.action === "dismiss_route") return handleDismissRoute(name, body);
 		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(name, body);
 		if (body.action === "request_reconcile") return handleReconcileRequest(name);
+		if (body.action === "end_focus") return handleEndFocus(name, body);
 		const { error: settingsError } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
-		if (body.action === "reanalyze") return handleReanalyze(name, body);
+		if (body.action === "focus") return handleFocus(name, body);
+		if (body.action === "reanalyze") {
+			if (typeof body.itemId === "string" && focusHold(body.itemId, name)) return IN_FOCUS;
+			return handleReanalyze(name, body);
+		}
 		const { itemId, routeId, text, force, input } = body;
 		if (isObject(input) && input.part !== undefined) return handlePart(name, body);
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
@@ -1366,6 +1412,7 @@ export async function startBoardServer({
 				return [409, { ok: false, result: "This route already ran. The board shows its result.", duplicate: true }];
 			}
 
+			if (route.as === "agent" && focusHold(itemId, name)) return IN_FOCUS;
 			// No second fix while one runs or its PR is a draft or open, also when the item file still offers one
 			if (route.type === "follow_up" && route.as === "agent" && (item.kind === "issue" || item.kind === "discussion")) {
 				const block = fixBlock(fixStateOf(itemId, await withInstance(name, () => loadFixSources(name))));
@@ -1402,6 +1449,7 @@ export async function startBoardServer({
 				createdAt: new Date().toISOString(),
 			};
 
+			if ((plan.agent || plan.apiEdit) && focusHold(itemId, name)) return IN_FOCUS;
 			if (plan.agent) {
 				const kind = ACTION_KINDS[plan.action];
 				if (kind && (await busyWith(name, itemId, kind))) {
@@ -2030,6 +2078,36 @@ export async function startBoardServer({
 	}
 
 	// The maintainer asks for a reconcile pass. The queue watcher prints it and the master starts the pass
+	// "Focus": one queued request, which the master turns into a focus session
+	async function handleFocus(name, body) {
+		const { itemId } = body;
+		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return outdated;
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const item = await readJson(itemFile(name, itemId));
+			if (!item) return outdated;
+			if (!allowedRepo(name, item.repo)) return [200, { ok: false, result: "The item names no repository of this project. Nothing was queued." }];
+			if (focusHold(itemId, name)) return [409, { ok: false, result: "This item is already in focus.", focus: true }];
+			const queued = (await readCollection(name, "actions")).some(({ data: a }) => a.itemId === itemId && a.action === "focus" && a.status === "queued");
+			if (queued) return [409, { ok: false, result: "The master is already setting up a focus session for this item.", focus: true }];
+			await logClick(name, itemId, { action: "focus", params: {}, text: "", status: "queued", via: "queue", createdAt: new Date().toISOString(), finishedAt: null, result: "" });
+			return [200, { ok: true, result: "Queued for the master session. It finds or starts the focus session.", queued: true }];
+		});
+	}
+
+	// "End focus": the hold ends without a summary, and the agent analyzes the item again
+	async function handleEndFocus(name, body) {
+		const { itemId } = body;
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return [200, { ok: false, result: OUTDATED, outdated: true }];
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const r = await endFocus({ instance: name, itemId, by: "end" });
+			if (!r.actionId) return [200, { ok: false, result: "This item is not in focus." }];
+			schedulePush(name, "actions");
+			schedulePush(name, "items");
+			return [200, { ok: true, result: "Focus ended. The agent analyzes the item again.", actionId: r.actionId }];
+		});
+	}
+
 	async function handleReconcileRequest(name) {
 		const at = await requestReconcile(name);
 		return [200, { ok: true, result: "Reconcile requested.", requestedAt: at }];
@@ -2134,6 +2212,9 @@ export async function startBoardServer({
 			if (path.startsWith("actions/") && typeof data.itemId === "string" && data.itemId.startsWith(`${name}/`)) data.itemId = data.itemId.slice(name.length + 1);
 			// Answers to findings are checked and kept on the item, so they come only through /api/action
 			if (path.startsWith("actions/") && isObject(data.params) && data.params.answers !== undefined) return [400, { error: "Answers to findings go through /api/action." }];
+			if (path.startsWith("actions/") && AGENT_ACTIONS.includes(data.action) && data.status === "queued" && typeof data.itemId === "string" && focusHold(data.itemId, name)) {
+				return [409, { error: IN_FOCUS[1].result, focus: true }];
+			}
 		}
 		const write = { op: body.op, path, data };
 		return withLock(docLocks, file, async () => {

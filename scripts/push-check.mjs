@@ -1,17 +1,19 @@
-// Usage: gary push-check --pr <number> [--sha <head sha>] [--repo <owner/name>]
+// Usage: gary push-check --pr <number> [--sha <head sha>] [--repo <owner/name>] [--focus-session <id>]
 // Says from GitHub's state right now whether an agent may push to a PR from a checkout of its branch.
+// While a focus holds the PR, only its own session may push, and it names itself with --focus-session.
 // Prints one JSON object. The exit code is 0 when the push is allowed and 3 when it is refused.
 import { instanceName, loadInstance } from "./lib/config.mjs";
+import { focusHold, focusRefusal } from "./lib/focus.mjs";
 import { fetchItem } from "./snapshot.mjs";
 
-const USAGE = "Usage: gary push-check --pr <number> [--sha <head sha>] [--repo <owner/name>]";
-const OPTIONS = ["--pr", "--sha", "--repo"];
+const USAGE = "Usage: gary push-check --pr <number> [--sha <head sha>] [--repo <owner/name>] [--focus-session <id>]";
+const OPTIONS = ["--pr", "--sha", "--repo", "--focus-session"];
 
 function options(argv) {
 	const out = {};
 	for (let i = 0; i < argv.length; i++) {
 		if (!OPTIONS.includes(argv[i]) || argv[i + 1] === undefined) throw new Error(USAGE);
-		out[argv[i].slice(2)] = argv[++i];
+		out[argv[i].slice(2).replace(/-(\w)/g, (_, c) => c.toUpperCase())] = argv[++i];
 	}
 	return out;
 }
@@ -36,6 +38,12 @@ export async function main(argv) {
 	if (!Number.isSafeInteger(number) || number <= 0) throw new Error(USAGE);
 	if (opts.sha !== undefined && !/^[0-9a-f]{40}$/.test(opts.sha)) throw new Error("--sha must be a full 40-character SHA");
 	const repo = opts.repo ?? loadInstance(instanceName()).repos[0];
+	const focus = focusHold(`pr-${number}`);
+	if (focus && focus.session?.id !== opts.focusSession) {
+		console.log(JSON.stringify({ ok: false, pr: number, repo, focus: { status: focus.status, session: focus.session }, refused: focusRefusal(`pr-${number}`, focus) }));
+		process.exitCode = 3;
+		return;
+	}
 	const entry = await fetchItem("pr", number, repo, { allFiles: true });
 	const refusal = pushCheckRefusal(entry, opts.sha);
 	console.log(JSON.stringify({
