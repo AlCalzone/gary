@@ -18,6 +18,7 @@ const SUITES = [
 	["node", "instances.test.mjs"],
 	["node", "migrate.test.mjs"],
 	["node", "facts.test.mjs"],
+	["node", "since.test.mjs"],
 	["node", "tiers.test.mjs"],
 	["node", "claims.test.mjs"],
 	["node", "fixes.test.mjs"],

@@ -16,6 +16,7 @@ import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
 import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
+import { sinceAnchor, sinceSummary } from "../scripts/lib/since.mjs";
 import { requestReviewRound, stageOf } from "../scripts/lib/watch.mjs";
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
 import { lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
@@ -984,8 +985,13 @@ export async function startBoardServer({
 			return files ? { files, total, ...(sensitiveOurs(fixSources.snapshot[id]) && { ours: true }) } : null;
 		};
 		const origins = await originsOf(name, instance, items, fixSources.records);
+		const actionsOf = new Map();
+		for (const { data: a } of actions) if (typeof a?.itemId === "string") actionsOf.set(a.itemId, [...(actionsOf.get(a.itemId) ?? []), a]);
+		// What happened on GitHub since his last choice on the item, for the timeline at the top of the dialog
+		const sinceOf = (id, data) => sinceSummary(fixSources.snapshot[id]?.activity, sinceAnchor(data, actionsOf.get(id)), { me: instance.config.me, bot: instance.config.bot?.login, actions: actionsOf.get(id) });
 		return items.map(({ id, data }) => ({
 			...data,
+			...(sinceOf(id, data) && { since: sinceOf(id, data) }),
 			...(sensitiveOf(id, data) && { sensitive: sensitiveOf(id, data) }),
 			...(origins.has(id) && { origin: origins.get(id) }),
 			// An item written before the routine copied the category gets it from the snapshot

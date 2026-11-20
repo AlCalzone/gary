@@ -571,6 +571,28 @@ const refreshedItems = (await api("/api/state")).data.items.filter((i) => i.inst
 check("the state serves live and handled", refreshedItems.find((i) => i.id === "issue-61").live?.state === "closed" && refreshedItems.find((i) => i.id === "issue-60").handled?.verified === "unchanged");
 r = await refresh("issue-70");
 check("a refresh of an item without handled only refreshes the fields", r.data.ok && r.data.result.verified === undefined && itemNow("issue-70").handled === undefined, r);
+
+// The timeline since his last choice comes from the snapshot's activity and his clicks
+const snapFile = join(home, "state", "snapshot.json");
+const hAt = Date.parse(itemNow("issue-60").handled.at);
+const iso = (ms) => new Date(ms).toISOString();
+writeFileSync(snapFile, JSON.stringify({ items: {
+	"issue-60": { activity: { events: [
+		{ at: iso(hAt - 60000), by: "hubot", side: "them", kind: "comment" },
+		{ at: iso(hAt + 60000), by: "hubot", side: "them", kind: "comment", asks: true },
+		{ at: iso(hAt + 120000), by: "hubot", side: "them", kind: "comment" },
+	], openThreads: [], ci: [] } },
+	"issue-70": { activity: { events: [{ at: iso(Date.now() - 3600000), by: "hubot", side: "them", kind: "comment" }], openThreads: [], ci: [] } },
+} }));
+const sinceOf = async (id) => (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === id).since;
+let since = await sinceOf("issue-60");
+check("the timeline starts at his last choice and groups the comments after it", since?.anchor.kind === "choice" && since.anchor.label === "Reply" && since.groups.length === 1 && since.groups[0].text === "hubot wrote 2 comments" && since.groups[0].note === "asked you something, no answer yet", since);
+check("an item he never chose on or opened has no timeline", (await sinceOf("issue-70")) === undefined);
+const seen = iso(Date.now() - 60000);
+r = await api("/api/db", { op: "update", path: "items/widgets/issue-70", data: { seenAt: seen } });
+since = await sinceOf("issue-70");
+check("the open time the page stores becomes the anchor", r.status === 200 && since?.anchor.kind === "opened" && since.anchor.at === seen && since.groups.length === 0, since);
+rmSync(snapFile, { force: true });
 const before = readFileSync(ghLog, "utf8").length;
 let last;
 for (let k = 71; k < 100 && (!last || last.status !== 429); k++) last = await refresh(`issue-${k}`);

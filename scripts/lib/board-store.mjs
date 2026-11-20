@@ -62,7 +62,7 @@ export function mergeFields(cur, patch) {
 }
 
 // The maintainer's fields survive a full replace. `priority` survives only when the new doc has none
-const KEPT_ON_REPLACE = ["hidden", "snoozedUntil", "dismissedRoutes", "handled"];
+const KEPT_ON_REPLACE = ["hidden", "snoozedUntil", "dismissedRoutes", "handled", "seenAt"];
 
 /** Builds the doc a full replace writes: `doc`, plus the maintainer's fields from `cur`. */
 export function replaceFields(cur, doc) {

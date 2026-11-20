@@ -504,6 +504,51 @@ The page talks to the server only through `window.claude`, which the server inje
 
 The page keeps filters and drafts in localStorage under keys prefixed `gary:<instance>:`, after a one-time move of the per-repo keys. Tabs, groups and header markers are described under "One server, one master".
 
+## Since your last choice
+
+The item dialog shows what happened on GitHub since the maintainer's last choice on the item, as a short vertical timeline under the title, the meta row and the agent banner:
+
+```
+Since your last choice, Nov 19 (Take over)
+●  jpoeppelman1 pushed 8 commits
+●  Copilot reviewed 3 times · 2 threads still open
+●  zwave-js-bot pushed 1 commit (Change)
+●  You requested changes · not addressed yet
+```
+
+The board server builds it in `scripts/lib/since.mjs` and serves it as `item.since: { anchor: { at, kind, label }, groups: [{ at, kind, icon, text, note }] }`. The page only draws it. It is a `<details>` element, open by default, and keeps his collapse while the dialog stays open. Without groups it is one line, `Nothing new since your last choice on Nov 19.` Without an anchor or without activity in the snapshot the item has no `since`, and the dialog shows nothing.
+
+Anchor, newest first wins:
+
+- `kind: "choice"`: his newest choice on the item, with `label` naming it, like `Take over`, `Dismissed Close`, `Snooze` or `Analyze again`. A choice is an action doc without `params.by`, which every route click, `dismiss_route`, snooze, hide, "Analyze again", full review and start fix writes, or `handled.at` for a prefill he used. The decision log holds only where he deviated from the proposal, so it is no source here. Jobs the code queued, like watch rounds, fix review rounds and automatic reviews, carry `params.by` and do not count.
+- `kind: "opened"`: without a choice, `seenAt` on the item, the time he last opened its dialog. The page writes it with `doc("items/<instance>/<id>").update({ seenAt })` when the dialog closes, with the time it opened, so the anchor does not move while he reads. `seenAt` is a maintainer field. A replace by `gary put` keeps it.
+
+Groups cover the events after the anchor, one per actor and kind, ordered by their first event. Each text names the actor, with `You` for `me` and `Copilot` for logins that start with `copilot`:
+
+- `commit`: `pushed 8 commits`, per author. A commit whose SHA is in the `result` or `resultParts.commits` of a push job is named by the job: `(Take over)`, `(Change)`, `(Address review)`, `(Drive round)` or `(Format)`.
+- `force_push`: `force-pushed 2 times`.
+- `review`: per reviewer, `approved`, `requested changes`, `reviewed`, or `reviewed 3 times, approved` for several. Bot reviews count.
+- `comment`: `wrote 3 comments`, per person, from comments, discussion replies and replies in review threads. The first comment of a review thread belongs to its review. Automated comments, `bot` comments and Gary's bot are left out. Gary's bot's replies in review threads are their own group, `wrote 2 replies in review threads`.
+- `ready`, `draft`, `merged`, `closed`, `reopened`: `marked it ready for review`, `converted it to draft`, `merged it`, `closed it`, `reopened it`.
+- `labeled`, `unlabeled`: `added label bug` or `removed labels a, b`, only by us.
+- `ci`: one group at the newest change of the CI result: `CI failed`, `CI failed again` or `CI passing again`.
+
+`note` says what is still open:
+
+- A review group: `2 threads still open` for the reviewer's unresolved threads started after the anchor.
+- His own change request: `not addressed yet` while no commit, force-push or finished push job came after his newest one.
+- A comment group: `asked you something, no answer yet` while no comment, reply or review by us came after the newest comment that asks him something. A comment by `them` asks him when it mentions `@me` or its last line ends in a question mark.
+
+### Activity in the snapshot
+
+The staged and committed snapshot keep per entry `activity: { events, openThreads, ci }`, which the work list and `gary item` leave out:
+
+- `events`: `{ at, by, side, kind }`, oldest first, the newest 60. `kind` is `comment`, `reply`, `thread_reply`, `review` with `state`, `commit` with `sha`, or a status event with `label` for label events. `side` is the same as in `facts.timeline`. A comment by `them` that asks the maintainer carries `asks: true`.
+- `openThreads`: `{ by, at }` of the first comment of every unresolved review thread, at most 50.
+- `ci`: `{ at, state }` with `passing` or `failing`, one entry per change the snapshots saw, at most 10. Each snapshot carries the list of the baseline forward and appends the current result with the snapshot time when it differs. The first entry is no change. Pending results are skipped.
+
+The query adds `oid` to the last 20 commits and `statusEvents`, the last 20 timeline items of the types `READY_FOR_REVIEW_EVENT`, `CONVERT_TO_DRAFT_EVENT`, `HEAD_REF_FORCE_PUSHED_EVENT`, `MERGED_EVENT`, `CLOSED_EVENT`, `REOPENED_EVENT`, `LABELED_EVENT` and `UNLABELED_EVENT` for PRs, and the last four for issues. Discussions have no timeline items in the API. The timeline shows what the last snapshot saw. A refresh from the dialog does not change it.
+
 ## Day plan
 
 The board shows three groups: "Quick & Easy" (`active`, `easy`), "Afterwards" (`almost`, `review`) and "When you have time" (`deferred`, `hardware`, snoozed items). A chip on each row names the section. The page shows at most the time budget (6 hours by default, set on the board), filled in group order by `priority`, using `effortMinutes`. An item that does not fit is skipped. Items handled today count as spent time. "Quick & Easy" shows at most 5 rows at a time. More rows appear only on click. The default view shows no backlog counts.

@@ -272,6 +272,10 @@ A `close` route on a discussion with `facts.answerable` and no `facts.answerChos
 
 The server sets the maintainer field `handled: { at, routeId, routeType, verified }` when he used a prefill button or a bot or agent route ran, and the board hides the item until the next run. `gary handled --json` lists such items. Early in every hourly run, after the snapshot, the routine clears `handled` with `gary put --merge items <id>` and `{ "handled": null }` when the thread changed on GitHub after `handled.at`, and classifies the item again. When nothing changed and `handled.at` is more than 30 minutes old, it clears `handled`, keeps the routes and prepends a `question` finding that he opened the thread but nothing changed there. A younger mark, or an agent job still queued or claimed, keeps `handled`.
 
+## Since your last choice
+
+`scripts/lib/since.mjs` holds the whole timeline of SPEC.md, "Since your last choice". `activityOf` runs in `gary snapshot` and writes `activity` into the staged entry. `sinceAnchor` and `sinceSummary` run in the board server's `readItems`, from the snapshot entry, the item's action docs and the item's `handled` and `seenAt`. The page's `renderSince` only draws the served `item.since`, and `recordSeen` stores `seenAt` when the dialog closes. No agent writes any part of it.
+
 ## Routes after a push
 
 Every pushing mode returns routes for the new head only: routes written before the push are dropped, `reviewedSha` is the new head, and a failed or refused job returns the previous doc unchanged after releasing its claim.

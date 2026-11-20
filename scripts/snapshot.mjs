@@ -7,6 +7,7 @@ import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs
 import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
 import { aiFacts, buildTimeline, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, sizeFacts, speakerFacts } from "./lib/facts.mjs";
+import { activityOf } from "./lib/since.mjs";
 import { graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
 
@@ -18,6 +19,7 @@ const MAX_THREAD_TEXT = 600;
 const MAX_OPEN_THREADS = 20;
 const THREAD_PAGE = 100;
 const TIMELINE_PAGE = 50;
+const STATUS_PAGE = 20;
 const MAX_COMMITS = 100;
 const TIMELINE_REPLIES = 20;
 const TIMELINE_THREAD_COMMENTS = 20;
@@ -53,6 +55,16 @@ const REVIEW_REQUEST_EVENTS = `reviewRequestEvents: timelineItems(itemTypes: [RE
 					nodes { ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } } } }
 				}`;
 
+// The status changes for the "Since your last choice" timeline. Issues have no draft, ready, force-push or merge events
+const EVENT_TYPES = {
+	READY_FOR_REVIEW_EVENT: "ReadyForReviewEvent", CONVERT_TO_DRAFT_EVENT: "ConvertToDraftEvent", HEAD_REF_FORCE_PUSHED_EVENT: "HeadRefForcePushedEvent",
+	MERGED_EVENT: "MergedEvent", CLOSED_EVENT: "ClosedEvent", REOPENED_EVENT: "ReopenedEvent", LABELED_EVENT: "LabeledEvent", UNLABELED_EVENT: "UnlabeledEvent",
+};
+const ISSUE_STATUS = ["CLOSED_EVENT", "REOPENED_EVENT", "LABELED_EVENT", "UNLABELED_EVENT"];
+const statusEvents = (types) => `statusEvents: timelineItems(itemTypes: [${types.join(", ")}], last: ${STATUS_PAGE}) {
+					nodes { __typename ${types.map((t) => `... on ${EVENT_TYPES[t]} { createdAt actor { login __typename }${/LABELED/.test(t) ? " label { name }" : ""} }`).join(" ")} }
+				}`;
+
 const PR_FIELDS = `
 				number title url body createdAt updatedAt isDraft state maintainerCanModify
 				author { login __typename } authorAssociation
@@ -62,11 +74,12 @@ const PR_FIELDS = `
 				headRefOid headRefName baseRefName isCrossRepository reviewDecision mergeable
 				additions deletions
 				commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-				recentCommits: commits(last: 20) { nodes { commit { committedDate author { user { login } } committer { user { login } } } } }
+				recentCommits: commits(last: 20) { nodes { commit { oid committedDate author { user { login } } committer { user { login } } } } }
 				allCommits: commits(first: ${MAX_COMMITS}) { totalCount nodes { commit { message signature { isValid wasSignedByGitHub } author { name email user { login } } committer { name email user { login } } } } }
 				files(first: ${MAX_FILES}) { totalCount nodes { path additions deletions } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
+				${statusEvents(Object.keys(EVENT_TYPES))}
 				reviews(last: 10) { nodes { author { login __typename } state submittedAt url body } }
 				allReviews: reviews(first: 100) { ${REVIEW_STATE_FIELDS} }
 				reviewRequests(first: 20) {
@@ -123,6 +136,7 @@ const ISSUE_FIELDS = `
 				assignees(first: 10) { nodes { login } }
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
+				${statusEvents(ISSUE_STATUS)}
 				closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { nodes { number url state isDraft title author { login } } }
 `;
 
@@ -259,13 +273,21 @@ export async function main(argv = []) {
 	];
 
 	const baseline = readJson(BASELINE())?.items ?? {};
+	const fetchedAt = new Date().toISOString();
+	const nodeOf = new Map([
+		...readyPrs.map((n) => [`pr-${n.number}`, ["pr", n]]),
+		...issues.nodes.map((n) => [`issue-${n.number}`, ["issue", n]]),
+		...discussions.nodes.map((n) => [`disc-${n.number}`, ["discussion", n]]),
+	]);
 	const current = {};
 	const changed = [];
 	const unchanged = [];
 	for (const item of items) {
-		const entry = baselineEntry(item);
-		current[item.id] = entry;
 		const old = baseline[item.id];
+		const [kind, node] = nodeOf.get(item.id);
+		// The activity stays out of the work list, which the agents read
+		const entry = { ...baselineEntry(item), activity: activityOf(kind, node, ctx, { before: old?.activity, ci: item.ci, at: fetchedAt }) };
+		current[item.id] = entry;
 		let reason;
 		if (!old) reason = "new";
 		else if (item.headSha && old.headSha !== item.headSha) reason = "head_changed";
@@ -286,7 +308,7 @@ export async function main(argv = []) {
 	mkdirSync(stateDir(), { recursive: true });
 	writeFileSync(
 		PENDING(),
-		JSON.stringify({ fetchedAt: new Date().toISOString(), items: current }, null, "\t") + "\n",
+		JSON.stringify({ fetchedAt, items: current }, null, "\t") + "\n",
 	);
 
 	const output = {

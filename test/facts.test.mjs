@@ -128,6 +128,9 @@ t.check("every snapshot entry has facts", out.changed?.length > 0 && out.changed
 t.check("the full snapshot fetches the missing replies too", out.changed?.find((e) => e.id === "disc-35")?.facts.timeline.filter((e) => e.kind === "reply").length === 3, out.changed?.find((e) => e.id === "disc-35"));
 const pending = JSON.parse(readFileSync(join(root, "instances", "widgets", "state", "snapshot.pending.json"), "utf8"));
 t.check("the staged snapshot keeps labels and assignees for every entry", Object.values(pending.items).every((e) => Array.isArray(e.labels) && Array.isArray(e.assignees)) && JSON.stringify(pending.items["pr-17"]?.assignees) === `["${ME}"]`, pending.items["pr-17"]);
+const act12 = pending.items["pr-12"]?.activity;
+t.check("the staged snapshot keeps the activity of a PR for the timeline", act12?.events.filter((e) => e.kind === "review").map((e) => e.state).join() === "approved,commented" && act12.openThreads.length === 3 && !act12.events.some((e) => e.kind === "thread_reply") && act12.ci.map((c) => c.state).join() === "passing", act12);
+t.check("the work list leaves the activity out", out.changed?.every((e) => e.activity === undefined));
 
 removeDir(T);
 t.done();
