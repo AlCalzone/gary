@@ -367,6 +367,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("revise: an agent card with the proposal in the instructions field", openCard().classList.contains("intent-agent") && openCard().querySelector("textarea").value === "Drop the 0x00c8 file, the 0x00c9 file covers both."
     && openCard().querySelector(".card-label").textContent === "Instructions for the agent");
   ok("revise: the button says Change and the quiet line names who commits", !!cardBtn("Change") && cardBtn("Change").classList.contains("intent-agent") && /Commits as widgets-bot/.test(openCard().querySelector(".card-actions").textContent));
+  ok("revise: the quiet line says what follows the push", /Then Gary reviews the new head/.test(openCard().querySelector(".card-actions").textContent));
   ok("revise: no take-over wording and no thread list on the card", !/Continues in the contributor's PR/.test(openCard().textContent) && !/Take over/.test(openCard().textContent) && !openCard().querySelector(".decisions"));
   ok("revise: the open threads keep their own list", !document.getElementById("d-threads").hidden && /Guard the empty list/.test(document.getElementById("d-threads").textContent));
   openCard().querySelector("textarea").value = "  "; openCard().querySelector("textarea").dispatchEvent(new Event("input"));

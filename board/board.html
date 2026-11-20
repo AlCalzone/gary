@@ -3057,6 +3057,17 @@ function instanceByName(name) {
 }
 
 // The instance entry an item belongs to. With one instance every item belongs to it.
+// The bot's PRs and the taken-over PRs stay watched after a push, so his next review on GitHub starts a round without a click
+function watchedAfterPush(d, r) {
+  const bot = instOf(d).bot ? botLogin(instOf(d)) : "";
+  return r.type === "take_over" || d.takenOver === true || (!!bot && str(d.author).toLowerCase() === bot.toLowerCase());
+}
+
+function pushNote(d, r) {
+  const who = instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you";
+  return "Commits as " + who + ". Then Gary reviews the new head" + (watchedAfterPush(d, r) ? " and keeps watching the PR: your next review on GitHub starts the next round." : ".");
+}
+
 function instOf(d) {
   return (d && instanceByName(str(d.instance))) || (boardInfo.instances.length === 1 ? boardInfo.instances[0] : EMPTY_INSTANCE);
 }
@@ -3938,7 +3949,7 @@ function buildCardActions(id, d, r, rec, locked) {
   if (instOf(d).paused === true && buttons.some((b) => b.actor === "bot" || b.actor === "own")) {
     out.push(h("span", { class: "paused-hint", title: "No GitHub writes. Run `gary resume` to turn them on.", text: "paused" }));
   }
-  if (r.type === "take_over" || r.type === "revise") out.push(h("span", { class: "quiet-line", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") }));
+  if (r.type === "take_over" || r.type === "revise") out.push(h("span", { class: "quiet-line", text: pushNote(d, r) }));
   // A prefill and a direct run can share a card, so the note names the button that runs at once
   // The escalate row says under its title who posts
   const ownButtons = escalateRoute(r) ? [] : buttons.filter((b) => b.actor === "own");
