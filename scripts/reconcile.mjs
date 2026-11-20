@@ -1,7 +1,7 @@
 // gary reconcile [request]        ask for a reconcile pass. The master starts it from the queue
 // gary reconcile due [--json]     say whether a pass is due and why
 // gary reconcile names [--json]   the names rules may refer to today, the retired ones and the ones gone since the last pass
-// gary reconcile files [--json]   the rule files of the instance and the core references a pass reads
+// gary reconcile files [--json]   the rule files of the instance, its profile skills and the core files a pass reads
 // gary reconcile start            mark a pass as started. Exit 3 when another one runs
 // gary reconcile done [--until <ISO>]   mark the pass as done. --until is the `at` of the newest log entry it read
 import { readdir } from "node:fs/promises";
@@ -14,6 +14,25 @@ async function mdFiles(dir) {
 		return (await readdir(dir)).filter((n) => n.endsWith(".md")).sort().map((n) => join(dir, n));
 	} catch (e) {
 		if (e.code === "ENOENT") return [];
+		throw e;
+	}
+}
+
+// Every core skill with its references, the routine's own references first
+async function coreSkills() {
+	const out = [];
+	for (const name of (await readdir(join(ROOT, "skills"))).sort()) {
+		out.push(join(ROOT, "skills", name, "SKILL.md"));
+		if (name !== "triage-routine") out.push(...(await mdFiles(join(ROOT, "skills", name, "references"))));
+	}
+	return out;
+}
+
+async function profileSkills(dir) {
+	try {
+		return (await readdir(join(dir, "skills"))).sort().map((n) => join(dir, "skills", n, "SKILL.md"));
+	} catch (e) {
+		if (e.code === "ENOENT" || e.code === "ENOTDIR") return [];
 		throw e;
 	}
 }
@@ -46,7 +65,8 @@ export async function main(argv) {
 			const data = {
 				profile: [...(await mdFiles(join(i.profileDir, "rules"))), ...(await mdFiles(join(i.profileDir, "templates")))],
 				personal: personalFiles(),
-				core: [join(ROOT, "SPEC.md"), ...(await mdFiles(refs)), ...(await readdir(join(ROOT, "skills"))).sort().map((n) => join(ROOT, "skills", n, "SKILL.md"))],
+				core: [join(ROOT, "SPEC.md"), ...(await mdFiles(refs)), ...(await coreSkills())],
+				profileSkills: await profileSkills(i.profileDir),
 			};
 			return print(argv, data, Object.entries(data).map(([k, v]) => `${k}:\n${v.map((f) => `  ${f}`).join("\n")}`).join("\n"));
 		}

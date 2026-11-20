@@ -17,6 +17,7 @@ const ITEM_FIELDS = [
 	"kind", "repo", "number", "title", "url", "author", "authorType", "category", "needsHardware", "discussionCategory", "priority",
 	"effortMinutes", "waitingOn", "dueAt", "dueSource", "series", "reviewDepth", "classifiedBy", "analyzedBy", "state", "hint", "routes",
 	"threads", "findings", "wants", "wantsReason", "handled", "pushed", "reviewedSha", "takenOver", "blocked", "dismissedRoutes",
+	"story", "links", "solved", "waitingDays", "rounds",
 ];
 
 /** The names a rule may refer to today, by kind. */
