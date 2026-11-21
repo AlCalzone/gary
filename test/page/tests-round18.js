@@ -51,11 +51,15 @@
     type(document.querySelector("#d-analyze textarea"), "Also check the tests."); await wait(5);
 
     __reply = () => ({ ok: false, result: "An answer names a finding the item no longer has. Reload the board." });
-    analyzeBtn().click(); await wait(20);
+    if (document.getElementById("d-analyze").hidden) { analyzeBtn().click(); await wait(20); }
+    const panelSend = () => document.querySelector('#d-analyze [data-focus-key="more:send"]');
+    ok("answers: the button opens the instructions box and sends nothing yet", !document.getElementById("d-analyze").hidden && panelSend().textContent === "Send 2 answers to the agent" && /optional/.test(document.querySelector("#d-analyze label").textContent), panelSend().textContent);
+    panelSend().click(); await wait(20);
     ok("answers: a refusal shows the server's reason and keeps the drafts", /no longer has/.test(document.querySelector("#d-foot .foot-status").textContent) && analyzeBtn().textContent === "Send 2 answers and analyze again", document.querySelector("#d-foot .foot-status").textContent);
     __reply = () => ({ ok: true, result: "Sent 2 answers to the agent." });
     const before = __calls.length;
-    analyzeBtn().click(); await wait(20);
+    if (document.getElementById("d-analyze").hidden) { analyzeBtn().click(); await wait(20); }
+    panelSend().click(); await wait(20);
     const sent = __calls.slice(before);
     ok("answers: one click sends one reanalyze with the answers and the note", sent.length === 1 && sent[0].tool === "reanalyze" && sent[0].instance === "widgets" && sent[0].itemId === "pr-9991" && sent[0].text === "Also check the tests."
       && JSON.stringify(sent[0].input) === JSON.stringify({ answers: [{ finding: "f1", text: "Yes, 0x00 means off." }, { finding: "#1-0a1b2c3d", text: "Not needed, the prefix has it." }] }), sent);

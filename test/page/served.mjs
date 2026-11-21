@@ -764,6 +764,8 @@ try {
 	await openItem("issue-40");
 	ok("answers: the answer draft survives a reload", await until(`document.querySelector("#d-findings .f-answer textarea")?.value === "7.21, see the second comment."`));
 	await ev(`document.querySelector("#d-foot .foot-analyze").click();`);
+	await until(`!document.getElementById("d-analyze").hidden`);
+	await ev(`document.querySelector('#d-analyze [data-focus-key="more:send"]').click();`);
 	ok("answers: the server keeps the answer on the item", await fileUntil(() => json(itemFile("issue-40")).findingAnswers?.[0]?.text === "7.21, see the second comment." && json(itemFile("issue-40")).findingAnswers[0].finding === "f1"));
 	ok("answers: one reanalyze is queued with the answer", actionFiles().filter((a) => a.itemId === "issue-40" && a.action === "reanalyze" && a.status === "queued" && a.params?.answers?.[0]?.findingText === "Which firmware does the stick run?").length === 1);
 	ok("answers: the dialog shows You answered once the item comes back", await until(`/^You answered: 7\\.21, see the second comment\\. · /.test(document.querySelector("#d-findings .f-answered")?.textContent ?? "") && document.querySelector("#d-findings .f-answer").hidden`));

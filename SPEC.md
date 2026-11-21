@@ -323,7 +323,7 @@ Rules:
 - A finding with `routeId` belongs to that route. The card shows the finding as its reason. Findings without `routeId` stay in the collapsed findings list.
 - Routes never contain "hide", "dismiss" or "snooze". The dialog footer has those.
 - "Analyze again" is a footer action next to Snooze, never a route. A click reveals a full-width note field of 3 to 4 rows and a send button.
-- Every finding, in the findings list and on a route card, has a quiet "Reply" link. It opens a small box under the finding, see "Answers to findings". While answers are written, the footer button reads "Send 2 answers and analyze again" and one click sends them.
+- Every finding, in the findings list and on a route card, has a quiet "Reply" link. It opens a small box under the finding, see "Answers to findings". While answers are written, the footer button reads "Send 2 answers and analyze again". It opens the note panel, so he can add instructions, and the panel's button "Send 2 answers to the agent" sends them.
 - A card can have more than one button. Each button shows who acts. A card with buttons for different actors shows no actor on its header.
 - A route without inputs (no text, no choices) is a compact row. The row carries the button. It does not expand.
 - Canned texts come from `<profile>/templates/<name>.md`. The agent copies the template into the route's `text` and adapts it. The text stays editable on the card.
@@ -401,7 +401,7 @@ The card of a used `as: "me"` route says so in words where a bot card says "Done
 
 ### Answers to findings
 
-The maintainer answers a finding where the dialog shows it. "Reply" opens a box under the finding and focuses it. "Cancel" closes it and drops the draft. The page keeps the draft like a step draft, under `<item>|a:<finding key>|1`, so it survives a re-render and a reload. With at least one answer written, the footer button reads "Send N answers and analyze again". One click, or the send button of the note panel, sends `{ action: "reanalyze", itemId, text, input: { answers: [{ finding, text }] } }` to `/api/action`. `text` is the note of the panel, empty when he wrote none. Without answers "Analyze again" stays the page's own `reanalyze` doc write.
+The maintainer answers a finding where the dialog shows it. "Reply" opens a box under the finding and focuses it. "Cancel" closes it and drops the draft. The page keeps the draft like a step draft, under `<item>|a:<finding key>|1`, so it survives a re-render and a reload. With at least one answer written, the footer button reads "Send N answers and analyze again". The button opens the note panel, labeled as optional instructions. The panel's send button sends `{ action: "reanalyze", itemId, text, input: { answers: [{ finding, text }] } }` to `/api/action`. `text` is the note of the panel, empty when he wrote none. Without answers "Analyze again" stays the page's own `reanalyze` doc write.
 
 `finding` is the finding's key: its `id`, or for a finding without one `#<index>-<hash>`, with the first 8 hex digits of the SHA-256 of its `text`. The server serves every finding with its `key`, so the page never computes it. A key with index and hash changes when the agent rewrites the finding.
 

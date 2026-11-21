@@ -4843,11 +4843,8 @@ function buildZoneControls(id) {
     detail.lastZone = "away";
     restoreItem(id);
   });
-  // With answers written, one click sends them together with the note
-  const analyze = fbtn([icon("sparkles"), "Analyze again"], "Analyze again", "foot:analyze", () => {
-    if (answerDrafts(id, state.items.get(id)).length) sendAnswers(id, note.value.trim()).then(() => { if (detail.id === id && state.notes.get(id)?.kind !== "failed") setPanel(false); });
-    else setPanel(detail.analyze.hidden);
-  }, "Ask the agent to look at this item again");
+  // The panel's own button sends, so he can add instructions to his answers first
+  const analyze = fbtn([icon("sparkles"), "Analyze again"], "Analyze again", "foot:analyze", () => setPanel(detail.analyze.hidden), "Ask the agent to look at this item again");
   analyze.classList.add("foot-analyze");
   analyze.setAttribute("aria-expanded", "false");
   analyze.setAttribute("aria-controls", "d-analyze");
@@ -4898,10 +4895,11 @@ function updateAnswerCount() {
     zc.label = label;
     zc.analyze.replaceChildren(icon("sparkles"), label);
     zc.analyze.setAttribute("aria-label", n ? label : busy ? "Analyzing, add a note" : "Analyze again");
-    zc.analyze.title = n ? "Send your answers to the agent" : busy ? "The agent is analyzing this item. You can add a note to the running analysis." : "Ask the agent to look at this item again";
+    zc.review.replaceChildren(actorMark("agent"), n ? "Send " + n + (n === 1 ? " answer" : " answers") + " to the agent" : "Send to the agent");
+    zc.analyze.title = n ? "Opens a box for optional instructions. Your answers go out when you send it." : busy ? "The agent is analyzing this item. You can add a note to the running analysis." : "Ask the agent to look at this item again";
     zc.analyze.dataset.tip = zc.analyze.title;
   }
-  zc.panelLabel.textContent = busy ? "Add a note to the running analysis" : "Analyze again";
+  zc.panelLabel.textContent = n ? "Instructions to go with your " + (n === 1 ? "answer" : "answers") + ", optional" : busy ? "Add a note to the running analysis" : "Analyze again";
   zc.review.disabled = zc.locked || (busy && !n && !zc.input.value.trim());
 }
 
