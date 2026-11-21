@@ -126,6 +126,22 @@ export function feedbackFacts(timeline, commits, { me, bot, writeLogin, reviewBo
 	};
 }
 
+/**
+ * The newest review or comment by `me` after `after` (a time in ms), as `{ at, kind, state }`, or null.
+ * `kind` is "review" for a review or an inline review comment and "comment" for the others. `state` is the
+ * review's state in lower case, like "approved", when `reviews` lists it, and null otherwise.
+ */
+export function ownVisit(timeline, reviews, { me, after }) {
+	const low = (v) => String(v ?? "").toLowerCase();
+	if (!me || !Number.isFinite(after)) return null;
+	const last = (timeline ?? []).filter((e) => FEEDBACK_KINDS.has(e.kind) && low(e.author) === low(me) && Date.parse(e.at) > after).at(-1);
+	if (!last) return null;
+	const kind = last.kind === "review" || last.kind === "thread_comment" ? "review" : "comment";
+	const review = kind === "review" ? (reviews ?? []).filter((r) => low(r.author) === low(me) && Date.parse(r.submittedAt) <= Date.parse(last.at)).at(-1) : null;
+	const state = typeof review?.state === "string" && review.state !== "PENDING" ? review.state.toLowerCase() : null;
+	return { at: last.at, kind, state };
+}
+
 export const MAX_SENSITIVE_FILES = 5;
 
 /** The first changed files of a PR entry that match the profile's `sensitivePaths`, with their full count. Empty without a match. */

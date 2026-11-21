@@ -17,7 +17,7 @@ import { requestReconcile } from "../scripts/lib/reconcile.mjs";
 import { ACTION_KINDS, claimsDir, listClaims } from "../scripts/lib/claims.mjs";
 import { autoReviewState, readAutoReviews } from "../scripts/lib/auto-review.mjs";
 import { runApiEdit } from "../scripts/lib/api-edit.mjs";
-import { sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
+import { ownVisit, sensitiveFacts, sensitiveOurs, touchesSensitive } from "../scripts/lib/facts.mjs";
 import { findingKey, findingsByKey } from "../scripts/lib/findings.mjs";
 import { sinceAnchor, sinceSummary } from "../scripts/lib/since.mjs";
 import { latest, pendingHold, requestReviewRound, stageOf, unhandledFeedback } from "../scripts/lib/watch.mjs";
@@ -54,6 +54,8 @@ const MAX_KEPT_ANSWERS = 100;
 // A refresh reads GitHub, so it is limited per item and in total
 const REFRESH_ITEM_MS = 20000;
 const REFRESH_PER_MINUTE = 30;
+// `MARK_MAX_AGE_MS` sets how long the page's "opened on GitHub" mark counts for a refresh
+const MARK_MAX_AGE_MS = 2 * 3600000;
 export const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "unchanged"];
 // What a bot action that ran says about the thread, for `handled.verified`
 const VERIFIED_BY_ACTION = { comment: "commented", review: "commented", create_issue: "commented", close: "closed", label: "labeled" };
@@ -1705,6 +1707,8 @@ export async function startBoardServer({
 	/**
 	 * Reads one item from GitHub, read-only, and stores what changed: `handled.verified`, `live` for a closed or
 	 * merged thread, and the GitHub fields the page shows. Nothing the agent wrote changes.
+	 * With `markedAt`, the time he opened the item on GitHub from the board, a review or comment of his after both
+	 * that time and `reviewedAt` becomes `visited` and queues one reanalyze.
 	 */
 	async function handleRefresh(body) {
 		const name = instanceOf(body.instance);
@@ -1739,13 +1743,24 @@ export async function startBoardServer({
 		}
 		const checkedAt = new Date().toISOString();
 		const state = entry.githubState ?? "open";
+		const markedAt = markTime(body.markedAt, now);
 		let next;
+		let visit = null;
 		await withLock(docLocks, file, async () => {
 			const cur = await readJson(file);
 			if (!cur) return;
 			next = { ...cur };
 			if (state === "closed" || state === "merged") next.live = { state, checkedAt };
 			else delete next.live;
+			if (state === "open" && markedAt !== null) {
+				const me = settingsOf(name).instance?.config.me;
+				const reviewed = Date.parse(cur.reviewedAt);
+				const found = ownVisit(entry.facts?.timeline, entry.reviews, { me, after: Math.max(markedAt, Number.isFinite(reviewed) ? reviewed : -Infinity) });
+				if (found && !(Date.parse(cur.visited?.at) > Date.parse(found.at))) {
+					next.visited = found;
+					visit = found;
+				}
+			}
 			if (entry.mergeable !== undefined) next.mergeable = MERGEABLE_STATES[entry.mergeable] ?? "unknown";
 			if (entry.ci !== undefined) next.ci = entry.ci;
 			if (entry.facts?.lastEventUrl) next.lastEventUrl = entry.facts.lastEventUrl;
@@ -1754,8 +1769,42 @@ export async function startBoardServer({
 			await writeAtomic(file, next);
 		});
 		if (!next) return [200, { ok: false, result: OUTDATED, outdated: true }];
+		const queued = visit ? await queueVisitAnalysis(name, itemId, visit) : false;
 		schedulePush(name, "items");
-		return [200, { ok: true, result: { state, checkedAt, ...(next.handled && { verified: next.handled.verified }) } }];
+		return [200, { ok: true, result: { state, checkedAt, ...(next.handled && { verified: next.handled.verified }), ...(next.visited && { visited: next.visited }), ...(queued && { queued: true }) } }];
+	}
+
+	/** The page's mark time in ms, or null when it is no time, lies in the future or is older than 2 hours. */
+	function markTime(value, now) {
+		const t = typeof value === "string" ? Date.parse(value) : NaN;
+		return Number.isFinite(t) && t <= now && t >= now - MARK_MAX_AGE_MS ? t : null;
+	}
+
+	const VISIT_WORDS = { approved: "approved the PR", changes_requested: "requested changes" };
+
+	/**
+	 * Queues one reanalyze for his review or comment on GitHub. It queues nothing while focus holds the item, while an
+	 * analysis of it is queued or running, or when one was queued for the same review or comment. Answers whether it queued.
+	 */
+	async function queueVisitAnalysis(name, itemId, visit) {
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			if (focusHold(itemId, name)) return false;
+			const actions = await readCollection(name, "actions");
+			if ((await workList(name, actions)).some((w) => w.itemId === itemId && w.kind === "review")) return false;
+			if (actions.some(({ data: a }) => a.itemId === itemId && a.action === "reanalyze" && a.params?.by === "github_visit" && a.params.visited?.at === visit.at)) return false;
+			const what = visit.kind === "comment" ? "commented" : VISIT_WORDS[visit.state] ?? "reviewed the PR";
+			await logClick(name, itemId, {
+				action: "reanalyze",
+				params: { by: "github_visit", visited: visit },
+				text: `The maintainer opened this item from the board and ${what} on GitHub at ${visit.at}, after the last analysis. Read what he wrote there and analyze the item again. Drop routes that his ${visit.kind} already settled.`,
+				status: "queued",
+				via: "queue",
+				createdAt: new Date().toISOString(),
+				finishedAt: null,
+				result: "",
+			});
+			return true;
+		});
 	}
 
 	/** What GitHub shows since the maintainer handled the item. */
