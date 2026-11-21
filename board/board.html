@@ -232,6 +232,9 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .working-line { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 13.5px; color: var(--muted); }
 .working-line[hidden] { display: none; }
 .working-line .i { width: 15px; height: 15px; color: var(--act-agent); }
+.visit-line .i { color: var(--muted); }
+.routes.stale > .card { opacity: 0.6; }
+.routes.stale > .card:hover, .routes.stale > .card:focus-within { opacity: 1; }
 /* A fix or a push in progress: filled teal, readable at a glance on the title line */
 .r-titleline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .agent-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; background: var(--act-agent); color: var(--surface); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
@@ -261,6 +264,7 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .origin-warn { color: var(--warn); }
 .callout.hold[hidden] { display: none; }
 .callout.hold p { margin: 0; }
+.visit-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, var(--surface)); color: var(--fg); font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap; }
 .hold-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
 /* An item in focus is his to work on in its own agent session, and Gary holds it meanwhile */
 .focus-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
@@ -1058,6 +1062,7 @@ textarea {
     <section class="ways" aria-label="Ways forward">
       <div class="callout strong sensitive-banner" id="d-sensitive" role="note" hidden></div>
       <p class="working-line" id="d-working" role="status" hidden></p>
+      <p class="working-line visit-line" id="d-visited" role="status" hidden></p>
       <p class="state" id="d-verdict"></p>
       <div class="routes" id="d-routes"></div>
     </section>
@@ -1519,9 +1524,17 @@ function handledOf(key, d = state.items.get(key)) {
   return h || localHandled.get(key) || null;
 }
 
+// A refresh found the thread merged or closed after the analysis. Such an item leaves the plan like a handled one.
+// An item that the agent wants reopened was closed already when it was analyzed.
+function goneOnGithub(d) {
+  const s = d && d.live && typeof d.live === "object" ? str(d.live.state) : "";
+  return (s === "merged" || s === "closed") && !routesOf(d).some((r) => r.type === "reopen");
+}
+
 function handledToday(key) {
+  const d = state.items.get(key);
   const hd = handledOf(key);
-  const t = hd ? parseTime(hd.at) : NaN;
+  const t = hd ? parseTime(hd.at) : goneOnGithub(d) ? parseTime(d.live.checkedAt) : NaN;
   return Number.isFinite(t) && dayKey(t) === dayKey(Date.now());
 }
 
@@ -1789,6 +1802,11 @@ function renderHandled(rows) {
   handledEls.count.textContent = "Handled, waiting for the next run: " + rows.length;
   handledEls.list.replaceChildren(...rows.map(([key, d]) => {
     const hd = handledOf(key, d);
+    if (!hd) {
+      const open = h("button", { class: "btn quiet small", type: "button", text: "Open", "data-focus-key": "handled:" + key });
+      open.addEventListener("click", () => openDetail(key));
+      return quietRow(key, d, h("span", { class: "h-check tone-ok", text: str(d.live.state) + " on GitHub" }), open);
+    }
     const route = routesOf(d).find((r) => r.id === hd.routeId);
     const what = str(route && route.title) || HANDLED_DONE[hd.routeType] || "Handled";
     const check = handledCheck(d, hd);
@@ -1813,7 +1831,7 @@ function renderAnalyzing(rows) {
   analyzingEls.list.replaceChildren(...rows.map(([key, d]) => {
     const open = h("button", { class: "btn quiet small", type: "button", text: "Open", "data-focus-key": "analyzing:" + key });
     open.addEventListener("click", () => openDetail(key));
-    return quietRow(key, d, open);
+    return quietRow(key, d, visitChip(d), open);
   }));
 }
 
@@ -1883,32 +1901,106 @@ async function bringBack(key) {
   render();
 }
 
-// Asks the server to read GitHub again for items he handled in the last 15 minutes, once per item per focus
-const refreshedThisFocus = new Set();
-function refreshHandled(keys) {
-  const send = boardApi && boardApi.refresh;
-  if (typeof send !== "function") return;
-  for (const key of keys) {
-    const hd = handledOf(key);
-    if (!hd || refreshedThisFocus.has(key)) continue;
-    if (Date.now() - parseTime(hd.at) > 15 * 60000) continue;
-    if (hd.verified && hd.verified !== "unchanged") continue;
-    refreshedThisFocus.add(key);
-    // The server rate-limits as well, so a refusal is no news
+// Items he opened on GitHub from the board, per instance, as { <itemId>: ISO time of the click }.
+// The marks live in local storage too, so a reload keeps them. A mark counts for 2 hours.
+const GITHUB_MARK_MS = 2 * 3600000;
+const githubMarks = new Map();
+
+function marksOf(instance) {
+  if (!githubMarks.has(instance)) {
+    let v = null;
     try {
-      Promise.resolve(send.call(boardApi, { instance: refOf(key).instance, itemId: refOf(key).id })).catch(() => {});
+      v = JSON.parse(localStorage.getItem(instanceKey(instance, "githubMarks")) || "{}");
     } catch {
-      // Nothing to show
+      // The marks then start empty
     }
+    githubMarks.set(instance, v && typeof v === "object" && !Array.isArray(v) ? v : {});
+  }
+  const marks = githubMarks.get(instance);
+  for (const [id, at] of Object.entries(marks)) if (!(Date.now() - parseTime(at) < GITHUB_MARK_MS)) delete marks[id];
+  return marks;
+}
+
+function saveMarks(instance) {
+  try {
+    localStorage.setItem(instanceKey(instance, "githubMarks"), JSON.stringify(marksOf(instance)));
+  } catch {
+    // The marks then live only until the next reload
   }
 }
 
+function githubMarkOf(key) {
+  const { instance, id } = refOf(key);
+  return marksOf(instance)[id] || null;
+}
+
+function setGithubMark(key, at) {
+  const { instance, id } = refOf(key);
+  const marks = marksOf(instance);
+  if (at) marks[id] = at;
+  else delete marks[id];
+  saveMarks(instance);
+}
+
+// Mark the item whose dialog or row holds a clicked github.com link. Middle and ctrl or cmd clicks count too
+function onGithubLinkClick(e) {
+  if (e.type === "auxclick" && e.button !== 1) return;
+  const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+  if (!a || !isGithubUrl(a.href)) return;
+  const row = a.closest("[data-id]");
+  const key = detail.id && detail.el.contains(a) ? detail.id : row && state.items.has(row.dataset.id) ? row.dataset.id : null;
+  if (key) setGithubMark(key, nowIso());
+}
+document.addEventListener("click", onGithubLinkClick, true);
+document.addEventListener("auxclick", onGithubLinkClick, true);
+
+// Asks the server to read the item from GitHub again, with the item's mark. A refusal, like the rate limit, is no news
+// and keeps the mark. A merged or closed thread, or a queued analysis of his visit, ends the mark.
+const refreshedThisFocus = new Set();
+function sendRefresh(key) {
+  const send = boardApi && boardApi.refresh;
+  if (typeof send !== "function" || refreshedThisFocus.has(key)) return;
+  refreshedThisFocus.add(key);
+  const markedAt = githubMarkOf(key);
+  const { instance, id } = refOf(key);
+  try {
+    Promise.resolve(send.call(boardApi, { instance, itemId: id, ...(markedAt && { markedAt }) })).then((r) => {
+      const res = r && r.ok === true && r.result && typeof r.result === "object" ? r.result : null;
+      if (markedAt && res && (res.state === "merged" || res.state === "closed" || res.queued === true) && githubMarkOf(key) === markedAt) setGithubMark(key, null);
+    }, () => {});
+  } catch {
+    // Nothing to show
+  }
+}
+
+// Items he handled in the last 15 minutes that GitHub does not confirm yet, once per item per focus
+function refreshHandled(keys) {
+  for (const key of keys) {
+    const hd = handledOf(key);
+    if (!hd) continue;
+    if (Date.now() - parseTime(hd.at) > 15 * 60000) continue;
+    if (hd.verified && hd.verified !== "unchanged") continue;
+    sendRefresh(key);
+  }
+}
+
+// The page counts as left on blur or when hidden. The return after that checks the marked items and the open dialog once
+let leftPage = false;
 function onFocusBack() {
   refreshedThisFocus.clear();
+  if (leftPage) {
+    leftPage = false;
+    for (const key of state.items.keys()) if (githubMarkOf(key)) sendRefresh(key);
+    if (detail.id && detail.el.open && state.items.has(detail.id)) sendRefresh(detail.id);
+  }
   refreshHandled([...state.items.keys()]);
 }
+window.addEventListener("blur", () => { leftPage = true; });
 window.addEventListener("focus", onFocusBack);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onFocusBack(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") onFocusBack();
+  else leftPage = true;
+});
 
 function buildSections() {
   planEls.split = h("div", { class: "split", role: "img" });
@@ -2528,6 +2620,7 @@ function buildRow(id, d, dim, slot) {
   const hint = rec && blockedRoute(d, rec) ? str((visibleRoutes(d).find((r) => r.recommended) || visibleRoutes(d)[0])?.title).trim() : str(d.hint).trim() || str(rec?.title).trim();
   const chip = agentChip(d);
   const held = focusChip(d) || holdChip(d);
+  const visit = visitChip(d);
   const dcat = discussionCategory(d) ? h("span", { class: "r-dcat", title: "Discussion category", text: discussionCategory(d) }) : null;
   const flags = flagChips(d);
   const review = reviewStatus(d);
@@ -2546,7 +2639,7 @@ function buildRow(id, d, dim, slot) {
     h("span", { class: "r-main" },
       // The combined tab names the repo, so the full ref gets its own quiet line above the title
       combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
-      chip || dcat || held || flags.length ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), ...flags, dcat, chip, held) : h("span", { class: "r-title", title, text: title }),
+      chip || dcat || held || visit || flags.length ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), ...flags, dcat, chip, held, visit) : h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
     meta,
@@ -2731,7 +2824,7 @@ function renderListNow() {
       byGroup.get(groupOf(d)).push({ id, data: d, dim: false, order: -1, planned: false, focus: true });
       continue;
     }
-    if (handledOf(id, d)) {
+    if (handledOf(id, d) || goneOnGithub(d)) {
       handledRows.push([id, d]);
       continue;
     }
@@ -2958,7 +3051,7 @@ function renderDetailInfo(d) {
   // A blank line starts a new paragraph
   detail.story.replaceChildren(...story.split(/\n\s*\n/).map((para) => h("p", null, richText(para))));
   detail.story.hidden = !story;
-  detail.verdict.hidden = !verdict;
+  detail.verdict.hidden = !verdict || goneOnGithub(d);
   renderAutoReview(d);
   renderSensitive(d);
   renderOrigin(d);
@@ -3487,6 +3580,30 @@ function renderHold(d) {
   el.replaceChildren(icon("clock"), h("div", null,
     h("p", { class: "hold-line", text: "Your " + x.kind + " from " + holdTime(x.feedbackAt) + " waits: the session that opened this PR in " + x.dir + " was active at " + holdTime(x.lastActiveAt) + ". Gary starts the round after 30 quiet minutes, around " + holdTime(x.until) + "." }),
     h("p", { class: "hold-sooner", text: "To act sooner, address it in that session yourself." })));
+}
+
+// The server serves `visited` when a refresh found his review or comment on GitHub after he opened the item from
+// the board. It counts until an analysis newer than it arrives.
+function visitOf(d) {
+  const v = d && d.visited && typeof d.visited === "object" ? d.visited : null;
+  if (!v || !Number.isFinite(parseTime(v.at)) || goneOnGithub(d)) return null;
+  const reviewed = parseTime(d.reviewedAt);
+  return Number.isFinite(reviewed) && reviewed >= parseTime(v.at) ? null : v;
+}
+
+// What he did on GitHub, as [sentence part, chip text]
+function visitWords(v) {
+  if (v.kind === "comment") return ["commented on GitHub", "Commented on GitHub"];
+  if (v.state === "approved") return ["approved this on GitHub", "Approved on GitHub"];
+  if (v.state === "changes_requested") return ["requested changes on GitHub", "Changes requested on GitHub"];
+  return ["reviewed this on GitHub", "Reviewed on GitHub"];
+}
+
+function visitChip(d) {
+  const v = visitOf(d);
+  if (!v) return null;
+  const [said, short] = visitWords(v);
+  return h("span", { class: "visit-chip", title: "You " + said + " at " + hhmm(v.at) + ". The cards are from before that.", text: short });
 }
 
 function holdChip(d) {
@@ -4643,6 +4760,12 @@ function renderRoutes(id, d, locked) {
     placeChildren(detail.routes, [h("p", { class: "farewell", text: "Suggestion dismissed. The agent will propose something else." })]);
     return;
   }
+  // A thread that is merged or closed now shows no route cards
+  if (goneOnGithub(d)) {
+    detail.cards.clear();
+    placeChildren(detail.routes, []);
+    return;
+  }
   const routes = visibleRoutes(d).filter((r) => !detail.dismissed.has(r.id));
   if (detail.openRoute === undefined || (detail.openRoute !== null && !routes.some((r) => r.id === detail.openRoute))) {
     const done = routes.find((r) => r.done && !routeCompact(r, d));
@@ -4769,6 +4892,19 @@ function renderRounds(d) {
     details].filter(Boolean));
 }
 
+function renderVisit(id, d) {
+  const el = document.getElementById("d-visited");
+  const v = visitOf(d);
+  el.hidden = !v;
+  detail.routes.classList.toggle("stale", !!v);
+  if (!v) return;
+  const next = analyzing(id) ? "The agent is analyzing it again." : "The cards below are from before that.";
+  const text = "You " + visitWords(v)[0] + " at " + hhmm(v.at) + ". " + next;
+  if (el.dataset.text === text) return;
+  el.dataset.text = text;
+  setKids(el, icon("eye"), h("span", { text }));
+}
+
 function renderWorking(d) {
   renderAgentBanner(d);
   // The push banner says it already; the quiet line is for a running review
@@ -4783,6 +4919,7 @@ function renderWorking(d) {
 
 function renderZones(id, d, locked) {
   renderWorking(d);
+  renderVisit(id, d);
   renderRoutes(id, d, locked);
   updateFooter(d, locked);
 }
@@ -4997,12 +5134,12 @@ function renderDetail() {
   detail.lastHint = str(d.hint).trim() || str(recommendedRoute(d)?.title).trim();
   detail.updatedEl.hidden = !detail.updated;
   const hd = handledOf(id, d);
+  const gone = goneOnGithub(d);
   const hEl = document.getElementById("d-handled");
-  hEl.hidden = !hd;
-  if (hd) {
-    const at = new Date(parseTime(hd.at)).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-    hEl.textContent = "You handled this at " + at + ". It returns after the next run if something is left to do.";
-  }
+  hEl.hidden = !hd && !gone;
+  const handledAt = hd ? "You handled this at " + hhmm(hd.at) + ". " : "";
+  if (gone) hEl.textContent = handledAt + (str(d.live.state) === "merged" ? "Merged" : "Closed") + " on GitHub. It leaves the board with the next run.";
+  else if (hd) hEl.textContent = handledAt + "It returns after the next run if something is left to do.";
   if (detail.updated && detail.updatedEl.dataset.before !== detail.updated.before) {
     detail.updatedEl.dataset.before = detail.updated.before;
     setKids(detail.updatedEl,

@@ -96,7 +96,7 @@
     await setMode("me");
     items(r8().map(([k, d]) => [k, k === "disc-9802" ? { ...d, live: { state: "closed", checkedAt: new Date().toISOString() } } : d])); await wait(10);
     openDetail("disc-9802"); await wait(10);
-    ok("a closed discussion offers no escalate button", !cards()[0]?.querySelector(".card-actions button") && /The discussion is closed/.test(cards()[0]?.textContent ?? ""));
+    ok("a closed discussion offers no escalate button and says it is closed", cards().length === 0 && /Closed on GitHub\. It leaves the board with the next run\.$/.test(document.getElementById("d-handled").textContent));
     document.getElementById("d-close").click(); await wait(5);
     await setMode("me", { botCommands: {} });
     items(r8()); await wait(10);
