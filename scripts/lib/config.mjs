@@ -124,6 +124,17 @@ export function autoReviewOf(config, profile) {
 	return { ...set, kinds, reason: null };
 }
 
+/**
+ * Whether Gary links fix PRs to the issues escalated discussions became: `{ enabled, bot, pattern, reason }`.
+ * `pattern` finds the issue number in the comment that `bot` posts. `reason` says why it is off.
+ */
+export function escalationOf(config, profile) {
+	const pattern = profile.escalateResult ?? null;
+	const bot = config.bot?.login ?? null;
+	const reason = !pattern ? "the profile has no escalateResult" : !bot ? "no bot is configured, and only the bot's comment names the issue" : null;
+	return { enabled: !reason, bot, pattern, reason };
+}
+
 export const PROFILE_DEFAULTS = {
 	maintainers: [],
 	botLogins: [],
@@ -137,6 +148,7 @@ export const PROFILE_DEFAULTS = {
 	aiAuthors: [],
 	autoReviewPaths: {},
 	formatCommand: null,
+	escalateResult: null,
 	dueDateFields: ["Due", "Due date", "Target date", "Deadline", "End date"],
 };
 
@@ -435,6 +447,23 @@ function checkAutomatedComments(list, errors, unknown) {
 	});
 }
 
+function checkEscalateResult(pattern, errors) {
+	if (pattern === undefined || pattern === null) return;
+	if (typeof pattern !== "string" || !pattern.trim() || pattern.length > MAX_PATTERN) {
+		return errors.push(`"escalateResult" must be a regular expression of at most ${MAX_PATTERN} characters`);
+	}
+	let groups;
+	try {
+		new RegExp(pattern);
+		// The empty alternative always matches, so the match lists every group of the pattern
+		groups = new RegExp(`${pattern}|`).exec("").length - 1;
+	} catch (e) {
+		return errors.push(`"escalateResult" is not a valid regular expression: ${e.message}`);
+	}
+	check(errors, groups === 1, `"escalateResult" must have exactly one capture group, for the issue number`);
+	check(errors, !NESTED_QUANTIFIER.test(pattern), `"escalateResult" nests quantifiers, which can make matching very slow`);
+}
+
 /** The problems in a profile.json object, split like checkConfig. */
 export function checkProfile(data) {
 	const errors = [];
@@ -458,6 +487,7 @@ export function checkProfile(data) {
 		`"botCommands" must map command names to the text to post`,
 	);
 	checkAutomatedComments(data.automatedComments, errors, unknown);
+	checkEscalateResult(data.escalateResult, errors);
 	const paths = data.autoReviewPaths;
 	if (paths !== undefined) {
 		if (!paths || typeof paths !== "object" || Array.isArray(paths)) errors.push(`"autoReviewPaths" must map a kind to a list of globs, like { "config": ["config/devices/**"] }`);

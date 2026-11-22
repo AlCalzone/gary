@@ -12,5 +12,6 @@
 	"automatedComments": [],
 	"aiAuthors": [],
 	"autoReviewPaths": { "config": [] },
-	"formatCommand": null
+	"formatCommand": null,
+	"escalateResult": null
 }

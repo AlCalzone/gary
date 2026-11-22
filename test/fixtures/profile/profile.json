@@ -8,5 +8,6 @@
 	"sensitivePaths": [".github/**", "**/package.json"],
 	"autoLabels": ["needs-info"],
 	"botCommands": { "escalate": "@widgets-bot escalate", "automerge": "@widgets-bot automerge" },
+	"escalateResult": "^Escalated to an issue: #(\\d+)",
 	"requiredTools": []
 }

@@ -135,6 +135,13 @@ t.check("an unknown autoReview field is only a warning at run time", arCheck.err
 t.check("autoReviewPaths maps a kind to globs", c.validateProfile({ ...gprofile, ...paths }).length === 0 && c.validateProfile({ ...gprofile, autoReviewPaths: ["config/**"] }).some((e) => /"autoReviewPaths" must map/.test(e)) && c.validateProfile({ ...gprofile, autoReviewPaths: { config: "config/**" } }).some((e) => /"autoReviewPaths.config" must be a list of globs/.test(e)));
 const kindCheck = c.checkProfile({ ...gprofile, autoReviewPaths: { docs: ["docs/**"] } });
 t.check("paths for a kind this version does not know are only a warning", kindCheck.errors.length === 0 && kindCheck.unknown.includes('unknown field "autoReviewPaths.docs"'), kindCheck);
+const er = (v) => c.validateProfile({ ...gprofile, escalateResult: v });
+t.check("escalateResult takes a pattern with one group, or null", er("^Escalated to an issue: #(\\d+)").length === 0 && er("^(?:Moved|Escalated) to #(\\d+)").length === 0 && er(null).length === 0, er("^Escalated to an issue: #(\\d+)"));
+t.check("escalateResult refuses a pattern without a group or with two", [er("^Escalated: #\\d+"), er("^(Escalated): #(\\d+)")].every((e) => e.some((x) => /exactly one capture group/.test(x))));
+t.check("escalateResult refuses a broken regex", er("^#(\\d+").some((e) => /not a valid regular expression/.test(e)) && er("^#(\\d+)\\").some((e) => /not a valid regular expression/.test(e)));
+t.check("escalateResult refuses nested quantifiers", er("^(?:a+)+#(\\d+)").some((e) => /nests quantifiers/.test(e)));
+t.check("escalateResult refuses other values and long patterns", [er(4), er(""), er(`(${"a".repeat(500)})`)].every((e) => e.some((x) => /at most 500/.test(x))));
+t.check("the link needs the field and a bot", c.escalationOf({ bot: { login: "b" } }, { escalateResult: "#(\\d+)" }).enabled && !c.escalationOf({ bot: null }, { escalateResult: "#(\\d+)" }).enabled && !c.escalationOf({ bot: { login: "b" } }, {}).enabled);
 t.check("formatCommand is one line without backticks", c.validateProfile({ ...gprofile, formatCommand: "npm run fmt" }).length === 0 && c.validateProfile({ ...gprofile, formatCommand: null }).length === 0 && ["`rm -rf`", "a\nb", "", 5, "x".repeat(201)].every((v) => c.validateProfile({ ...gprofile, formatCommand: v }).some((e) => /"formatCommand" must be/.test(e))));
 t.check("the template profile is valid and carries the new fields", (() => {
 	const tpl = JSON.parse(readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8"));

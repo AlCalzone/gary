@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, autoReviewOf, fixReviewOf, homePath, instanceName, instanceNames, loadConfig, loadProfile, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
+import { ROOT, autoReviewOf, escalationOf, fixReviewOf, homePath, instanceName, instanceNames, loadConfig, loadProfile, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { canReadProjects, readLogin } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
@@ -115,6 +115,12 @@ async function checkInstance() {
 			// A warning only when config.json asks for the post and it cannot run
 			if (!command) return ["warn", 'escalateAs is "me", but the profile has no botCommands.escalate, so the board has nothing to post'];
 			return ["ok", `me: a click on the escalate button posts "${command}" on the discussion under your own gh login. Nothing else posts a bot command`];
+		});
+		await attempt("escalate link", async () => {
+			const link = escalationOf(config, loadProfile());
+			// A warning only when profile.json asks for the link and it cannot run
+			if (!link.enabled) return [link.pattern ? "warn" : "ok", `off: ${link.reason}. A fix PR of an escalated discussion is not linked to its issue`];
+			return ["ok", `a comment by ${link.bot} that matches ${link.pattern} names the issue an escalated discussion became. Its fix PRs get "fixes #<issue>"`];
 		});
 		add("pause", isPaused() ? "warn" : "ok", isPaused() ? "paused: nothing goes to GitHub and queued agent requests wait. `gary resume` ends it" : "not paused");
 		await attempt("checkout", async () => {
