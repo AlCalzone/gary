@@ -16,7 +16,7 @@ import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { accountMode } from "./lib/gh.mjs";
 import { isEditProposal, occurrences, proposalTarget, validateProposal, writeLearn } from "./lib/learning.mjs";
 import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
-import { fixPrNumbers, fixStateOf, loadFixSources } from "./lib/fixes.mjs";
+import { fixForOf, fixPrNumbers, fixStateOf, loadFixSources } from "./lib/fixes.mjs";
 import { focusHold, focusRefusal } from "./lib/focus.mjs";
 
 // `FOCUS_FACT_FIELDS` names what a write may change on an item in focus: the facts from GitHub, the rank and the maintainer's fields
@@ -51,7 +51,7 @@ async function check(instance, write) {
 	// fixFor is code-owned: it comes from Gary's record of its fix PRs, whatever the doc says
 	if (write.op === "replace" && write.data.kind === "pr") {
 		const forItem = fixPrNumbers(sources.records).get(write.data.number);
-		if (forItem) write.data.fixFor = { itemId: forItem, ref: `${write.data.repo}#${forItem.split("-").pop()}` };
+		if (forItem) write.data.fixFor = fixForOf(forItem, write.data.repo);
 		else delete write.data.fixFor;
 	}
 	const merged = write.op === "merge" ? mergeFields(cur ?? {}, write.data) : replaceFields(cur, write.data);

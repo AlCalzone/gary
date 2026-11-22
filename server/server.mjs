@@ -21,7 +21,7 @@ import { ownVisit, sensitiveFacts, sensitiveOurs, touchesSensitive } from "../sc
 import { findingKey, findingsByKey } from "../scripts/lib/findings.mjs";
 import { sinceAnchor, sinceSummary } from "../scripts/lib/since.mjs";
 import { latest, pendingHold, requestReviewRound, stageOf, unhandledFeedback } from "../scripts/lib/watch.mjs";
-import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
+import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixForOf, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
 import { endFocus, focusDir, focusHold, isHeld, readFocuses, safeLink } from "../scripts/lib/focus.mjs";
 import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
@@ -1053,6 +1053,12 @@ export async function startBoardServer({
 			// A pending fix of the routine counts toward its limit, so the page can show "N of 10"
 			return fix && fix.startedBy === "routine" && BLOCKING_FIX_STATES.includes(fix.state) ? { ...fix, limit: autoFixes } : fix;
 		};
+		const fixItems = fixPrNumbers(fixSources.records);
+		// The stored fixFor still names the discussion after the records moved to its issue
+		const fixForServed = (data) => {
+			const forItem = data.kind === "pr" && typeof data.repo === "string" ? fixItems.get(data.number) : undefined;
+			return forItem ? { fixFor: fixForOf(forItem, data.repo) } : {};
+		};
 		const autoReviews = await readAutoReviews(name);
 		const autoReviewOf = (id, data) => (data.kind === "pr" ? autoReviewState(data, autoReviews[id], fixSources.snapshot[id]) : null);
 		const categoryOf = (id, data) => (data.kind === "discussion" && typeof data.discussionCategory !== "string" ? fixSources.snapshot[id]?.category : undefined);
@@ -1091,6 +1097,7 @@ export async function startBoardServer({
 		const sinceOf = (id, data) => sinceSummary(fixSources.snapshot[id]?.activity, sinceAnchor(data, actionsOf.get(id)), { me: instance.config.me, bot: instance.config.bot?.login, actions: actionsOf.get(id) });
 		return items.map(({ id, data: stored }) => [id, withSnapshotFields(id, normalizeCategory(stored))]).map(([id, data]) => ({
 			...data,
+			...fixForServed(data),
 			...(sinceOf(id, data) && { since: sinceOf(id, data) }),
 			...(sensitiveOf(id, data) && { sensitive: sensitiveOf(id, data) }),
 			...(origins.has(id) && { origin: origins.get(id) }),

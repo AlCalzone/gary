@@ -67,6 +67,22 @@ t.check("a comment by the other side after the fix PR brings the item back, with
 t.check("a fix PR without a recorded time parks until it is merged or closed", f.fixStateOf("issue-1", { ...none, snapshot: { "issue-1": { closingPrs: [closing(30, "open")], lastThemAt: "2026-11-18T09:30:00Z" } } }).parked === true);
 t.check("a running fix parks also after a new comment", f.parksItem("working", "2026-11-18T09:00:00Z", "2026-11-18T09:30:00Z") === true);
 
+// The records of an escalated discussion move to its issue
+const atDisc = { "disc-5": [record], "issue-9": [{ ...record, number: 31 }] };
+const atIssue = f.movedRecords(atDisc, "disc-5", "issue-9");
+t.check("the records move under the issue, with their origin", !atIssue["disc-5"] && JSON.stringify(atIssue["issue-9"]) === JSON.stringify([{ ...record, number: 31 }, { ...record, from: "disc-5" }]), atIssue);
+t.check("the move is idempotent", f.movedRecords(atIssue, "disc-5", "issue-9") === atIssue && atDisc["disc-5"].length === 1);
+const doubled = f.movedRecords({ "disc-5": [record], "issue-9": [{ ...record, readyAt: "2026-11-18T12:00:00Z" }] }, "disc-5", "issue-9")["issue-9"];
+t.check("a PR recorded under both stays one record", doubled.length === 1 && doubled[0].from === "disc-5" && !!doubled[0].readyAt, doubled);
+const onlyMoved = { "issue-9": [{ ...record, from: "disc-5" }] };
+const both = ["issue-9", "disc-5"].map((id) => f.fixStateOf(id, { ...none, records: onlyMoved }));
+t.check("the issue and its discussion resolve the same fix", both.every((x) => x?.state === "open" && x.pr.number === 30 && x.since === record.at && x.parked === true), both);
+t.check("the PR's origin is the issue", f.fixPrNumbers(onlyMoved).get(30) === "issue-9" && f.fixRecordOf(onlyMoved, 30).itemId === "issue-9");
+t.check("a moved fix counts once toward the limit", f.pendingAutoFixes({ ...none, records: onlyMoved }) === 1);
+const endedFix = { "issue-9": [{ ...record, from: "disc-5", ended: "merged" }] };
+t.check("a PR that ended before the move does not block the issue", f.fixStateOf("issue-9", { ...none, records: endedFix }).state === "merged" && f.fixBlock(f.fixStateOf("issue-9", { ...none, records: endedFix })) === null);
+t.check("a reopened PR wins over the recorded end", f.fixStateOf("issue-9", { ...none, records: endedFix, snapshot: { "pr-30": { isDraft: false } } }).state === "open");
+
 // gary fix-record and the snapshot
 let r = gary("fix-record", "issue-23", "--pr", "19", "--branch", "gary/fix-issue-23", "--run", "run-1", "--by", "routine");
 t.check("fix-record writes the record", r.status === 0 && json(r).url === "https://github.com/acme/widgets/pull/19" && JSON.parse(readFileSync(join(home, "state", "fixes.json"), "utf8"))["issue-23"][0].branch === "gary/fix-issue-23", r.stdout + r.stderr);

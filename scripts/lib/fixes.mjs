@@ -10,10 +10,28 @@ export const FIX_BY = ["routine", "maintainer"];
 export const BLOCKING_FIX_STATES = ["working", "draft", "open"];
 const fixesFile = () => join(stateDir(), "fixes.json");
 
-/** Gary's own record of the fix PRs it opened: `{ <itemId>: [{ number, url, branch, run, startedBy, at }] }`. */
+/**
+ * Gary's own record of the fix PRs it opened: `{ <itemId>: [{ number, url, branch, run, startedBy, at }] }`.
+ * A record that moved from an escalated discussion to its issue also carries `from`, the discussion's item id.
+ */
 export async function readFixRecords() {
 	const data = await readJson(fixesFile());
 	return data ?? {};
+}
+
+// One read and write at a time within this process, so no update is lost between them
+let updating = Promise.resolve();
+
+/** Writes the records that `change` returns for the current ones. Writes nothing when it returns them unchanged. */
+function updateFixRecords(change) {
+	const next = updating.then(async () => {
+		const records = await readFixRecords();
+		const changed = change(records);
+		if (changed !== records) await writeAtomic(fixesFile(), changed);
+		return changed;
+	});
+	updating = next.catch(() => {});
+	return next;
 }
 
 /** Records a fix PR for an item. The autofix skill calls it right after `gh pr create`. */
@@ -23,10 +41,15 @@ export async function recordFix({ itemId, number, branch, run, startedBy, repo }
 	if (typeof branch !== "string" || !branch.trim() || branch.length > 250) throw new Error("--branch must name the PR's branch");
 	if (typeof run !== "string" || !run.trim() || run.length > 200) throw new Error("--run must name the run");
 	if (!FIX_BY.includes(startedBy)) throw new Error(`--by must be one of ${FIX_BY.join(", ")}`);
-	const records = await readFixRecords();
-	const list = (records[itemId] ?? []).filter((r) => r.number !== number);
 	const entry = { number, url: `https://github.com/${repo}/pull/${number}`, branch, run, startedBy, at: new Date().toISOString() };
-	await writeAtomic(fixesFile(), { ...records, [itemId]: [...list, entry] });
+	await updateFixRecords((records) => {
+		const hit = fixRecordOf(records, number);
+		// A record that moved to the issue stays there when the fix worker names the discussion
+		const moved = hit?.record.from === itemId;
+		const key = moved ? hit.itemId : itemId;
+		const list = (records[key] ?? []).filter((r) => r.number !== number);
+		return { ...records, [key]: [...list, moved ? { ...hit.record, ...entry } : entry] };
+	});
 	return entry;
 }
 
@@ -41,11 +64,36 @@ export function fixRecordOf(records, number) {
 
 /** Notes on the record of fix PR `number` that Gary marked it ready for review. */
 export async function recordFixReady(number, at = new Date().toISOString()) {
-	const records = await readFixRecords();
-	const hit = fixRecordOf(records, number);
-	if (!hit) throw new Error(`PR #${number} is not a fix PR Gary recorded`);
-	await writeAtomic(fixesFile(), { ...records, [hit.itemId]: records[hit.itemId].map((r) => (r.number === number ? { ...r, readyAt: at } : r)) });
+	await patchFixRecord(number, { readyAt: at });
 }
+
+/** Merges `patch` into the record of fix PR `number`. An undefined value removes the field. Throws without a record. */
+export function patchFixRecord(number, patch) {
+	return updateFixRecords((records) => {
+		const hit = fixRecordOf(records, number);
+		if (!hit) throw new Error(`PR #${number} is not a fix PR Gary recorded`);
+		return { ...records, [hit.itemId]: records[hit.itemId].map((r) => (r.number === number ? { ...r, ...patch } : r)) };
+	});
+}
+
+/** The records with the ones of `from` moved to `to`, each marked with `from`. The same object without any to move. */
+export function movedRecords(records, from, to) {
+	if (!records[from]?.length) return records;
+	const { [from]: moving, ...rest } = records;
+	const target = new Map((rest[to] ?? []).map((r) => [r.number, r]));
+	for (const r of moving) target.set(r.number, { ...r, ...target.get(r.number), from });
+	return { ...rest, [to]: [...target.values()] };
+}
+
+export const moveFixRecords = (from, to) => updateFixRecords((records) => movedRecords(records, from, to));
+
+/** The records of an item, with the ones that moved from it to the issue it became. */
+export function fixRecordsFor(records, itemId) {
+	return Object.entries(records).flatMap(([id, list]) => (list ?? []).filter((r) => r && (id === itemId || r.from === itemId)));
+}
+
+/** The `fixFor` of a fix PR's item, for the item its record is under. */
+export const fixForOf = (itemId, repo) => ({ itemId, ref: `${repo}#${itemId.split("-").pop()}` });
 
 export const driveDir = (instance = instanceName()) => join(instanceDir(instance), "state", "drive");
 /** The id of the board item of PR `number`. A drive file and its action doc are named by it. */
@@ -125,7 +173,8 @@ export function fixStateOf(itemId, { claims, actions, records, snapshot, repo, d
 	const entry = snapshot[itemId];
 	const candidates = new Map();
 	const add = (number, data) => candidates.set(number, { ...(candidates.get(number) ?? {}), ...Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined)) });
-	for (const r of records[itemId] ?? []) add(r.number, { number: r.number, url: r.url, startedBy: r.startedBy, since: r.at, readyAt: r.readyAt });
+	// `ended` is the state a moved record's PR had when it got no closing reference. GitHub's links override it
+	for (const r of fixRecordsFor(records, itemId)) add(r.number, { number: r.number, url: r.url, startedBy: r.startedBy, since: r.at, readyAt: r.readyAt, state: r.ended });
 	for (const p of [...(entry?.closingPrs ?? []), ...(entry?.referencingPrs ?? [])]) add(p.number, { number: p.number, url: p.url, state: p.state, isDraft: p.isDraft, title: p.title, author: p.author, ci: p.ci });
 	if (!candidates.size) return null;
 	const prs = [...candidates.values()].map((p) => {
@@ -207,6 +256,8 @@ export async function fixStates(instance = instanceName()) {
 		if (e.code !== "ENOENT") throw e;
 	}
 	const ids = new Set(Object.keys(sources.records));
+	// An escalated discussion stays listed with the fix PRs that moved to its issue
+	for (const r of Object.values(sources.records).flat()) if (r?.from) ids.add(r.from);
 	for (const n of names) {
 		const id = n.slice(0, -5);
 		const item = await readJson(join(boardDir(instance), "items", n));
