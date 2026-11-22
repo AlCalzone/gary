@@ -240,4 +240,9 @@ if (query.includes("discussion(number: $number)")) {
 	if (query.includes("category")) repository({ discussion: d });
 	repository({ discussion: { closed: d.closed, comments: { nodes: [] } } });
 }
+// The state of fix PRs that left the open PRs, one alias per PR
+if (query.includes("query EndedFixes")) {
+	const numbers = [...query.matchAll(/p(\d+): pullRequest/g)].map((m) => Number(m[1]));
+	repository(Object.fromEntries(numbers.map((n) => [`p${n}`, overrides[`ended-${n}`] ?? (gh.issuesAndPrs[n]?.__typename === "PullRequest" ? { state: gh.issuesAndPrs[n].state } : null)])));
+}
 fail(`fake gh has no answer for this query: ${query.slice(0, 120)}`, undefined);

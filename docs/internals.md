@@ -330,7 +330,7 @@ control.json                the pause switch
 decisions.jsonl             the decision log
 learn.json                  the learning cursor
 reconcile.json              the last reconcile pass, the names it knew, a pending request
-fixes.json                  the fix PRs Gary opened, per item. A record that moved to an issue has `from` plus `linked` or `ended`
+fixes.json                  the fix PRs Gary opened, per item. A record that moved to an issue has `from` plus `linked` or `ended`. `gary snapshot` sets `ended` on any record whose PR left the open PRs, so a merged or closed fix stops counting as pending
 claims/<itemId>.<kind>.json the claims on items
 opened.json                 the prefill buttons he used, per item and route
 failures.json               failed analyses per item

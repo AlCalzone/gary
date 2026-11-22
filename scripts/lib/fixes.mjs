@@ -76,6 +76,12 @@ export function patchFixRecord(number, patch) {
 	});
 }
 
+/** The numbers of the recorded fix PRs without a known end that are not among `openPrs`, the numbers of the repo's open PRs. */
+export function vanishedFixPrs(records, openPrs) {
+	const open = new Set(openPrs);
+	return Object.values(records).flatMap((list) => list ?? []).filter((r) => Number.isSafeInteger(r?.number) && !r.ended && !open.has(r.number)).map((r) => r.number);
+}
+
 /** The records with the ones of `from` moved to `to`, each marked with `from`. The same object without any to move. */
 export function movedRecords(records, from, to) {
 	if (!records[from]?.length) return records;
@@ -184,7 +190,7 @@ export function fixStateOf(itemId, { claims, actions, records, snapshot, repo, d
 		const merged = { ...p, ...Object.fromEntries(Object.entries(live).filter(([, v]) => v !== undefined)) };
 		// Gary marked it ready after the snapshot was taken
 		if (p.readyAt) merged.isDraft = false;
-		// A recorded PR found nowhere else is taken as open, so it still blocks
+		// A recorded PR found nowhere else is taken as open, so it still blocks. The snapshot records `ended` once it left the open PRs
 		const state = merged.state === "merged" ? "merged" : merged.state === "closed" ? "closed" : merged.isDraft ? "draft" : "open";
 		return { ...merged, state };
 	});

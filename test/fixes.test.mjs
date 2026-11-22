@@ -79,6 +79,8 @@ const both = ["issue-9", "disc-5"].map((id) => f.fixStateOf(id, { ...none, recor
 t.check("the issue and its discussion resolve the same fix", both.every((x) => x?.state === "open" && x.pr.number === 30 && x.since === record.at && x.parked === true), both);
 t.check("the PR's origin is the issue", f.fixPrNumbers(onlyMoved).get(30) === "issue-9" && f.fixRecordOf(onlyMoved, 30).itemId === "issue-9");
 t.check("a moved fix counts once toward the limit", f.pendingAutoFixes({ ...none, records: onlyMoved }) === 1);
+t.check("a recorded PR that left the open PRs is named, one with a known end or still open is not", JSON.stringify(f.vanishedFixPrs({ "issue-1": [{ ...record, number: 30 }, { ...record, number: 31, ended: "merged" }], "issue-2": [{ ...record, number: 32 }] }, [32, 40])) === "[30]");
+t.check("a merged fix whose issue left the snapshot no longer counts as pending", f.pendingAutoFixes({ ...none, records: { "issue-9": [{ ...record, ended: "merged" }] } }) === 0);
 const endedFix = { "issue-9": [{ ...record, from: "disc-5", ended: "merged" }] };
 t.check("a PR that ended before the move does not block the issue", f.fixStateOf("issue-9", { ...none, records: endedFix }).state === "merged" && f.fixBlock(f.fixStateOf("issue-9", { ...none, records: endedFix })) === null);
 t.check("a reopened PR wins over the recorded end", f.fixStateOf("issue-9", { ...none, records: endedFix, snapshot: { "pr-30": { isDraft: false } } }).state === "open");

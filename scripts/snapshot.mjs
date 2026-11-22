@@ -11,7 +11,7 @@ import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoRev
 import { aiFacts, buildTimeline, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { activityOf } from "./lib/since.mjs";
 import { canReadProjects, graphql, writeLogin } from "./lib/gh.mjs";
-import { fixPrNumbers, readFixRecords } from "./lib/fixes.mjs";
+import { fixPrNumbers, patchFixRecord, readFixRecords, vanishedFixPrs } from "./lib/fixes.mjs";
 import { heldItemIds } from "./lib/focus.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
@@ -254,6 +254,26 @@ const ITEM_QUERIES = {
 	discussion: ["discussion", DISCUSSION_FIELDS],
 };
 
+/**
+ * Records `ended` on every fix PR that left the open PRs, as "merged" or "closed". Without it a fix whose PR and
+ * issue both left the snapshot would count as open forever. A failure only warns: the next snapshot tries again.
+ */
+async function markEndedFixes(records, openPrs) {
+	const numbers = vanishedFixPrs(records, openPrs).slice(0, 50);
+	if (!numbers.length) return;
+	try {
+		const { owner, name } = repoParts(loadProfile().repo);
+		const fields = numbers.map((n) => `p${n}: pullRequest(number: ${n}) { state }`).join(" ");
+		const data = await graphql(`query EndedFixes($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${fields} } }`, { owner, name });
+		for (const n of numbers) {
+			const state = data.repository?.[`p${n}`]?.state;
+			if (state === "MERGED" || state === "CLOSED") await patchFixRecord(n, { ended: state.toLowerCase() });
+		}
+	} catch (e) {
+		console.error(`gary snapshot: could not check ended fix PRs: ${e.message}`);
+	}
+}
+
 /** The file `--out` names. The baseline and the staged snapshot must never be the target. */
 export function outPath(argv) {
 	const i = argv.indexOf("--out");
@@ -282,7 +302,9 @@ export async function main(argv = []) {
 	]);
 
 	// Drafts are ignored, except Gary's own fix PRs, which the board must show. A draft that becomes ready shows up as a new item
-	const fixFor = fixPrNumbers(await readFixRecords());
+	const fixRecords = await readFixRecords();
+	await markEndedFixes(fixRecords, prs.nodes.map((n) => n.number));
+	const fixFor = fixPrNumbers(fixRecords);
 	const readyPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number));
 	await Promise.all([
 		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
