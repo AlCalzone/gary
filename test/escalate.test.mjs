@@ -1,7 +1,7 @@
 // The escalate button of a `move` to `issue` route: the server posts the profile's escalate command on a discussion
 // under the maintainer's own login. Runs on temp roots with the fake gh, so nothing reaches GitHub.
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { GARY, PROFILE, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
@@ -33,8 +33,8 @@ function writeItems(home, items) {
 	for (const [id, data] of Object.entries(items)) writeFileSync(join(home, "state", "board", "items", id + ".json"), JSON.stringify(data));
 }
 
-async function startServer(root, env, port, args, extraEnv) {
-	const child = spawn(process.execPath, [join(ROOT, "server/server.mjs"), ...args, "--port", String(port)], { env: { ...env, ...extraEnv }, stdio: ["ignore", "inherit", "pipe"] });
+async function startServer(root, env, port, args, extraEnv, command = [join(ROOT, "server/server.mjs"), ...args, "--port", String(port)]) {
+	const child = spawn(process.execPath, command, { env: { ...env, ...extraEnv }, stdio: ["ignore", "inherit", "pipe"] });
 	let stderr = "";
 	child.stderr.on("data", (d) => (stderr += d));
 	for (let i = 0; i < 50 && !stderr.includes(" on http://127.0.0.1:"); i++) await sleep(100);
@@ -222,6 +222,78 @@ try {
 } finally {
 	run.child.kill("SIGTERM");
 }
+// ---------- after the click: the issue is found without waiting, and the fix PR is linked ----------
+const until = async (cond, ms = 8000) => {
+	for (let waited = 0; waited < ms; waited += 100) {
+		if (await cond()) return true;
+		await sleep(100);
+	}
+	return false;
+};
+const linkDir = join(T, "link");
+const linkPort = await freePort();
+const linked = makeHome(linkDir, { port: linkPort, escalateAs: "me" });
+const copied = makeHome(linkDir, { profile: profileFor(linkDir, "copied", "acme/copied") }, "copied");
+const linkedPr = (number, disc) => ({ kind: "pr", repo: "acme/widgets", number, title: "Fix it", reviewedAt, fixFor: { itemId: `disc-${disc}`, ref: `acme/widgets#${disc}` }, routes: [{ id: "r1", type: "merge", as: "me", title: "Merge" }] });
+writeItems(linked.home, {
+	"disc-31": disc(31), "disc-32": disc(32), "disc-35": disc(35),
+	"issue-50": { kind: "issue", repo: "acme/widgets", number: 50, title: "Add a dark mode", reviewedAt, routes: [] },
+	"pr-60": linkedPr(60, 31),
+});
+writeItems(copied.home, { "disc-31": disc(31, "acme/copied") });
+const fixRecord = (number) => ({ number, url: `https://github.com/acme/widgets/pull/${number}`, branch: "b", run: "r", startedBy: "routine", at: reviewedAt });
+writeFileSync(join(linked.home, "state", "fixes.json"), JSON.stringify({ "disc-31": [fixRecord(60)], "disc-35": [fixRecord(62)] }));
+writeFileSync(join(copied.home, "state", "fixes.json"), JSON.stringify({ "disc-31": [fixRecord(63)] }));
+const linkStub = join(linkDir, "stub.json");
+writeFileSync(linkStub, JSON.stringify({ "*": { state: "OPEN" } }));
+const linkWrites = join(linkDir, "writes.log");
+const linkAnswers = join(linkDir, "overrides.json");
+const pending = { "escalation-31": { closed: false, resultComments: { nodes: [] } } };
+writeFileSync(linkAnswers, JSON.stringify(pending));
+const boot = `import { startBoardServer } from ${JSON.stringify(join(ROOT, "server/server.mjs"))};
+	await startBoardServer({ port: ${linkPort}, escalateRecheckMs: Array(40).fill(250) });`;
+const fast = await startServer(linked.root, linked.env, linkPort, [], { GARY_GUARD_STUB: linkStub, FAKE_GH_WRITES: linkWrites, FAKE_GH_OVERRIDES: linkAnswers }, ["--input-type=module", "-e", boot]);
+const records = (home) => JSON.parse(readFileSync(join(home, "state", "fixes.json"), "utf8"));
+const edits = () => (existsSync(linkWrites) ? readFileSync(linkWrites, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((w) => w.mutation === "updatePullRequest") : []);
+try {
+	let r = await fast.click("widgets", "disc-31");
+	t.check("the click answers before the issue exists", r.data.ok === true && !!records(linked.home)["disc-31"] && edits().length === 0, r);
+	await sleep(700);
+	t.check("while the workflow still runs nothing moves", !!records(linked.home)["disc-31"] && edits().length === 0);
+	const said = (login, body) => ({ author: { login }, body, lastEditedAt: null, editor: null });
+	const pr = (number, disc) => ({ id: `PR_${number}`, url: `https://github.com/acme/widgets/pull/${number}`, state: "OPEN", author: { login: "widgets-bot" }, body: `Related discussion: https://github.com/acme/widgets/discussions/${disc}`, closingIssuesReferences: { nodes: [] } });
+	const issue = (number) => ({ number, repository: { nameWithOwner: "acme/widgets" } });
+	writeFileSync(linkAnswers, JSON.stringify({
+		"escalation-31": { closed: true, resultComments: { nodes: [said("octocat", COMMAND), said("widgets-bot", "Escalated to an issue: #50")] } },
+		"escalated-issue-50": issue(50),
+		"link-pr-60": pr(60, 31),
+		"disc-35": { closed: true },
+		"escalation-35": { closed: true, resultComments: { nodes: [said("widgets-bot", "Escalated to an issue: #52")] } },
+		"escalated-issue-52": issue(52),
+		"link-pr-62": pr(62, 35),
+	}));
+	t.check("the server's re-check moves the record and edits the body once", await until(() => edits().length === 1 && !!records(linked.home)["issue-50"]?.[0]?.linked), [records(linked.home), edits()]);
+	t.check("the edit runs as the bot", edits()[0]?.as === "widgets-bot" && edits()[0].variables.body.endsWith("\n\nfixes #50"), edits());
+	const items = (await fast.api("/api/state")).data.items;
+	const at = (id) => items.find((i) => i.instance === "widgets" && i.id === id);
+	t.check("the issue's item shows the fix PR", at("issue-50")?.fix?.pr.number === 60 && at("issue-50").fix.parked === true, at("issue-50"));
+	t.check("the PR's item names the issue", JSON.stringify(at("pr-60")?.fixFor) === '{"itemId":"issue-50","ref":"acme/widgets#50"}', at("pr-60"));
+	await sleep(700);
+	t.check("the re-check stops after the link", edits().length === 1);
+
+	r = await fast.api("/api/refresh", { instance: "widgets", itemId: "disc-35" });
+	t.check("a refresh that finds the discussion closed links it too", r.data.ok === true && (await until(() => edits().length === 2 && !!records(linked.home)["issue-52"]?.[0]?.linked)), [r, records(linked.home)]);
+
+	// He copies the command and posts it himself
+	const answers = JSON.parse(readFileSync(linkAnswers, "utf8"));
+	const inCopied = { number: 50, repository: { nameWithOwner: "acme/copied" } };
+	writeFileSync(linkAnswers, JSON.stringify({ ...answers, "escalated-issue-50": inCopied, "link-pr-63": pr(63, 31) }));
+	r = await fast.api("/api/decision", { instance: "copied", itemId: "disc-31", routeId: "r2", text: "" });
+	t.check("a copied command starts the re-check", r.data.ok === true && (await until(() => !!records(copied.home)["issue-50"]?.[0]?.linked)), [r, records(copied.home)]);
+} finally {
+	fast.child.kill("SIGTERM");
+}
+
 await sleep(200);
 removeDir(T);
 t.done();

@@ -25,6 +25,7 @@ import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixForOf, fixPrNumbers, fixSta
 import { endFocus, focusDir, focusHold, isHeld, readFocuses, safeLink } from "../scripts/lib/focus.mjs";
 import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
+import { linkEscalated } from "../scripts/lib/escalation.mjs";
 import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
@@ -54,6 +55,9 @@ const MAX_KEPT_ANSWERS = 100;
 // A refresh reads GitHub, so it is limited per item and in total
 const REFRESH_ITEM_MS = 20000;
 const REFRESH_PER_MINUTE = 30;
+// `ESCALATE_RECHECK_MS` holds the waits between the looks for the issue after an escalate click.
+// The workflow posts its comment after about 10 seconds. The hourly run covers what comes later than 2 minutes
+const ESCALATE_RECHECK_MS = [10000, 15000, 20000, 15000, 60000];
 // `MARK_MAX_AGE_MS` sets how long the page's "opened on GitHub" mark counts for a refresh
 const MARK_MAX_AGE_MS = 2 * 3600000;
 export const HANDLED_VERIFIED = ["closed", "merged", "commented", "labeled", "unchanged"];
@@ -827,6 +831,7 @@ export async function startBoardServer({
 	dryRun = process.env.GARY_DRY_RUN === "1",
 	keepAlive = true,
 	pageFile = PAGE_FILE,
+	escalateRecheckMs = ESCALATE_RECHECK_MS,
 	log: print = (...a) => console.error("[board]", ...a),
 } = {}) {
 	if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new Error(`Invalid port ${port}`);
@@ -862,6 +867,8 @@ export async function startBoardServer({
 	const liveStates = new Map();
 	// One timer per instance that pushes the items again when the earliest hold of a watched PR ends
 	const holdTimers = new Map();
+	// One timer per escalated discussion whose issue the server still looks for
+	const linkTimers = new Map();
 
 	const names = () => [...served.keys()].sort();
 	const boardNow = () => boardInfo(names(), { dryRun, log });
@@ -1624,9 +1631,43 @@ export async function startBoardServer({
 			doneKeys.add(key);
 			refusals.delete(key);
 			await setHandled(name, itemId, route, "commented");
+			// The workflow needs a few seconds, so the click does not wait for the issue
+			if (!dryRun) recheckEscalation(name, itemId);
 		}
 		schedulePush(name, "items");
 		return [200, outcome];
+	}
+
+	/** Looks once for the issue of one discussion and links its fix PRs. Answers whether nothing is left to look for. */
+	async function linkNow(name, itemId) {
+		try {
+			return await withLock(actionLocks, `${name}//link`, async () => {
+				if (closed || !served.has(name) || settingsOf(name).error) return true;
+				const r = await withInstance(name, () => linkEscalated({ discussion: itemId, dryRun }));
+				for (const e of r.errors) log(`Linking the fix PRs of ${name}/${itemId} failed at ${e.itemId}: ${e.error}`);
+				if (r.moved.length || r.linked.length) {
+					schedulePush(name, "actions");
+					schedulePush(name, "items");
+				}
+				return r.settled;
+			});
+		} catch (e) {
+			log(`Linking the fix PRs of ${name}/${itemId} failed:`, e.message);
+			return false;
+		}
+	}
+
+	/** Looks again after each wait in `waits`, until the fix PRs of the discussion are linked. */
+	function recheckEscalation(name, itemId, waits = escalateRecheckMs) {
+		if (closed || !waits.length) return;
+		const key = `${name}/${itemId}`;
+		clearTimeout(linkTimers.get(key));
+		const timer = setTimeout(async () => {
+			linkTimers.delete(key);
+			if (!(await linkNow(name, itemId))) recheckEscalation(name, itemId, waits.slice(1));
+		}, waits[0]);
+		timer.unref();
+		linkTimers.set(key, timer);
 	}
 
 	/**
@@ -1777,6 +1818,8 @@ export async function startBoardServer({
 		});
 		if (!next) return [200, { ok: false, result: OUTDATED, outdated: true }];
 		const queued = visit ? await queueVisitAnalysis(name, itemId, visit) : false;
+		// He can post the escalate command himself and then return to the board
+		if (next.kind === "discussion" && state === "closed") void linkNow(name, itemId);
 		schedulePush(name, "items");
 		return [200, { ok: true, result: { state, checkedAt, ...(next.handled && { verified: next.handled.verified }), ...(next.visited && { visited: next.visited }), ...(queued && { queued: true }) } }];
 	}
@@ -1965,6 +2008,8 @@ export async function startBoardServer({
 		if (typeof text === "string" && text !== drafted) await decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
 		await markOpened(name, itemId, item, route, typeof text === "string" ? text : "");
 		await setHandled(name, itemId, route, null);
+		// He copied the escalate command and posts it himself
+		if (route.type === "move" && route.params?.to === "issue" && item.kind === "discussion") recheckEscalation(name, itemId);
 		return [200, { ok: true, result: "Logged." }];
 	}
 
@@ -2413,6 +2458,7 @@ export async function startBoardServer({
 			closed = true;
 			clearInterval(heartbeat);
 			for (const t of pending.values()) clearTimeout(t);
+			for (const t of linkTimers.values()) clearTimeout(t);
 			stopWatching();
 			for (const res of clients) res.end();
 			clients.clear();

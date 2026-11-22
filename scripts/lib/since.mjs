@@ -202,6 +202,13 @@ export function sinceSummary(activity, anchor, { me, bot, actions = [] } = {}) {
 		} else Object.assign(line, { icon: STATUS_ICONS[g.kind], text: `${who(by)} ${STATUS_WORDS[g.kind]}` });
 		out.push(line);
 	}
+	const linked = new Map();
+	for (const a of actions) {
+		if (a?.action !== "link_issue" || a.status !== "done" || !Number.isSafeInteger(a.params?.issue) || !(Date.parse(a.finishedAt) > from)) continue;
+		// An issue with two fix PRs gets one line
+		if (!linked.has(a.params.issue)) linked.set(a.params.issue, { at: a.finishedAt, kind: "linked", icon: "link", text: `Linked the fix PR to #${a.params.issue}` });
+	}
+	out.push(...linked.values());
 	const ci = Array.isArray(activity.ci) ? activity.ci : [];
 	const changes = ci.filter((c, i) => i > 0 && Date.parse(c.at) > from);
 	if (changes.length) {

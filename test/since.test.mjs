@@ -144,6 +144,13 @@ t.check("nothing after the anchor gives no groups", s.groups.length === 0 && s.a
 s = sinceSummary({ events: [], openThreads: [], ci: [{ at: at(19, 11), state: "failing" }] }, anchor, {});
 t.check("the first CI result the snapshot saw is no change", s.groups.length === 0, s);
 
+const link = (finishedAt, pr = 60) => ({ itemId: "issue-50", action: "link_issue", params: { by: "fix", pr, issue: 50 }, status: "done", createdAt: finishedAt, finishedAt });
+s = sinceSummary({ events: [], openThreads: [], ci: [] }, anchor, { actions: [link(at(19, 20)), link(at(19, 21), 61)] });
+t.check("the link of the fix PR is one line", JSON.stringify(s.groups) === JSON.stringify([{ at: at(19, 20), kind: "linked", icon: "link", text: "Linked the fix PR to #50" }]), s.groups);
+s = sinceSummary({ events: [], openThreads: [], ci: [] }, anchor, { actions: [link(at(10, 0))] });
+t.check("a link from before the anchor gives no line", s.groups.length === 0, s.groups);
+t.check("the link is no choice of his", sinceAnchor({}, [link(at(19, 20))]) === null);
+
 // `gary snapshot --out`: the work list goes into the run directory, never over the baseline
 const { outPath } = await import("../scripts/snapshot.mjs");
 const { stateDir } = await import("../scripts/lib/config.mjs");
