@@ -69,7 +69,7 @@ export function issueInComments(comments, { pattern, bot }) {
 /** The body with code fences, HTML comments and inline code blanked, at the same offsets and lines. */
 function proseOf(body) {
 	return body.replace(/^ {0,3}(`{3,}|~{3,})[\s\S]*?(?:^ {0,3}\1[`~]*[ \t]*$|(?![\s\S]))|<!--[\s\S]*?(?:-->|(?![\s\S]))|`[^`\n]*`/gm, (hidden, fence) =>
-		// Inline code keeps visible characters, so its line does not look like the end of a paragraph
+		// Inline code must keep visible characters because an empty line ends a paragraph
 		hidden.replace(/[^\r\n]/g, !fence && hidden.startsWith("`") ? "`" : " "));
 }
 
@@ -82,7 +82,7 @@ export function closesInText(body, { repo, issue }) {
 
 /**
  * The body with the line `fixes #<issue>` as its own paragraph, after the paragraph that refers to the discussion.
- * A link to the discussion wins over a `#<number>`, and the last one counts. Without either the line goes to the end.
+ * A link to the discussion wins over a `#<number>`. The last one counts. Without either the line goes to the end.
  * Every other character of the body stays.
  */
 export function bodyWithClosing(body, { repo, issue, discussion }) {
@@ -169,7 +169,7 @@ async function escalatedTo({ repo, pattern, bot }, number) {
 	return issue;
 }
 
-/** Adds the closing line to one PR, or notes why it needs none. */
+/** Adds the closing line to one PR unless it needs none or must wait. */
 async function linkPr(c, target) {
 	const { out, dryRun } = c;
 	const { issue, issueItem, record } = target;
@@ -212,7 +212,8 @@ async function editBody({ repo, bot, dryRun, out }, { issue, issueItem, discussi
 
 	const body = pr.body ?? "";
 	const referenced = (pr.closingIssuesReferences?.nodes ?? []).some((n) => n?.number === issue && same(n.repository?.nameWithOwner, repo));
-	// The references lag behind an edit and stay empty outside the default branch, so the text counts too
+	// The text counts too because the references can lag behind an edit.
+	// They also stay empty for a PR to another base branch
 	const edit = !referenced && !closesInText(body, { repo, issue });
 	if (edit) {
 		const next = bodyWithClosing(body, { repo, issue, discussion });
@@ -235,12 +236,12 @@ async function editBody({ repo, bot, dryRun, out }, { issue, issueItem, discussi
 	await patchFixRecord(number, { linked: at, ended: undefined });
 }
 
-/** Writes one action doc for the PR's item and one for the issue's, which the timelines show. */
+/** Writes one action doc for the PR's item and one for the issue's. Their timelines show it. */
 async function logLink({ at, bot, url, edit, number, issue, issueItem, from }) {
 	const dir = join(boardDir(), "actions");
 	await mkdir(dir, { recursive: true });
 	const pr = prItemId(number);
-	// `params.by` marks a job of the code, which is no choice of the maintainer
+	// `params.by` keeps the doc from counting as a choice of the maintainer
 	const doc = { action: LINK_ACTION, params: { by: "fix", pr: number, issue, from, edited: edit }, text: edit ? `fixes #${issue}` : "", as: bot, status: "done", via: "server", createdAt: at, finishedAt: at, result: url };
 	for (const [itemId, other] of [[pr, issueItem], [issueItem, pr]]) await writeAtomic(join(dir, `${itemId}-linked-${other}.json`), { itemId, ...doc });
 }

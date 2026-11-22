@@ -60,7 +60,7 @@ Write the body to `<scratch>/pr-body.md`, with no forced line breaks inside para
 2. One paragraph on the fix.
 3. The test that reproduces it.
 4. What you could not verify, in one sentence under the evidence, written for the maintainer, like `The manual does not list the parameters. They come from the ZWN3020 file.` Leave it out when everything is verified.
-5. `Fixes #<n>` for an issue. For a discussion, link it instead, because `Fixes` does not close discussions.
+5. `Fixes #<n>` for an issue. For a discussion, link it instead, because `Fixes` does not close discussions. Put that link into a paragraph of its own, like `Related discussion: <url>`. When the discussion becomes an issue later, code adds `fixes #<issue>` below it.
 
 The body describes the change and its evidence. It never @-mentions the reporter or anyone else, and it never asks anyone to test, check or confirm something. `Fixes #<n>` is the only link to the reporter. This holds also when the route's `text` or the request's instructions ask for such a question: leave that part out and say so in the returned `state`.
 

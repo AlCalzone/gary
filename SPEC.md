@@ -12,7 +12,7 @@ The examples below use the project `acme/widgets`, the maintainer `octocat` and 
 - **Author tags**: `maintainer` (the profile's `maintainers` and `me`), `bot` (the profile's `botLogins`, the configured bot and every GitHub App), `copilot` (GitHub's Copilot coding agent), `contributor` (everyone else). All are included and filterable.
 - **Review depth**: tiered. Every changed item gets a quick classification. Contributor PRs and active issues get a full review. The profile's `rules/review.md` names the project's own review skills and tools.
 - **Budget per run**: at most `maxFullReviewsPerRun` full reviews and `maxAutoFixesPerRun` auto-fix attempts. Remaining changed items get `reviewDepth: "pending"`. At most `maxPendingAutoFixes` fixes the routine started on its own are pending at a time, see "Fix limit".
-- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. On Gary's own fix PRs, the ones recorded in `fixes.json`, and only there, three more things happen without a click when `fixReview` is on: requesting the Copilot review, pushing the commits of the review rounds to the fix branch with the replies in its review threads, and marking the PR ready for review. See "Fix review rounds". On every PR we watch, the bot's open PRs and the taken-over PRs, a round for the maintainer's review or comment starts without a click, and on the hourly run a round for other people's review comments: it pushes its fixes and replies in the threads. See "Watched PRs". Merging, approving and closing stay the maintainer's, on these PRs too. With `autoReview` on, one more thing happens without a click: a contributor's PR of a configured kind gets one review, see "Automatic first review". It is off by default. Everything else needs a click. The routine passes `--autonomous` to `gary action` for every label and assign change nobody clicked, and the code then refuses labels outside `autoLabels` and every other action.
+- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. On Gary's own fix PRs, the ones recorded in `fixes.json`, and only there, three more things happen without a click when `fixReview` is on: requesting the Copilot review, pushing the commits of the review rounds to the fix branch with the replies in its review threads, and marking the PR ready for review. See "Fix review rounds". When a discussion became an issue, code adds one `fixes #<issue>` line to the body of each of its open fix PRs, also without a click. See "Fix PRs of an escalated discussion". On every PR we watch, the bot's open PRs and the taken-over PRs, a round for the maintainer's review or comment starts without a click, and on the hourly run a round for other people's review comments: it pushes its fixes and replies in the threads. See "Watched PRs". Merging, approving and closing stay the maintainer's, on these PRs too. With `autoReview` on, one more thing happens without a click: a contributor's PR of a configured kind gets one review, see "Automatic first review". It is off by default. Everything else needs a click. The routine passes `--autonomous` to `gary action` for every label and assign change nobody clicked, and the code then refuses labels outside `autoLabels` and every other action.
 - **Board server**: one `server/server.mjs` per machine serves every instance on `127.0.0.1` at the `port` from the root `config.json`. It runs inside the `gary` MCP server of the master session, which starts it with `board_start`, or standalone with `gary serve`. Other sessions leave it alone. It watches every instance's board store, picks up new instances without a restart and pushes changes to the open page.
 - **Buttons**: a click on a bot route makes the server run it live through `scripts/lib/actions.mjs`. When GitHub cannot be reached, the action fails, the board shows the error, and the maintainer can click again. Agent requests are always queued.
 - **Confirmation**: merge, close and any posting of public text need a second confirm click on the board.
@@ -66,6 +66,7 @@ Gary has three layers, one place for each kind of change.
     decisions.jsonl      the decision log, see Learning
     learn.json           the learning cursor
     reconcile.json       when the last reconcile pass ran and the names it knew, see "Reconcile"
+    fixes.json           the fix PRs Gary opened, per item, see "PRs that are ours alone" and "Fix PRs of an escalated discussion"
     opened.json          the `as: "me"` buttons he used, per item and route, see Routes
     failures.json        failed triage count per item, kept by the routine
     auto-reviews.json    the automatic reviews Gary posted and their format offers, see "Automatic first review"
@@ -148,6 +149,7 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
   "sensitivePaths": [".github/**", "**/package.json"],   // globs. A PR that touches one carries `sensitiveFiles`
   "autoLabels": ["needs-info"],    // labels the routine may set without a click
   "botCommands": { "escalate": "@widgets-bot escalate" },   // commands the maintainer posts himself. No bot-posted text may contain any of them. Only `escalate` has a route, and with `escalateAs: "me"` the board posts it under his login after his click
+  "escalateResult": "^Escalated to an issue: #(\\d+)",   // or null: the comment the bot posts when a discussion became an issue, with the issue number as the one capture group. Without it fix PRs are not linked to that issue
   "requiredTools": ["mcp__widgets-logs__loadLogFile"],   // checked at the start of a run
   "automatedComments": [           // comments a workflow posts on its own. They do not count as anyone's turn in the snapshot facts
     { "name": "logfile feedback", "pattern": "<!-- LOGFILE_COMMENT_TAG -->", "origin": "the workflow that posts it" }
@@ -159,7 +161,7 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
 }
 ```
 
-`name` and `repo` are required. Unknown fields are handled like in config.json. An `automatedComments` entry has `name`, `pattern` and an optional `origin`. `pattern` is a JavaScript regular expression of at most 500 characters, without flags, tested against the first 20000 characters of the comment body with leading white space removed. Validation compiles it and refuses one that does not compile or nests quantifiers like `(a+)+`. `autoReviewPaths` maps a kind to a list of globs. A kind this version does not know is an unknown field. `formatCommand` has at most 200 characters, one line, no backtick. `dueDateFields` holds at most 20 names of at most 100 characters each.
+`name` and `repo` are required. Unknown fields are handled like in config.json. An `automatedComments` entry has `name`, `pattern` and an optional `origin`. `pattern` is a JavaScript regular expression of at most 500 characters, without flags, tested against the first 20000 characters of the comment body with leading white space removed. Validation compiles it and refuses one that does not compile or nests quantifiers like `(a+)+`. `escalateResult` is a regular expression of at most 500 characters with exactly one capture group. Validation checks it like a pattern of `automatedComments`. `autoReviewPaths` maps a kind to a list of globs. A kind this version does not know is an unknown field. `formatCommand` has at most 200 characters, one line, no backtick. `dueDateFields` holds at most 20 names of at most 100 characters each.
 
 A long-running process, like the board server, keeps the last valid settings of an instance when its config.json or profile.json breaks. `loadInstance` then returns them with `settingsError` naming the problem, and `settingsWarnings` lists unknown fields. An instance whose settings were never valid in the process is listed by `listInstances` with `valid: false`, no repos and its `settingsError`, and serves no items.
 
@@ -210,7 +212,8 @@ Two older layouts are moved by commands, never silently:
 - `gary claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>] [--request <action id>]`: claim work on an item before starting it. It creates `<state>/claims/<itemId>.<kind>.json` exclusively with `{ run, at, expiresAt }`, default ttl 60 minutes, and exits 3 with the holder when another run holds an unexpired claim. The same run renews its claim, an expired claim is taken over. A `fix` claim without `--request` is the routine's own fix: it also exits 3 with the numbers when `maxPendingAutoFixes` fixes of the routine are pending, see "Fix limit". `push` covers take_over, revise, address_review, drive rounds and format. A `fix` claim also exits 3 while a fix PR for the item is a draft or open, and while a `start_fix` request other than `--request` is queued for it: a request worker passes the id of its own action doc. A refused claim needs no item doc: the caller skips the item.
 - `gary release <itemId> <kind> --run <run>`: remove the claim when `run` holds it, exit 3 when another run does. Every exit of a job, also a failed one, releases its claims. A claim a crashed job leaves behind expires.
 - `gary claims [--json]`: list the claims with `itemId`, `kind`, `run`, `at`, `expiresAt` and `expired`.
-- `gary fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer`: record a fix PR Gary opened in `<state>/fixes.json`, `{ <itemId>: [{ number, url, branch, run, startedBy, at }] }`. The autofix skill calls it right after `gh pr create`.
+- `gary fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer`: record a fix PR Gary opened in `<state>/fixes.json`, `{ <itemId>: [{ number, url, branch, run, startedBy, at }] }`. The autofix skill calls it right after `gh pr create`. A record that moved to the issue of an escalated discussion also has `from`, and `linked` or `ended`. Recording its PR again for the discussion keeps it under the issue.
+- `gary link-escalated [--dry-run]`: find the issues that escalated discussions with fix records became, move the records there and add the closing line to the open fix PRs, see "Fix PRs of an escalated discussion". It prints `{ ok, enabled, dryRun, moved, linked, skipped, waiting, wouldHave, invocations, errors }` and exits 1 when `errors` is not empty. `--dry-run` writes nothing and lists the GitHub writes in `invocations`.
 - `gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run]` and `gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer] [--dry-run]`: start the review rounds of a fix PR Gary opened, and end each round on it, see "Fix review rounds". Both refuse a PR that is not in `fixes.json`, and both exit 4 and write nothing while the instance is paused. `--dry-run` prints the GitHub writes and the docs it would write.
 - `gary pr-watch list [--json]`, `gary pr-watch round --pr <n> --by me|others --at <ISO> [--run <run>] [--dry-run]`, `gary pr-watch review --pr <n> --sha <head> [--action <id> | --after <id> --run <run>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run]` and `gary pr-watch done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]`: the watch on the bot's PRs and the taken-over PRs, see "Watched PRs". Each refuses a PR that is not watched. Exit 3 means a rule refused, exit 4 that the instance is paused.
 - `gary auto-review check|post|accept|reply|rerequest|list`: the one automatic first review on a contributor PR and its format offer, see "Automatic first review". Exit 3 means a rule refused, exit 4 that the instance is paused.
@@ -224,7 +227,7 @@ Two older layouts are moved by commands, never silently:
 - `gary reconcile [request] | due | names | files | start | done [--until <ISO>]`, each with `--json`: the reconcile pass, see "Reconcile". `request` is what the maintainer runs.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
+- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the link of escalated fix PRs (a warning when the profile has `escalateResult` and no bot is configured), the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
 
 Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
@@ -255,6 +258,7 @@ While paused:
 - `gary action` refuses every action with the same result, also with `--dry-run` and `--autonomous`,
 - agent routes are still queued, but `gary watch-queue` and `gary watch-queue --all` print nothing of that instance, so the master session starts nothing for it. The requests appear when the pause ends,
 - `gary auto-review post` posts nothing and records the step in the run's `would-have.json`. `accept`, `reply --agrees yes` and `rerequest` queue nothing and exit 4,
+- `gary link-escalated` and the server's re-check still move fix records to the issue of an escalated discussion. The PR's body waits. The command names the waiting edit in `wouldHave`. The first run after the pause sends it,
 - board-only actions keep working: dismiss, snooze, `dismiss_route`, `accept_proposal`, `dismiss_proposal`, `request_reconcile` and `/api/decision`. A reconcile request waits until the pause ends, like an agent request.
 
 `board.instances[].paused` in `/api/state` and in `use("board")` shows the switch per instance. The event stream sends a `board` event with the full board object when a `control.json` changes. `gary doctor` reports the state.
@@ -381,7 +385,7 @@ This is the one exception to "replies in his name are prefill only". The server 
 - The helper checks that the stored login is `me` and that the discussion is open, then sends one `addDiscussionComment` mutation. When GitHub refuses the comment because the login lacks the permission, the refusal says so and names the copy button, which keeps working.
 - With `--dry-run` the helper runs the checks and the reads, and the result shows the invocation it would send.
 
-A post that ran writes an action doc with `action: "escalate"`, `route: "move"`, `text` (the command), `as` (the login), `params: { to: "issue", issueKind }` and the comment's URL as `result`. A failed post writes it with `status: "failed"`, and the button works again. A successful one logs an `escalated` decision, sets `handled` with `verified: "commented"` and serves `done` on the route, so the row shows "Done · view on GitHub" and the item moves to "Handled, waiting for the next run". The next snapshot drops the discussion once the workflow closed it.
+A post that ran writes an action doc with `action: "escalate"`, `route: "move"`, `text` (the command), `as` (the login), `params: { to: "issue", issueKind }` and the comment's URL as `result`. A failed post writes it with `status: "failed"`, and the button works again. A successful one logs an `escalated` decision, sets `handled` with `verified: "commented"` and serves `done` on the route, so the row shows "Done · view on GitHub" and the item moves to "Handled, waiting for the next run". The next snapshot drops the discussion once the workflow closed it. The discussion's fix PRs move to the new issue, see "Fix PRs of an escalated discussion".
 
 While a pushing agent job runs on a PR (`take_over`, `revise`, `address_review`, `drive`, also a drive that waits for a review bot between rounds, `format`, a round of a watched PR), every route that decides the PR on its current state answers 409 "The agent is changing this PR. Decide after it is done.": `review`, `merge`, `close`, a `chore` with `action: "ready"`, and the pushing routes `address_review`, `take_over`, `revise`, `drive` and `format`. Replies, request_logs, labels and other chores stay allowed. The block ends when the job's action doc is `done` or `failed` and no `push` claim is left. A watched PR that only waits for the maintainer's feedback, with its drive file in the stage `watch`, blocks nothing. A click on any agent route answers 409 "The agent is already working on this." while an unexpired claim of its kind or a queued or claimed request of the same kind exists for the item.
 
@@ -566,6 +570,7 @@ Groups cover the events after the anchor, one per actor and kind, ordered by the
 - `comment`: `wrote 3 comments`, per person, from comments, discussion replies and replies in review threads. The first comment of a review thread belongs to its review. Automated comments, `bot` comments and Gary's bot are left out. Gary's bot's replies in review threads are their own group, `wrote 2 replies in review threads`.
 - `ready`, `draft`, `merged`, `closed`, `reopened`: `marked it ready for review`, `converted it to draft`, `merged it`, `closed it`, `reopened it`.
 - `labeled`, `unlabeled`: `added label bug` or `removed labels a, b`, only by us.
+- `linked`: `Linked the fix PR to #50`, from a `link_issue` action doc of the item after the anchor, one line per issue.
 - `ci`: one group at the newest change of the CI result: `CI failed`, `CI failed again` or `CI passing again`.
 
 `note` says what is still open:
@@ -718,7 +723,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "handled": { "at": "ISO", "routeId": "r1", "routeType": "reply", "verified": null },   // the maintainer's, see below
   "live": { "state": "closed", "checkedAt": "ISO" },   // set by a refresh that found the thread closed or merged. The next snapshot drops the item
   "visited": { "at": "ISO", "kind": "review", "state": "approved" },   // set by a refresh: his newest review or comment on GitHub after he opened the item from the board, see below
-  "fixFor": { "itemId": "issue-23", "ref": "acme/widgets#23" }   // code-owned, PRs: the item this Gary fix PR is for, with `ref` naming that item, from <state>/fixes.json
+  "fixFor": { "itemId": "issue-23", "ref": "acme/widgets#23" }   // code-owned, PRs: the item this Gary fix PR is for, with `ref` naming that item, from <state>/fixes.json. The server serves it from the records. It follows a move to an issue
 }
 ```
 
@@ -744,7 +749,7 @@ The server serves derived state on items, never stored:
 - The item in the current form: `category` for an old `section`, and `discussionCategory`, from the snapshot entry when the item has none.
 - `dueAt`, `dueSource`, `series` and `waitingOn` from the snapshot entry when it has one. The snapshot wins over the stored item, because a milestone or a project date changes without a new comment. A due date or series the entry lacks is not served.
 - `working: { kind: "fix" | "review" | "push", action, since }` while an unexpired claim, a queued or claimed agent request, or a drive that waits for its review bot (`<state>/drive/<itemId>.json` in the stage `review`) exists. A drive file in the stage `watch` is no work. Push work wins over other kinds, then the oldest. `action` is the agent action, missing for a bare claim.
-- `fix` on issues and discussions: `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy: "routine" | "maintainer" | "other", since, parked }`. `parked` says that the fix keeps the item out of the day plan: true for `working`, and for `draft` and `open` until the other side writes. That is the case when the snapshot entry's `lastThemAt` is later than `since`, the time Gary recorded the fix PR. A fix PR without a recorded time has no `since`, so it parks the item until it is merged or closed. `merged` and `closed` never park. Sources, strongest first: a `fix` claim or a queued `start_fix` request (`working`, the maintainer when a request is queued, else the routine), Gary's records in `fixes.json`, the snapshot's `closingPrs` of an issue in any state, and for a discussion the PRs that name it by URL or as `#<number>`. The PR's own snapshot entry gives its live fields. A recorded PR that no source shows counts as open. With several PRs an open or draft one wins, then merged, then closed.
+- `fix` on issues and discussions: `{ state: "working" | "draft" | "open" | "merged" | "closed", pr: { number, url, title, isDraft, ci, author } | null, startedBy: "routine" | "maintainer" | "other", since, parked }`. `parked` says that the fix keeps the item out of the day plan: true for `working`, and for `draft` and `open` until the other side writes. That is the case when the snapshot entry's `lastThemAt` is later than `since`, the time Gary recorded the fix PR. A fix PR without a recorded time has no `since`, so it parks the item until it is merged or closed. `merged` and `closed` never park. Sources, strongest first: a `fix` claim or a queued `start_fix` request (`working`, the maintainer when a request is queued, else the routine), Gary's records in `fixes.json` with the ones that moved from the item to the issue it became, the snapshot's `closingPrs` of an issue in any state, and for a discussion the PRs that name it by URL or as `#<number>`. The PR's own snapshot entry gives its live fields. A recorded PR that no source shows counts as open. With several PRs an open or draft one wins, then merged, then closed.
 
 - `focus` while the item is in focus, while the master sets a focus up, and for a day after it could not, see "Focus".
 - `autoReview` on PRs with a record in `<state>/auto-reviews.json`: `{ at, url, sha, event, count, asked, offer: { kind, state, at }, waiting, changed }`. `asked` holds the texts of the findings the last automatic review posted. `changed` lists what happened since it, from the snapshot entry: `pushed` (the head differs from the reviewed one and is not our own format commit), `replied` (the PR's author commented, replied or reviewed), `re-requested`, `formatted` (our format commit made the head of a PR whose review had no findings) and `maintainer` (a maintainer commented or reviewed). `waiting` is true while `changed` is empty. The reply that accepted the format offer is no `replied`.
@@ -752,6 +757,38 @@ The server serves derived state on items, never stored:
 #### Fix limit
 
 `maxPendingAutoFixes` (default 10) limits the fixes the routine started on its own that are pending: a fix job of the routine that runs, or a fix PR recorded with `startedBy: "routine"` whose state is `draft` or `open`. A fix the maintainer started with a click never counts and is never refused by the limit. A merged or closed fix PR frees its slot. `gary claim <itemId> fix` without `--request` takes the claim, counts, and gives the claim back with exit 3 when the count is above the limit, so two runs that claim at once never pass it together. Per run the routine starts at most `min(maxAutoFixesPerRun, maxPendingAutoFixes - pending)` fixes. `0` turns automatic fixes off, like `maxAutoFixesPerRun: 0`. A pending fix of the routine is served with `fix.limit: { pending, max }`, and the line "Has a fix in progress" shows it as "automatic: 3 of 10".
+
+#### Fix PRs of an escalated discussion
+
+A discussion can get a fix PR before it becomes an issue. Example: Gary opens draft PR #60 for discussion #36. The maintainer escalates. The workflow creates issue #50, comments `Escalated to an issue: #50` as the bot and closes the discussion. Gary then moves the record to `issue-50` and adds `fixes #50` to the body of PR #60.
+
+It runs only with the profile's `escalateResult` and a configured bot. `linkEscalated` in `scripts/lib/escalation.mjs` does it all in code. No text of a model goes into it.
+
+The issue comes from the discussion's last 30 comments. All of these must hold:
+
+- The discussion is closed.
+- The configured bot wrote the comment. Text by anyone else never counts. A comment that anyone else edited does not count either.
+- `escalateResult` matches at the start of the comment, after leading white space. The newest such comment wins.
+- The number is an issue of the instance's repo.
+
+The records move from `disc-<n>` to `issue-<number>`, each with `from: "disc-<n>"`. A record is stored once. It counts once toward the fix limit. Everything that reads the records by item finds it for the issue: the fix state, `fixFor`, the watch and the rounds. The discussion still resolves to it through `from`, so `gary fixes` lists it under both ids. The drive file's `fixFor` follows with the link. A second move changes nothing.
+
+Then each moved record's PR is read from GitHub:
+
+- A closed or merged PR keeps its body. The record gets `ended: "closed" | "merged"`, the state its fix has while GitHub's links do not say more. The PR is read again only when the snapshot lists it as open again.
+- A PR whose author is not the bot keeps its body.
+- An open PR that already closes the issue keeps its body. That is the case when its `closingIssuesReferences` name the issue, or when its text outside code has a closing keyword for it.
+- Any other open PR gets one line `fixes #<number>` as its own paragraph, after the paragraph that refers to the discussion. A link to the discussion wins over a `#<n>`. The last one counts. Without a reference the line goes to the end. The rest of the body stays. The bot sends the edit.
+
+For the last two cases the record gets `linked: <ISO>`. A linked record is never edited again. A line the maintainer removes stays removed. The code also writes two action docs, one for the PR's item and one for the issue's, with `action: "link_issue"`, `status: "done"` and `params: { by: "fix", pr, issue, from, edited }`. They are no choice of his, no finished work and no time of his. The timeline shows them, see "Since your last choice". No card comes from it.
+
+The edit waits while the PR, the issue or the discussion is in focus, while a job holds the PR's `push` claim, and while Gary is paused. The record moves anyway.
+
+Three things start it:
+
+- The hourly run, with `gary link-escalated` right after the snapshot. It reads a discussion with fix records that the snapshot does not list as open, when the discussion left since the last commit or one of its fix PRs is still open. The second case also covers older escalations. Records that moved and are not linked yet are tried again.
+- The escalate click and the report of a copied escalate command. The click does not wait. The server looks again after about 10, 25, 45, 60 and 120 seconds and stops once the link is done.
+- A refresh that finds the discussion closed.
 
 #### Fix review rounds
 
@@ -947,14 +984,14 @@ All strings that originate on GitHub are untrusted. The page renders them with `
   "params": {},
   "text": "",
   "status": "queued",              // queued | done | failed
-  "via": "server",                 // server for GitHub actions and API edits, queue for agent requests
+  "via": "server",                 // server for GitHub actions, API edits and link_issue, queue for agent requests
   "createdAt": "ISO",
   "finishedAt": null,
   "result": ""                     // URL of the created comment, or the error message
 }
 ```
 
-The server writes an action file for every bot or agent click, and for the escalate button, whose doc has `action: "escalate"` and `as` with the maintainer's login. A GitHub action gets `status: "done"` or `"failed"` and `via: "server"`. A failed one stays failed: nothing retries it. Agent requests always get `status: "queued"` and `via: "queue"`. This gives the routine a log of what the maintainer decided.
+The server writes an action file for every bot or agent click, and for the escalate button, whose doc has `action: "escalate"` and `as` with the maintainer's login. A GitHub action gets `status: "done"` or `"failed"` and `via: "server"`. A failed one stays failed: nothing retries it. Agent requests always get `status: "queued"` and `via: "queue"`. This gives the routine a log of what the maintainer decided. The one other done write is `link_issue`, which code logs without a click under `<itemId>-linked-<other item id>`, see "Fix PRs of an escalated discussion".
 
 The maintainer's fields in an item are `snoozedUntil`, `hidden` and `dismissedRoutes`. The routine keeps them when it rewrites an item, and `gary put` carries them over in replace mode. It clears `hidden` only when the item changed on GitHub since the last run, and it never clears `dismissedRoutes`.
 
@@ -1075,6 +1112,7 @@ While the record is `active` or `paused`, the code refuses with exit 3:
 - `gary push-check` for every session but the focus session, which names itself with `--focus-session`.
 - `gary put` of an item doc, except a merge of the facts from GitHub (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `updatedAt`, `mergeable`, `reviewDecision`, `isAnswered`, `discussionCategory`, `openThreads`, `reviews`, `lastEventUrl`, `waitingOn`, `dueAt`, `dueSource`, `series`), `priority` and the maintainer's fields.
 - `gary action --autonomous`.
+- the body edit of `gary link-escalated` and of the server's re-check. It waits without an exit 3.
 
 `gary snapshot` lists a changed item in focus in `focus`, apart from `changed`, so the hourly run refreshes its facts and classifies nothing. `gary watch-queue` prints nothing of an item in focus except focus requests: its queued requests stay unprinted, and so do its drive events, feedback lines and automatic review answers. All of them print once the focus ended, because the watcher marks only printed lines as seen. The server refuses agent routes, API edits, Analyze again and a page write of a queued agent request on the item with `{ ok: false, focus: true }`. The maintainer's own clicks of GitHub actions still run.
 
@@ -1349,7 +1387,7 @@ The `triage-routine` skill is the worker for one instance. In short:
 
 1. Run `gary paths` and `gary models`, and read `config.json` and the profile. Take the run lock. Check the profile's `requiredTools`.
 2. Process queued action files in `<state>/board/actions/` that the master handed it. They are agent requests and go onto this run's work list. Write back status and result.
-3. Run `gary snapshot`, then `gary pr-origin`. The changed items in focus come in `focus`, apart from `changed`. Of those, only the facts from GitHub are written, see "Focus".
+3. Run `gary snapshot`, then `gary link-escalated`, then `gary pr-origin`. The changed items in focus come in `focus`, apart from `changed`. Of those, only the facts from GitHub are written, see "Focus".
 4. Delete the items for `closed` ids with `gary put items <id> --delete`. Queue a round for other people's feedback on each watched PR that has some no round handled, with `gary pr-watch list --json` and `gary pr-watch round --by others`, and take those PRs out of `changed` for this run, see "Watched PRs".
 5. Quick-classify every `changed` item. Pick up to `maxFullReviewsPerRun` for a full review: first items that need analysis, then contributor PRs, then items in `unblock` and `act`, then the rest by updatedAt.
 6. Run full reviews as parallel subagents on the `review` model. PRs use `triage-review-pr`, issues and discussions use `triage-issue`.

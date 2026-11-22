@@ -313,6 +313,8 @@ The PRs we control stay watched after the review bot rounds, until they are merg
 
 A bot PR outside `fixes.json` can come from an interactive Claude Code session. `gary pr-origin` (`scripts/pr-origin.mjs`, with the search in `scripts/lib/origins.mjs`) finds that session in the transcripts under `GARY_SESSIONS_DIR`, then `sessionsDir` in the root config, then `~/.claude/projects`. It reads only transcripts changed after the PR was created and parses only those that name the PR's URL. The opener is the session whose `gh pr create`, MCP create-PR call or push of the head branch came before the PR existed and led to its URL in a tool result. `<state>/origins.json` caches the result per PR and keeps only the session id, its directory, its times, the first prompt cut to 100 characters and the transcript's name. The server serves it as `origin` with the resume command. `busyOrigin` checks the transcript's mtime. While it is under 30 minutes old, the watcher prints no `maintainer-feedback` line for the PR and `gary pr-watch round` refuses with exit 3. The test suites set `GARY_SESSIONS_DIR` to a missing directory, so no test reads the real transcripts.
 
+`scripts/lib/escalation.mjs` links the fix PRs of an escalated discussion to the issue it became. `linkEscalated` reads the issue number from the bot's comment (`issueInComments`), moves the records (`moveFixRecords`) and adds the closing line (`bodyWithClosing`). `gary link-escalated` calls it on every hourly run. The server calls it for one discussion after an escalate click, after a copied command and from a refresh that finds the discussion closed (`recheckEscalation`, `linkNow`). The `updatePullRequest` mutation lives only in that module, and `test/sharing.test.zsh` checks that. It is no entry of `ACTIONS`, so `gary action` and the MCP server cannot edit a PR's body. A short `push` claim on the PR keeps the edit apart from an agent's edit. The PR is read right before the write, because the API has no way to make the edit conditional.
+
 `maxPendingAutoFixes` limits the pending fixes the routine started itself. `pendingAutoFixes` in `scripts/lib/fixes.mjs` counts them, and `gary claim <itemId> fix` without `--request` refuses at the limit after it took the claim.
 
 ## State layout
@@ -328,6 +330,8 @@ control.json                the pause switch
 decisions.jsonl             the decision log
 learn.json                  the learning cursor
 reconcile.json              the last reconcile pass, the names it knew, a pending request
+fixes.json                  the fix PRs Gary opened, per item. A record that moved to an issue has `from` plus `linked` or `ended`
+claims/<itemId>.<kind>.json the claims on items
 opened.json                 the prefill buttons he used, per item and route
 failures.json               failed analyses per item
 drive/<itemId>.json         waiting drives and watched PRs
@@ -355,4 +359,4 @@ npm test            # actions, server, accounts, learning, reconcile, sharing, v
 npm run test:page   # the board page, mocked and served. Needs Chrome or Chromium
 ```
 
-The suites run offline. `test/fake-gh/gh` stands in for the `gh` binary on PATH, answers Gary's reads from `test/fixtures/github.mjs` and refuses every write. With `FAKE_GH_WRITES` it accepts a short list of mutations and logs them to that file, which is how `test/api-edit.test.mjs` checks the commit of an API edit without GitHub. Each suite makes its own temp home with the fixture profile `test/fixtures/profile` (the project `acme/widgets`) and picks free ports, so they never touch a real home or a running board. `CHROME` names the browser binary for the page suites, default `google-chrome`. Avatars from github.com may fail to load offline, and the page suites accept the letter placeholder then.
+The suites run offline. `test/fake-gh/gh` stands in for the `gh` binary on PATH, answers Gary's reads from `test/fixtures/github.mjs` and refuses every write. With `FAKE_GH_WRITES` it accepts a short list of mutations and logs them to that file, which is how `test/api-edit.test.mjs` checks the commit of an API edit and `test/link-escalated.test.mjs` the edit of a PR's body without GitHub. Each suite makes its own temp home with the fixture profile `test/fixtures/profile` (the project `acme/widgets`) and picks free ports, so they never touch a real home or a running board. `CHROME` names the browser binary for the page suites, default `google-chrome`. Avatars from github.com may fail to load offline, and the page suites accept the letter placeholder then.

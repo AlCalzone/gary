@@ -19,7 +19,7 @@ export async function readFixRecords() {
 	return data ?? {};
 }
 
-// One read and write at a time within this process, so no update is lost between them
+// Serialize the updates within this process so none overwrites another
 let updating = Promise.resolve();
 
 /** Writes the records that `change` returns for the current ones. Writes nothing when it returns them unchanged. */

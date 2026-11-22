@@ -217,6 +217,7 @@ Per type:
     - A confirmed bug: the recommended route, titled `Move: escalate to a bug issue`, with `params.issueKind: "bug"`.
     - A feature request or an idea that is concrete and plausible enough that he may want to track it. Judge that by the entry's `category` and by the content, because a request also lands in other categories. Title it `Accept: track as an enhancement issue`, with `params.issueKind: "enhancement"`. Offer it as an alternative next to the recommended `reply` or `close`. Make it the recommended route only when the request is clearly good: small, well described and in line with what the project already does. Its `why` says in one sentence what the issue would track.
     `issueKind` only words the card ("becomes an enhancement issue"). Gary sets no label. The repo's workflow picks it, and the profile's rules say how. Leave `issueKind` out when neither word fits.
+    An open fix PR of the discussion is no reason against it. Code links the PR to the new issue (SPEC.md, "Fix PRs of an escalated discussion").
     Never offer it on a discussion that is closed or already escalated, and never on a vague wish that names no concrete change.
     The card copies the command for him to post. With `escalateAs: "me"` in the instance config it has a button that posts exactly the command under his own login, after his click and a confirm. No agent and no `gary action` call can post it.
   Reports for projects outside the org get a `close` with a redirect reply.

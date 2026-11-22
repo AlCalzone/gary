@@ -6007,7 +6007,7 @@ function subscribe(db) {
     for (const doc of snap.docs) {
       const a = doc.data();
       if (!a || typeof a.itemId !== "string") continue;
-      // The link of a fix PR is code's work and shows in the timeline. As the latest action it would count as his time
+      // A link_issue doc must never be the latest action because the board would count it as his time
       if (a.action === "link_issue") continue;
       const inst = a.instance || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : "");
       // An action doc may name its item by the plain id or by the full key

@@ -867,7 +867,7 @@ export async function startBoardServer({
 	const liveStates = new Map();
 	// One timer per instance that pushes the items again when the earliest hold of a watched PR ends
 	const holdTimers = new Map();
-	// One timer per escalated discussion whose issue the server still looks for
+	// `linkTimers` holds one timer per escalated discussion whose issue the server still looks for
 	const linkTimers = new Map();
 
 	const names = () => [...served.keys()].sort();
@@ -1631,7 +1631,7 @@ export async function startBoardServer({
 			doneKeys.add(key);
 			refusals.delete(key);
 			await setHandled(name, itemId, route, "commented");
-			// The workflow needs a few seconds, so the click does not wait for the issue
+			// Look for the issue later because the workflow needs a few seconds to create it
 			if (!dryRun) recheckEscalation(name, itemId);
 		}
 		schedulePush(name, "items");

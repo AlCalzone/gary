@@ -118,7 +118,7 @@ async function checkInstance() {
 		});
 		await attempt("escalate link", async () => {
 			const link = escalationOf(config, loadProfile());
-			// A warning only when profile.json asks for the link and it cannot run
+			// Warn only when profile.json asks for the link and it cannot run
 			if (!link.enabled) return [link.pattern ? "warn" : "ok", `off: ${link.reason}. A fix PR of an escalated discussion is not linked to its issue`];
 			return ["ok", `a comment by ${link.bot} that matches ${link.pattern} names the issue an escalated discussion became. Its fix PRs get "fixes #<issue>"`];
 		});

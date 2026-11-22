@@ -1,5 +1,5 @@
 // gary link-escalated [--dry-run]: finds the issues that escalated discussions became and links Gary's fix PRs to them.
-// It prints one JSON object. Exit 1 when a read or a write failed, and the next run tries again.
+// It prints one JSON object. It exits 1 when a read or a write failed. The next run tries again.
 import { linkEscalated } from "./lib/escalation.mjs";
 
 export async function main(argv) {

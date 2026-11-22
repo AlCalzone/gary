@@ -131,7 +131,7 @@ export function autoReviewOf(config, profile) {
 export function escalationOf(config, profile) {
 	const pattern = profile.escalateResult ?? null;
 	const bot = config.bot?.login ?? null;
-	const reason = !pattern ? "the profile has no escalateResult" : !bot ? "no bot is configured, and only the bot's comment names the issue" : null;
+	const reason = !pattern ? "the profile has no escalateResult" : !bot ? "no bot is configured. Only the bot's comment names the issue" : null;
 	return { enabled: !reason, bot, pattern, reason };
 }
 
@@ -455,7 +455,7 @@ function checkEscalateResult(pattern, errors) {
 	let groups;
 	try {
 		new RegExp(pattern);
-		// The empty alternative always matches, so the match lists every group of the pattern
+		// Append an empty alternative so the match lists every group of the pattern
 		groups = new RegExp(`${pattern}|`).exec("").length - 1;
 	} catch (e) {
 		return errors.push(`"escalateResult" is not a valid regular expression: ${e.message}`);

@@ -135,6 +135,8 @@ The code keeps a fix state per issue and discussion: `fix: { state, pr, startedB
 - **`merged`**: recommend a `close` with a closing message that names the release when it is known (`item-doc.md`, `close`).
 - **`closed`** without a merge: a new fix may start. `story` says that the earlier attempt was closed, and why when the thread says so.
 
+When a discussion with a fix PR became an issue, `gary link-escalated` moves the fix to the issue. `gary fixes --json` then lists the PR for the issue, also when the PR was opened for the discussion. The PR's `fixFor` names the issue. Triage that issue like any issue with a fix in progress. A `closingPrs` entry can take one more run to appear.
+
 A fix PR whose review rounds run (`fix.review` on its source item in `gary fixes --json`) is no board item yet. The rounds end with a `full_review` request that brings it to the board, ready for review when the rounds went through, still a draft when they stopped. Its item then carries the `rounds` and says in `state` how they ended. As finished agent work it sits at the top of its group ("Work the maintainer asked the agent for comes back first" covers it too).
 
 A fix PR asks nobody to verify it. When its body names something the fix could not verify, the PR's item carries that as a `question` finding for the maintainer. Whether to ask the reporter is his decision: offer it as a `reply` route as `me` on the fix PR's item only when the doubt is real, like a parameter set no second source confirms. Never recommend that route. A device config taken from a sibling device or confirmed by a source the profile names needs no such route.
