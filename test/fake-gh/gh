@@ -3,8 +3,8 @@
 // and refuses every write, so no test can reach GitHub.
 //   FAKE_GH_WRITES         a file. With it the fake accepts the mutations of the fix review rounds, a Copilot
 //                          review request, marking a PR ready and a review request for the maintainer, a PR review, a
-//                          discussion comment, and the commit and the comment of an API edit, and appends one line per
-//                          accepted write. A `writeError` in
+//                          discussion comment, the commit and the comment of an API edit, and the edit of a PR's body, and
+//                          appends one line per accepted write. A `writeError` in
 //                          FAKE_GH_OVERRIDES makes such a write fail with that message, and a `branchHead` there is the
 //                          head a commit must expect
 //   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
@@ -13,7 +13,9 @@
 //   FAKE_GH_NO_PROJECTS    "1" makes every read of GitHub Projects fail like a token without the read:project scope.
 //                          A node's `projectItems` reach only a query that asks for them
 //   FAKE_GH_OVERRIDES      a JSON file { "issue-22": { …fields } } merged into the full nodes of `gary item`, read on every call.
-//                          "requests-<n>" is merged into the PR that a review request for the maintainer reads
+//                          "requests-<n>" is merged into the PR that a review request for the maintainer reads.
+//                          "escalation-<n>" is the closed discussion, "escalated-issue-<n>" the issue and "link-pr-<n>"
+//                          the PR that `gary link-escalated` reads
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as gh from "../fixtures/github.mjs";
@@ -69,6 +71,7 @@ if (/^\s*mutation\b/.test(query)) {
 		["addPullRequestReview", { addPullRequestReview: { pullRequestReview: { url: `${gh.URL}/pull/${String(v.id).replace("PR_", "")}#pullrequestreview-777` } } }],
 		["createCommitOnBranch", { createCommitOnBranch: { commit: { oid: gh.NEW_HEAD, url: `${gh.URL}/commit/${gh.NEW_HEAD}` } } }],
 		["addComment(", { addComment: { commentEdge: { node: { url: `${gh.URL}/pull/${String(v.id).replace("PR_", "")}#issuecomment-950` } } } }],
+		["updatePullRequest(", { updatePullRequest: { pullRequest: { url: `${gh.URL}/pull/${String(v.id).replace("PR_", "")}` } } }],
 		["addDiscussionComment", { addDiscussionComment: { comment: { url: `${gh.URL}/discussions/${String(v.id).replace("D_", "")}#discussioncomment-900` } } }],
 	].find(([name]) => query.includes(name));
 	if (!process.env.FAKE_GH_WRITES || !accepted) fail("fake gh refuses every write", undefined);
@@ -106,6 +109,23 @@ if (/projectsV2|projectItems/.test(query) && process.env.FAKE_GH_NO_PROJECTS ===
 	fail("Your token has not been granted the required scopes to execute this query. The 'projectsV2' field requires one of the following scopes: ['read:project'], but your token has only been granted the: ['repo'] scopes.", undefined);
 }
 if (query.includes("projectsV2(first: 1)")) repository({ projectsV2: { totalCount: 1 } });
+
+// The reads of the link from an escalated discussion's fix PRs to its issue
+if (query.includes("resultComments")) {
+	const d = overrides[`escalation-${v.number}`];
+	if (!d) fail(`Could not resolve to a Discussion with the number of ${v.number}.`, { repository: { discussion: null } });
+	repository({ discussion: d });
+}
+if (query.includes("escalatedIssue")) {
+	const issue = overrides[`escalated-issue-${v.number}`];
+	if (!issue) fail(`Could not resolve to an Issue with the number of ${v.number}.`, { repository: { escalatedIssue: null } });
+	repository({ escalatedIssue: issue });
+}
+if (query.includes("closingIssuesReferences(first: 50)")) {
+	const pr = overrides[`link-pr-${v.number}`];
+	if (!pr) fail(`Could not resolve to a PullRequest with the number of ${v.number}.`, { repository: { pullRequest: null } });
+	repository({ pullRequest: pr });
+}
 
 // The PR a review request for the maintainer reads: its author, its draft flag and the pending review requests
 if (query.includes("reviewRequests(first:") && query.includes("user(login: $me)")) {

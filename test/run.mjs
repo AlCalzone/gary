@@ -28,6 +28,7 @@ const SUITES = [
 	["node", "pr-watch.test.mjs"],
 	["node", "auto-review.test.mjs"],
 	["node", "escalate.test.mjs"],
+	["node", "link-escalated.test.mjs"],
 	["node", "api-edit.test.mjs"],
 	["node", "ours.test.mjs"],
 	["node", "origins.test.mjs"],

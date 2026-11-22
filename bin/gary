@@ -17,6 +17,7 @@ const COMMANDS = {
 	handled: ["../scripts/handled.mjs", "main", "List the items handled on the board, with the last check and whether GitHub changed since. --json"],
 	fixes: ["../scripts/fixes-cli.mjs", "fixesMain", "The fix state of every issue and discussion: a running fix job or a fix PR. --json"],
 	"fix-record": ["../scripts/fixes-cli.mjs", "recordMain", "Record a fix PR: fix-record <itemId> --pr <number> --branch <name> --run <run> --by routine|maintainer"],
+	"link-escalated": ["../scripts/link-escalated.mjs", "main", "Find the issues that escalated discussions became, move their fix records there and add \"fixes #<issue>\" to the open fix PRs. --dry-run"],
 	"fix-review": ["../scripts/fix-review.mjs", "main", "The review rounds of a fix PR Gary opened: fix-review start --pr <n> --sha <sha> --run <run> | finish --pr <n> --outcome done|stopped --reason <text>. --dry-run"],
 	"pr-watch": ["../scripts/pr-watch.mjs", "main", "The watch on the bot's PRs, Gary's fix PRs among them, and taken-over PRs: pr-watch list [--json] | round --pr <n> --by me|others --at <ISO> [--run <run>] | review --pr <n> --sha <sha> [--action <id>] | done --pr <n> --sha <sha>. --seen-me, --seen-others, --dry-run"],
 	"pr-origin": ["../scripts/pr-origin.mjs", "main", "Find and cache the local Claude Code session that opened each open bot PR outside fixes.json, in <state>/origins.json. --json, --refresh"],
@@ -39,7 +40,7 @@ const COMMANDS = {
 	doctor: ["../scripts/doctor.mjs", "main", "Check the installation, read-only. --json, --all"],
 };
 // These change state, so they name the instance first on stderr. pause, resume and setup name it themselves
-const ANNOUNCED = new Set(["snapshot", "put", "action"]);
+const ANNOUNCED = new Set(["snapshot", "put", "action", "link-escalated"]);
 
 function help() {
 	const lines = ["Usage: gary [--instance <name>] <command> [options]", ""];

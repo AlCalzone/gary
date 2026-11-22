@@ -116,6 +116,9 @@ callers=$(grep -rln "requestCopilotReview" $W/scripts $W/server $W/mcp-server/in
 callers=$(grep -rln "postEscalateCommand" $W/scripts $W/server $W/mcp-server/index.mjs $W/bin | sort | tr '\n' ' ')
 [[ $callers == "$W/scripts/lib/gh.mjs $W/server/server.mjs " ]] && ok || bad "escalate helper callers" "$callers"
 [[ $(grep -c "postEscalateCommand(" $W/server/server.mjs) == 1 ]] && ok || bad "one escalate call site" ""
+# Only the link of an escalated discussion edits a PR's body
+callers=$(grep -rln "updatePullRequest(" $W/scripts $W/server $W/mcp-server/index.mjs $W/bin | sort | tr '\n' ' ')
+[[ $callers == "$W/scripts/lib/escalation.mjs " ]] && ok || bad "body edit callers" "$callers"
 expect "gh() in bot mode uses the bot token" 0 "widgets-bot" env GARY_HOME=$H/bot node -e "import('$W/scripts/lib/gh.mjs').then(async (m) => console.log((await m.gh(['api','user','--jq','.login'])).trim()))"
 
 rm -rf $H
