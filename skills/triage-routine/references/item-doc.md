@@ -10,6 +10,8 @@ The maintainer scans dozens of items per session. A briefing earns its place whe
 
 `category` is one of `act`, `unblock`, `land` and `decide`, by the rules of the classification file. It names the move he makes: act on something due, unblock someone who waits on him, land work that is nearly done, or decide a question nobody actively waits on. A doc written before categories carried `section`. Never write `section`. `needsHardware: true` marks an item that only real hardware can settle. Leave it out otherwise.
 
+A contributions instance adds a fifth category, `fyi`: news for him on a thread he follows, and nothing to do. An `fyi` item carries `newsAt`, the time of the newest relevant event its `state` reports. `gotIt` is the maintainer's: the board sets it when he says "Got it", and `gary put` keeps it. `classification.contributions.md` has the rules. A maintainer instance never writes `fyi`, `newsAt` or `gotIt`.
+
 ## `state`
 
 The verdict. One sentence, at most 25 words, that describes the situation. It does not name the action, because the recommended route's card does. Less text is better: he reads `state` to pick what to tackle next, and opens the item for everything else.

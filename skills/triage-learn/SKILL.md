@@ -94,7 +94,7 @@ One proposal holds one small, concrete rule, in his words where possible. Exampl
 Where it goes:
 
 - Project facts and project policy go to the profile: `rules/classification.md`, `rules/voice.md`, `rules/review.md`, `rules/issues.md`. A canned text he keeps rewriting goes to its template in `templates/`.
-- Personal habits and style go to the shared `personal.md` (`target: "personal"`), because they hold for all his projects. When the evidence is clearly about this one project, the rule goes to the profile instead.
+- Personal habits and style go to the shared `personal.md` (`target: "personal"`), because they hold for all his projects. When the evidence is clearly about this one project, the rule goes to the profile instead. A contributions instance has no profile (`profile` is null in `gary paths`): every proposal of it targets `personal.md`.
 
 `heading` names an existing heading of that file, or a new one that fits its structure. A template has no headings: leave `heading` empty, and the text is appended at its end. `text` is the exact text to append under it, written in the file's style, at most a few lines. `why` cites the evidence in one or two sentences. `evidence` lists every entry you used. `title` has at most 60 characters.
 

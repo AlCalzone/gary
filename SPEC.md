@@ -89,7 +89,7 @@ The core contains no repo name, no account name and no absolute path. It works a
 
 ```jsonc
 {
-  "kind": "maintainer",            // the only kind today. A maintainer instance triages the one repo of its profile
+  "kind": "maintainer",            // maintainer or contributions. A maintainer instance triages the one repo of its profile. See "Contributions" for the other kind
   "profile": "~/repositories/gary-profile-widgets",   // directory of the project profile. Relative paths are relative to the instance directory
   "me": "octocat",                 // the maintainer's GitHub login
   "checkout": "~/repositories/widgets",   // local clone of the repo. Worktrees for fixes go under state/worktrees/
@@ -108,9 +108,9 @@ The core contains no repo name, no account name and no absolute path. It works a
 }
 ```
 
-`profile` and `me` are required. The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `reviewer` is `copilot` or `off`, `requestAs` is `me` or `bot`, `maxRounds` is 1 to 3, and fields left out take their default. A value outside these lists is an error. It is also off when the profile's `reviewBots` does not list `copilot`, or when `requestAs` is `bot` without a bot. `gary doctor` says which case holds. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. `escalateAs` is `prefill` or `me`, another value is an error, and `gary doctor` shows it and warns when it is `me` and the profile has no `botCommands.escalate`. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
+`profile` and `me` are required. A config with `kind: "contributions"` has its own fields, see "Contributions". The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `reviewer` is `copilot` or `off`, `requestAs` is `me` or `bot`, `maxRounds` is 1 to 3, and fields left out take their default. A value outside these lists is an error. It is also off when the profile's `reviewBots` does not list `copilot`, or when `requestAs` is `bot` without a bot. `gary doctor` says which case holds. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. `escalateAs` is `prefill` or `me`, another value is an error, and `gary doctor` shows it and warns when it is `me` and the profile has no `botCommands.escalate`. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
 
-Code looks up an instance through `loadInstance(name)`. Its allowed repos are the profile's one `repo`, and `allowedRepo(instance, repo)`, `checkoutFor(instance, repo)` and `rulesFor(instance, repo, topic)` answer per repo. For `maintainer` they return the configured checkout and the profile's `rules/<topic>.md`. The skills read that file directly.
+Code looks up an instance through `loadInstance(name)`. Its allowed repos are the profile's one `repo`, and `allowedRepo(instance, repo)`, `checkoutFor(instance, repo)` and `rulesFor(instance, repo, topic)` answer per repo. For `maintainer` they return the configured checkout and the profile's `rules/<topic>.md`. The skills read that file directly. For `contributions` the allowed repos come from its snapshot, and the other two return null.
 
 ### Models
 
@@ -226,8 +226,9 @@ Two older layouts are moved by commands, never silently:
 - `gary put proposals <id> <file>`: write one proposal, validated. With `--check` it validates and writes nothing. `gary put learn <file>`: write the learn cursor.
 - `gary reconcile [request] | due | names | files | start | done [--until <ISO>]`, each with `--json`: the reconcile pass, see "Reconcile". `request` is what the maintainer runs.
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
+- `gary setup --kind contributions [--instance <name>] [--me <login>] [--title <text>] [--include <list>] [--exclude <list>] [--max-items <n>]`: create a contributions instance, default name `contributions`, see "Contributions". It takes none of the profile, checkout or bot flags, and refuses a second one for the same `me`.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor [--all]`: read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the link of escalated fix PRs (a warning when the profile has `escalateResult` and no bot is configured), the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
+- `gary doctor [--all]`: for a contributions instance it checks the kind, unknown fields, the stored `gh` login and its scopes, the repos it leaves out, the caps, the models, the pause, the port, the skill links and the launcher, see "Contributions". Otherwise, read-only checks of the resolved instance, or of every instance: Node, `gh`, the stored `gh` login against `me`, the bot token against `bot.login`, the profile, the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the link of escalated fix PRs (a warning when the profile has `escalateResult` and no bot is configured), the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check.
 
 Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
@@ -265,7 +266,7 @@ While paused:
 
 ## Categories
 
-Each item has exactly one `category`. It names the kind of move the maintainer makes:
+Each item has exactly one `category`. It names the kind of move the maintainer makes. A contributions instance adds `fyi`, see "Contributions":
 
 1. Act (`act`): something is due or time-critical. An item with a due date (see "Due dates"), a release blocker, a security report, a regression in the latest release.
 2. Unblock (`unblock`): someone outside our side waits on him and cannot go on without him. A reporter who waits for his answer or diagnosis, a contributor PR that waits for his review, a question an agent asked him.
@@ -595,11 +596,11 @@ The board shows three groups, filled from category, effort and due date:
 
 - "Quick & Easy": every item with `effortMinutes` of 2 or less, whatever its category, and every `act` item due within 2 days or overdue.
 - "Afterwards": the other `act`, `unblock` and `land` items, and `decide` items someone outside waits on (`waitingOn: "us"`). Without `waitingOn`, a `waitingDays` counts as waiting.
-- "When you have time": the other `decide` items, and snoozed items.
+- "When you have time": the other `decide` items, the other `fyi` items of a contributions instance, and snoozed items.
 
 Within a group the page ranks: work he asked for that finished comes first (an agent job of his like a take-over, a change, an address-review, a drive, a format or a fix, done, or an item whose `pushed.sha` equals its `reviewedSha`). Then items with a due date, the earliest first. Then items by outside contributors and reporters before his own and bot work. Within those the lowest `effortMinutes` comes first, then `priority`, then the newest `updatedAt`. Snoozed items come last. The items of one series sit next to each other in their group, in series order, at the place of the series' first unfinished item. An item that is handled or gone no longer counts, so the next item gives the series its place.
 
-A chip on each row names the category: Act, Unblock, Land or Decide, or Snoozed. Each category has a soft tint for the chip background and a strong ink for the chip text and border, the legend dots and the bar segments, in light and dark mode. The chip text has a contrast of at least 4.5:1 against its tint, and a dot at least 3:1 against the page. After the title the row shows quiet chips: the due date (`due Nov 24`, `due today`, `overdue 2 d`, in the Act color within 2 days and in the error color when overdue, with `dueSource` in the tooltip), `hardware` for `needsHardware`, and the place in a series (`series 2/3`, with the first item's title in the tooltip).
+A chip on each row names the category: Act, Unblock, Land or Decide, FYI on a contributions instance, or Snoozed. Each category has a soft tint for the chip background and a strong ink for the chip text and border, the legend dots and the bar segments, in light and dark mode. The chip text has a contrast of at least 4.5:1 against its tint, and a dot at least 3:1 against the page. After the title the row shows quiet chips: the due date (`due Nov 24`, `due today`, `overdue 2 d`, in the Act color within 2 days and in the error color when overdue, with `dueSource` in the tooltip), `hardware` for `needsHardware`, and the place in a series (`series 2/3`, with the first item's title in the tooltip).
 
 The page shows at most the time budget (6 hours by default, set on the board), filled in group order and rank, using `effortMinutes`. An item that does not fit is skipped. Items handled today count as spent time, shown as "<spent> of <budget>". "Quick & Easy" shows at most 5 rows at a time. More rows appear only on click. Above the groups, a bar splits the time of today's plan by category, with a legend like "Unblock 2 h". It counts only rows in today's plan. A click on a segment or a legend entry scrolls to the first group with planned work of that category. The board is for planning the day: the default view shows no backlog, neither item counts nor the time of items outside the plan.
 
@@ -665,7 +666,9 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "labels": ["bug"],
   "isDraft": false,
   "ci": "passing",                 // passing | failing | pending | none   (PRs)
-  "category": "land",              // act | unblock | land | decide, see Categories
+  "category": "land",              // act | unblock | land | decide, see Categories. A contributions instance adds fyi
+  "newsAt": "ISO",                 // contributions, fyi only: the newest relevant event its state reports
+  "gotIt": { "at": "ISO" },        // contributions, the maintainer's: his last "Got it" on the board
   "needsHardware": false,          // optional: only real hardware can settle it
   "dueAt": "2026-11-24",           // optional, from the snapshot: the due date GitHub has for the item
   "dueSource": "milestone 2026.12",   // with dueAt: where GitHub has it
@@ -1039,6 +1042,7 @@ Board-only actions, no GitHub call. The page applies them to the item file throu
 | `accept_proposal`, `dismiss_proposal` | decide a proposal, see Learning. The server applies them through `/api/action` |
 | `request_reconcile` | ask for a reconcile pass, see "Reconcile". The server applies it through `/api/action` |
 | `end_focus` | end the focus on the item without a summary, see "Focus". The server applies it through `/api/action` |
+| `got_it` | a contributions instance's fyi item: sets `gotIt: { at }` and logs a done action doc, see "Contributions". The server applies it through `/api/action` |
 
 Agent requests. The server writes them as queued action docs when their route is clicked. The page writes only the `reanalyze` doc of "Analyze again" without answers. With answers the server writes it, see "Answers to findings". The master session watches the queue between runs (`gary watch-queue` under the Monitor tool) and starts them within seconds. If the master is not running, the next hourly run picks them up:
 
@@ -1315,6 +1319,90 @@ Name `gary`, stdio, for interactive Claude sessions and for the master session. 
 
 One tool per GitHub action above, named like the action. Each takes `kind`, `number`, `params`, `text`, acts on the instance of the session's working directory and rejects anything outside the table. Three more tools control the one board server and work from any directory: `board_start` starts it inside the MCP process at the root port, or reports the one that already runs, with the instances it serves. `board_stop` stops it if this process started it. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`, plus `sessionInstanceError` when the session's directory resolves to no instance.
 
+## Contributions
+
+A contributions instance follows the maintainer's own GitHub activity outside the repos of his maintainer instances, on the same board as its own tab. Example: octocat maintains `acme/widgets` with a maintainer instance. He also has a PR open in `other/lib`, reported a bug in `third/app` and was asked to review a PR in `friend/tool`. The contributions tab holds those three.
+
+Round one is read-only. Gary writes nothing to GitHub for this kind: no bot, no agent push, no label, no comment. Every text for GitHub is a prefill: the board copies it and opens the thread. Left for a later round: agent work on his own PRs, with checkouts per repo, and with that the fixes, drives and focus sessions.
+
+### config.json
+
+```jsonc
+{
+  "kind": "contributions",
+  "me": "octocat",                 // his GitHub login. The searches run as his stored gh login
+  "title": "Contributions",        // the tab title, at most 60 characters
+  "include": [],                   // only these repos when not empty: "owner/name" or "owner/*", at most 200
+  "exclude": [],                   // never these repos, same form
+  "activeWindowDays": 30,          // threads he took part in count with activity in this window
+  "activeMaxWaitDays": 14,         // a question to him older than this is no live conversation
+  "maxItems": 150,                 // the most threads one snapshot keeps, 10 to 500
+  "models": { "worker": "sonnet", "standard": "sonnet" }   // optional, as for every instance
+}
+```
+
+`kind` and `me` are required, the rest has the defaults shown. A field of a maintainer instance (`profile`, `checkout`, `bot`, `allowOwnTokenPushes`, `maxFullReviewsPerRun`, `maxAutoFixesPerRun`, `maxPendingAutoFixes`, `fixReview`, `fastTier`, `escalateAs`, `autoReview`) is an error here, and these fields are unknown fields in a maintainer config. Unknown fields are handled like in every config.
+
+The instance has no profile: `loadInstance` returns `profileDir: null`, `checkout: null` and a profile with the defaults of profile.json, `name` from `title` and `repo: null`. `gary paths` prints `profile` and `checkout` as null. Its allowed repos are the repos of its staged and its committed snapshot, minus every repo of a maintainer instance on this machine, read from those instances' files without validating them. The account mode is always `none`.
+
+### Snapshot
+
+`gary snapshot` runs ten GraphQL searches as his stored `gh` login, in this order, each newest first:
+
+| key | search | involvement |
+| --- | --- | --- |
+| `review` | open, non-draft PRs with `review-requested:@me` | `review_requested` |
+| `own-pr` | his open, non-draft PRs | `author` |
+| `assigned` | open threads assigned to him, updated in the window | `assignee` |
+| `own-issue` | his open issues, updated in the window | `author` |
+| `own-discussion` | his open discussions, updated in the window | `author` |
+| `involved` | open threads with `involves:@me`, updated in the window | from the data |
+| `reviewed` | open PRs with `reviewed-by:@me`, updated in the window | `reviewer` |
+| `involved-discussion` | open discussions with `involves:@me`, updated in the window | from the data |
+| `closed` | threads with `involves:@me` closed in the last 7 days, at most the window | from the data |
+| `closed-discussion` | the same for discussions | from the data |
+
+His own PRs and review requests count at any age, because someone waits or the work is his. Every query carries `archived:false` where the search allows it, and qualifiers that narrow it: `repo:` and `user:` for `include`, `-repo:` for the maintainer repos and the exact repos of `exclude`, and `-user:` for an `owner/*` of `exclude`. Qualifiers that would make a query longer than 256 characters are left out, the `include` ones all together. The code filters every result again by the same rules. The searches run at once, each at most as many pages of 25 as `maxItems` needs, and their results join in the order above. The first thread over `maxItems` stops the join. The work list then has `cut: { max, search, matched, left, skipped, message }`, and stderr carries the message, like `The snapshot stopped at maxItems 150. The search "closed" matched 26 threads, up to 3 of them are left out.`
+
+The notifications API would also work with a `repo` token, but its threads depend on what he read on GitHub, so the searches are the source.
+
+An item id is `<owner>.<name>.<kind>-<number>` in lower case, with `disc` for a discussion, like `other.lib.pr-5`. An owner holds no dot and kind and number come last, so two threads never share an id. A name too long for the id pattern is cut and gets 8 hex digits of the SHA-256 of the repo. Every entry carries `repo`, and the staged and committed entries keep `repo` and `githubState`.
+
+Each entry carries the fields of a maintainer entry that apply, `facts.timeline` and the speaker facts with only `me` as `us`, and `activity` in the staged snapshot for "Since your last choice". The contributions facts:
+
+- `involvement`: `author`, `assignee`, `review_requested`, `reviewer`, `commenter`, `mentioned`, from the searches and the data. A thread with no other reason is `mentioned`.
+- `lookedAt` and `lookedVia`: his newest comment, review or opening post (`comment`), or the `gotIt.at` of the stored item (`got_it`), whichever is newer. Null when he never wrote there.
+- `news`: what others did after `lookedAt`, at most the newest 15, and `newsCount`. Code drops his own events, bot accounts, comments that only agree like `+1` or `same here`, label changes, draft and ready flips, force-pushes and CI. A comment carries `excerpt`, its text without quoted lines cut at 300 characters, `mentionsMe` for a mention outside a quote and `asksMe` when it also ends in a question mark.
+- `closed`: `{ at, by, how }` for a closed or merged thread. A thread he closed himself, or one that closed before he last looked, is left out of the snapshot.
+- PRs: `ci`, `ciGreen`, `approvedBy`, `changesRequestedBy`, `openThreadCount`, `openThreadsByOthers`, `reviewRequested`, and `myReview: { state, at, pushedSince }` for his own last review.
+- `quietDays`, and `quiet: true` when `news` is empty, the thread is open and he is neither author, assignee nor requested reviewer.
+
+The work list has `changed`, `quiet`, `focus` (always empty), `unchanged`, `closed` and `stale` (always zero). `quiet` lists the changed ids whose entry is quiet: no model looks at them. `gary item` reads one thread of an allowed repo with the same fields and needs `--repo` or an item id.
+
+### Classification and FYI
+
+The routine runs a contributions instance like any instance, with the steps that need a profile, a bot or a checkout skipped by kind, see the routine skill. Only the standard tier classifies, on the instance's `standard` model, by `classification.contributions.md`. Every item is `reviewDepth: "quick"`.
+
+The categories keep their meaning from his side: `act` for what only he can do next on his own PR or issue, `unblock` for someone who waits on his review or answer, `land` for his approved PR that needs a last step, `decide` for whether to keep going, close or hand over. The fifth category `fyi` is only for this kind: new and relevant information since he last looked, and nothing to do. Whether news is relevant is the model's call, also for a discussion between others. Mechanical noise never reaches it. Threads with nothing relevant and nothing to do get no item, or keep their stored one off the board.
+
+An `fyi` item carries `newsAt`, the newest relevant event its `state` reports, and a `state` of one or two sentences. It usually takes 1 or 2 minutes and has no routes, unless a reply makes sense. Routes of this kind are `reply`, `review`, `close` and `open`, all `as: "me"`, without `alsoLabel`, `alsoAnswer` or inline comments. The validator refuses `fyi` and `newsAt` on a maintainer instance, and `wants`, `pushed`, `takenOver`, `autofix`, `fixFor`, `rounds` and `needsHardware` on a contributions instance.
+
+### Got it
+
+The dialog of an `fyi` item has one "Got it" button. It sends `{ instance, action: "got_it", itemId }` to `/api/action`. The server refuses it for an item that is not `fyi` or whose repo is not allowed. Otherwise it sets `gotIt: { at }` on the item, a maintainer field that `gary put` keeps, and writes a done action doc with `action: "got_it"` and `via: "board"`, which "Since your last choice" names "Got it". The board hides an `fyi` item while `gotIt.at` is not older than its `newsAt`. The next snapshot counts `gotIt.at` as his last look, so only later news reach the classification. When it finds relevant news, the routine writes a newer `newsAt` and the item is back.
+
+### Server
+
+`board.instances[]` carries `kind: "contributions"`, `readOnly: true` and `repoUrl: null`. `/api/action` takes only `got_it`, `reanalyze` with answers, `dismiss_route`, `accept_proposal` and `dismiss_proposal` for this kind. Every route click, every second button, `focus`, `end_focus` and `request_reconcile` answer `{ ok: false, result: "This is a contributions instance. Gary writes nothing to GitHub for it: post the text on GitHub yourself.", readOnly: true }`. A page write of a queued agent request other than `reanalyze` answers 409. The prefill report to `/api/decision` and `/api/refresh` work as for every instance, with the repo check above. `gary action` refuses every action for this kind, and the `gh` wrapper refuses every write while such an instance is in scope, so no code path can reach GitHub.
+
+### Commands
+
+`fix-record`, `link-escalated`, `fix-review`, `pr-watch`, `pr-origin`, `api-edit`, `auto-review`, `push-check`, `reconcile`, `shadow` and `focus` except `focus list` exit 3 for this kind and print `{ ok: false, kind: "contributions", result }`. A learn pass may propose rules for `personal.md` only: accepting a profile proposal is refused, because there is no profile. The master starts the worker in the instance directory, because there is no checkout.
+
+### Board
+
+The instance is its own tab, titled by `title`. Inside it the rows come from many repos, so every row shows `owner/name#number` like the combined tab, and so does the dialog's top bar. FYI is a category chip like the others, with its own tint and ink in light and dark mode. Its items join the three groups by the usual rules: 2 minutes or less in "Quick & Easy", a longer read in "When you have time", because nobody waits on news. They count toward the plan with their effort, and nothing shows the backlog. The dialog has no Focus button, because a focus works in a checkout, and its items have no merge, label or agent card. "Analyze again" queues a new quick classification.
+
 ## Snapshot
 
 ```
@@ -1409,9 +1497,9 @@ This section is the contract for the single-server change. Where an older sectio
 
 ### Instances and kinds
 
-- Instance config gets `kind`. Today the only value is `"maintainer"`. A later kind `"contributions"` covers the user's own work across repos.
-- Every instance has a list of allowed repos. For `maintainer` it is the profile's one `repo`. An action is refused when the item's repo is not in that list.
-- Rules that differ by kind live in files named for the kind: `skills/triage-routine/references/classification.maintainer.md`. Shared rules keep their names.
+- Instance config gets `kind`: `"maintainer"` or `"contributions"`. The second kind covers the user's own threads across repos. Round one of it is built and read-only, see "Contributions".
+- Every instance has a list of allowed repos. For `maintainer` it is the profile's one `repo`. For `contributions` it is every repo its snapshot produced, never a repo of a maintainer instance. An action is refused when the item's repo is not in that list.
+- Rules that differ by kind live in files named for the kind: `skills/triage-routine/references/classification.maintainer.md` and `classification.contributions.md`. Shared rules keep their names.
 - Checkout and rules are looked up per repo through one function each (`checkoutFor(instance, repo)`, `rulesFor(instance, repo, topic)`). For `maintainer` they return the configured checkout and the profile's file.
 
 ### Item identity

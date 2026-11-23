@@ -38,6 +38,12 @@ Every `gary` command resolves the instance in this order:
 
 The skills resolve the instance once with `gary paths` and pass `--instance <name>` on every later command, also in subagent briefs. Only humans rely on the inference.
 
+### The contributions kind
+
+An instance with `kind: "contributions"` has no profile, bot or checkout. `scripts/lib/config.mjs` validates its config with `checkContributionsConfig`, returns a profile of defaults for it, and computes its allowed repos in `contributionRepos`: the repos of its staged and committed snapshot, cached by mtime, minus `maintainerRepos()`. `scripts/lib/contributions.mjs` holds what needs no GitHub call: the ids (`contributionId`), the repo filter (`repoCovered`, `scopeQualifiers`), the ten searches and their GraphQL fields, and the facts (`contributionFacts`, `newsOf`). `scripts/snapshot.mjs` runs the searches in `contributionsMain` and reads one thread in `fetchContribution`.
+
+No write can reach GitHub for this kind, checked in three places: `run()` in `scripts/lib/gh.mjs` rejects every write while such an instance is in scope, `runAction` refuses before it validates, and the server answers `readOnly: true` to every click but `got_it`, `reanalyze`, `dismiss_route` and the proposals. `bin/gary` refuses the commands that need a profile, a bot or a checkout with exit 3 (`MAINTAINER_ONLY`). The board page reads `kind` from `board.instances` to show the repo in every row, hide Focus and offer "Got it" on `fyi` items.
+
 ## One server, one master
 
 The contract is the SPEC section "One server, one master".
@@ -359,4 +365,4 @@ npm test            # actions, server, accounts, learning, reconcile, sharing, v
 npm run test:page   # the board page, mocked and served. Needs Chrome or Chromium
 ```
 
-The suites run offline. `test/fake-gh/gh` stands in for the `gh` binary on PATH, answers Gary's reads from `test/fixtures/github.mjs` and refuses every write. With `FAKE_GH_WRITES` it accepts a short list of mutations and logs them to that file, which is how `test/api-edit.test.mjs` checks the commit of an API edit and `test/link-escalated.test.mjs` the edit of a PR's body without GitHub. Each suite makes its own temp home with the fixture profile `test/fixtures/profile` (the project `acme/widgets`) and picks free ports, so they never touch a real home or a running board. `CHROME` names the browser binary for the page suites, default `google-chrome`. Avatars from github.com may fail to load offline, and the page suites accept the letter placeholder then.
+The suites run offline. `test/fake-gh/gh` stands in for the `gh` binary on PATH, answers Gary's reads from `test/fixtures/github.mjs` and refuses every write. `FAKE_GH_CONTRIBUTIONS` names a JSON file it answers the contributions searches from, which `test/contributions.test.mjs` writes per case. With `FAKE_GH_WRITES` it accepts a short list of mutations and logs them to that file, which is how `test/api-edit.test.mjs` checks the commit of an API edit and `test/link-escalated.test.mjs` the edit of a PR's body without GitHub. Each suite makes its own temp home with the fixture profile `test/fixtures/profile` (the project `acme/widgets`) and picks free ports, so they never touch a real home or a running board. `CHROME` names the browser binary for the page suites, default `google-chrome`. Avatars from github.com may fail to load offline, and the page suites accept the letter placeholder then.

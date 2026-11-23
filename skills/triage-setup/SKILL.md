@@ -1,6 +1,6 @@
 ---
 name: triage-setup
-description: Set up the triage board for a maintainer's own GitHub project, or add another project as a new Gary instance. Runs gary setup, drafts a project profile (profile.json and rules files) by reading the repo's labels, CODEOWNERS, contributing guide, issue templates and workflows, runs gary doctor and creates the hourly scheduled triage task. Use when a maintainer wants to start using the triage board, add a project to it, or create or redo a triage profile.
+description: Set up the triage board for a maintainer's own GitHub project, or add another project as a new Gary instance, or add a contributions instance for his own threads in other repos. Runs gary setup, drafts a project profile (profile.json and rules files) by reading the repo's labels, CODEOWNERS, contributing guide, issue templates and workflows, runs gary doctor and creates the hourly scheduled triage task. Use when a maintainer wants to start using the triage board, add a project to it, or create or redo a triage profile.
 ---
 
 # Set up the triage board
@@ -25,6 +25,18 @@ Ask for:
 - without a bot: whether agents may push and post under his own `gh` login (`allowOwnTokenPushes`). Explain the tradeoff in one sentence: with it, agents can open fix PRs and address reviews, without it every bot route becomes text he posts himself.
 
 Write these into `<config>` (SPEC.md "Home"). Leave the limits at their defaults.
+
+## 1a. A contributions instance
+
+A contributions instance follows his own GitHub activity outside the repos of his maintainer instances: his own open PRs, his issues and discussions, the PRs that wait for his review, and the threads he commented on, reviewed or was mentioned in. It shows as its own tab on the board. It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it: every reply is a text the board copies for him. Offer it once his maintainer instances exist, and set it up only when he wants it.
+
+Ask for the repos to leave out beyond his maintainer instances, like his own personal projects that are really maintainer work, as `owner/name` or `owner/*`. Then run:
+
+```bash
+gary setup --kind contributions --me <login> [--exclude "<owner>/*,<owner>/<name>"] [--include …] [--title "Contributions"] [--max-items 150]
+```
+
+The instance is called `contributions` unless `--instance` names another. Skip steps 2 and 3 for it: there is no profile to draft, and his personal rules apply as they are. Run `gary --instance contributions doctor`. It checks his `gh` login and its scopes, names the maintainer repos and the `exclude` list it leaves out, and states the cap. With `repo` in the scopes the searches find private repos too. The first snapshot says when `maxItems` cuts it. Then he narrows `include`, adds to `exclude` or raises `maxItems` in its `config.json`. The hourly master task picks the instance up without a change.
 
 ## 2. Draft the profile
 

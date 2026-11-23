@@ -29,9 +29,24 @@ Reference files, read when you reach the step that needs them:
 
 - `${CLAUDE_SKILL_DIR}/references/board-db.md`: reading and writing the board store.
 - `${CLAUDE_SKILL_DIR}/references/accounts.md`: the three account setups, who writes, git identity, who counts as "us".
-- `${CLAUDE_SKILL_DIR}/references/classification.<kind>.md`, the classification file for the instance's `kind` from `gary instances --json` or `<config>` (today only `classification.maintainer.md`): category rules, review selection, priorities, autonomous labels. Profile topic: `classification`.
+- `${CLAUDE_SKILL_DIR}/references/classification.<kind>.md`, the classification file for the instance's `kind` from `gary instances --json` or `<config>`: `classification.maintainer.md` or `classification.contributions.md`. Category rules, review selection, priorities, autonomous labels. Profile topic: `classification`.
 - `${CLAUDE_SKILL_DIR}/references/item-doc.md`: how to write `state`, `findings`, `threads` and `routes`, and the validation checklist for returned docs.
 - `${CLAUDE_SKILL_DIR}/references/voice.md`: how suggested replies must sound. Profile topic: `voice`.
+
+## A contributions instance
+
+`kind: "contributions"` in `<config>` means the instance follows the maintainer's own threads in repos outside his maintainer instances. It has no profile, no bot and no checkout: `<profile>` and `<checkout>` are `null`, and there are no profile rules, `requiredTools`, labels or bot commands. Gary writes nothing to GitHub for it. `classification.contributions.md` holds its rules. The run sequence below holds with these changes:
+
+- **Step 1.** Read `<config>` only. Skip the `requiredTools` check.
+- **Step 2.** The only request is `reanalyze`. Classify that one item again like step 5 does, from `gary item <id>`, with the standard tier and the maintainer's text as his instruction. Mark any other request `failed` with `A contributions instance runs no agent jobs.`
+- **Step 3.** Run `gary snapshot --out <run>/snapshot.json` as usual. Skip `gary link-escalated` and `gary pr-origin`: both exit 3 for this kind. The work list has `quiet` next to `changed`: the ids of changed threads with nothing new for him and nothing to do. When it has `cut`, the cap stopped the snapshot. Put `cut.message` into the run summary as its own line.
+- **Step 4.** Delete the items of `closed`. For each id in `quiet` with a stored item, take it off the board with one `gary put --merge items <id>` of `{ "routes": [], "hint": null, "newsAt": null, "category": "decide", "state": "Nothing new for you since <lookedAt as a date>." }`. A `quiet` id without a stored item gets nothing. Steps 4d, 4a, 4e and 4f do not apply: there are no fixes, labels, automatic reviews or watched PRs. 4c runs as usual. In 4b the rule files are the core references of this kind and the `<personal>` files.
+- **Step 5.** Classify every `changed` item with the standard tier only (`model: <standard>`), by `classification.contributions.md`. `fastTier` is always `off`. Every item is `reviewDepth: "quick"`, `classifiedBy: "standard"`. The classifier writes no item for a thread with nothing relevant and nothing to do when no item is stored for it.
+- **Steps 6, 6a and 7** do not run: no full reviews, no automatic reviews, no fixes.
+- **Step 8.** Write the items with `gary put` as usual. There are no autonomous changes.
+- **Step 9.** Line 2 of the summary is `Reviews: 12 quick, 4 FYI, 3 quiet.` `pendingReviews` in `meta.json` is 0.
+- **Step 9a.** The learn pass may run. Its proposals target `personal.md` only, because there is no profile.
+- **Step 9b.** Skip the reconcile pass. `gary reconcile` exits 3 for this kind.
 
 ## Models
 

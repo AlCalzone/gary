@@ -100,7 +100,7 @@ With one project, the current folder does not matter. With several, `gary` picks
 
 From a clone, `gary setup` links the command into `~/.local/bin`, which must be on your `PATH`. A plugin install puts `gary` on the `PATH` inside Claude Code sessions only. There you run a command by typing `! gary pause` in a session, or you ask Claude to run it.
 
-- `gary setup`: install or reconfigure Gary on this machine. `gary setup --instance <name>` adds a project.
+- `gary setup`: install or reconfigure Gary on this machine. `gary setup --instance <name>` adds a project. `gary setup --kind contributions` adds the instance for your threads in other repos.
 - `gary instances`: list the projects on this machine.
 - `gary doctor`: check the installation without changing anything: Node, `gh` and its login, the bot token, the profile, the checkout, the port, the skill links, the pause switch, the models, and whether the automatic review is on.
 - `gary models`: print which model runs the master, the workers, the reviews and the classification.
@@ -118,6 +118,19 @@ While paused, every click that would post, review, label or transfer is refused 
 ## Several projects
 
 One machine can run Gary for several repos. Each repo gets its own instance with its own settings, pause switch and decision log, and its own tab on the one board. Ask Claude to set up Gary for the next repo, and the `triage-setup` skill creates a new instance next to the existing ones. The board picks it up without a restart, and the next hourly run includes it. Your shared `personal.md` applies to all instances. Each instance can add its own `personal.md` on top. Instances of the same project on different machines can share one profile.
+
+## Your contributions elsewhere
+
+A contributions instance follows your own threads in repos outside your maintainer instances: your open PRs, your issues and discussions, the PRs that wait for your review, and the threads you commented on, reviewed or were mentioned in. It is its own tab on the board, and every row names its repo, like `other/lib#5`. Next to Act, Unblock, Land and Decide it has a fifth category, FYI: something new and relevant happened since you last looked, like a maintainer's decision, a release with your fix or your PR merged by someone else, and there is nothing to do. "Got it" hides such an item until there is news again. Noise like "+1" comments, bot posts, label changes and CI reruns never shows up.
+
+Gary writes nothing to GitHub for this instance. A reply card copies the text and opens the thread, and you post it yourself. There is no profile, bot or checkout to set up:
+
+```sh
+gary setup --kind contributions --exclude "your-name/*"
+gary --instance contributions doctor
+```
+
+`include` and `exclude` in its `config.json` take `owner/name` or `owner/*`. `maxItems` (default 150) caps one snapshot, and the snapshot says when the cap cuts.
 
 One master Claude session runs everything, started every hour by one scheduled task. It starts the board server, starts one worker per instance for the triage, and watches the queue of all instances to start a worker for each request you click. A worker is a child session where the harness supports it, otherwise a headless `claude -p` run, otherwise the master does the job itself.
 
