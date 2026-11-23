@@ -15,7 +15,10 @@ import {
 const run = promisify(execFile);
 
 const USAGE = `Usage: gary setup [options]
+       gary setup --kind contributions [--instance <name>] [--me <login>] [--title <tab title>]
+                  [--include <owner/name,owner/*>] [--exclude <owner/name,owner/*>] [--max-items <n>]
 
+  --kind <kind>             maintainer (default) or contributions: your own threads outside the maintainer instances
   --repo <owner/name>       repository to triage, needed for a new profile
   --me <login>              your GitHub login, defaults to your stored gh login
   --checkout <dir>          your local clone of the repository
@@ -29,6 +32,10 @@ const USAGE = `Usage: gary setup [options]
   --force                   replace an existing config.json and existing links
   --no-links                do not link skills and the launcher, do not print the MCP command
   --register-mcp            run \`claude mcp add\` for a clone install
+  --title <text>            contributions: the tab title, default "Contributions"
+  --include <list>          contributions: only these repos, comma-separated owner/name or owner/*
+  --exclude <list>          contributions: leave these repos out, comma-separated owner/name or owner/*
+  --max-items <n>           contributions: the most threads one snapshot keeps, default 150
 `;
 
 const PERSONAL_HEADER = `<!--
@@ -116,6 +123,52 @@ function link(target, path, force, report) {
 	report.push(`linked ${path} -> ${target}`);
 }
 
+/** Links the skills and the launcher of a clone install, and registers or names the MCP server. */
+async function linkInstall(o, report) {
+	if (o["no-links"] || isPluginInstall()) return;
+	for (const name of readdirSync(join(ROOT, "skills"))) {
+		link(join(ROOT, "skills", name), join(homedir(), ".claude", "skills", name), o.force, report);
+	}
+	link(join(ROOT, "bin", "gary"), join(homedir(), ".local", "bin", "gary"), o.force, report);
+	const mcp = ["mcp", "add", "--scope", "user", "gary", "--", "node", join(ROOT, "mcp-server", "index.mjs")];
+	if (o["register-mcp"]) {
+		await run("claude", mcp, { timeout: 60000 });
+		report.push("registered the gary MCP server");
+	} else {
+		report.push(`register the MCP server with: claude ${mcp.join(" ")}`);
+	}
+}
+
+const globList = (v) => (v ? v.split(",").map((x) => x.trim()).filter(Boolean) : undefined);
+
+/** Writes the config.json of a contributions instance. It has no profile, bot or checkout. */
+function setupContributions(o, me, report) {
+	for (const flag of ["repo", "checkout", "profile", "name", "bot-login", "bot-token-file"]) {
+		if (o[flag] !== undefined) throw new Error(`--${flag} is only for a maintainer instance. A contributions instance has no profile, bot or checkout.`);
+	}
+	const name = explicitInstance() ?? "contributions";
+	if (!INSTANCE_NAME.test(name)) throw new Error(`"${name}" is not a valid instance name. Use lower case letters, digits and dashes, at most 40.`);
+	const dir = instanceDir(name);
+	const exists = existsSync(join(dir, "config.json"));
+	if (exists && !o.force) throw new Error(`Instance ${name} already exists in ${dir}. Pass --force to replace its config.json.`);
+	const same = instanceNames().filter((n) => n !== name).map(instanceFacts).find((f) => f.config?.kind === "contributions" && String(f.config.me).toLowerCase() === me.toLowerCase());
+	if (same) throw new Error(`Instance ${same.name} already follows the contributions of ${me}.`);
+	const config = {
+		kind: "contributions", me,
+		...(o.title && { title: o.title }),
+		...(globList(o.include) && { include: globList(o.include) }),
+		...(globList(o.exclude) && { exclude: globList(o.exclude) }),
+		...(o["max-items"] !== undefined && { maxItems: Number(o["max-items"]) }),
+	};
+	const errors = validateConfig(config);
+	if (errors.length) throw new Error(`The settings are invalid:\n- ${errors.join("\n- ")}`);
+	mkdirSync(join(dir, "state"), { recursive: true });
+	writeFileSync(join(dir, "config.json"), JSON.stringify(config, null, "\t") + "\n");
+	if (!existsSync(personalFile())) writeFileSync(personalFile(), PERSONAL_HEADER);
+	console.error(`${exists ? "Updated" : "Created"} instance ${name}.`);
+	report.push(`wrote ${join(dir, "config.json")}`);
+}
+
 export async function main(argv) {
 	const { values: o } = parseArgs({
 		args: argv,
@@ -132,6 +185,11 @@ export async function main(argv) {
 			force: { type: "boolean", default: false },
 			"no-links": { type: "boolean", default: false },
 			"register-mcp": { type: "boolean", default: false },
+			kind: { type: "string", default: "maintainer" },
+			title: { type: "string" },
+			include: { type: "string" },
+			exclude: { type: "string" },
+			"max-items": { type: "string" },
 			help: { type: "boolean", default: false },
 		},
 	});
@@ -165,8 +223,15 @@ export async function main(argv) {
 	};
 
 	try {
+		if (!["maintainer", "contributions"].includes(o.kind)) throw new Error("--kind must be maintainer or contributions.");
 		const me = o.me ?? (await ask("Your GitHub login", await storedLogin())) ?? "";
 		if (!me) throw new Error("Pass --me <login>, or log in with `gh auth login` first.");
+		if (o.kind === "contributions") {
+			setupContributions(o, me, report);
+			await linkInstall(o, report);
+			console.log(report.join("\n"));
+			return;
+		}
 
 		// Profile: an existing directory, a shipped profile name, or a new profile from profiles/template
 		let profileArg = o.profile ?? (await ask("Profile directory or shipped profile name (empty for a new profile)"));
@@ -239,19 +304,7 @@ export async function main(argv) {
 		console.error(`${exists ? "Updated" : "Created"} instance ${name}.`);
 
 		report.push(`wrote ${join(dir, "config.json")}`, ...created.map(([, d]) => `created profile ${d} from profiles/template`));
-		if (!o["no-links"] && !isPluginInstall()) {
-			for (const name of readdirSync(join(ROOT, "skills"))) {
-				link(join(ROOT, "skills", name), join(homedir(), ".claude", "skills", name), o.force, report);
-			}
-			link(join(ROOT, "bin", "gary"), join(homedir(), ".local", "bin", "gary"), o.force, report);
-			const mcp = ["mcp", "add", "--scope", "user", "gary", "--", "node", join(ROOT, "mcp-server", "index.mjs")];
-			if (o["register-mcp"]) {
-				await run("claude", mcp, { timeout: 60000 });
-				report.push("registered the gary MCP server");
-			} else {
-				report.push(`register the MCP server with: claude ${mcp.join(" ")}`);
-			}
-		}
+		await linkInstall(o, report);
 		console.log(report.join("\n"));
 	} finally {
 		rl?.close();

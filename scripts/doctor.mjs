@@ -5,9 +5,9 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, autoReviewOf, escalationOf, fixReviewOf, homePath, instanceName, instanceNames, loadConfig, loadProfile, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
+import { ROOT, autoReviewOf, escalationOf, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
-import { canReadProjects, readLogin } from "./lib/gh.mjs";
+import { canReadProjects, readLogin, storedScopes } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
 
 const run = promisify(execFile);
@@ -30,6 +30,30 @@ async function boardOnPort(port) {
 	} catch {
 		return null;
 	}
+}
+
+/** The checks of the install that every instance shares: the skill links and the launcher. */
+async function checkInstall(attempt) {
+	await attempt("skills", async () => {
+		if (isPluginInstall()) return ["ok", "plugin install, Claude Code loads the skills"];
+		const missing = readdirSync(join(ROOT, "skills")).filter((name) => {
+			try {
+				return realpathSync(join(homedir(), ".claude", "skills", name)) !== realpathSync(join(ROOT, "skills", name));
+			} catch {
+				return true;
+			}
+		});
+		return [missing.length ? "warn" : "ok", missing.length ? `not linked into ~/.claude/skills: ${missing.join(", ")}. Run \`gary setup\`` : "linked into ~/.claude/skills"];
+	});
+	await attempt("launcher", async () => {
+		try {
+			const found = (await run("sh", ["-c", "command -v gary"])).stdout.trim();
+			return ["ok", found];
+		} catch {
+			return ["warn", "gary is not on PATH"];
+		}
+	});
+
 }
 
 async function checkInstance() {
@@ -57,6 +81,11 @@ async function checkInstance() {
 		config = loadConfig();
 		return ["ok", paths().config];
 	});
+	if (config && isContributions(config)) {
+		await checkContributions(config, attempt, add);
+		await checkInstall(attempt);
+		return checks;
+	}
 	await attempt("profile", async () => {
 		const profile = loadProfile();
 		// The run time only warns about unknown fields. Here they fail, so typos get caught
@@ -141,27 +170,54 @@ async function checkInstance() {
 		const tools = loadProfile().requiredTools;
 		return ["ok", tools.length ? `the routine checks these at the start of a run: ${tools.join(", ")}` : "none"];
 	});
-	await attempt("skills", async () => {
-		if (isPluginInstall()) return ["ok", "plugin install, Claude Code loads the skills"];
-		const missing = readdirSync(join(ROOT, "skills")).filter((name) => {
-			try {
-				return realpathSync(join(homedir(), ".claude", "skills", name)) !== realpathSync(join(ROOT, "skills", name));
-			} catch {
-				return true;
-			}
-		});
-		return [missing.length ? "warn" : "ok", missing.length ? `not linked into ~/.claude/skills: ${missing.join(", ")}. Run \`gary setup\`` : "linked into ~/.claude/skills"];
-	});
-	await attempt("launcher", async () => {
-		try {
-			const found = (await run("sh", ["-c", "command -v gary"])).stdout.trim();
-			return ["ok", found];
-		} catch {
-			return ["warn", "gary is not on PATH"];
-		}
-	});
+	await checkInstall(attempt);
 
 	return checks;
+}
+
+/**
+ * The checks of a contributions instance: the login and its scopes, the repos it leaves out, the caps and the parts it
+ * shares with every instance. It has no profile, bot or checkout to check.
+ */
+async function checkContributions(config, attempt, add) {
+	add("kind", "ok", "contributions: your own threads outside the maintainer instances. Gary writes nothing to GitHub for it, every reply is text you post yourself");
+	await attempt("unknown fields", async () => {
+		const unknown = settingsWarningsFor(instanceName());
+		return unknown.length ? ["fail", unknown.join("; ")] : ["ok", "none"];
+	});
+	await attempt("gh login", async () => {
+		const login = await readLogin("stored");
+		const same = login.toLowerCase() === config.me.toLowerCase();
+		return [same ? "ok" : "fail", same ? `${login}. The searches run as this login, so they find what it can see` : `stored gh login is "${login}", config.json names "${config.me}"`];
+	});
+	await attempt("token scopes", async () => {
+		const scopes = await storedScopes();
+		if (scopes === null) return ["warn", "GitHub names no scopes for this token, like for a fine-grained token. It needs read access to issues, pull requests and discussions of the repos you take part in"];
+		if (scopes.includes("repo")) return ["ok", `${scopes.join(", ")}. "repo" lets the searches see private repos too`];
+		if (scopes.includes("public_repo")) return ["warn", `${scopes.join(", ")}. Without "repo" the searches miss threads in private repos. \`gh auth refresh -s repo\` adds it`];
+		return ["warn", `${scopes.join(", ") || "no scopes"}. The searches see only public threads. \`gh auth refresh -s repo\` adds private repos`];
+	});
+	await attempt("left out", async () => {
+		const blocked = [...maintainerRepos(instanceNames().filter((n) => n !== instanceName()))];
+		const parts = [blocked.length ? `the repos of your maintainer instances: ${blocked.join(", ")}` : "no maintainer instance on this machine"];
+		if (config.exclude.length) parts.push(`exclude: ${config.exclude.join(", ")}`);
+		parts.push(config.include.length ? `only include: ${config.include.join(", ")}` : "Every other repo counts");
+		return ["ok", parts.join(". ")];
+	});
+	add("caps", "ok", `at most ${config.maxItems} threads per snapshot, with activity in the last ${config.activeWindowDays} days. Your own open PRs and review requests count at any age. The snapshot says when the cap cuts`);
+	await attempt("models", async () => {
+		const { models } = modelsOf(config);
+		return ["ok", `worker ${models.worker}, standard ${models.standard} for the classification. master ${models.master}, not checked: the host sets the master session's model`];
+	});
+	add("pause", isPaused() ? "warn" : "ok", isPaused() ? "paused: the board stays up and queued analyses wait. `gary resume` ends it" : "not paused");
+	await attempt("port", async () => {
+		const { port } = rootConfig();
+		if (await portFree(port)) return ["ok", `${port} is free, \`gary serve\` or board_start starts the board there`];
+		const served = await boardOnPort(port);
+		if (served?.includes(instanceName())) return ["ok", `${port} runs the board server, and it serves this instance`];
+		if (served !== null) return ["warn", `${port} runs the board server, but it does not list this instance yet`];
+		return ["fail", `another program uses port ${port}`];
+	});
 }
 
 const print = (checks) => {

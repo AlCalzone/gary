@@ -27,7 +27,7 @@ export async function main(argv) {
 	if (!rows.length) return console.log(`No instance in ${rootDir()}. Run \`gary setup\`.`);
 	console.log(`Board server on port ${port}: ${serving ? "up" : "down"}`);
 	for (const r of rows) {
-		console.log(`${r.current ? "*" : " "} ${r.name.padEnd(20)} ${(r.kind ?? "invalid").padEnd(11)} ${r.repos.join(", ").padEnd(32)} ${r.paused ? "paused " : "running"} ${r.served ? "on the board" : "not on the board"}`);
+		console.log(`${r.current ? "*" : " "} ${r.name.padEnd(20)} ${(r.kind ?? "invalid").padEnd(11)} ${(r.kind === "contributions" ? `${r.repos.length} repos of your threads` : r.repos.join(", ")).padEnd(32)} ${r.paused ? "paused " : "running"} ${r.served ? "on the board" : "not on the board"}`);
 		if (r.settingsError) console.log(`    error: ${r.settingsError.replaceAll("\n", "\n    ")}`);
 		for (const w of r.settingsWarnings ?? []) console.log(`    warning: ${w}`);
 	}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The one entry point for everything the skills and the maintainer run. `gary help` lists the commands.
 // `--instance <name>` picks the instance, before or after the command.
-import { SettingsError, instanceName, paths, setInstance } from "../scripts/lib/config.mjs";
+import { SettingsError, instanceName, loadConfig, paths, setInstance } from "../scripts/lib/config.mjs";
 
 // Each entry: module, exported function, help text
 const COMMANDS = {
@@ -41,6 +41,26 @@ const COMMANDS = {
 };
 // These change state, so they name the instance first on stderr. pause, resume and setup name it themselves
 const ANNOUNCED = new Set(["snapshot", "put", "action", "link-escalated"]);
+// These need a profile, a bot or a checkout, which a contributions instance has none of. `focus list` only reads
+const MAINTAINER_ONLY = new Set(["fix-record", "link-escalated", "fix-review", "pr-watch", "pr-origin", "api-edit", "auto-review", "push-check", "reconcile", "shadow", "focus"]);
+
+/** Refuses a command a contributions instance cannot run, with exit 3 and one JSON line. */
+function refusedByKind(command, args) {
+	if (!MAINTAINER_ONLY.has(command) || (command === "focus" && args[0] === "list")) return false;
+	let kind;
+	try {
+		kind = loadConfig().kind;
+	} catch {
+		// The command itself reports a broken or missing instance
+		return false;
+	}
+	if (kind !== "contributions") return false;
+	const result = `gary ${command} needs a maintainer instance. ${instanceName()} is a contributions instance: it has no profile, bot or checkout, and Gary writes nothing to GitHub for it.`;
+	console.log(JSON.stringify({ ok: false, kind, result }));
+	console.error(result);
+	process.exitCode = 3;
+	return true;
+}
 
 function help() {
 	const lines = ["Usage: gary [--instance <name>] <command> [options]", ""];
@@ -77,6 +97,7 @@ try {
 			if (out.error) process.exitCode = 2;
 		}
 	} else if (Object.hasOwn(COMMANDS, command)) {
+		if (refusedByKind(command, args)) process.exit();
 		if (ANNOUNCED.has(command)) console.error(`Instance ${instanceName()}.`);
 		const [module, fn] = COMMANDS[command];
 		await (await import(module))[fn](args);
