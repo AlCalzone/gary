@@ -3653,7 +3653,7 @@ function renderFocus(key, d) {
     failed: ["No focus session started.", f.reason || "The master could not start a session."],
   }[f.status];
   const actions = f.status === "active" ? [open("Open session", "focus:open")] : f.status === "paused" ? [open("Resume", "focus:resume"), end] : [];
-  el.replaceChildren(icon(f.status === "paused" ? "pause" : f.status === "failed" ? "alert" : "eye"),
+  setKids(el, icon(f.status === "paused" ? "pause" : f.status === "failed" ? "alert" : "eye"),
     h("div", { class: "fb-text" }, ...texts.map((t) => h("p", { text: t }))),
     actions.some(Boolean) ? h("div", { class: "fb-actions" }, ...actions.filter(Boolean)) : null);
 }

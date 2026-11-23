@@ -31,7 +31,7 @@
     items([pr(2101, { focus: { status: "requested", at: iso(1000) } })]); await wait(10);
     ok("focus requested: the row says the master sets it up", chip("pr-2101")?.textContent === "Focus requested");
     await reopen("pr-2101");
-    ok("focus requested: the dialog says so too, and the button is gone", !banner().hidden && /The master looks for a session/.test(banner().textContent) && focusBtn().hidden);
+    ok("focus requested: the dialog says so too, and the button is gone", !banner().hidden && /The master looks for a session/.test(banner().textContent) && !/null/.test(banner().textContent) && focusBtn().hidden);
 
     // Active
     const started = new Date(Date.now() - 20 * 60000).toISOString();
