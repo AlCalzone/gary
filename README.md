@@ -69,7 +69,6 @@ Gary keeps project facts, project rules and your personal style apart:
 
 - [docs/board.md](docs/board.md): working with the board day to day.
 - [docs/internals.md](docs/internals.md): commands, server, state and tests, for people changing Gary.
-- [SPEC.md](SPEC.md): the contract between the skills, the scripts and the board.
 
 ---
 
