@@ -95,6 +95,12 @@ export async function readLogin(which) {
 	return (await run(["api", "user", "--jq", ".login"], "", env)).trim();
 }
 
+/** The permissions of the stored gh login ("stored") or the bot token ("bot") on `repo`, from one read. Read-only. */
+export async function readRepoPermissions(which, repo) {
+	const env = which === "bot" ? { ...process.env, ...GH_ENV, GH_TOKEN: botToken() } : storedLoginEnv();
+	return JSON.parse(await run(["api", `repos/${repo}`], "", env)).permissions ?? null;
+}
+
 /**
  * The OAuth scopes of the stored gh login, from the X-OAuth-Scopes header of a read of the user, as a list.
  * null means GitHub sent no such header, like for a fine-grained token, so the scopes are unknown. Read-only.

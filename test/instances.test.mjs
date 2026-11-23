@@ -1,7 +1,7 @@
 // Several instances under one root: resolution, setup, pause, doctor, the board server and the MCP server.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { BOT_TOKEN } from "./fixtures/github.mjs";
 import { GARY, PROFILE, ROOT, freePort, removeDir, runner, tempDir, testEnv } from "./lib.mjs";
@@ -212,6 +212,35 @@ try {
 	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
 	t.check("doctor says when there is no format check", /ok\s+format check\s+off: the profile names no autofixCommands/.test(r.stdout), r.stdout);
 	writeFileSync(gfile, gprofile);
+
+	// What a first run needs
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor says the bot may push", /^ok\s+push access\s+widgets-bot may push to acme\/Gadgets$/m.test(r.stdout), r.stdout);
+	t.check("doctor checks git and the MCP SDK", /^ok\s+git\s+git version/m.test(r.stdout) && /^ok\s+mcp sdk\s+@modelcontextprotocol\/sdk loads/m.test(r.stdout), r.stdout);
+	t.check("doctor checks claude", /^(ok|warn)\s+claude\s/m.test(r.stdout), r.stdout);
+	t.check("doctor prints no required tools as none", /^ok\s+required tools\s+none$/m.test(r.stdout), r.stdout);
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain, extra: { FAKE_GH_REPO_ACCESS: "read" } });
+	t.check("doctor warns when the bot may not push", /^warn\s+push access\s+widgets-bot may not push to acme\/Gadgets\./m.test(r.stdout), r.stdout);
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain, extra: { FAKE_GH_REPO_ACCESS: "none" } });
+	t.check("doctor warns when the repo cannot be read", /^warn\s+push access\s+could not read acme\/Gadgets as widgets-bot/m.test(r.stdout), r.stdout);
+	const gconfig = join(root, "instances", "gadgets", "config.json");
+	const gconfigText = readFileSync(gconfig, "utf8");
+	writeFileSync(gconfig, JSON.stringify({ ...JSON.parse(gconfigText), bot: null, allowOwnTokenPushes: true }));
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor checks his own login with allowOwnTokenPushes", /^ok\s+push access\s+octocat may push to acme\/Gadgets$/m.test(r.stdout), r.stdout);
+	writeFileSync(gconfig, JSON.stringify({ ...JSON.parse(gconfigText), bot: null, allowOwnTokenPushes: false }));
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor reads no repo when no account writes", /^ok\s+push access\s+not checked: no account writes/m.test(r.stdout), r.stdout);
+	writeFileSync(gconfig, gconfigText);
+	writeFileSync(gfile, JSON.stringify({ ...JSON.parse(gprofile), requiredTools: ["mcp__logs__loadLogFile"] }));
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor names the required tools and says it cannot check them", /^skip\s+required tools\s+mcp__logs__loadLogFile\. Not checked: doctor cannot see MCP tools/m.test(r.stdout), r.stdout);
+	writeFileSync(gfile, gprofile);
+	const noClaude = env.PATH.split(delimiter).filter((d) => !existsSync(join(d, "claude"))).join(delimiter);
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain, extra: { PATH: noClaude } });
+	t.check("doctor only warns without claude, and says the headless worker needs it", /^warn\s+claude\s+.*headless worker with `claude -p`/m.test(r.stdout) && !/^fail\s+claude/m.test(r.stdout), r.stdout);
+	r = spawnSync(process.execPath, ["--import", 'data:text/javascript,Object.defineProperty(process.versions,"node",{value:"22.11.0"})', GARY, "help"], { env, encoding: "utf8" });
+	t.check("gary refuses Node below 24 with one line", r.status === 1 && r.stderr.trim() === "gary needs Node 24 or later. This is Node 22.11.0." && r.stdout === "", r);
 } finally {
 	fake.kill();
 }

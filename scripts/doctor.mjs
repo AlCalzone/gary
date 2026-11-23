@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { ROOT, TAB_ICON_MAX_BYTES, tabIconFile, autoReviewOf, escalationOf, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
-import { canReadProjects, readLogin, storedScopes } from "./lib/gh.mjs";
+import { canReadProjects, readLogin, readRepoPermissions, storedScopes } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
 
 const run = promisify(execFile);
@@ -32,8 +32,26 @@ async function boardOnPort(port) {
 	}
 }
 
-/** The checks of the install that every instance shares: the skill links and the launcher. */
+const firstLine = (text) => String(text ?? "").trim().split("\n")[0];
+
+/** The checks of the install that every instance shares: git, claude, the MCP SDK, the skill links and the launcher. */
 async function checkInstall(attempt) {
+	await attempt("git", async () => ["ok", (await run("git", ["--version"])).stdout.trim()]);
+	await attempt("claude", async () => {
+		try {
+			return ["ok", firstLine((await run("claude", ["--version"], { timeout: 20000 })).stdout)];
+		} catch {
+			return ["warn", "`claude --version` failed. The master starts a headless worker with `claude -p` where the harness has no child sessions, so it needs the claude CLI on PATH"];
+		}
+	});
+	await attempt("mcp sdk", async () => {
+		try {
+			await import("@modelcontextprotocol/sdk/server/mcp.js");
+			return ["ok", "@modelcontextprotocol/sdk loads, so the MCP server can start"];
+		} catch (e) {
+			return ["fail", `@modelcontextprotocol/sdk does not load, so the MCP server cannot start: ${firstLine(e.message)}. In a clone, run \`npm install\` in ${ROOT}`];
+		}
+	});
 	await attempt("skills", async () => {
 		if (isPluginInstall()) return ["ok", "plugin install, Claude Code loads the skills"];
 		const missing = readdirSync(join(ROOT, "skills")).filter((name) => {
@@ -122,6 +140,19 @@ async function checkInstance() {
 		} else {
 			add("bot", "ok", `no bot, ${config.allowOwnTokenPushes ? "bot routes run under your own gh login" : "bot routes become text you post yourself"}`);
 		}
+		await attempt("push access", async () => {
+			const writer = config.bot ? { which: "bot", login: config.bot.login } : config.allowOwnTokenPushes ? { which: "stored", login: config.me } : null;
+			if (!writer) return ["ok", "not checked: no account writes, because there is no bot and allowOwnTokenPushes is false"];
+			const { repo } = loadProfile();
+			let permissions;
+			try {
+				permissions = await readRepoPermissions(writer.which, repo);
+			} catch (e) {
+				return ["warn", `could not read ${repo} as ${writer.login}: ${firstLine(e.message)}`];
+			}
+			if (permissions?.push === true) return ["ok", `${writer.login} may push to ${repo}`];
+			return ["warn", `${writer.login} may not push to ${repo}. Fix PRs, pushes to PRs and format commits fail until it gets write access`];
+		});
 		await attempt("due dates", async () => {
 			const fields = loadProfile().dueDateFields;
 			const access = await canReadProjects();
@@ -185,7 +216,8 @@ async function checkInstance() {
 	}
 	await attempt("required tools", async () => {
 		const tools = loadProfile().requiredTools;
-		return ["ok", tools.length ? `the routine checks these at the start of a run: ${tools.join(", ")}` : "none"];
+		if (!tools.length) return ["ok", "none"];
+		return ["skip", `${tools.join(", ")}. Not checked: doctor cannot see MCP tools. The routine checks them at the start of a run`];
 	});
 	await checkInstall(attempt);
 

@@ -69,7 +69,7 @@ Tell him this in two or three sentences. The board logs his decisions locally: d
 
 ## 4. Check
 
-Run `gary --instance <name> doctor` and fix what it reports together with him. `gary doctor --all` checks every instance. It checks the config, the profile, the tools in `requiredTools`, `gh` access and the bot token.
+Run `gary --instance <name> doctor` and fix what it reports together with him. `gary doctor --all` checks every instance. It checks Node, `git`, `claude`, the MCP SDK, the config, the profile, `gh` access, the bot token and whether the writing account may push. It names the tools in `requiredTools` without checking them: confirm with him that those MCP servers are set up in Claude Code.
 
 ## 5. Schedule
 

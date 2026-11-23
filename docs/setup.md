@@ -3,6 +3,7 @@
 ## Requirements
 
 - Node 24 or newer
+- `git`
 - the `gh` CLI, logged in as you
 - Claude Code, in any harness that can run a scheduled session every hour
 - optional: a bot account with a token file

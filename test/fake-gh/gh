@@ -9,6 +9,8 @@
 //                          head a commit must expect
 //   GH_TOKEN               the bot token from the fixtures logs in as the bot, any other token as "someone-else"
 //   FAKE_GH_LOGIN          the stored login without GH_TOKEN, default octocat. Empty means not logged in
+//   FAKE_GH_REPO_ACCESS    what a read of repos/<owner>/<name> answers for a repo of the fixture owner: "push" (default), "read",
+//                          or "none" for a 404
 //   FAKE_GH_LOG            a file that gets one line per call, for tests that check what ran
 //   FAKE_GH_NO_PROJECTS    "1" makes every read of GitHub Projects fail like a token without the read:project scope.
 //                          A node's `projectItems` reach only a query that asks for them
@@ -62,6 +64,13 @@ if (args[1] !== "graphql") {
 	if (args.includes("-X") || args.includes("--method")) fail("fake gh refuses every write", undefined);
 	const m = /^repos\/[^/]+\/[^/]+\/actions\/runs\?head_sha=([0-9a-f]{40})/.exec(args[1]);
 	if (m) out({ workflow_runs: gh.runs[m[1]] ?? [] });
+	const repo = /^repos\/([^/]+)\/([^/?]+)$/.exec(args[1]);
+	if (repo) {
+		const access = process.env.FAKE_GH_REPO_ACCESS ?? "push";
+		if (access === "none" || repo[1].toLowerCase() !== gh.OWNER) fail("Not Found (HTTP 404)", undefined);
+		const push = access === "push";
+		out({ full_name: `${repo[1]}/${repo[2]}`, permissions: { admin: false, maintain: false, push, triage: push, pull: true } });
+	}
 	fail(`fake gh has no answer for ${args[1]}`, undefined);
 }
 
