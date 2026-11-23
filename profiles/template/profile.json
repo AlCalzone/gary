@@ -1,21 +1,51 @@
+// The facts Gary's code needs about one project. Comments and trailing commas are allowed.
+// docs/configuration.md describes every field. `gary doctor` checks this file.
 {
+	// The project's name on the board, and its repository as owner/name
 	"name": "my-project",
 	"repo": "owner/my-project",
+
+	// GitHub logins that count as "us" next to your own
 	"maintainers": [],
+	// Bot accounts whose posts count as automated, like "renovate[bot]"
 	"botLogins": [],
+	// Review bots Gary may request a review from. Only "copilot" is supported. Empty: no review bot rounds
 	"reviewBots": [],
+	// Repos of the same owner an item can be moved to, by name
 	"relatedRepos": [],
+
+	// Globs no agent may change in someone else's PR: workflows, agent instructions, dependency manifests
 	"sensitivePaths": [".github/**", "**/package.json"],
+	// Labels Gary may set and remove without a click, like the label for "waiting on the reporter"
 	"autoLabels": [],
+
+	// Commands your own bot workflows react to, by a name of your choice.
+	// "escalate" is special: it turns a discussion into an issue, like "@my-bot escalate"
 	"botCommands": {},
-	"requiredTools": [],
+	// Regular expression for the comment your bot posts after "escalate", with the issue number as its one group
+	"escalateResult": null,
+	// Bot comments that are noise, as { "name", "pattern", "origin" }. The pattern is tested against the start of the comment
 	"automatedComments": [],
+
+	// Logins whose PRs count as AI-written, next to the agents Gary detects itself
 	"aiAuthors": [],
-	"autoReviewPaths": { "config": [] },
-	"formatCommand": null,
+	// MCP tools the agents need for this project, like "mcp__my-server__my_tool"
+	"requiredTools": [],
+
+	// Format check: commands that fix formatting and lint, run on a PR's changed files.
+	// An entry is a command with {files}, or { "run": "…", "files": ["**/*.ts"] } for one file type.
+	// Example: ["npx prettier --write --ignore-unknown {files}"]. Empty: no format check and no "Format" card
 	"autofixCommands": [],
+	// One command that prepares a fresh worktree for them, like "npm ci"
 	"autofixSetup": null,
+	// The command a contributor runs to format, named in the automatic first review's offer
+	"formatCommand": null,
+
+	// Paths the automatic first review may cover, per kind of PR. It is off unless config.json turns it on
+	"autoReviewPaths": { "config": [] },
+
+	// "conventional" when commit messages follow conventional commits, otherwise null
 	"commitFormat": null,
+	// How PRs are merged: "squash", "merge" or "rebase"
 	"mergeMethod": "squash",
-	"escalateResult": null
 }

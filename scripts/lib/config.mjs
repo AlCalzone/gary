@@ -4,6 +4,7 @@
 //   home:     the instance directory root/instances/<name>, holds config.json, an optional personal.md and state/
 //   profile:  the project directory named by `profile` in config.json, holds profile.json, rules/ and templates/
 // The instance comes from --instance, then GARY_INSTANCE, then the working directory, then the only instance.
+import { readJsoncFile } from "./jsonc.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
@@ -272,7 +273,7 @@ export function instanceNames() {
 
 function readJsonSync(file) {
 	try {
-		return JSON.parse(readFileSync(file, "utf8"));
+		return file.endsWith("profile.json") ? readJsoncFile(file) : JSON.parse(readFileSync(file, "utf8"));
 	} catch {
 		return null;
 	}
@@ -398,7 +399,8 @@ function readSettings(file, what) {
 	}
 	let data;
 	try {
-		data = JSON.parse(readFileSync(file, "utf8"));
+		// A profile.json may carry comments. A config.json may not, because accepted setting proposals rewrite it
+		data = file.endsWith("profile.json") ? readJsoncFile(file) : JSON.parse(readFileSync(file, "utf8"));
 	} catch (e) {
 		throw new SettingsError(`${what} ${file} is not valid JSON: ${e.message}`);
 	}

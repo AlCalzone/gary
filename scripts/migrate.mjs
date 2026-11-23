@@ -3,6 +3,7 @@
 //   - the root config.json gets the port, from the first instance that had one
 //   - every stored item without `repo` gets the instance's repo
 //   - a server-token in an instance's state moves to <root>/state/
+import { parseJsonc } from "./lib/jsonc.mjs";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { writeAtomic } from "./lib/board-store.mjs";
@@ -10,7 +11,7 @@ import { DEFAULT_PORT, hasFlatLayout, instanceDir, instanceNames, instancePath, 
 
 function readJson(file) {
 	try {
-		return JSON.parse(readFileSync(file, "utf8"));
+		return parseJsonc(readFileSync(file, "utf8"));
 	} catch {
 		return null;
 	}

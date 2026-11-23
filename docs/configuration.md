@@ -31,6 +31,8 @@ The limits in [safety.md](safety.md) cannot be changed by a profile or by `perso
 - `rules/issues.md`: how issues and discussions are triaged.
 - `templates/*.md`: canned texts, like a request for logs.
 
+`profile.json` may carry `//` comments and trailing commas. The template explains every field in a comment.
+
 Fields of `profile.json`:
 
 | Field | Meaning |

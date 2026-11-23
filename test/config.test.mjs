@@ -1,4 +1,5 @@
 // The instance library: loadInstance, listInstances, repo lookups, the root config, scoping and live settings.
+import { parseJsonc, setJsoncValue, stripJsonc } from "../scripts/lib/jsonc.mjs";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -148,6 +149,8 @@ t.check("escalateResult refuses nested quantifiers", er("^(?:a+)+#(\\d+)").some(
 t.check("escalateResult refuses other values and long patterns", [er(4), er(""), er(`(${"a".repeat(500)})`)].every((e) => e.some((x) => /at most 500/.test(x))));
 t.check("the link needs the field and a bot", c.escalationOf({ bot: { login: "b" } }, { escalateResult: "#(\\d+)" }).enabled && !c.escalationOf({ bot: null }, { escalateResult: "#(\\d+)" }).enabled && !c.escalationOf({ bot: { login: "b" } }, {}).enabled);
 t.check("formatCommand is one line without backticks", c.validateProfile({ ...gprofile, formatCommand: "npm run fmt" }).length === 0 && c.validateProfile({ ...gprofile, formatCommand: null }).length === 0 && ["`rm -rf`", "a\nb", "", 5, "x".repeat(201)].every((v) => c.validateProfile({ ...gprofile, formatCommand: v }).some((e) => /"formatCommand" must be/.test(e))));
+t.check("JSONC: comments and trailing commas are dropped, strings are kept", JSON.stringify(parseJsonc('// a\n{ "u": "http://x/*y*/", /* b */ "l": [1, 2,], "s": ",]", }')) === '{"u":"http://x/*y*/","l":[1,2],"s":",]"}' && stripJsonc("{\n/* a\nb */\n}").split("\n").length === 4);
+t.check("JSONC: a value is replaced in place and its comment stays", setJsoncValue('{\n\t// c\n\t"repo": "a/b", // d\n\t"x": []\n}', "repo", "o/n") === '{\n\t// c\n\t"repo": "o/n", // d\n\t"x": []\n}');
 const af = (fields) => c.validateProfile({ ...gprofile, autofixCommands: [], autofixSetup: null, ...fields });
 t.check("autofixCommands and autofixSetup take commands with their placeholders", af({ autofixCommands: ["npx prettier --write {files}"], autofixSetup: "npm ci" }).length === 0 && af({}).length === 0);
 t.check("an autofix command may run on the whole project or on the files its globs match", af({ autofixCommands: ["npm run lint:fix", { run: "npx eslint --fix {files}", files: ["**/*.ts"] }] }).length === 0);
@@ -159,7 +162,7 @@ t.check("mergeMethod is squash, merge or rebase, default squash", ["squash", "me
 t.check("commitFormat is null or conventional", c.validateProfile({ ...gprofile, commitFormat: "conventional" }).length === 0 && c.validateProfile({ ...gprofile, commitFormat: null }).length === 0 && ["angular", "", 1].every((v) => c.validateProfile({ ...gprofile, commitFormat: v }).some((e) => /"commitFormat" must be null or one of "conventional"/.test(e))) && c.PROFILE_DEFAULTS.commitFormat === null);
 t.check("the defaults have no format check", JSON.stringify(c.PROFILE_DEFAULTS.autofixCommands) === "[]" && c.PROFILE_DEFAULTS.autofixSetup === null);
 t.check("the template profile is valid and carries the new fields", (() => {
-	const tpl = JSON.parse(readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8"));
+	const tpl = parseJsonc(readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8"));
 	return c.validateProfile(tpl).length === 0 && JSON.stringify(tpl.autoReviewPaths) === '{"config":[]}' && tpl.formatCommand === null && JSON.stringify(tpl.autofixCommands) === "[]" && tpl.autofixSetup === null && tpl.commitFormat === null && tpl.mergeMethod === "squash";
 })());
 // A broken autoReview keeps the last valid settings, like every other field

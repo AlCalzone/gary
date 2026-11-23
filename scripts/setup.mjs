@@ -1,6 +1,7 @@
 // gary setup: creates an instance under the root with config.json and state/, and the shared personal.md.
 // It asks for missing values in a terminal. Elsewhere it needs them as flags.
 // It also moves the layout from before instances into instances/<name>.
+import { readJsoncFile, setJsoncValue } from "./lib/jsonc.mjs";
 import { execFile } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -67,7 +68,7 @@ function migrateFlat(report) {
 	if (config.checkout) config.checkout = abs(config.checkout);
 	if (config.bot?.tokenFile) config.bot.tokenFile = abs(config.bot.tokenFile);
 	const profile = resolve(expandHome(config.profile ?? ""));
-	const repo = JSON.parse(readFileSync(join(profile, "profile.json"), "utf8")).repo;
+	const repo = readJsoncFile(join(profile, "profile.json")).repo;
 	const name = nameFromRepo(repo);
 	if (!INSTANCE_NAME.test(name)) throw new Error(`Cannot name an instance after ${repo}. Move ${root}/config.json by hand.`);
 	const dir = instanceDir(name);
@@ -248,8 +249,7 @@ export async function main(argv) {
 			if (existsSync(dir) && readdirSync(dir).length && !o.force) {
 				throw new Error(`${dir} exists but holds no profile.json. Pass --force to fill it from the template.`);
 			}
-			const data = JSON.parse(readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8"));
-			Object.assign(data, { name: o.name ?? basename(repo), repo, maintainers: [me] });
+			const data = { ...readJsoncFile(join(ROOT, "profiles", "template", "profile.json")), name: o.name ?? basename(repo), repo, maintainers: [me] };
 			profile = dir;
 			created.push(["profile", dir, data]);
 		}
@@ -270,7 +270,7 @@ export async function main(argv) {
 		}
 
 		// Instance name, and no second instance for the same repo or checkout
-		const repo = created.length ? created[0][2].repo : JSON.parse(readFileSync(join(profile, "profile.json"), "utf8")).repo;
+		const repo = created.length ? created[0][2].repo : readJsoncFile(join(profile, "profile.json")).repo;
 		const name = explicitInstance() ?? nameFromRepo(repo);
 		if (!INSTANCE_NAME.test(name)) throw new Error(`"${name}" is not a valid instance name. Use lower case letters, digits and dashes, at most 40.`);
 		const dir = instanceDir(name);
@@ -291,12 +291,15 @@ export async function main(argv) {
 			errors.push(...validateProfile(data).map((e) => `profile: ${e}`));
 		}
 		// An existing profile is checked strictly too, so a typo in it gets caught before the first run
-		if (!created.length) errors.push(...validateProfile(JSON.parse(readFileSync(join(profile, "profile.json"), "utf8"))).map((e) => `profile: ${e}`));
+		if (!created.length) errors.push(...validateProfile(readJsoncFile(join(profile, "profile.json"))).map((e) => `profile: ${e}`));
 		if (errors.length) throw new Error(`The settings are invalid:\n- ${errors.join("\n- ")}`);
 
 		for (const [, dir, data] of created) {
 			cpSync(join(ROOT, "profiles", "template"), dir, { recursive: true, force: false, errorOnExist: false });
-			writeFileSync(join(dir, "profile.json"), JSON.stringify(data, null, "\t") + "\n");
+			// Fill in the three known values in the template's text, so its comments stay
+			let text = readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8");
+			for (const key of ["name", "repo", "maintainers"]) text = setJsoncValue(text, key, data[key]);
+			writeFileSync(join(dir, "profile.json"), text);
 		}
 		mkdirSync(join(dir, "state"), { recursive: true });
 		writeFileSync(join(dir, "config.json"), JSON.stringify(config, null, "\t") + "\n");
