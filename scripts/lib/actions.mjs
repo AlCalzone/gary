@@ -618,8 +618,8 @@ const sameLogin = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").to
 
 /**
  * Requests the maintainer's review as the writing identity, with `union: true` so other requested reviewers stay.
- * It sets `ctx.skipped` and sends nothing when he wrote the PR, when the writing identity is his own login, when the
- * PR is not open or is a draft, and when his review is already requested.
+ * It sets `ctx.skipped` and sends nothing when the maintainer wrote the PR, when the writing identity is their own login, when the
+ * PR is not open or is a draft, and when the maintainer's review is already requested.
  */
 async function requestMaintainerReview(ctx) {
 	if (ctx.params.as !== undefined) throw new Error("params.as is only for a Copilot review. The writing identity requests the maintainer's review");

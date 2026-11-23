@@ -51,7 +51,7 @@ async function context(prArg) {
 	const number = Number(prArg);
 	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("--pr must be a PR number");
 	const instance = loadInstance(instanceName());
-	// Last-good settings keep the board up. They are no base for posting on his behalf
+	// Last-good settings keep the board up. They are no base for posting on the maintainer's behalf
 	if (instance.settingsError) throw new Refused("settings", `The settings of ${instance.name} are invalid, so nothing is posted: ${instance.settingsError}`);
 	const itemId = prItemId(number);
 	const records = await readAutoReviews();
@@ -197,7 +197,7 @@ async function acceptOffer(c, { by, at, run }) {
 	const joined = maintainerJoinedAt(entry, { maintainers: maintainerLogins(), ownReviewUrls: c.record.reviews.map((r) => r.url) });
 	if (Date.parse(joined ?? "") > Date.parse(offer.at)) {
 		await updateAutoReview(c.itemId, (cur) => ({ ...cur, offer: { ...cur.offer, state: "closed", closedAt: new Date().toISOString() } }));
-		throw new Refused("maintainer-active", `A maintainer joined PR #${c.number} at ${joined}. The offer is closed, and the format card is his.`);
+		throw new Refused("maintainer-active", `A maintainer joined PR #${c.number} at ${joined}. The offer is closed, and the format card is the maintainer's.`);
 	}
 	if (entry.facts.maintainerCanModify !== true) throw new Refused("cannot-push", `PR #${c.number} no longer allows edits by maintainers.`);
 

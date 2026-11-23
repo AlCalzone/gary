@@ -30,7 +30,7 @@ const POSTING_TYPES = new Set(["reply", "request_logs", "reopen", "review", "fol
 
 const isString = (v) => typeof v === "string" && v.trim().length > 0;
 
-// He runs every route of a contributions instance on GitHub himself: the board copies the text and opens the thread
+// The maintainer runs every route of a contributions instance on GitHub themself: the board copies the text and opens the thread
 const CONTRIBUTION_ROUTES = ["reply", "review", "close", "open"];
 // Fields that come from a profile, a bot, a checkout or an agent job, none of which a contributions instance has
 const MAINTAINER_FIELDS = ["wants", "wantsReason", "pushed", "takenOver", "autofix", "fixFor", "rounds", "needsHardware"];
@@ -46,10 +46,10 @@ function checkContribution(item, err) {
 		if (!isObject(r)) return;
 		const where = `routes[${i}] (${r.type})`;
 		if (!CONTRIBUTION_ROUTES.includes(r.type)) err("contribution-route", `${where}: a contributions instance offers only ${CONTRIBUTION_ROUTES.join(", ")}, because Gary writes nothing to GitHub there`);
-		else if (r.as !== "me") err("contribution-as", `${where}: every route of a contributions instance is as "me", a text he posts himself`);
+		else if (r.as !== "me") err("contribution-as", `${where}: every route of a contributions instance is as "me", a text the maintainer posts themself`);
 		const params = isObject(r.params) ? r.params : {};
 		if (params.alsoLabel !== undefined || params.alsoAnswer !== undefined) err("contribution-part", `${where}: alsoLabel and alsoAnswer need a bot, which a contributions instance has none of`);
-		if (r.type === "review" && Array.isArray(params.comments) && params.comments.length) err("contribution-comments", `${where}: a review he posts himself carries no inline comments. Put them into the text`);
+		if (r.type === "review" && Array.isArray(params.comments) && params.comments.length) err("contribution-comments", `${where}: a review the maintainer posts themself carries no inline comments. Put them into the text`);
 	});
 }
 
@@ -59,7 +59,7 @@ function checkContribution(item, err) {
  * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known. `sensitive` says whether
  * the PR's snapshot entry lists sensitive files: true, false, or undefined without an entry. `sensitiveOurs` says
  * that the entry also marks the PR as ours alone. `kind` is the instance's kind: a contributions instance allows the
- * category `fyi` and only routes he runs on GitHub himself.
+ * category `fyi` and only routes the maintainer runs on GitHub themself.
  */
 export function validateItem(id, doc, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false, kind = "maintainer" }) {
 	const errors = [];
@@ -258,7 +258,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 				if (params.event === "approve" && hasValidThread) warn("approve-valid-thread", `${where}: approves while a thread is judged valid`);
 				// GitHub refuses a change request on one's own PR, so a bot's PR keeps a comment review
 				if (params.event === "comment" && item.authorType !== "bot") {
-					warn("review-comment-event", `${where}: a review with something for the contributor is a change request. Use event "request_changes", or "approve" for a clean PR. He can still pick Comment on the card`);
+					warn("review-comment-event", `${where}: a review with something for the contributor is a change request. Use event "request_changes", or "approve" for a clean PR. The maintainer can still pick Comment on the card`);
 				}
 				break;
 			}

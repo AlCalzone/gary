@@ -1,6 +1,6 @@
 // The parts of a contributions instance that need no GitHub call: item ids, the repo filter, the search queries and
 // the facts the classification reads. A contributions instance follows the maintainer's own threads in repos outside
-// his maintainer instances. See "Contributions" in SPEC.md.
+// their maintainer instances. See "Contributions" in SPEC.md.
 import { createHash } from "node:crypto";
 import { repoMatches } from "./config.mjs";
 import { buildTimeline, speakerFacts } from "./facts.mjs";
@@ -64,8 +64,8 @@ export function scopeQualifiers({ include = [], exclude = [], blocked = new Set(
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 /**
- * The searches of one snapshot, in the order the cap keeps them: who waits on him first, then his own work, then the
- * threads he took part in, then what closed in the last days. `type` is the GraphQL search type, `reason` the
+ * The searches of one snapshot, in the order the cap keeps them: who waits on the maintainer first, then the maintainer's own work, then the
+ * threads the maintainer took part in, then what closed in the last days. `type` is the GraphQL search type, `reason` the
  * involvement a hit carries. `cutoff` and `closedSince` are times in ms.
  */
 export function contributionSearches({ cutoff, closedSince }) {
@@ -160,7 +160,7 @@ export function mentions(body, me) {
 	return new RegExp(`(^|[^\\w-])@${me.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(unquoted(body));
 }
 
-// A comment asks him when it names him or its last line ends in a question mark
+// A comment asks the maintainer when it names them or its last line ends in a question mark
 const asks = (body, me) => mentions(body, me) || /\?\s*$/.test(unquoted(body).split("\n").filter((l) => l.trim()).at(-1) ?? "");
 
 const isBotAuthor = (author) => author?.__typename === "Bot" || low(author?.login).endsWith("[bot]") || ["copilot", "copilot-swe-agent"].includes(low(author?.login));
@@ -170,9 +170,9 @@ const MAX_EXCERPT = 300;
 const NEWS_STATUS = { MergedEvent: "merged", ClosedEvent: "closed", ReopenedEvent: "reopened" };
 
 /**
- * The events after `after` (ms) that may be news for him, oldest first, as `{ at, by, kind, state?, excerpt?, mentionsMe?, asksMe? }`.
- * Code drops the mechanical noise: his own events, bots, comments that only agree, label changes, draft and ready
- * flips, force-pushes and CI. Whether the rest matters for him is the classification's call.
+ * The events after `after` (ms) that may be news for the maintainer, oldest first, as `{ at, by, kind, state?, excerpt?, mentionsMe?, asksMe? }`.
+ * Code drops the mechanical noise: the maintainer's own events, bots, comments that only agree, label changes, draft and ready
+ * flips, force-pushes and CI. Whether the rest matters for the maintainer is the classification's call.
  */
 export function newsOf(kind, node, { me, after }) {
 	const out = [];
@@ -212,7 +212,7 @@ export function newsOf(kind, node, { me, after }) {
 
 // The kinds of involvement, in the order the facts list them
 export const INVOLVEMENT = ["author", "assignee", "review_requested", "reviewer", "commenter", "mentioned"];
-// He has a part in these threads even when nothing new happened
+// The maintainer has a part in these threads even when nothing new happened
 const ACTIVE = new Set(["author", "assignee", "review_requested"]);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -234,9 +234,9 @@ function timelineEvents(kind, node) {
 
 /**
  * The facts of one thread for a contributions instance. `reasons` are the involvements the searches found, `gotIt` the
- * time of his last "Got it" on the board, or null. `ctx` is `{ me, us, patterns }` for the sides of the timeline.
+ * time of the maintainer's last "Got it" on the board, or null. `ctx` is `{ me, us, patterns }` for the sides of the timeline.
  * Returns the facts: the timeline and who waits, `involvement`, `lookedAt` with `lookedVia`, `news`, and for PRs
- * the review and CI state. `quiet` is true when nothing is new for him and he has no active part in the thread.
+ * the review and CI state. `quiet` is true when nothing is new for the maintainer and they have no active part in the thread.
  */
 export function contributionFacts(kind, node, { me, ctx, reasons = [], gotIt = null, ci = "none", now = Date.now() }) {
 	const comments = node.timelineComments;
@@ -288,7 +288,7 @@ function closedFacts(kind, node, state) {
 	return { at: ev?.createdAt ?? node.closedAt ?? null, by: ev?.actor?.login ?? null, how };
 }
 
-// The state of a PR that decides what he does next on his own PR or a PR he reviews
+// The state of a PR that decides what the maintainer does next on their own PR or a PR they review
 function prFacts(node, { me, ci, requested }) {
 	const isMe = (login) => low(login) === low(me);
 	const latest = new Map();

@@ -173,7 +173,7 @@ export function oursAlone(node, { me, bot = null, garyFix = false, ai } = {}) {
 	const total = node.allCommits?.totalCount;
 	if (!commits.length || !Number.isInteger(total) || total > commits.length) return no(`its commit list is incomplete: ${commits.length} of ${total ?? "an unknown number of"} commits read`);
 	const isAgent = agentMatcher(ai);
-	// `ourIds` holds the names and emails of our own commits on this PR, so a trailer with the maintainer's real name counts as his
+	// `ourIds` holds the names and emails of our own commits on this PR, so a trailer with the maintainer's real name counts as the maintainer's
 	const ourIds = new Set();
 	for (const { commit } of commits) {
 		for (const person of [commit?.author, commit?.committer]) {

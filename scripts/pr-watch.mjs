@@ -9,7 +9,7 @@
 //     drive action doc claimed by --run. Without a review bot in the profile it requests nothing and answers `skipped`.
 //   gary pr-watch done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]
 //     Ends a round without a next review bot round. The PR goes back to waiting for the maintainer's feedback.
-//     With --request-maintainer the writing identity then requests his review.
+//     With --request-maintainer the writing identity then requests the maintainer's review.
 // Exit code 3 means a rule refused, 4 that the instance is paused.
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
@@ -85,7 +85,7 @@ async function round(argv) {
 	const at = new Date(out.at).toISOString();
 	const unhandled = unhandledFeedback(out.by, { drive: c.drive, feedback: { ...feedbackOf(c), [out.by === "me" ? "lastMeAt" : "lastOthersAt"]: at }, item: c.item, record: c.record });
 	if (!unhandled) throw new Refused(`A round already handled the feedback on PR #${c.number} up to ${at}.`);
-	// Record refused feedback of his, so the watcher prints it again once the hold ends
+	// Record refused feedback of the maintainer's, so the watcher prints it again once the hold ends
 	const hold = async (held) => {
 		if (out.by !== "me" || dryRun) return;
 		await mkdir(driveDir(), { recursive: true });

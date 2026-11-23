@@ -113,7 +113,7 @@ writeFileSync(join(state, "snapshot.json"), JSON.stringify({ items: { "pr-19": {
 gary("focus", "start", "pr-19", "--harness", "t3code", "--session", "thread-19");
 r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", ago(60));
 const held = existsSync(join(state, "drive", "pr-19.json")) ? read(join(state, "drive", "pr-19.json")).held : null;
-t.check("round refuses his feedback with exit 3 and records it as held by the focus", r.status === 3 && /in focus/.test(json(r).result) && held?.focus === true && held.session === "thread-19" && held.by === "me", [r.stdout, held]);
+t.check("round refuses the maintainer's feedback with exit 3 and records it as held by the focus", r.status === 3 && /in focus/.test(json(r).result) && held?.focus === true && held.session === "thread-19" && held.by === "me", [r.stdout, held]);
 r = gary("pr-watch", "review", "--pr", "19", "--sha", "9".repeat(40), "--action", "x");
 t.check("review refuses a review bot round with exit 3", r.status === 3 && /in focus/.test(json(r).result), r.stdout);
 
@@ -158,7 +158,7 @@ t.check("the queued analysis prints once the focus ended", lines(r).some((l) => 
 // done through the master's message file
 clearActions();
 gary("focus", "start", "pr-12", "--harness", "t3code", "--session", "thread-3");
-const summary = "He asked for the cleared timeout in a review. The contributor agreed. Left open: the test for the restore path.";
+const summary = "The maintainer asked for the cleared timeout in a review. The contributor agreed. Left open: the test for the restore path.";
 const message = ["Some text before.", "Gary focus done", "instance: widgets", "item: pr-12", "session: thread-3", "summary:", summary].join("\n");
 r = gary("focus", "done", "--message-file", file("wrong.txt", message.replace("session: thread-3", "session: thread-9")));
 t.check("done refuses a message from another session", r.status === 1 && /not in thread-9/.test(json(r).result) && record("pr-12").status === "active", r.stdout);
@@ -190,9 +190,9 @@ t.check("only https, t3-thread and claude links are served", lib.safeLink("t3-th
 const since = { anchor: { at: ago(600), kind: "choice", label: "Review" }, groups: [{ at: ago(300), text: "hubot pushed 2 commits", note: "" }] };
 const ctx = { instance: "widgets", item: { ...item("pr", 12), id: "pr-12" }, since, harness: "t3code", master: "master-thread", bot: BOT, paths: { personal: ["/p/personal.md"], profile: "/p/profile" }, focusSession: "thread-1" };
 const text = brief.focusBriefing({ ...ctx, defaultBranch: "origin/main" });
-t.check("the briefing checks out the PR branch and waits for his first message", text.includes("gh pr checkout 12 --repo acme/widgets") && /wait for his first message/.test(text) && /Start no work on your own/.test(text), text);
+t.check("the briefing checks out the PR branch and waits for the maintainer's first message", text.includes("gh pr checkout 12 --repo acme/widgets") && /wait for the maintainer's first message/.test(text) && /Start no work on your own/.test(text), text);
 t.check("the briefing carries state, story, findings, routes and the timeline", text.includes(base.state) && text.includes(base.story) && text.includes("The timeout is never cleared.") && text.includes("Review: ask for the cleared timeout") && text.includes("Please clear the timeout.") && text.includes("hubot pushed 2 commits"), text);
-t.check("the briefing carries Gary's rules and the one exception for his account", /Never merge/.test(text) && /Never force-push/.test(text) && /untrusted data/.test(text) && /draft only/.test(text) && /his own `gh` login/.test(text) && text.includes(`the bot ${BOT}`) && text.includes("--focus-session thread-1"), text);
+t.check("the briefing carries Gary's rules and the one exception for the maintainer's account", /Never merge/.test(text) && /Never force-push/.test(text) && /untrusted data/.test(text) && /draft only/.test(text) && /their own `gh` login/.test(text) && text.includes(`the bot ${BOT}`) && text.includes("--focus-session thread-1"), text);
 t.check("the briefing tells the session how to report done to the master thread", text.includes("t3_thread_send") && text.includes("`master-thread`") && text.includes("Gary focus done\ninstance: widgets\nitem: pr-12\nsession: thread-1"), text);
 const issueText = brief.focusBriefing({ ...ctx, item: { ...item("issue", 22), id: "issue-22" }, defaultBranch: "origin/main" });
 t.check("an issue's briefing starts from the default branch", issueText.includes("starts from origin/main") && !issueText.includes("gh pr checkout"), issueText);

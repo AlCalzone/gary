@@ -490,7 +490,7 @@ const SEARCH_PAGE = 25;
 // Closed threads stay this many days, at most the active window, so their news can reach the board
 const CLOSED_DAYS = 7;
 
-/** The context of the facts timeline for a contributions instance: only the maintainer himself is "us". */
+/** The context of the facts timeline for a contributions instance: only the maintainer themself is "us". */
 function contributionsContext(me) {
 	return { us: [me.toLowerCase()], patterns: [], me, maintainers: [me.toLowerCase()] };
 }
@@ -503,7 +503,7 @@ const contributionClassifier = (me) => (author) => {
 	return "contributor";
 };
 
-/** The time of his last "Got it" on the stored item, or null. */
+/** The time of the maintainer's last "Got it" on the stored item, or null. */
 async function gotItOf(id) {
 	const item = await readDoc(join(boardDir(), "items", id + ".json"));
 	return typeof item?.gotIt?.at === "string" ? item.gotIt.at : null;
@@ -599,7 +599,7 @@ export function cutMessage(cut) {
 	return `The snapshot stopped at maxItems ${cut.max}. The search "${cut.search}" matched ${cut.matched} threads, up to ${cut.left} of them are left out.${later} Narrow "include", add repos to "exclude" or raise "maxItems".`;
 }
 
-/** gary snapshot for a contributions instance: his own threads in every repo outside the maintainer instances. */
+/** gary snapshot for a contributions instance: the maintainer's own threads in every repo outside the maintainer instances. */
 async function contributionsMain(config, out) {
 	const me = config.me;
 	const now = Date.now();
@@ -617,7 +617,7 @@ async function contributionsMain(config, out) {
 	for (const [id, { kind, node, reasons }] of hits) {
 		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now });
 		const closed = item.facts.closed;
-		// A thread he closed himself, or one that closed before he last looked, holds no news
+		// A thread the maintainer closed themself, or one that closed before they last looked, holds no news
 		if (closed && (String(closed.by ?? "").toLowerCase() === me.toLowerCase() || (item.facts.lookedAt && !(Date.parse(closed.at) > Date.parse(item.facts.lookedAt))))) continue;
 		const old = baseline[id];
 		const entry = {

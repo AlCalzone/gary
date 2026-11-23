@@ -66,7 +66,7 @@ export function activityOf(kind, node, ctx, { before, ci, at } = {}) {
 	return { events: events.slice(-MAX_ACTIVITY), openThreads: openThreads.slice(-MAX_OPEN_THREADS), ci: seen.slice(-MAX_CI) };
 }
 
-// A comment asks the maintainer something when it mentions him or its last line ends in a question mark
+// A comment asks the maintainer something when it mentions the maintainer or its last line ends in a question mark
 function asksMe(body, me) {
 	const text = String(body ?? "").trim();
 	if (!text) return false;
@@ -90,9 +90,9 @@ export const PUSH_JOBS = { take_over: "Take over", revise: "Change", address_rev
 const isChoice = (a) => a && typeof a.createdAt === "string" && Number.isFinite(Date.parse(a.createdAt)) && !(a.params && typeof a.params === "object" && a.params.by !== undefined);
 
 /**
- * The anchor of the timeline for one item: `{ at, kind: "choice", label }` for his newest choice, else
- * `{ at, kind: "opened" }` for the last time he opened the dialog, else null. `actions` are the item's action docs.
- * A choice is a click recorded as an action doc, or `item.handled` for a prefill he used.
+ * The anchor of the timeline for one item: `{ at, kind: "choice", label }` for the maintainer's newest choice, else
+ * `{ at, kind: "opened" }` for the last time the maintainer opened the dialog, else null. `actions` are the item's action docs.
+ * A choice is a click recorded as an action doc, or `item.handled` for a prefill the maintainer used.
  */
 export function sinceAnchor(item, actions = []) {
 	const choices = [];

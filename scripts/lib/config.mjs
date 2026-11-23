@@ -21,7 +21,7 @@ const REPO_NAME = /^[\w.-]{1,100}$/;
 export const INSTANCE_KINDS = ["maintainer", "contributions"];
 export const DEFAULT_PORT = 7878;
 
-// A contributions instance follows the maintainer's own threads outside the repos of his maintainer instances.
+// A contributions instance follows the maintainer's own threads outside the repos of their maintainer instances.
 // It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it
 export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150 };
 export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", ...Object.keys(CONTRIBUTIONS_DEFAULTS)];
@@ -80,7 +80,7 @@ export const CONFIG_DEFAULTS = {
 	escalateAs: "prefill",
 };
 
-// Who posts the profile's escalate command on a discussion: the server under the maintainer's login, or he himself after a copy
+// Who posts the profile's escalate command on a discussion: the server under the maintainer's login, or the maintainer themself after a copy
 export const ESCALATE_AS = ["me", "prefill"];
 
 export const FIX_REVIEWERS = ["copilot", "off"];

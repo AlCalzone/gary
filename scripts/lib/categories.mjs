@@ -2,7 +2,7 @@
 // Items written before categories carry `section`. normalizeCategory maps it, so those items stay on the board until the routine writes them again.
 
 export const CATEGORIES = ["act", "unblock", "land", "decide"];
-// A contributions instance adds `fyi`: news for him on a thread he follows, and nothing to do
+// A contributions instance adds `fyi`: news for the maintainer on a thread they follow, and nothing to do
 export const FYI = "fyi";
 
 /** The categories an item of an instance of `kind` may carry. */

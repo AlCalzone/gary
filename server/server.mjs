@@ -788,7 +788,7 @@ function shim(token, info, version) {
   // Board-only helper of the local server: the maintainer, dry-run mode and the instances
   const board = {
     ...INFO,
-    // Reports the use of a route he does on GitHub himself, for the decision log. Failures stay quiet
+    // Reports the use of a route the maintainer does on GitHub themself, for the decision log. Failures stay quiet
     async decision(body) {
       try { await api("/api/decision", scoped(body)); } catch { /* the log entry is lost, nothing else */ }
     },
@@ -994,8 +994,8 @@ export async function startBoardServer({
 	}
 
 	/**
-	 * Why the watch holds back the round for his feedback on a bot PR: `{ feedbackAt, feedbackKind, lastActiveAt, until }`
-	 * while its origin session was active in the last 30 minutes and his feedback is unhandled, or null. The feedback is
+	 * Why the watch holds back the round for the maintainer's feedback on a bot PR: `{ feedbackAt, feedbackKind, lastActiveAt, until }`
+	 * while its origin session was active in the last 30 minutes and the maintainer's feedback is unhandled, or null. The feedback is
 	 * the snapshot's or the one a refused round recorded in the drive file's `held`. `feedbackKind` is "review",
 	 * "comment" or null when the snapshot does not know it.
 	 */
@@ -1109,7 +1109,7 @@ export async function startBoardServer({
 			const f = focusStateOf(focusRecords[id], (actionsOf.get(id) ?? []).filter((a) => a.action === "focus"));
 			if (f) focuses.set(id, f);
 		}
-		// What happened on GitHub since his last choice on the item, for the timeline at the top of the dialog
+		// What happened on GitHub since the maintainer's last choice on the item, for the timeline at the top of the dialog
 		const sinceOf = (id, data) => sinceSummary(fixSources.snapshot[id]?.activity, sinceAnchor(data, actionsOf.get(id)), { me: instance.config.me, bot: instance.config.bot?.login, actions: actionsOf.get(id) });
 		return items.map(({ id, data: stored }) => [id, withSnapshotFields(id, normalizeCategory(stored))]).map(([id, data]) => ({
 			...data,
@@ -1126,7 +1126,7 @@ export async function startBoardServer({
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),
 			...(typeof data.hint === "string" && { hint: servedHint(data) }),
-			// Every finding is served with the key his answers name it by
+			// Every finding is served with the key the maintainer's answers name it by
 			...(Array.isArray(data.findings) && { findings: data.findings.map((f, i) => (isObject(f) ? { ...f, key: findingKey(f, i) } : f)) }),
 			routes: routesOf(data).map((route) => {
 				const hash = draftHash(route, data);
@@ -1137,7 +1137,7 @@ export async function startBoardServer({
 					const done = def.params(route) ? partDone[p].get(`${name}|${id}|${route.id}|${partHash(p, route, data)}`) : undefined;
 					if (done) parts[def.doneField] = done;
 				}
-				// Serve the mark only for the draft he used
+				// Serve the mark only for the draft the maintainer used
 				const mark = opened[id]?.[route.id];
 				const used = mark?.draftHash === hash && typeof mark.at === "string" ? { opened: { at: mark.at } } : {};
 				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...used, ...parts };
@@ -1381,14 +1381,14 @@ export async function startBoardServer({
 
 	const itemFile = (name, itemId) => join(served.get(name).board, "items", itemId + ".json");
 
-	// The `as: "me"` buttons he used: `{ <itemId>: { <routeId>: { at, draftHash, text } } }`
+	// The `as: "me"` buttons the maintainer used: `{ <itemId>: { <routeId>: { at, draftHash, text } } }`
 	const openedFile = (name) => join(served.get(name).state, "opened.json");
 	const readOpened = async (name) => {
 		const data = await readJson(openedFile(name));
 		return isObject(data) ? data : {};
 	};
 
-	/** Records that he used the prefill button of `route` with `text`. Drops the item's marks for drafts that are gone. */
+	/** Records that the maintainer used the prefill button of `route` with `text`. Drops the item's marks for drafts that are gone. */
 	async function markOpened(name, itemId, item, route, text) {
 		const file = openedFile(name);
 		await withLock(docLocks, file, async () => {
@@ -1771,7 +1771,7 @@ export async function startBoardServer({
 	/**
 	 * Reads one item from GitHub, read-only, and stores what changed: `handled.verified`, `live` for a closed or
 	 * merged thread, and the GitHub fields the page shows. Nothing the agent wrote changes.
-	 * With `markedAt`, the time he opened the item on GitHub from the board, a review or comment of his after both
+	 * With `markedAt`, the time the maintainer opened the item on GitHub from the board, a review or comment of theirs after both
 	 * that time and `reviewedAt` becomes `visited` and queues one reanalyze.
 	 */
 	async function handleRefresh(body) {
@@ -1834,7 +1834,7 @@ export async function startBoardServer({
 		});
 		if (!next) return [200, { ok: false, result: OUTDATED, outdated: true }];
 		const queued = visit ? await queueVisitAnalysis(name, itemId, visit) : false;
-		// He can post the escalate command himself and then return to the board
+		// The maintainer can post the escalate command themself and then return to the board
 		if (next.kind === "discussion" && state === "closed") void linkNow(name, itemId);
 		schedulePush(name, "items");
 		return [200, { ok: true, result: { state, checkedAt, ...(next.handled && { verified: next.handled.verified }), ...(next.visited && { visited: next.visited }), ...(queued && { queued: true }) } }];
@@ -1849,7 +1849,7 @@ export async function startBoardServer({
 	const VISIT_WORDS = { approved: "approved the PR", changes_requested: "requested changes" };
 
 	/**
-	 * Queues one reanalyze for his review or comment on GitHub. It queues nothing while focus holds the item, while an
+	 * Queues one reanalyze for the maintainer's review or comment on GitHub. It queues nothing while focus holds the item, while an
 	 * analysis of it is queued or running, or when one was queued for the same review or comment. Answers whether it queued.
 	 */
 	async function queueVisitAnalysis(name, itemId, visit) {
@@ -1862,7 +1862,7 @@ export async function startBoardServer({
 			await logClick(name, itemId, {
 				action: "reanalyze",
 				params: { by: "github_visit", visited: visit },
-				text: `The maintainer opened this item from the board and ${what} on GitHub at ${visit.at}, after the last analysis. Read what he wrote there and analyze the item again. Drop routes that his ${visit.kind} already settled.`,
+				text: `The maintainer opened this item from the board and ${what} on GitHub at ${visit.at}, after the last analysis. Read what they wrote there and analyze the item again. Drop routes that the maintainer's ${visit.kind} already settled.`,
 				status: "queued",
 				via: "queue",
 				createdAt: new Date().toISOString(),
@@ -2005,7 +2005,7 @@ export async function startBoardServer({
 		}
 	}
 
-	// The page reports the use of a route he does on GitHub himself. Nothing goes to GitHub and no action doc is written
+	// The page reports the use of a route the maintainer does on GitHub themself. Nothing goes to GitHub and no action doc is written
 	async function handleDecision(body) {
 		const name = instanceOf(body.instance);
 		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
@@ -2024,12 +2024,12 @@ export async function startBoardServer({
 		if (typeof text === "string" && text !== drafted) await decide(name, "edited_text", itemId, item, { route: brief(route), draft: cut(drafted), final: cut(text) });
 		await markOpened(name, itemId, item, route, typeof text === "string" ? text : "");
 		await setHandled(name, itemId, route, null);
-		// He copied the escalate command and posts it himself
+		// The maintainer copied the escalate command and posts it themself
 		if (route.type === "move" && route.params?.to === "issue" && item.kind === "discussion") recheckEscalation(name, itemId);
 		return [200, { ok: true, result: "Logged." }];
 	}
 
-	/** Checks his answers to the item's findings and returns them with each finding's text. Throws a Refusal. */
+	/** Checks the maintainer's answers to the item's findings and returns them with each finding's text. Throws a Refusal. */
 	function checkAnswers(name, item, input) {
 		if (!isObject(input)) throw new Refusal("input must be an object.");
 		checkKeys(input, ["answers"], "input");
@@ -2054,7 +2054,7 @@ export async function startBoardServer({
 		});
 	}
 
-	// "Analyze again" with his answers to findings: one queued reanalyze, the answers kept on the item and logged
+	// "Analyze again" with the maintainer's answers to findings: one queued reanalyze, the answers kept on the item and logged
 	async function handleReanalyze(name, body) {
 		const { itemId, text = "", input } = body;
 		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
@@ -2213,8 +2213,8 @@ export async function startBoardServer({
 	}
 
 	/**
-	 * "Got it" on an fyi item of a contributions instance: he read the news. The item leaves the board until the routine
-	 * finds new relevant activity, and the snapshot counts this time as his last look at the thread.
+	 * "Got it" on an fyi item of a contributions instance: the maintainer read the news. The item leaves the board until the routine
+	 * finds new relevant activity, and the snapshot counts this time as the maintainer's last look at the thread.
 	 */
 	async function handleGotIt(name, body) {
 		const { itemId } = body;

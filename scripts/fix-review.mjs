@@ -138,7 +138,7 @@ async function finish(argv) {
 	if (!drive || drive.by !== "fix" || typeof drive.actionId !== "string") throw new Error(`PR #${c.number} has no review rounds to end`);
 	const roundDoc = await readJson(join(boardDir(), "actions", drive.actionId + ".json"));
 
-	// A stopped drive leaves the PR a draft, so he sees that it is unfinished. A PR Gary marked ready once is not marked again
+	// A stopped drive leaves the PR a draft, so the maintainer sees that it is unfinished. A PR Gary marked ready once is not marked again
 	const wantsReady = out.outcome === "done" && drive.markReady !== false && !c.record.readyAt;
 	let ready = false;
 	let readyNote = null;
@@ -163,7 +163,7 @@ async function finish(argv) {
 		finishedAt: null,
 		result: "",
 	};
-	// Only a clean end hands the PR to him
+	// Only a clean end hands the PR to the maintainer
 	const askMaintainer = requestMaintainer && out.outcome === "done";
 	const notAsked = requestMaintainer && !askMaintainer && { maintainerReview: { requested: false, skipped: "The rounds stopped, so your review is not requested." } };
 	if (dryRun) {
@@ -175,7 +175,7 @@ async function finish(argv) {
 	if (ready) await recordFixReady(c.number, now);
 	const reviewId = await writeAction(c.itemId, review);
 	if (roundDoc) await writeAtomic(join(boardDir(), "actions", drive.actionId + ".json"), { ...roundDoc, status: "done", finishedAt: now, result: review.text });
-	// In the own mode the round's replies post under his login, so all his feedback up to now counts as seen
+	// In the own mode the round's replies post under the maintainer's login, so all the maintainer's feedback up to now counts as seen
 	const marks = accountMode() === "own" ? { ...seen, me: now } : seen;
 	await writeAtomic(stateFile, enterWatch(drive, { sha: drive.lastPushedSha, seen: marks, now }));
 	const maintainerReview = askMaintainer ? await requestMaintainerReview({ repo: c.repo, number: c.number }) : null;

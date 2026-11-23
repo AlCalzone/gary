@@ -210,7 +210,7 @@ export function refusal({ entry, sha, settings, profile, maintainers, writeLogin
 	if (sha !== undefined && entry.headSha !== sha) return no("head-moved", `The head of PR #${entry.number} is ${entry.headSha}, not the reviewed ${sha}.`);
 	if (entry.facts?.timelineTruncated) return no("timeline-truncated", `The thread of PR #${entry.number} is longer than the snapshot reads, so nothing proves that no maintainer joined it.`);
 	const joined = maintainerJoinedAt(entry, { maintainers, ownReviewUrls: (record?.reviews ?? []).map((r) => r.url) });
-	if (joined) return no("maintainer-active", `A maintainer commented or reviewed on PR #${entry.number} at ${joined}. The thread is his.`);
+	if (joined) return no("maintainer-active", `A maintainer commented or reviewed on PR #${entry.number} at ${joined}. The thread is theirs.`);
 	const insider = (entry.comments ?? []).find((c) => INSIDERS.includes(c.authorAssociation) && c.authorType !== "bot" && !same(c.author, writeLogin));
 	if (insider) return no("maintainer-active", `${insider.author}, a ${insider.authorAssociation.toLowerCase()} of the repository, commented on PR #${entry.number}. The thread is theirs.`);
 	const last = lastReview(record);
@@ -221,7 +221,7 @@ export function refusal({ entry, sha, settings, profile, maintainers, writeLogin
 
 /**
  * What the PR's author answered to an open format offer, from the offer's fresh facts:
- * `{ accepted: true }` for a positive reaction of his on the review, and `replies`, his comments after the offer
+ * `{ accepted: true }` for a positive reaction of the author's on the review, and `replies`, the author's comments after the offer
  * that nobody judged yet. Reactions and comments of anyone else never count.
  */
 export function offerAnswer(offer, facts, author) {

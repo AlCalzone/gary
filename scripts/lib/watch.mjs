@@ -47,7 +47,7 @@ export function unhandledFeedback(side, sources) {
 
 /**
  * The drive file's `held` record while the feedback it names is still unhandled, or null. `gary pr-watch round` writes
- * `held: { feedbackAt, by: "me", session, since }` when it refused his feedback because the origin session was active,
+ * `held: { feedbackAt, by: "me", session, since }` when it refused the maintainer's feedback because the origin session was active,
  * and adds `focus: true` when a focus held the PR.
  */
 export function pendingHold(sources) {
@@ -269,7 +269,7 @@ export function baseDrive(c) {
 
 export const feedbackOf = (c) => c.entry?.feedback ?? c.entry?.facts ?? {};
 
-// In the own mode our replies post under his login, so a round marks all his feedback up to now as seen
+// In the own mode our replies post under the maintainer's login, so a round marks all the maintainer's feedback up to now as seen
 export function marksFor(seen) {
 	return accountMode() === "own" ? { ...seen, me: new Date().toISOString() } : seen;
 }

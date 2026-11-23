@@ -19,7 +19,7 @@ export const ROUTE_TYPES = {
 	open: ["me"],
 };
 export const DRIVE_AUTHORS = new Set(["maintainer", "bot", "copilot"]);
-// Without a bot these turn into text the maintainer posts himself
+// Without a bot these turn into text the maintainer posts themself
 export const PREFILL_TYPES = new Set(["reply", "request_logs", "reopen", "follow_up"]);
 export const PUSHING_AGENT_TYPES = new Set(["address_review", "take_over", "revise", "drive", "follow_up", "format"]);
 export const MOVE_MODES = ["transfer", "close"];
@@ -56,7 +56,7 @@ export const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v)
 
 /**
  * Who acts after a click, given the configured accounts (`mode` from accountMode()):
- * "me" (prefill, he acts on GitHub), "bot", "own" (his stored gh login, only with allowOwnTokenPushes),
+ * "me" (prefill, the maintainer acts on GitHub), "bot", "own" (the maintainer's stored gh login, only with allowOwnTokenPushes),
  * "agent", "unavailable" (needs a bot or allowOwnTokenPushes), or undefined for an invalid route.
  * A move to a repository has one actor per button, so pass its `moveMode` ("transfer" or "close").
  */

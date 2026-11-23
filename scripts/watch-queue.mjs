@@ -11,8 +11,8 @@
 // in <state>/origins.json was active in the last 30 minutes gets no such line until the session is quiet. Feedback that
 // `gary pr-watch round` refused for that session prints once more after the session has been quiet for 30 minutes.
 // A PR with an automatic review gets lines with "action": "auto_review": "event": "offer-accepted" when its author
-// reacted positively to the format offer, "offer-reply" with "at" when he commented after it, and "re-requested"
-// with "at" when he re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
+// reacted positively to the format offer, "offer-reply" with "at" when the author commented after it, and "re-requested"
+// with "at" when the author re-requested the review. The watcher reads at most 20 such PRs every 3 minutes.
 // While a focus holds an item, nothing of it is printed except focus requests: its queued requests, drive events,
 // feedback lines and automatic review answers wait until the focus ends. A held focus gets a line with
 // "action": "focus", "event": "check", "harness" and "session" when its session has been quiet for 30 minutes, and
