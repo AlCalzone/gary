@@ -143,9 +143,16 @@ t.check("escalateResult refuses nested quantifiers", er("^(?:a+)+#(\\d+)").some(
 t.check("escalateResult refuses other values and long patterns", [er(4), er(""), er(`(${"a".repeat(500)})`)].every((e) => e.some((x) => /at most 500/.test(x))));
 t.check("the link needs the field and a bot", c.escalationOf({ bot: { login: "b" } }, { escalateResult: "#(\\d+)" }).enabled && !c.escalationOf({ bot: null }, { escalateResult: "#(\\d+)" }).enabled && !c.escalationOf({ bot: { login: "b" } }, {}).enabled);
 t.check("formatCommand is one line without backticks", c.validateProfile({ ...gprofile, formatCommand: "npm run fmt" }).length === 0 && c.validateProfile({ ...gprofile, formatCommand: null }).length === 0 && ["`rm -rf`", "a\nb", "", 5, "x".repeat(201)].every((v) => c.validateProfile({ ...gprofile, formatCommand: v }).some((e) => /"formatCommand" must be/.test(e))));
+const af = (fields) => c.validateProfile({ ...gprofile, autofixCommands: [], autofixSetup: null, ...fields });
+t.check("autofixCommands and autofixSetup take commands with their placeholders", af({ autofixCommands: ["npx prettier --write {files}"], autofixSetup: "npm ci" }).length === 0 && af({}).length === 0);
+t.check("every autofix command needs {files}", af({ autofixCommands: ["npx prettier --write ."] }).some((e) => /"autofixCommands" must be/.test(e)));
+t.check("autofixCommands refuses other values", [[""], ["a {files}\nb"], "npx prettier {files}", [5], Array(11).fill("x {files}")].every((v) => af({ autofixCommands: v }).some((e) => /"autofixCommands" must be/.test(e))));
+t.check("autofixSetup is one line", ["", "a\nb", 5, "x".repeat(501)].every((v) => af({ autofixCommands: ["x {files}"], autofixSetup: v }).some((e) => /"autofixSetup" must be/.test(e))));
+t.check("autofixSetup needs commands", af({ autofixSetup: "npm ci" }).some((e) => /"autofixSetup" needs "autofixCommands"/.test(e)));
+t.check("the defaults have no format check", JSON.stringify(c.PROFILE_DEFAULTS.autofixCommands) === "[]" && c.PROFILE_DEFAULTS.autofixSetup === null);
 t.check("the template profile is valid and carries the new fields", (() => {
 	const tpl = JSON.parse(readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8"));
-	return c.validateProfile(tpl).length === 0 && JSON.stringify(tpl.autoReviewPaths) === '{"config":[]}' && tpl.formatCommand === null;
+	return c.validateProfile(tpl).length === 0 && JSON.stringify(tpl.autoReviewPaths) === '{"config":[]}' && tpl.formatCommand === null && JSON.stringify(tpl.autofixCommands) === "[]" && tpl.autofixSetup === null;
 })());
 // A broken autoReview keeps the last valid settings, like every other field
 const wfile = join(root, "instances", "widgets", "config.json");

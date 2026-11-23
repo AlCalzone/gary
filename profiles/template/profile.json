@@ -13,5 +13,7 @@
 	"aiAuthors": [],
 	"autoReviewPaths": { "config": [] },
 	"formatCommand": null,
+	"autofixCommands": [],
+	"autofixSetup": null,
 	"escalateResult": null
 }

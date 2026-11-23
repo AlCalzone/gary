@@ -1460,6 +1460,10 @@ export async function startBoardServer({
 				if (refusal) return [200, { ok: false, result: refusal, sensitive: true }];
 			}
 
+			if (route.type === "format" && !settingsOf(name).instance?.profile?.autofixCommands?.length) {
+				return [200, { ok: false, result: "The profile names no autofixCommands, so there is no format check to apply. Nothing was queued." }];
+			}
+
 			const draft = typeof text === "string" ? text : typeof route.text === "string" ? route.text : "";
 			let plan;
 			try {

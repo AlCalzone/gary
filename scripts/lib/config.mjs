@@ -194,6 +194,8 @@ export const PROFILE_DEFAULTS = {
 	aiAuthors: [],
 	autoReviewPaths: {},
 	formatCommand: null,
+	autofixCommands: [],
+	autofixSetup: null,
 	escalateResult: null,
 	dueDateFields: ["Due", "Due date", "Target date", "Deadline", "End date"],
 };
@@ -538,6 +540,22 @@ function checkEscalateResult(pattern, errors) {
 	check(errors, !NESTED_QUANTIFIER.test(pattern), `"escalateResult" nests quantifiers, which can make matching very slow`);
 }
 
+export const MAX_AUTOFIX_COMMANDS = 10;
+const MAX_COMMAND = 500;
+const isCommand = (v) => typeof v === "string" && v.trim().length > 0 && v.length <= MAX_COMMAND && !/[\n\r]/.test(v);
+
+function checkAutofix(data, errors) {
+	const cmds = data.autofixCommands;
+	check(
+		errors,
+		cmds === undefined || (Array.isArray(cmds) && cmds.length <= MAX_AUTOFIX_COMMANDS && cmds.every((c) => isCommand(c) && c.includes("{files}"))),
+		`"autofixCommands" must be a list of at most ${MAX_AUTOFIX_COMMANDS} one-line shell commands of at most ${MAX_COMMAND} characters, each with the placeholder {files}`,
+	);
+	const setup = data.autofixSetup;
+	check(errors, setup === undefined || setup === null || isCommand(setup), `"autofixSetup" must be null or one shell command on one line, at most ${MAX_COMMAND} characters`);
+	check(errors, setup === undefined || setup === null || (Array.isArray(cmds) && cmds.length > 0), `"autofixSetup" needs "autofixCommands" to run after it`);
+}
+
 /** The problems in a profile.json object, split like checkConfig. */
 export function checkProfile(data) {
 	const errors = [];
@@ -576,6 +594,7 @@ export function checkProfile(data) {
 	check(errors, due === undefined || (isStringList(due) && due.length <= 20 && due.every((f) => f.trim().length > 0 && f.length <= 100)), `"dueDateFields" must be a list of at most 20 project field names, each at most 100 characters`);
 	const cmd = data.formatCommand;
 	check(errors, cmd === undefined || cmd === null || (typeof cmd === "string" && cmd.trim().length > 0 && cmd.length <= 200 && !/[`\n\r]/.test(cmd)), `"formatCommand" must be the one-line command a contributor runs to format, at most 200 characters, without backticks`);
+	checkAutofix(data, errors);
 	return { errors, unknown };
 }
 

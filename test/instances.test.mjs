@@ -207,6 +207,11 @@ try {
 	writeFileSync(gfile, gprofile);
 	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
 	t.check("doctor shows the fast tier", /ok\s+fast tier\s+off/.test(r.stdout), r.stdout);
+	t.check("doctor says a format check is configured", /ok\s+format check\s+on: 2 autofix commands after the setup `ln -s \{checkout\}\/node_modules node_modules`/.test(r.stdout), r.stdout);
+	writeFileSync(gfile, JSON.stringify({ ...JSON.parse(gprofile), autofixCommands: [], autofixSetup: null }));
+	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
+	t.check("doctor says when there is no format check", /ok\s+format check\s+off: the profile names no autofixCommands/.test(r.stdout), r.stdout);
+	writeFileSync(gfile, gprofile);
 } finally {
 	fake.kill();
 }

@@ -27,7 +27,7 @@ The limits in [safety.md](safety.md) cannot be changed by a profile or by `perso
 - `profile.json`: project facts, see below.
 - `rules/classification.md`: what goes into which category.
 - `rules/voice.md`: how the project writes.
-- `rules/review.md`: how PRs are reviewed, the formatter commands.
+- `rules/review.md`: how PRs are reviewed, the CI jobs that fail on formatting.
 - `rules/issues.md`: how issues and discussions are triaged.
 - `templates/*.md`: canned texts, like a request for logs.
 
@@ -47,9 +47,28 @@ Fields of `profile.json`:
 | `automatedComments` | Patterns of bot comments that are noise |
 | `aiAuthors` | Logins whose PRs count as AI-written |
 | `autoReviewPaths` | Paths the automatic first review may cover |
-| `formatCommand` | The comment a contributor can post to have the PR formatted |
+| `formatCommand` | The command a contributor runs to format, named by the automatic review when Gary cannot push |
+| `autofixCommands` | Formatter and lint autofix commands with the placeholder `{files}`, default `[]`, see below |
+| `autofixSetup` | One command that prepares a fresh worktree of the base branch, default `null`, see below |
 | `requiredTools` | Tools the agents need, like an MCP server for logs |
 | `dueDateFields` | GitHub Project fields read as due dates |
+
+### Format check
+
+```json
+{
+  "autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],
+  "autofixSetup": "ln -s {checkout}/node_modules node_modules"
+}
+```
+
+Each review runs these commands on the PR's changed files, in a fresh worktree of the base branch. Gary never reviews style. It shows a badge and a "Format" card that commits exactly what the commands change.
+
+- `{files}` becomes the changed paths. Every command gets every path, so a command that handles only some file types needs its own option to skip the others.
+- `autofixSetup` runs first, in that worktree. `{checkout}` becomes the instance's checkout. Use it to install or link the tools, like `npm ci`.
+- Setup and commands use the base branch's tools and configuration, never code from the PR.
+
+With an empty `autofixCommands`, the default, there is no format check, no badge, no "Format" card and no format offer.
 
 ## An instance's config.json
 

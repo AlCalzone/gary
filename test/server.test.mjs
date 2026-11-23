@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { PROFILE, ROOT, freePort, makeHome, removeDir, tempDir } from "./lib.mjs";
 import { commentBody, planRoute } from "../server/server.mjs";
+import { validateItem } from "../scripts/lib/validate-item.mjs";
 
 const T = tempDir();
 const PORT = await freePort();
@@ -632,6 +633,12 @@ try {
 	formatError = e.message;
 }
 check("format needs the reviewed head", /needs the item's reviewedSha/.test(formatError), formatError);
+{
+	const doc = { ...formatItem, repo: "acme/widgets", title: "Fix", url: "https://github.com/acme/widgets/pull/9", author: "hubot", state: "Format.", section: "land", priority: 1, effortMinutes: 2, reviewDepth: "full", reviewedAt: "2026-11-17T14:00:00Z", hint: "Format: fix formatting and lint", routes: [{ ...formatRoute, title: "Format: fix formatting and lint", recommended: true }] };
+	const codes = (autofixCommands) => validateItem("pr-9", doc, { mode: "bot", profile: { repo: "acme/widgets", autofixCommands }, repos: ["acme/widgets"] }).errors;
+	check("the validator takes a format route with autofixCommands", !codes(["x {files}"]).some((e) => e.code === "format" || e.code === "autofix"), codes(["x {files}"]));
+	check("without autofixCommands the validator refuses the format route and autofix", codes([]).some((e) => e.code === "format") && codes([]).some((e) => e.code === "autofix"), codes([]));
+}
 check("original, suggestion and diffHunk are never sent", JSON.stringify(Object.keys(sent).sort()) === '["line","path","text"]' && sent.text === "Rename\n\n```suggestion\nconst a = 1;\n```", sent);
 
 // Two instances in one server

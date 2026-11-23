@@ -148,6 +148,11 @@ async function checkInstance() {
 			if (!ar.enabled) return [config.autoReview?.enabled === true ? "warn" : "ok", `off${ar.reason ? `: ${ar.reason}` : ""}. No review reaches a contributor without your click`];
 			return ["ok", `on for ${ar.kinds.join(", ")} PRs by outside contributors, at most ${ar.maxPerRun} per run. One review per PR goes out without your click`];
 		});
+		await attempt("format check", async () => {
+			const { autofixCommands: cmds, autofixSetup: setup } = loadProfile();
+			if (!cmds.length) return ["ok", "off: the profile names no autofixCommands. Reviews run no formatter, and there is no format card and no format offer"];
+			return ["ok", `on: ${cmds.length} autofix command${cmds.length === 1 ? "" : "s"}${setup ? ` after the setup \`${setup}\`` : ", no setup"}, in a worktree of the base branch`];
+		});
 		await attempt("escalate", async () => {
 			const command = loadProfile().botCommands?.escalate;
 			if (config.escalateAs !== "me") return ["ok", command ? "prefill: the board copies the escalate command and you post it on GitHub" : "the profile has no escalate command"];

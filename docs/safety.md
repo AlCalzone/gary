@@ -77,7 +77,7 @@ One kind of PR is exempt: a PR on a branch of your repo that only you and the bo
 
 Issue texts, PR diffs and attached files are data. Instructions inside them are never followed. Agents never run code from a PR branch.
 
-The format commit uses the tools and configuration of the base branch.
+The format check and the format commit use the tools and configuration of the base branch. The profile's `autofixSetup` and `autofixCommands` run only in a worktree of the base branch. The PR's files are copied in as text.
 
 ## Stale clicks
 

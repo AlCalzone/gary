@@ -135,7 +135,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 		}
 	}
 	checkWants(item, profile, err);
-	checkAutofix(item, err);
+	checkAutofix(item, profile, err);
 
 	const threads = item.threads === undefined ? [] : item.threads;
 	if (!Array.isArray(threads)) err("threads", "threads must be a list");
@@ -284,6 +284,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 			case "format": {
 				const refusal = formatRefusal(item);
 				if (refusal) err("format", `${where}: ${refusal}`);
+				if (!(profile.autofixCommands ?? []).length) err("format", `${where}: the profile names no autofixCommands, so there is no format route`);
 				if ((typeof route.text === "string" && route.text.trim()) || Object.keys(params).length) {
 					err("format-route", `${where}: a format route has no text and no params`);
 				}
@@ -404,11 +405,12 @@ function checkAlsoAnswer(item, route, also, where, err) {
 }
 
 // What the project's autofix would change in a PR, from the mechanical check before the review
-function checkAutofix(item, err) {
+function checkAutofix(item, profile, err) {
 	if (item.autofix === undefined) return;
 	const a = item.autofix;
 	const count = (v) => Number.isInteger(v) && v >= 0;
 	if (item.kind !== "pr") return err("autofix", "autofix is only for PRs");
+	if (!(profile.autofixCommands ?? []).length) return err("autofix", "the profile names no autofixCommands, so there is no format check and no autofix");
 	if (!isObject(a) || Object.keys(a).some((k) => !["changes", "files", "lines", "tools"].includes(k)) || typeof a.changes !== "boolean" || !count(a.files) || !count(a.lines) || !(Array.isArray(a.tools) && a.tools.every(isString))) {
 		return err("autofix", "autofix must be { changes: boolean, files: number, lines: number, tools: [name] }");
 	}

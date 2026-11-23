@@ -9,5 +9,7 @@
 	"autoLabels": ["needs-info"],
 	"botCommands": { "escalate": "@widgets-bot escalate", "automerge": "@widgets-bot automerge" },
 	"escalateResult": "^Escalated to an issue: #(\\d+)",
-	"requiredTools": []
+	"requiredTools": [],
+	"autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],
+	"autofixSetup": "ln -s {checkout}/node_modules node_modules"
 }

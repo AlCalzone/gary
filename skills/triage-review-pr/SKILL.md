@@ -73,7 +73,7 @@ A PR can be several of these. Review each part.
 
 ## 2a. Format check
 
-Run the check in `${CLAUDE_SKILL_DIR}/references/format-check.md` and write its result as `autofix`. Formatting, indentation, import order, trailing commas and everything else the project's formatter or lint autofix corrects is never a finding, never mentioned in `state` or `story`, and never an inline comment. Do not read code for style at all.
+Run the check in `${CLAUDE_SKILL_DIR}/references/format-check.md` and write its result as `autofix`. Without `autofixCommands` in the profile there is no check, no `autofix` and no `format` route. Formatting, indentation, import order, trailing commas and everything else the project's formatter or lint autofix corrects is never a finding, never mentioned in `state` or `story`, and never an inline comment. Do not read code for style at all.
 
 ## 3. Review dimensions
 

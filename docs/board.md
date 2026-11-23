@@ -47,7 +47,7 @@ A review with a finding goes out as "Request changes". A clean PR gets an approv
 
 For each open review thread you choose Fix or Dismiss. Only comments the agent judged valid start on Fix.
 
-Gary's reviews never list formatting problems. When the project's formatter would change a PR, the item shows a badge and a "Format" card. That card commits exactly those fixes to the PR, without taking it over.
+Gary's reviews never list formatting problems. When the project's formatter would change a PR, the item shows a badge and a "Format" card. That card commits exactly those fixes to the PR, without taking it over. This needs `autofixCommands` in the profile, see [configuration.md](configuration.md#format-check).
 
 After the agent pushed to a PR, the item offers the decision: merge, a review with what is left, or another pass.
 
