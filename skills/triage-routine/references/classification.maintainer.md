@@ -125,7 +125,22 @@ A part whose next step is his merge, approval or close is `land`, also on a cont
 
 ## AI-written PRs
 
-`facts.aiAuthored` says whether an AI agent wrote the PR, with the evidence in `facts.aiSignals`. The bot's own commits on a PR someone else opened do not count: they are ours, from a take-over, a change or a format run, and `facts.ourCommits` counts them. The profile's rules say what follows. The fast tier never decides such a PR. Estimate his reading time from `facts.changedLines` (`item-doc.md`, `effortMinutes`).
+A PR counts as AI-written when `facts.aiAuthored` is true. The code sets it from the commits: an AI agent or a bot account as author or co-author, a `Co-Authored-By` trailer that names one, a head branch like `claude/…` or `copilot/…`, or a name from the profile's `aiAuthors`. `facts.aiSignals` lists what it found. This also holds for a PR opened under the maintainer's own account.
+
+The bot's own commits on a PR someone else opened do not count. They are ours, from a take-over, a change or a format run, and `facts.ourCommits` counts them. Such a PR is judged like the contributor's PR it is.
+
+The default: every AI-written PR needs the maintainer's own review of the code before it is merged. GitHub shows no sign of that review on the maintainer's own PRs. A profile or `personal.md` can change this default or add exceptions. So:
+
+- Clean never makes it a quick merge. Green CI, resolved threads and an approval by a bot change nothing. The category is `land` on a PR we control and `unblock` on a contributor's PR.
+- `effortMinutes` is the maintainer's time to read the diff, from `facts.changedLines` by the table in `item-doc.md`. A small diff may still show under Quick & Easy. Above 1500 changed lines say so in `state`, like `About 1850 changed lines by Claude that you have not reviewed yet.`
+- `state` says that the code was written by an AI agent and how much of it the maintainer has not reviewed.
+- "Merge" is never the recommended route. Recommend what moves the maintainer's review forward: `drive` when review threads are open, a `revise` ("Change") route when the agent can name one concrete change to the PR, otherwise no agent route. A `merge` route may be the alternative.
+- On a PR we control, opened by the maintainer, the bot or a coding agent working for us, never offer `take_over`. These PRs are ours already.
+- A contributor's PR that only counts as AI-written because of an AI co-author or an autofix commit is still the contributor's. It follows the normal rule: when the findings are small and we can fix them ourselves, recommend `take_over` with `mode: "push"` and keep the `review` as the alternative. A finding only the contributor can answer does not block the take-over. The take-over fixes the rest, and the open question goes into its `text` so the agent asks it on the PR after the push.
+- The agent's own full review does not replace the maintainer's. Its findings help the maintainer read faster, so list the three places that most deserve a look as findings with their file and line.
+- The exception: the maintainer wrote in the PR or in a note to the agent that the current head is reviewed. Then the normal rules apply. A note that names an older commit counts only up to that commit.
+
+The fast tier never decides such a PR.
 
 ## Fixes in progress
 

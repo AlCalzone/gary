@@ -5,7 +5,7 @@
 		{
 			"name": "gary",
 			"source": "./",
-			"description": "Maintainer triage board for one GitHub repository."
+			"description": "Turns the open PRs, issues and discussions of your GitHub projects into a plan for your day, with the next step prepared by Claude."
 		}
 	]
 }

@@ -49,8 +49,10 @@ Start a Claude session and ask it to set up Gary. The `triage-setup` skill reads
 It drafts the profile for you to review:
 
 - `profile.json`: the repo, maintainers, bot logins, related repos, sensitive paths, labels Gary may set on its own, bot commands.
-- `rules/*.md`: how items are classified, how you write, how PRs and issues are reviewed.
+- `rules/*.md`: how items are classified, which canned requests the project uses, how PRs and issues are reviewed.
 - `templates/*.md`: canned texts, like a request for logs.
+
+It also drafts a section on how you reply for your `personal.md`, from your recent replies.
 
 It asks only what it cannot read: your login, whether a bot posts for you, and your writing preferences.
 

@@ -98,7 +98,7 @@ Your estimate of how long the maintainer needs to read up and decide, in minutes
 - 60: a new subsystem, a design discussion, a change of about 800 to 1500 lines.
 - 120: a change above about 1500 lines that he has to read himself.
 
-Code he has to read himself, like an AI-written PR under the profile's rules, is estimated from `facts.changedLines`. It leaves out lock files but not generated files, so subtract generated files and snapshots you can see in the file list: up to 20 lines 2, up to 100 lines 5, up to 300 lines 15, up to 800 lines 30, up to 1500 lines 60, above that 120.
+Code he has to read himself, like an AI-written PR, is estimated from `facts.changedLines`. It leaves out lock files but not generated files, so subtract generated files and snapshots you can see in the file list: up to 20 lines 2, up to 100 lines 5, up to 300 lines 15, up to 800 lines 30, up to 1500 lines 60, above that 120.
 
 A full review lowers the estimate when it leaves him only a confirmation. Open specification questions raise it. The estimate decides the group (the classification file): 1 or 2 minutes put the item into "Quick & Easy", whatever its category. 5 or more mean he has to think.
 

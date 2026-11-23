@@ -26,7 +26,7 @@ The limits in [safety.md](safety.md) cannot be changed by a profile or by `perso
 
 - `profile.json`: project facts, see below.
 - `rules/classification.md`: what goes into which category.
-- `rules/voice.md`: how the project writes.
+- `rules/voice.md`: the project's texts, like canned requests and their links. How you write goes into `personal.md`.
 - `rules/review.md`: how PRs are reviewed, the CI jobs that fail on formatting.
 - `rules/issues.md`: how issues and discussions are triaged.
 - `templates/*.md`: canned texts, like a request for logs.
