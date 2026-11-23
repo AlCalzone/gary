@@ -1401,6 +1401,7 @@ Every instance config, of both kinds, takes an optional `tab: { icon, color, bac
 - Every role has a fixed lightness per theme: page, cards, lines, the plan's cards and their hover, the bar, the accent for links, buttons and the selected tab, and the three text colors. Contrast comes from these lightness steps, so it is the same for every hue.
 - Every role's chroma is a share of the strongest chroma sRGB can show at that lightness and hue, with a cap. A fixed chroma would look heavy in pink and weak in blue.
 - The page and the plain cards stay near neutral. The plan's cards and the accent carry the color.
+- Dialogs use near-neutral versions of the card and line colors (`n-surface`, `n-surface-2`, `n-line`, `n-line-strong`), so the tint does not shift the colors of the action cards.
 - The category colors, warnings and CI colors stay as they are in every palette.
 - A page test checks every named color and some hex keys in both themes: text on every surface at 4.5:1 or more, body text at 7:1 or more, the category colors on every surface at 4.5:1 or more, and the plan's cards apart from the page.
 

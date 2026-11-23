@@ -28,7 +28,7 @@
     for (const key of [...Object.values(TINT_KEYS), "#0071bc", "#ffcc00", "#ff0000", "#00ffcc"]) for (const theme of ["dark", "light"]) {
       const p = paletteFor(key, theme);
       const need = (what, a, b, min) => { const v = cr(a, b); if (v < min) bad.push(key + " " + theme + " " + what + " " + v.toFixed(2)); };
-      for (const s of ["bg", "surface", "surface-2", "today", "today-hover"]) {
+      for (const s of ["bg", "surface", "surface-2", "today", "today-hover", "n-surface", "n-surface-2"]) {
         need("fg/" + s, p.fg, p[s], 7);
         need("muted/" + s, p.muted, p[s], 4.5);
         need("faint/" + s, p.faint, p[s], 4.5);
@@ -41,6 +41,8 @@
       need("line/surface", p["line-strong"], p.surface, theme === "dark" ? 1.4 : 1.3);
     }
     ok("tab style: every key color keeps text contrast and separates cards from the page", bad.length === 0, bad.slice(0, 12).join(" | "));
+    const chromaOf = (hx) => { const v = [1, 3, 5].map((i) => parseInt(hx.slice(i, i + 2), 16)); return Math.max(...v) - Math.min(...v); };
+    ok("tab style: a dialog's surface is nearly neutral in every key color", Object.values(TINT_KEYS).every((k) => ["dark", "light"].every((th) => chromaOf(paletteFor(k, th)["n-surface"]) <= 4)), Object.values(TINT_KEYS).map((k) => paletteFor(k, "dark")["n-surface"]).join());
     ok("tab style: gray is a palette without hue", /^#([0-9a-f]{2})\1\1$/.test(paletteFor(TINT_KEYS.gray, "dark").bg));
   }
   tabBtns()[1].click(); await wait(5);
