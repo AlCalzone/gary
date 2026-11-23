@@ -101,7 +101,7 @@
     await setMode("me", { botCommands: {} });
     items(r8()); await wait(10);
     await openItem("disc-9801");
-    ok("me without an escalate command: no such route", cards().length === 1 && !/Accept/.test(cards()[0].textContent));
+    ok("me without an escalate command: the route only opens GitHub", cards().length === 2 && [...moveCard().querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Open GitHub to create the issue");
     await setMode("prefill");
     items(r8()); await wait(10);
 

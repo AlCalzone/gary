@@ -3258,7 +3258,6 @@ function routesOf(d) {
     .filter((r) => r && typeof r === "object" && typeof r.id === "string" && Object.hasOwn(ROUTE_ACTORS, r.type))
     // A move to another repo has one actor per button, so only its buttons decide
     .filter((r) => r.actor === undefined || ROUTE_ACTOR_KINDS.has(r.actor) || (r.type === "move" && moveToRepo(r) && r.actors))
-    .filter((r) => r.type !== "move" || str(paramsOf(r).to) !== "issue" || escalateCommand(instOf(d)) !== "")
     .filter((r) => r.type !== "move" || !moveToRepo(r) || ["transfer", "close"].some((m) => moveActor(r, m) !== null));
 }
 
@@ -3273,13 +3272,15 @@ function escalateRoute(r) {
 
 // With `escalateAs: "me"` the server posts the command under his login after a click
 function escalatePosts(d) {
-  return instOf(d).escalateAs === "me";
+  return instOf(d).escalateAs === "me" && escalateCommand(instOf(d)) !== "";
 }
 
 const ISSUE_KIND_WORDS = { bug: "a bug issue", enhancement: "an enhancement issue" };
 
 function escalateNote(d, r) {
   const becomes = "The discussion becomes " + (ISSUE_KIND_WORDS[str(paramsOf(r).issueKind)] || "an issue");
+  // Without a bot command the maintainer uses GitHub's own "Create issue from discussion" link
+  if (!escalateCommand(instOf(d))) return becomes + " once you use “Create issue from discussion” in its sidebar on GitHub.";
   const command = "`" + escalateCommand(instOf(d)) + "`";
   return escalatePosts(d) ? becomes + ". The button posts " + command + " under your GitHub login." : becomes + " once you post " + command + " there.";
 }
@@ -3503,6 +3504,7 @@ function routeButtons(d, r) {
     case "move": {
       if (str(p.to) === "discussion") return [me("Open GitHub to convert", { copy: null })];
       if (str(p.to) === "issue") {
+        if (!escalateCommand(instOf(d))) return [me("Open GitHub to create the issue", { copy: null })];
         if (!escalatePosts(d)) return [me("Copy escalate command, open GitHub", { copy: "escalate" })];
         return [
           { id: "escalate", actor: "own", label: str(p.issueKind) === "enhancement" ? "Accept as an issue" : "Escalate to an issue", confirm: true, confirmVerb: "post " + escalateCommand(instOf(d)), input: { mode: "escalate" } },

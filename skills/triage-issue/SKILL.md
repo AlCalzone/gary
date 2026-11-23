@@ -86,7 +86,7 @@ Also common:
 - The report belongs in a repo from the profile's `relatedRepos`: a `move` route to that repo, with `text` from the `reopen-elsewhere` template. Its `why` recommends transfer when the issue already has what that repo needs, and closing with the reopen request when it lacks it.
 - The report belongs to a project outside the org: a `close` route with reason `not_planned` and a redirect reply.
 - A support question filed as an issue: a `move` route with `params.to: "discussion"` as `me`.
-- A confirmed bug in a discussion: a `move` route with `params.to: "issue"` as `me`, recommended, titled `Move: escalate to a bug issue`, with `params.issueKind: "bug"`. Only when the profile has `botCommands.escalate`.
+- A confirmed bug in a discussion: a `move` route with `params.to: "issue"` as `me`, recommended, titled `Move: escalate to a bug issue`, with `params.issueKind: "bug"`.
 - A feature request or an idea in a discussion that is concrete and plausible enough to track: the same `move` route, titled `Accept: track as an enhancement issue`, with `params.issueKind: "enhancement"`. The entry's `category` and `facts.category` name the discussion's category. A request in another category counts by its content. Offer it next to the recommended `reply` or `close`, and recommend it only when the request is clearly good. Never on a closed or already escalated discussion. A fix PR of the discussion moves to the new issue on its own. `item-doc.md` has the details.
 - A fault outside the project with nothing the code can do: a `close` route, reason `not_planned`, and a text naming the evidence.
 

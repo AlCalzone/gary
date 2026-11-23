@@ -189,7 +189,7 @@ General rules:
 - A route without text, like `drive`, `merge` without a title or `close` without a note, leaves `text` out.
 - Every route that posts or prefills text carries finished `text`. The maintainer can click without editing. No placeholders like `<version>`, no "[insert link]", no notes to him inside the text. The text has no forced line breaks inside paragraphs and contains no bot commands (see the classification file).
 - Text for `as: "me"` is in the maintainer's own first-person voice, because he posts it under his name. When he uses such a prefill, the board logs locally which route he chose and how he changed the text, for `triage-learn`. Nothing of it reaches GitHub through the server. Text for `as: "bot"` states facts and requests without "I".
-- A route that depends on a profile fact exists only when that fact exists: `move` to a repo only for repos in `relatedRepos`, `move` to `issue` only with `botCommands.escalate`, `drive` only when `reviewBots` is not empty.
+- A route that depends on a profile fact exists only when that fact exists: `move` to a repo only for repos in `relatedRepos`, `drive` only when `reviewBots` is not empty.
 
 Per type:
 
@@ -215,13 +215,13 @@ Per type:
 - **`move`**: three targets.
   - A repo from `relatedRepos`, on an issue, with `as: "bot"`. The card has two bot buttons: transfer the issue, or close it with `text` that asks to reopen there. Write `text` from `<profile>/templates/reopen-elsewhere.md` for the second button, with the target repo and what the new issue needs. Say in `why` which button fits: transfer when the issue already has what the other repo needs, like versions and steps, close when it lacks it.
   - `discussion`, on an issue, with `as: "me"`: he converts it on GitHub. No `text`.
-  - `issue`, on a discussion, with `as: "me"`, only when `botCommands.escalate` exists. The discussion becomes an issue: he posts the command, and the repo's own workflow creates the issue and closes the discussion. No `text`. The bot never posts that command. Two cases:
+  - `issue`, on a discussion, with `as: "me"`. The discussion becomes an issue. With `botCommands.escalate` in the profile, the maintainer posts that command and the repo's own workflow creates the issue and closes the discussion. Without it, the maintainer uses "Create issue from discussion" in the discussion's sidebar on GitHub. No `text`. The bot never posts a command. Two cases:
     - A confirmed bug: the recommended route, titled `Move: escalate to a bug issue`, with `params.issueKind: "bug"`.
     - A feature request or an idea that is concrete and plausible enough that he may want to track it. Judge that by the entry's `category` and by the content, because a request also lands in other categories. Title it `Accept: track as an enhancement issue`, with `params.issueKind: "enhancement"`. Offer it as an alternative next to the recommended `reply` or `close`. Make it the recommended route only when the request is clearly good: small, well described and in line with what the project already does. Its `why` says in one sentence what the issue would track.
     `issueKind` only words the card ("becomes an enhancement issue"). Gary sets no label. The repo's workflow picks it, and the profile's rules say how. Leave `issueKind` out when neither word fits.
     An open fix PR of the discussion is no reason against it. Code links the PR to the new issue (SPEC.md, "Fix PRs of an escalated discussion").
     Never offer it on a discussion that is closed or already escalated, and never on a vague wish that names no concrete change.
-    The card copies the command for him to post. With `escalateAs: "me"` in the instance config it has a button that posts exactly the command under his own login, after his click and a confirm. No agent and no `gary action` call can post it.
+    With `botCommands.escalate` the card copies the command for him to post. With `escalateAs: "me"` in the instance config it has a button that posts exactly the command under his own login, after his click and a confirm. No agent and no `gary action` call can post it. Without the command the card copies nothing and opens the discussion.
   Reports for projects outside the org get a `close` with a redirect reply.
 - **`drive`**: the agent drives the PR on its own for up to `params.maxRounds` rounds (1 to 3, default 3): it judges and addresses the open review comments, pushes, requests a review from the profile's review bot and repeats. Leave `text` out.
 
@@ -291,7 +291,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
     - `revise`: no `params`. `text` is non-empty. The same authors as `drive`, or `takenOver: true`. A contributor PR without `takenOver: true` gets `take_over` instead.
     - `drive`: `maxRounds` is 1, 2 or 3. The profile's `reviewBots` is not empty. The PR's author is the maintainer, the bot or has `authorType: "copilot"`, or the item has `takenOver: true`.
     - `address_review`: the same authors as `drive`, or `takenOver: true`. A contributor PR without `takenOver: true` gets `take_over` instead.
-    - `move`: on an issue, `to` is a repo from `relatedRepos` with `as: "bot"` and a non-empty `text`, or `discussion` with `as: "me"`. On a discussion, `to` is `issue` with `as: "me"`, `botCommands.escalate` exists, the discussion is open, and `issueKind` is `bug`, `enhancement` or absent.
+    - `move`: on an issue, `to` is a repo from `relatedRepos` with `as: "bot"` and a non-empty `text`, or `discussion` with `as: "me"`. On a discussion, `to` is `issue` with `as: "me"`, the discussion is open, and `issueKind` is `bug`, `enhancement` or absent.
     - `chore`: `action` is `label`, `assign`, `ready`, `answer_discussion`, `react`, `update_branch` or `rerun_ci`, and the other keys are that action's params.
 11. `reply`, `request_logs`, `follow_up` and `revise` routes have a non-empty `text`, except a `revise` in the API form. A `review` has a `text` or at least one comment. No `text` contains a command from the profile's `botCommands`.
 11a. No route has a type listed in the item's `dismissedRoutes`. A `close` with reason `not_planned` on a feature request is not the only route.

@@ -1584,7 +1584,7 @@ export async function startBoardServer({
 		const { instance } = settingsOf(name);
 		if (item.kind !== "discussion") return refuse("Only a discussion can become an issue.");
 		const command = instance.profile.botCommands?.escalate;
-		if (typeof command !== "string" || !command.trim()) return refuse("The profile has no escalate command, so there is nothing to post.");
+		if (typeof command !== "string" || !command.trim()) return refuse('The profile has no escalate command, so there is nothing to post. Use "Create issue from discussion" in the discussion\'s sidebar on GitHub.');
 		if (instance.config.escalateAs !== "me") {
 			return refuse('This route is yours to do on GitHub. The board only copies the command and opens the discussion. With "escalateAs": "me" in config.json the board posts the command under your login.');
 		}

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { GARY, PROFILE, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 import { ACTIONS } from "../scripts/lib/actions.mjs";
+import { validateItem } from "../scripts/lib/validate-item.mjs";
 
 const t = runner("escalate");
 const T = tempDir();
@@ -50,6 +51,13 @@ async function startServer(root, env, port, args, extraEnv, command = [join(ROOT
 
 const actionsOf = (home) => readdirSync(join(home, "state", "board", "actions")).filter((n) => n.endsWith(".json")).map((n) => JSON.parse(readFileSync(join(home, "state", "board", "actions", n), "utf8")));
 const refused = (r, re) => r.status === 200 && r.data.ok === false && re.test(r.data.result);
+
+// ---------- the validator offers the route with and without a bot command ----------
+{
+	const codes = (botCommands) => validateItem("disc-7", disc(7), { mode: "bot", profile: { repo: "acme/widgets", botCommands }, repos: ["acme/widgets"] }).errors.map((e) => e.code);
+	t.check("the validator takes the issue route with an escalate command", !codes({ escalate: COMMAND }).some((c) => c.startsWith("move")), codes({ escalate: COMMAND }));
+	t.check("the validator takes the issue route without one", !codes({}).some((c) => c.startsWith("move")), codes({}));
+}
 
 // ---------- dry run: refusals, the config switch and the exact text ----------
 const dryDir = join(T, "dry");

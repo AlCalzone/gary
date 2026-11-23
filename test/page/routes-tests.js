@@ -669,7 +669,12 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await openItem("pr-9473");
   ok("no bot: a review with inline comments, the chore and take_over are hidden", cards().length === 1 && /Merge/.test(cards()[0].textContent));
   await openItem("disc-9476");
-  ok("without an escalate command there is no escalate route", !cards().some((c) => /escalate/.test(c.textContent)) && cards().length === 1);
+  ok("without an escalate command the issue route stays, with one button that opens GitHub", cards().length === 2 && [...cards()[0].querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Open GitHub to create the issue");
+  ok("without an escalate command the row names GitHub's own link", /Create issue from discussion/.test(cards()[0].querySelector(".escalate-note")?.textContent ?? ""));
+  calls = __calls.length;
+  window.__clip = "untouched";
+  cardBtn("Open GitHub to create the issue", cards()[0]).click(); await wait(20);
+  ok("without an escalate command the click copies nothing and opens the discussion", window.__clip === "untouched" && /\/discussions\/9476$/.test(window.__opened.at(-1)) && __calls.length === calls);
   await openItem("issue-9477");
   ok("no bot: reply as bot becomes a prefill", cards().some((c) => /Reply/.test(c.textContent)));
   cards().find((c) => /Reply/.test(c.textContent)).querySelector(".card-head").click(); await wait(5);

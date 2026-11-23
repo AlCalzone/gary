@@ -305,7 +305,6 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 					if (item.kind !== "issue") err("move-target", `${where}: only an issue can become a discussion`);
 				} else if (params.to === "issue") {
 					if (item.kind !== "discussion") err("move-target", `${where}: only a discussion can become an issue`);
-					if (!isString(profile.botCommands?.escalate)) err("move-escalate", `${where}: the profile has no escalate command`);
 					if (item.live?.state === "closed") err("move-closed", `${where}: the discussion is closed, so it cannot become an issue`);
 					if (params.issueKind !== undefined && !ISSUE_KINDS.includes(params.issueKind)) err("move-issue-kind", `${where}: params.issueKind must be one of ${ISSUE_KINDS.join(", ")}`);
 				} else if (!isString(params.to)) {
