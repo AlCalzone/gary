@@ -229,7 +229,8 @@ html[data-tint] { --bg: color-mix(in srgb, var(--page-tint) 9%, var(--bg-0)); --
 .combined .r-num { display: none; }
 @media (min-width: 561px) {
   .combined .row { grid-template-columns: 16px 16px 4.9em minmax(0, 1fr) 7.5em 3.4em 3.6em; grid-template-areas: "kind rev cat main author effort age"; }
-  .combined .r-meta { grid-column: 1 / 4; }
+  /* The column under the kind icon stays empty, so the kinds can be scanned top to bottom */
+  .combined .r-meta { grid-column: 2 / 4; }
 }
 .row.moved { animation: moved 2.4s ease-out; }
 @keyframes moved { from { background: var(--accent-soft); } to { background: transparent; } }
