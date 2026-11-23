@@ -62,7 +62,7 @@ It asks only what it cannot read: your login, whether a bot posts for you, your 
 
 ## Daily use
 
-Open the board at `http://127.0.0.1:<port>/`, with the port from `~/.config/gary/config.json`. One board serves all your projects: the tab "All" combines them, and each project has its own tab. In "All", items show their full ref, like `acme/widgets#412`. Items are grouped by how much attention they need, from "Quick & Easy" to "When you have time". An item with nothing to do right now is not shown. It comes back when it changes on GitHub. An issue or discussion with a fix in progress leaves the groups too: the fix PR carries the work, and the line "Has a fix in progress" below the groups lists such items until the PR is merged or closed, or the reporter writes again.
+Open the board at `http://gary.localhost:<port>/` or `http://127.0.0.1:<port>/`, with the port from `~/.config/gary/config.json`. One board serves all your projects: the tab "All" combines them, and each project has its own tab. In "All", items show their full ref, like `acme/widgets#412`. Items are grouped by how much attention they need, from "Quick & Easy" to "When you have time". An item with nothing to do right now is not shown. It comes back when it changes on GitHub. An issue or discussion with a fix in progress leaves the groups too: the fix PR carries the work, and the line "Has a fix in progress" below the groups lists such items until the PR is merged or closed, or the reporter writes again.
 
 Each item has a short verdict, a story of what happened so far, and cards with suggested actions. One card is recommended. A card shows who acts after your click:
 

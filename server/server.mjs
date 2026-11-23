@@ -851,8 +851,9 @@ export async function startBoardServer({
 		print(...a);
 		appendFile(logFile, `${new Date().toISOString()} ${a.map((x) => (typeof x === "string" ? x : String(x?.stack ?? x))).join(" ")}\n`).catch(() => {});
 	};
-	const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
-	const HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+	// Browsers resolve every name under .localhost to the loopback address, so gary.localhost needs no hosts entry
+	const ORIGINS = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, `http://gary.localhost:${port}`]);
+	const HOSTS = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `gary.localhost:${port}`]);
 	const url = `http://127.0.0.1:${port}/`;
 
 	const clients = new Set();

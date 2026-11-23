@@ -910,6 +910,10 @@ r = await fetch(base + "/api/state", { headers: { "X-Board-Token": TOKEN, Origin
 check("a foreign origin is refused", r.status === 403);
 const hostStatus = await new Promise((resolve) => get({ host: "127.0.0.1", port: PORT, path: "/api/state", headers: { "X-Board-Token": TOKEN, Host: `example.com:${PORT}` } }, (res) => resolve(res.statusCode)).on("error", () => resolve(null)));
 check("a foreign host is refused", hostStatus === 421, hostStatus);
+const namedStatus = await new Promise((resolve) => get({ host: "127.0.0.1", port: PORT, path: "/api/state", headers: { "X-Board-Token": TOKEN, Host: `gary.localhost:${PORT}`, Origin: `http://gary.localhost:${PORT}` } }, (res) => resolve(res.statusCode)).on("error", () => resolve(null)));
+check("gary.localhost is served", namedStatus === 200, namedStatus);
+const otherLocal = await new Promise((resolve) => get({ host: "127.0.0.1", port: PORT, path: "/api/state", headers: { "X-Board-Token": TOKEN, Host: `evil.localhost:${PORT}` } }, (res) => resolve(res.statusCode)).on("error", () => resolve(null)));
+check("another name under .localhost is refused", otherLocal === 421, otherLocal);
 r = await fetch(base + "/api/action", { method: "POST", headers: { "X-Board-Token": TOKEN, "Content-Type": "text/plain" }, body: "{}" });
 check("a non-JSON body is refused", r.status === 415);
 r = await fetch(base + "/api/action", { method: "POST", headers: { "X-Board-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify({ instance: "widgets", text: "x".repeat(300 * 1024) }) });
