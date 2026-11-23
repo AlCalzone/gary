@@ -34,6 +34,7 @@ const SUITES = [
 	["node", "origins.test.mjs"],
 	["node", "focus.test.mjs"],
 	["node", "visit.test.mjs"],
+	["node", "contributions.test.mjs"],
 	["zsh", "sharing.test.zsh"],
 	["zsh", "validate.test.zsh"],
 ];

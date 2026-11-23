@@ -2220,6 +2220,7 @@ export async function startBoardServer({
 			await withLock(docLocks, file, async () => {
 				const item = await readJson(file);
 				if (!item) return void (refused = outdated);
+				if (!allowedRepo(name, item.repo)) return void (refused = [200, { ok: false, result: "The item names no thread of this instance." }]);
 				if (item.category !== "fyi") return void (refused = [200, { ok: false, result: "Only an FYI item takes Got it." }]);
 				await writeAtomic(file, { ...item, gotIt: { at } });
 			});

@@ -283,7 +283,9 @@ export async function proposalTarget(p, instance = instanceName()) {
 		return { file: personalFile(), repo: null };
 	}
 	if (!PROFILE_FILE.test(p.file ?? "")) throw new Error("A profile proposal must target rules/<topic>.md or templates/<name>.md");
-	const profile = await realpath(loadInstance(instance).profileDir);
+	const { profileDir } = loadInstance(instance);
+	if (!profileDir) throw new Error("A contributions instance has no profile. Its rules go into personal.md");
+	const profile = await realpath(profileDir);
 	const dir = join(profile, dirname(p.file));
 	let realDir;
 	try {

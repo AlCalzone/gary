@@ -126,6 +126,7 @@ export async function verifyOwnLogin() {
  * stored login only when allowOwnTokenPushes is true.
  */
 export function assertWriteAllowed() {
+	if (readOnlyInstance()) throw new Error(READ_ONLY_MESSAGE);
 	if (accountMode() === "none") {
 		throw new Error("No bot account is configured and allowOwnTokenPushes is false, so the board cannot write to GitHub. Do this step on GitHub yourself.");
 	}

@@ -16,6 +16,9 @@
 //                          "requests-<n>" is merged into the PR that a review request for the maintainer reads.
 //                          "escalation-<n>" is the closed discussion, "escalated-issue-<n>" the issue and "link-pr-<n>"
 //                          the PR that `gary link-escalated` reads
+//   FAKE_GH_CONTRIBUTIONS  a JSON file { searches: [{ match, nodes, total }], items: { "owner/name#n": node } } for a
+//                          contributions instance. A search answers with the nodes of the first entry whose `match`
+//                          occurs in its query, paged by `first` and `after`. ContributionsItem reads `items`
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as gh from "../fixtures/github.mjs";
@@ -105,6 +108,22 @@ const withProjects = (node) => {
 };
 const withOverride = (key, node) => withProjects(node && overrides[key] ? { ...node, ...overrides[key] } : node);
 
+if (query.includes("query ContributionsSearch") || query.includes("query ContributionsItem")) {
+	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : { searches: [], items: {} };
+	if (query.includes("query ContributionsItem")) {
+		const node = data.items?.[`${v.owner}/${v.name}#${v.number}`] ?? null;
+		if (!node) fail(`Could not resolve to an item with the number of ${v.number}.`, { repository: null });
+		const field = { PullRequest: "pullRequest", Issue: "issue", Discussion: "discussion" }[node.__typename];
+		out({ data: { repository: { [field]: node } } });
+	}
+	const hit = (data.searches ?? []).find((s) => String(v.q).includes(s.match));
+	const all = hit?.nodes ?? [];
+	const from = v.after ? Number(v.after) : 0;
+	const nodes = all.slice(from, from + (v.first ?? 25));
+	const end = from + nodes.length;
+	const total = hit?.total ?? all.length;
+	out({ data: { search: { issueCount: total, discussionCount: total, pageInfo: { hasNextPage: end < all.length, endCursor: String(end) }, nodes } } });
+}
 if (/projectsV2|projectItems/.test(query) && process.env.FAKE_GH_NO_PROJECTS === "1") {
 	fail("Your token has not been granted the required scopes to execute this query. The 'projectsV2' field requires one of the following scopes: ['read:project'], but your token has only been granted the: ['repo'] scopes.", undefined);
 }

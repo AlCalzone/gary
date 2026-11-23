@@ -650,7 +650,7 @@ async function fetchContribution(kind, number, repo) {
 	const field = ITEM_QUERIES[kind][0];
 	let data;
 	try {
-		data = await graphql(`query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { ${field}(number: $number) { ${NODE_FIELDS[kind]} } } }`, { owner, name, number });
+		data = await graphql(`query ContributionsItem($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { ${field}(number: $number) { ${NODE_FIELDS[kind]} } } }`, { owner, name, number });
 	} catch (e) {
 		if (/Could not resolve/i.test(e.message)) throw new Error(`${kind} #${number} not found in ${repo}`);
 		throw e;
