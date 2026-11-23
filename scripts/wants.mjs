@@ -1,9 +1,13 @@
 // gary wants [--json]: lists, per board item, the labels and assignees its `wants` asks for that GitHub does not
 // show yet. GitHub's state comes from the staged snapshot, or the baseline when nothing is staged. Read-only.
+// Without a bot and without allowOwnTokenPushes no account may write, so the list is empty and `skipped` says why.
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { boardDir, readJson } from "./lib/board-store.mjs";
 import { stateDir } from "./lib/config.mjs";
+import { accountMode } from "./lib/gh.mjs";
+
+export const NO_WRITER = "No account may write: there is no bot and allowOwnTokenPushes is false. No label or assignee change is attempted.";
 
 const lower = (list) => new Set((list ?? []).map((x) => x.toLowerCase()));
 
@@ -28,6 +32,10 @@ async function readSnapshot() {
 }
 
 export async function main(argv) {
+	if (accountMode() === "none") {
+		if (argv.includes("--json")) return console.log(JSON.stringify({ snapshot: null, fetchedAt: null, items: [], unknown: [], skipped: NO_WRITER }, null, 2));
+		return console.log(NO_WRITER);
+	}
 	const dir = join(boardDir(), "items");
 	let names = [];
 	try {

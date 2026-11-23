@@ -182,7 +182,7 @@ A subagent never writes `handled`. The routine only clears it under these rules.
 
 ### 4a. Wanted labels and assignees
 
-Every hourly run, independent of what changed, run `gary wants --json`. Skip the items in focus. It lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the item's `wantsReason`, and marks items without a snapshot entry as `unknown`. Skip the `unknown` ones. Attempt each listed change with `gary action --autonomous`, one input file per label or assignee, with the reason. Assignees are only added, never removed. Do not compare labels yourself.
+Every hourly run, independent of what changed, run `gary wants --json`. Skip the items in focus. It lists per item the labels to add or remove and the assignees to add that the staged snapshot does not show yet, with the item's `wantsReason`, and marks items without a snapshot entry as `unknown`. Skip the `unknown` ones. With `skipped` in the output no account may write: the list is empty, and you attempt nothing. Attempt each listed change with `gary action --autonomous`, one input file per label or assignee, with the reason. Assignees are only added, never removed. Do not compare labels yourself.
 
 While paused, each attempt is refused and recorded in `would-have.json`. A refusal for another reason, like a label outside `autoLabels`, goes into the run summary.
 

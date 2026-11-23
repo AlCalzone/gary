@@ -74,7 +74,7 @@ What the agent wants changed on GitHub without a click, as labels and assignees:
 "wantsReason": "The maintainer asked the reporter to upgrade and report back, which is still open."
 ```
 
-Write it at classification time, only for changes the classification file and the profile allow without a click, and only with labels from the profile's `autoLabels`. `wantsReason` is one sentence that states the last exchange correctly. Both are agent-owned and replaced with the doc. Leave both out when nothing is wanted. The routine compares `wants` with the item's current labels and assignees every run and applies what is missing.
+Write it at classification time, only for changes the classification file and the profile allow without a click, and only with labels from the profile's `autoLabels`. `wantsReason` is one sentence that states the last exchange correctly. Both are agent-owned and replaced with the doc. Leave both out when nothing is wanted, and always without a bot and without `allowOwnTokenPushes` (`accounts.md`). The routine compares `wants` with the item's current labels and assignees every run and applies what is missing.
 
 ## `autofix`
 

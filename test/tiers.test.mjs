@@ -62,6 +62,14 @@ w = json(gary("wants", "--json"));
 t.check("gary wants falls back to the baseline", w.snapshot === "baseline" && w.items.length === 2, w);
 r = gary("wants");
 t.check("gary wants prints one line per item", /pr-12\s+\+needs-info @octocat\s+The log is missing\./.test(r.stdout) && /pr-17\s+\+needs-info -dependencies/.test(r.stdout) && /2 items want changes, compared to the baseline snapshot/.test(r.stdout), r.stdout);
+const configFile = join(home, "config.json");
+const config = readFileSync(configFile, "utf8");
+writeFileSync(configFile, JSON.stringify({ ...JSON.parse(config), bot: null, allowOwnTokenPushes: false }));
+w = json(gary("wants", "--json"));
+t.check("without an account that may write gary wants lists nothing and says why", w.items.length === 0 && w.unknown.length === 0 && /No account may write/.test(w.skipped), w);
+writeFileSync(configFile, JSON.stringify({ ...JSON.parse(config), bot: null, allowOwnTokenPushes: true }));
+t.check("with allowOwnTokenPushes gary wants lists the changes", json(gary("wants", "--json")).items.length === 2);
+writeFileSync(configFile, config);
 
 // autofix and the format route
 const fmt = (over = {}) => ({ ...BASE, number: 14, reviewedSha: "c".repeat(40), autofix: { changes: true, files: 2, lines: 9, tools: ["prettier"] }, hint: "Format: run the autofix", routes: [{ id: "r1", type: "format", title: "Format: run the autofix", as: "agent", recommended: true }], ...over });
