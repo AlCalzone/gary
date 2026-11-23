@@ -157,7 +157,7 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
   "aiAuthors": ["devin"],          // extra names of AI agents for facts.aiAuthored, matched as case-insensitive parts of a commit author's name or login
   "autoReviewPaths": { "config": ["data/devices/**"] },   // globs per kind of PR that may get an automatic review. A PR is of a kind when every changed file matches one of its globs
   "formatCommand": "npm run fmt",  // or null: the one-line command a contributor runs to format. The automatic review names it when it cannot offer to push
-  "autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],   // default []: the formatter and lint autofix commands of the format check. Empty means no format check, no `autofix`, no `format` route and no format offer
+  "autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],   // default []: the formatter and lint autofix commands of the format check. Empty means no format check, no `autofix`, no `format` route and no format offer. An entry may also be { "run", "files": [globs] } to limit it to matching files. A command without {files} runs on the whole project, and only its changes to the PR's files count
   "autofixSetup": "npm ci",        // default null: one command that prepares a fresh worktree of the base branch before the commands run
   "commitFormat": "conventional",  // or null, the default: the format of an API edit's commit message, see "API edit"
   "mergeMethod": "squash",         // the default: squash, merge or rebase. The default method of the `merge` action. Only with squash may an agent set a PR's title for the commit

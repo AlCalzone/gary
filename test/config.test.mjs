@@ -150,7 +150,8 @@ t.check("the link needs the field and a bot", c.escalationOf({ bot: { login: "b"
 t.check("formatCommand is one line without backticks", c.validateProfile({ ...gprofile, formatCommand: "npm run fmt" }).length === 0 && c.validateProfile({ ...gprofile, formatCommand: null }).length === 0 && ["`rm -rf`", "a\nb", "", 5, "x".repeat(201)].every((v) => c.validateProfile({ ...gprofile, formatCommand: v }).some((e) => /"formatCommand" must be/.test(e))));
 const af = (fields) => c.validateProfile({ ...gprofile, autofixCommands: [], autofixSetup: null, ...fields });
 t.check("autofixCommands and autofixSetup take commands with their placeholders", af({ autofixCommands: ["npx prettier --write {files}"], autofixSetup: "npm ci" }).length === 0 && af({}).length === 0);
-t.check("every autofix command needs {files}", af({ autofixCommands: ["npx prettier --write ."] }).some((e) => /"autofixCommands" must be/.test(e)));
+t.check("an autofix command may run on the whole project or on the files its globs match", af({ autofixCommands: ["npm run lint:fix", { run: "npx eslint --fix {files}", files: ["**/*.ts"] }] }).length === 0);
+t.check("the object form needs run and files and nothing else", [{ run: "x" }, { files: ["a"] }, { run: "x", files: [] }, { run: "x", files: ["a"], extra: 1 }].every((v) => af({ autofixCommands: [v] }).some((e) => /"autofixCommands" must be/.test(e))));
 t.check("autofixCommands refuses other values", [[""], ["a {files}\nb"], "npx prettier {files}", [5], Array(11).fill("x {files}")].every((v) => af({ autofixCommands: v }).some((e) => /"autofixCommands" must be/.test(e))));
 t.check("autofixSetup is one line", ["", "a\nb", 5, "x".repeat(501)].every((v) => af({ autofixCommands: ["x {files}"], autofixSetup: v }).some((e) => /"autofixSetup" must be/.test(e))));
 t.check("autofixSetup needs commands", af({ autofixSetup: "npm ci" }).some((e) => /"autofixSetup" needs "autofixCommands"/.test(e)));

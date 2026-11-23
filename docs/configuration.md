@@ -59,14 +59,19 @@ Fields of `profile.json`:
 
 ```json
 {
-  "autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],
+  "autofixCommands": [
+    "npx prettier --write --ignore-unknown {files}",
+    { "run": "npx eslint --fix {files}", "files": ["**/*.ts", "**/*.js"] }
+  ],
   "autofixSetup": "ln -s {checkout}/node_modules node_modules"
 }
 ```
 
 Each review runs these commands on the PR's changed files, in a fresh worktree of the base branch. Gary never reviews style. It shows a badge and a "Format" card that commits exactly what the commands change.
 
-- `{files}` becomes the changed paths. Every command gets every path, so a command that handles only some file types needs its own option to skip the others.
+- `{files}` becomes the changed paths.
+- The form `{ "run", "files" }` limits a command to the changed files that match its globs.
+- A command without `{files}`, like `yarn lint --fix`, runs on the whole project. Only its changes to the PR's files count.
 - `autofixSetup` runs first, in that worktree. `{checkout}` becomes the instance's checkout. Use it to install or link the tools, like `npm ci`.
 - Setup and commands use the base branch's tools and configuration, never code from the PR.
 

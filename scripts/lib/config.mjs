@@ -555,12 +555,20 @@ export const MAX_AUTOFIX_COMMANDS = 10;
 const MAX_COMMAND = 500;
 const isCommand = (v) => typeof v === "string" && v.trim().length > 0 && v.length <= MAX_COMMAND && !/[\n\r]/.test(v);
 
+const isGlobList = (v) => Array.isArray(v) && v.length > 0 && v.length <= 20 && v.every((g) => typeof g === "string" && g.trim().length > 0 && g.length <= 200);
+// A string runs for every changed file. The object form limits the command to the files its globs match
+function isAutofixCommand(v) {
+	if (isCommand(v)) return true;
+	if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+	return Object.keys(v).every((k) => k === "run" || k === "files") && isCommand(v.run) && isGlobList(v.files);
+}
+
 function checkAutofix(data, errors) {
 	const cmds = data.autofixCommands;
 	check(
 		errors,
-		cmds === undefined || (Array.isArray(cmds) && cmds.length <= MAX_AUTOFIX_COMMANDS && cmds.every((c) => isCommand(c) && c.includes("{files}"))),
-		`"autofixCommands" must be a list of at most ${MAX_AUTOFIX_COMMANDS} one-line shell commands of at most ${MAX_COMMAND} characters, each with the placeholder {files}`,
+		cmds === undefined || (Array.isArray(cmds) && cmds.length <= MAX_AUTOFIX_COMMANDS && cmds.every(isAutofixCommand)),
+		`"autofixCommands" must be a list of at most ${MAX_AUTOFIX_COMMANDS} entries. An entry is a one-line shell command of at most ${MAX_COMMAND} characters, or { "run": <command>, "files": [<glob>, …] }`,
 	);
 	const setup = data.autofixSetup;
 	check(errors, setup === undefined || setup === null || isCommand(setup), `"autofixSetup" must be null or one shell command on one line, at most ${MAX_COMMAND} characters`);

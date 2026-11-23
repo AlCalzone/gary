@@ -5,7 +5,11 @@ Formatting, indentation, import order, trailing commas and everything else the p
 The commands come from the profile. Read `autofixCommands` and `autofixSetup` in `<profile>/profile.json`. A missing field has its default: `[]` and `null`.
 
 ```json
-"autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],
+"autofixCommands": [
+  "npx prettier --write --ignore-unknown {files}",
+  { "run": "npx eslint --fix {files}", "files": ["**/*.ts", "**/*.js"] },
+  "npm run lint:fix"
+],
 "autofixSetup": "ln -s {checkout}/node_modules node_modules"
 ```
 
@@ -28,7 +32,7 @@ When `autofixCommands` is empty, skip the check and leave `autofix` out. Then th
    When `autofixSetup` is set, run it in the worktree before step 2, with `{checkout}` replaced by `<checkout>`. It installs or links the tools, like `npm ci` or `ln -s {checkout}/node_modules node_modules`. When it fails, stop as described under "Result".
 2. For each changed file, write the PR's version into the worktree at the same path: `gh api "repos/<owner>/<repo>/contents/<path>?ref=<sha>" -H "Accept: application/vnd.github.raw" > <worktree>/<path>`. `<sha>` is the head you check, `reviewedSha` in a review.
 3. Stage that state: `git -C <worktree> -c core.hooksPath=/dev/null add -A`. It is the PR's version of those files.
-4. Run each command of `autofixCommands` in the worktree, in the listed order, with `{files}` replaced by the changed paths, each quoted for the shell. Every command gets every path. A command that handles only some file types needs its own option to skip the others, like `--ignore-unknown` for prettier. Pass `-c core.hooksPath=/dev/null` to every git call.
+4. Run each command of `autofixCommands` in the worktree, in the listed order, with `{files}` replaced by the changed paths, each quoted for the shell. An entry is a command, or an object with `run` and `files`. The object form gets only the changed paths that match one of its `files` globs, and is skipped when none matches. A command without `{files}`, like `npm run lint:fix`, runs on the whole project. Afterwards undo what it changed outside the PR's files: `git -C <worktree> checkout -- .` for every path that is not one of the changed files. Pass `-c core.hooksPath=/dev/null` to every git call.
 5. Read the result: `git -C <worktree> diff --numstat`. Any line means the autofix changes something. Count the files and the added plus removed lines.
 6. Keep the patch when the caller needs it: `git -C <worktree> diff > <scratch>/format.patch`. Then remove the worktree with `git -C <checkout> worktree remove --force <worktree>`.
 
