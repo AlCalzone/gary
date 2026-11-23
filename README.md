@@ -6,6 +6,8 @@
 
 Gary turns the open PRs, issues and discussions of your GitHub projects into a plan for your day. Every item comes briefed, with the next step prepared: a review, a reply, a fix. You read, click and keep the last word.
 
+One board covers all the projects you maintain. It also follows your own PRs, issues and review requests in other people's repos.
+
 ![The board with two projects](docs/images/board.png)
 
 ## What you get
@@ -24,7 +26,9 @@ Gary turns the open PRs, issues and discussions of your GitHub projects into a p
 
 **Rules in plain text.** Gary proposes a rule when you keep correcting it the same way. You accept, edit or dismiss it.
 
-**One board for everything.** Several projects share one board, each in its own tab. A [contributions tab](docs/configuration.md#your-contributions-elsewhere) follows your threads in other people's repos.
+**Every project you maintain.** Each project gets its own tab, rules and settings. The tab "All" merges them into one plan.
+
+**Everything you contribute to.** A [contributions tab](docs/configuration.md#your-contributions-elsewhere) follows your threads in repos you do not maintain: your open PRs and issues, the PRs that wait for your review, and the threads you commented on. It tells you when something relevant happened and filters out the noise. Gary only reads there.
 
 ## Setup
 
