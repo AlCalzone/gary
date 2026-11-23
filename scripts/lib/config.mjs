@@ -46,7 +46,7 @@ function checkTab(errors, unknown, tab) {
 	if (!tab || typeof tab !== "object" || Array.isArray(tab)) return void errors.push('"tab" must be { "icon", "color", "background", "favorite" }');
 	for (const key of Object.keys(tab)) if (!["icon", "color", "background", "favorite"].includes(key)) unknown.push(`unknown field "tab.${key}"`);
 	if (tab.icon !== undefined && !TAB_ICONS.includes(tab.icon) && !isIconFile(tab.icon)) errors.push(`"tab.icon" must be an image file (${Object.keys(TAB_ICON_TYPES).join(", ")}) or one of ${TAB_ICONS.join(", ")}`);
-	if (tab.color !== undefined && !TAB_COLORS.includes(tab.color)) errors.push(`"tab.color" must be one of ${TAB_COLORS.join(", ")}`);
+	if (tab.color !== undefined && !TAB_COLORS.includes(tab.color) && !/^#[0-9a-f]{6}$/i.test(String(tab.color))) errors.push(`"tab.color" must be a color like #0071bc or one of ${TAB_COLORS.join(", ")}`);
 	if (tab.background !== undefined && typeof tab.background !== "boolean") errors.push('"tab.background" must be true or false');
 	if (tab.favorite !== undefined && typeof tab.favorite !== "boolean") errors.push('"tab.favorite" must be true or false');
 	if (tab.background === true && tab.color === undefined) errors.push('"tab.background" needs "tab.color"');

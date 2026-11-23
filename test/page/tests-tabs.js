@@ -18,7 +18,31 @@
   ok("tab style: the tab shows its icon and color, the label stays", !!tabBtns()[2].querySelector("svg") && tabBtns()[2].style.getPropertyValue("--tab-ink") === "var(--cat-unblock-ink)" && tabBtns()[2].textContent === "contoso-gadgets" && !tabBtns()[1].querySelector("svg"));
   ok("tab style: the tab across all projects has no page tint", !("tint" in document.documentElement.dataset));
   tabBtns()[2].click(); await wait(5);
-  ok("tab style: the project's own tab tints the page", "tint" in document.documentElement.dataset && document.documentElement.style.getPropertyValue("--page-tint") === "var(--cat-unblock-ink)");
+  ok("tab style: the project's own tab tints the page", document.documentElement.dataset.tint === "#8cc0f0" && /^#[0-9a-f]{6}$/.test(document.documentElement.style.getPropertyValue("--today")) && document.documentElement.style.getPropertyValue("--accent") !== "");
+  {
+    // The palette of every key color keeps text readable and cards apart from the page, in both themes
+    const lum = (hx) => { const f = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); const [r, g, b] = [1, 3, 5].map((i) => f(parseInt(hx.slice(i, i + 2), 16) / 255)); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const cr = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    const inks = { dark: ["#f4a582", "#8cc0f0", "#86d9a4", "#bbaefa", "#f3a8d2"], light: ["#a8481f", "#255f99", "#1f6a45", "#5a43b3", "#9a2c6a"] };
+    const bad = [];
+    for (const key of [...Object.values(TINT_KEYS), "#0071bc", "#ffcc00", "#ff0000", "#00ffcc"]) for (const theme of ["dark", "light"]) {
+      const p = paletteFor(key, theme);
+      const need = (what, a, b, min) => { const v = cr(a, b); if (v < min) bad.push(key + " " + theme + " " + what + " " + v.toFixed(2)); };
+      for (const s of ["bg", "surface", "surface-2", "today", "today-hover"]) {
+        need("fg/" + s, p.fg, p[s], 7);
+        need("muted/" + s, p.muted, p[s], 4.5);
+        need("faint/" + s, p.faint, p[s], 4.5);
+        need("accent/" + s, p.accent, p[s], 4.5);
+        inks[theme].forEach((ink, i) => need("category " + i + "/" + s, ink, p[s], 4.5));
+      }
+      need("accent-fg/accent", p["accent-fg"], p.accent, 4.5);
+      need("accent/accent-soft", p.accent, p["accent-soft"], 4.5);
+      need("plan card/page", p.today, p.bg, theme === "dark" ? 1.25 : 1.13);
+      need("line/surface", p["line-strong"], p.surface, theme === "dark" ? 1.4 : 1.3);
+    }
+    ok("tab style: every key color keeps text contrast and separates cards from the page", bad.length === 0, bad.slice(0, 12).join(" | "));
+    ok("tab style: gray is a palette without hue", /^#([0-9a-f]{2})\1\1$/.test(paletteFor(TINT_KEYS.gray, "dark").bg));
+  }
   tabBtns()[1].click(); await wait(5);
   ok("tab style: another project's tab drops the tint", !("tint" in document.documentElement.dataset));
   tabBtns()[0].click(); await wait(5);

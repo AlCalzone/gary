@@ -1396,10 +1396,16 @@ The dialog of an `fyi` item has one "Got it" button. It sends `{ instance, actio
 
 ### Tab style
 
-Every instance config, of both kinds, takes an optional `tab: { icon, color, background, favorite }`. A tab with `favorite: true` comes right after the tab across all instances, before the others. The tab across all instances has a fixed icon. The board shows the icon in front of the tab's title and draws the icon and the selected tab's underline in the color. With `background: true` the page takes a tint of that color while the board shows only this instance: the background, the cards, the lines and the plan's highlight are each their neutral color with a fixed share of the tab color mixed in, so they keep fitting each other. The tab across all instances has no tint. `background` needs `color`.
+Every instance config, of both kinds, takes an optional `tab: { icon, color, background, favorite }`. A tab with `favorite: true` comes right after the tab across all instances, before the others. The tab across all instances has a fixed icon. The board shows the icon in front of the tab's title and draws the icon and the selected tab's underline in the color. With `background: true` the page takes its colors from that color while the board shows only this instance. The color is the key: only its hue counts. The page computes one palette from it in OKLCH (`paletteFor` in `board.html`), with these rules:
+
+- Every role has a fixed lightness per theme: page, cards, lines, the plan's cards and their hover, the bar, the accent for links, buttons and the selected tab, and the three text colors. Contrast comes from these lightness steps, so it is the same for every hue.
+- Every role's chroma is a share of the strongest chroma sRGB can show at that lightness and hue, with a cap. A fixed chroma would look heavy in pink and weak in blue.
+- The page and the plain cards stay near neutral. The plan's cards and the accent carry the color.
+- The category colors, warnings and CI colors stay as they are in every palette.
+- A page test checks every named color and some hex keys in both themes: text on every surface at 4.5:1 or more, body text at 7:1 or more, the category colors on every surface at 4.5:1 or more, and the plan's cards apart from the page.
 
 - `icon`: an image file (`.svg`, `.png`, `.jpg`, `.jpeg`, `.webp`, at most 1 MB), as an absolute path, a `~/` path or a path relative to the instance's directory. The server sends it at `/tab-icon/<instance>` and gives the page `tab.iconUrl` in place of the path. `gary doctor` checks the file. Or one of the built-in icons `zap`, `home`, `star`, `globe`, `heart`, `user`, `shield`, `bot`, `sparkles`, `wrench`, `lightbulb`, `plug`, `eye`, `pr`, `issue`, `discussion`, `commit`, `comments`.
-- `color`: one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`. These are the category colors, so both themes define them.
+- `color`: a hex color like `#0071bc`, or one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`. `gray` gives a palette without hue.
 
 The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg`. With several instances the logo replaces the heading "Gary", which stays for screen readers.
 
