@@ -10,7 +10,7 @@ The maintainer clicked `format` on a PR, or the PR's author accepted the offer o
 2. Run the check in `format-check.md` again, against the current head, and keep the patch. It takes `autofixCommands` and `autofixSetup` from the profile. When `autofixCommands` is empty, refuse: the profile has no format check.
 3. Refuse when the patch touches a file the PR did not change, or when it is empty.
 4. Set up the PR worktree as `push-to-pr.md` describes and apply the patch: `git -C <worktree> -c core.hooksPath=/dev/null apply --index <scratch>/format.patch`. If it does not apply cleanly, refuse. Never resolve conflicts.
-5. Commit under the writing identity with the profile's commit message, default `chore: format and fix lint`. Push as `push-to-pr.md` describes.
+5. Commit under the writing identity with the commit message `rules/review.md` names. Without one, use `chore: format and fix lint` when the profile has `commitFormat: "conventional"`, and `Format and fix lint` otherwise. Push as `push-to-pr.md` describes.
 6. Return as `push-to-pr.md` describes. The item gets `autofix` with `changes: false`, the new `reviewedSha`, the commit in `links`, and the `format` route removed. Everything else on the item stays as it was, including its other routes. Without other findings, the recommended route becomes `merge` as `me`, or a `review` approval when the PR lacks one.
 
 The commit runs CI again. When CI was red only because of the lint job, it should turn green.

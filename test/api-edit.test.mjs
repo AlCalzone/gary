@@ -63,7 +63,11 @@ for (const [label, message, re] of [
 	["a commit message with a mention", "docs: thanks @octocat", /mention/],
 	["a commit message that closes an issue", "docs: fix the link, closes #12", /closing keyword/],
 ]) t.check(`${label} is refused`, has(params({ message }), re), problems(params({ message })));
-t.check("a conventional commit with a scope passes", commitMessageProblem("fix(docs): correct the invite link") === null);
+t.check("a conventional commit with a scope passes", commitMessageProblem("fix(docs): correct the invite link", [], "conventional") === null);
+const plain = (p) => apiEditProblems(p, { ...profile, commitFormat: null });
+t.check("without commitFormat a plain line passes", plain(params({ message: "Fix the Discord invite link" })).length === 0 && commitMessageProblem("Fix the link") === null);
+t.check("without commitFormat the message is still one line of at most 72 characters", plain(params({ message: "Fix\nmore" })).some((m) => /one line/.test(m)) && plain(params({ message: "x".repeat(73) })).some((m) => /longer than 72/.test(m)) && plain(params({ message: " " })).some((m) => /is required: the commit message, one line$/.test(m)));
+t.check("without commitFormat a bot command is still refused", plain(params({ message: "Fix it @widgets-bot automerge" })).some((m) => /mention|bot command/.test(m)) && commitMessageProblem("Fix it, then automerge", ["automerge"]) !== null);
 
 // ---------- applying edits ----------
 const refusal = (fn) => {

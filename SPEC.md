@@ -159,6 +159,7 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
   "formatCommand": "npm run fmt",  // or null: the one-line command a contributor runs to format. The automatic review names it when it cannot offer to push
   "autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],   // default []: the formatter and lint autofix commands of the format check. Empty means no format check, no `autofix`, no `format` route and no format offer
   "autofixSetup": "npm ci",        // default null: one command that prepares a fresh worktree of the base branch before the commands run
+  "commitFormat": "conventional",  // or null, the default: the format of an API edit's commit message, see "API edit"
   "dueDateFields": ["Due", "Due date", "Target date", "Deadline", "End date"]   // date fields of a GitHub Projects item that give the item its due date, matched without regard to case. The default is shown
 }
 ```
@@ -433,7 +434,7 @@ The API edit is the one push such a PR can get. It is a `take_over` (contributor
   "id": "r1", "type": "take_over", "as": "bot", "title": "Take over: fix the Discord link", "recommended": true,
   "params": {
     "via": "api",
-    "message": "docs: fix the Discord invite link",   // the commit message, one conventional commit line
+    "message": "docs: fix the Discord invite link",   // the commit message, one line. A conventional commit with commitFormat "conventional"
     "edits": [                                         // the exact change, written out at review time
       { "path": "CONTRIBUTING.md", "original": "Join us on Discord: https://discord.gg/wrong", "replacement": "Join us on Discord: https://discord.gg/right" }
     ]
@@ -451,7 +452,7 @@ Limits. The validator checks the ones that need no GitHub read. The code that co
 - Every path is an existing regular file at the PR head, mode `100644`. A missing path, a symlink, a directory, a submodule, an executable file, a binary file and a file too large for the API to return as text are refused. So the commit creates, deletes and renames nothing and changes no mode.
 - `original` occurs exactly once in the file at the head, as whole lines. Two edits of one file do not overlap. `replacement` is not empty and differs from `original`.
 - No `replacement`, path, `message` or note contains a `botCommands` string.
-- `message` matches `<type>(<scope>): <text>` with a type of `fix`, `docs`, `chore`, `feat`, `refactor`, `test`, `style` or `perf`, has at most 72 characters and one line, and holds no `@`, no marker that skips CI like `[skip ci]` and no closing keyword like `closes #12`.
+- `message` has at most 72 characters and one line, and holds no `@`, no marker that skips CI like `[skip ci]` and no closing keyword like `closes #12`. With the profile's `commitFormat: "conventional"` it also matches `<type>(<scope>): <text>` with a type of `fix`, `docs`, `chore`, `feat`, `refactor`, `test`, `style` or `perf`. With `commitFormat: null`, the default, any such line passes.
 - `reviewedSha` is a full 40-character SHA.
 
 The click needs a second confirm and runs on the server, with no agent. The server first reads the thread like for every bot route that posts. A person's comment or review after `reviewedAt` is refused with "Post anyway". A head other than `reviewedSha` is refused. No force passes it. Then `runApiEdit` in `scripts/lib/api-edit.mjs`:

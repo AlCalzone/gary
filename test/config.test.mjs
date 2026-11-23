@@ -154,10 +154,11 @@ t.check("every autofix command needs {files}", af({ autofixCommands: ["npx prett
 t.check("autofixCommands refuses other values", [[""], ["a {files}\nb"], "npx prettier {files}", [5], Array(11).fill("x {files}")].every((v) => af({ autofixCommands: v }).some((e) => /"autofixCommands" must be/.test(e))));
 t.check("autofixSetup is one line", ["", "a\nb", 5, "x".repeat(501)].every((v) => af({ autofixCommands: ["x {files}"], autofixSetup: v }).some((e) => /"autofixSetup" must be/.test(e))));
 t.check("autofixSetup needs commands", af({ autofixSetup: "npm ci" }).some((e) => /"autofixSetup" needs "autofixCommands"/.test(e)));
+t.check("commitFormat is null or conventional", c.validateProfile({ ...gprofile, commitFormat: "conventional" }).length === 0 && c.validateProfile({ ...gprofile, commitFormat: null }).length === 0 && ["angular", "", 1].every((v) => c.validateProfile({ ...gprofile, commitFormat: v }).some((e) => /"commitFormat" must be null or one of "conventional"/.test(e))) && c.PROFILE_DEFAULTS.commitFormat === null);
 t.check("the defaults have no format check", JSON.stringify(c.PROFILE_DEFAULTS.autofixCommands) === "[]" && c.PROFILE_DEFAULTS.autofixSetup === null);
 t.check("the template profile is valid and carries the new fields", (() => {
 	const tpl = JSON.parse(readFileSync(join(ROOT, "profiles", "template", "profile.json"), "utf8"));
-	return c.validateProfile(tpl).length === 0 && JSON.stringify(tpl.autoReviewPaths) === '{"config":[]}' && tpl.formatCommand === null && JSON.stringify(tpl.autofixCommands) === "[]" && tpl.autofixSetup === null;
+	return c.validateProfile(tpl).length === 0 && JSON.stringify(tpl.autoReviewPaths) === '{"config":[]}' && tpl.formatCommand === null && JSON.stringify(tpl.autofixCommands) === "[]" && tpl.autofixSetup === null && tpl.commitFormat === null;
 })());
 // A broken autoReview keeps the last valid settings, like every other field
 const wfile = join(root, "instances", "widgets", "config.json");

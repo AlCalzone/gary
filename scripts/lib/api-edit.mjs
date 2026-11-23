@@ -42,12 +42,16 @@ export function editPathProblem(path, sensitivePaths = []) {
 	return null;
 }
 
-/** Why `message` cannot be the commit message, or null. It is one conventional commit line. */
-export function commitMessageProblem(message, commands = []) {
-	if (typeof message !== "string" || !message.trim()) return "params.message is required: the commit message, one conventional commit line";
+/**
+ * Why `message` cannot be the commit message, or null. It is one line, and a conventional commit line when `format`
+ * is "conventional", the profile's `commitFormat`.
+ */
+export function commitMessageProblem(message, commands = [], format = null) {
+	const what = format === "conventional" ? "one conventional commit line" : "one line";
+	if (typeof message !== "string" || !message.trim()) return `params.message is required: the commit message, ${what}`;
 	if (/[\r\n]/.test(message)) return "params.message must be one line";
 	if (message.length > API_EDIT_LIMITS.message) return `params.message is longer than ${API_EDIT_LIMITS.message} characters`;
-	if (!MESSAGE_PATTERN.test(message)) return `params.message must be a conventional commit like "docs: fix the Discord invite link", with one of ${COMMIT_TYPES.join(", ")}`;
+	if (format === "conventional" && !MESSAGE_PATTERN.test(message)) return `params.message must be a conventional commit like "docs: fix the Discord invite link", with one of ${COMMIT_TYPES.join(", ")}`;
 	if (SKIP_CI.test(message)) return "params.message must not hold a marker that skips CI";
 	if (message.includes("@")) return "params.message must not mention anyone";
 	if (CLOSING_KEYWORD.test(message)) return "params.message must not hold a closing keyword for an issue";
@@ -67,7 +71,7 @@ export function apiEditProblems(params, profile) {
 	for (const key of Object.keys(params)) if (!PARAM_KEYS.includes(key)) problems.push(`unknown param "${key}"`);
 	if (params.mode !== undefined && params.mode !== "push") problems.push('an API edit commits to the PR branch, so params.mode is "push" or absent');
 	const commands = botCommandsOf(profile);
-	const messageProblem = commitMessageProblem(params.message, commands);
+	const messageProblem = commitMessageProblem(params.message, commands, profile?.commitFormat ?? null);
 	if (messageProblem) problems.push(messageProblem);
 	const edits = params.edits;
 	if (!Array.isArray(edits) || !edits.length) return [...problems, "params.edits must list at least one edit { path, original, replacement }"];

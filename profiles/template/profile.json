@@ -15,5 +15,6 @@
 	"formatCommand": null,
 	"autofixCommands": [],
 	"autofixSetup": null,
+	"commitFormat": null,
 	"escalateResult": null
 }
