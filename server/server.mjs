@@ -2423,7 +2423,7 @@ export async function startBoardServer({
 
 		if (url.pathname === "/logo.svg" && req.method === "GET") {
 			res.writeHead(200, { "Content-Type": "image/svg+xml", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Cache-Control": "max-age=3600", "X-Content-Type-Options": "nosniff" });
-			return res.end(await readFile(join(ROOT, "logo-outlined.svg")));
+			return res.end(await readFile(join(ROOT, "logo-head-outlined.svg")));
 		}
 
 		if (url.pathname.startsWith("/tab-icon/") && req.method === "GET") {
