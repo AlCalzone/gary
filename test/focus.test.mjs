@@ -205,6 +205,7 @@ t.check("text without the mark is no done message", brief.parseDoneMessage("inst
 
 r = gary("focus", "brief", "pr-12", "--harness", "t3code", "--master", "master-thread");
 t.check("gary focus brief prints the briefing and the facts the master needs", r.status === 0 && json(r).kind === "pr" && json(r).number === 12 && json(r).briefing.includes("gh pr checkout 12") && json(r).previous?.status === "ended", r.stdout + r.stderr);
+t.check("the brief names the review model for a new session", json(r).model === "opus", json(r).model);
 t.check("a new session learns where it finds its own id", json(r).briefing?.includes("`currentThreadId` in the answer of any T3 thread tool") && json(r).briefing.includes("--focus-session <your session id>") && json(r).briefing.includes("session: <your session id>"), json(r).briefing);
 r = gary("focus", "brief", "pr-12", "--harness", "t3code", "--master", "master-thread", "--session", "thread-7");
 t.check("with a session it prints the note for an attached session", r.status === 0 && json(r).note.includes("--focus-session thread-7") && !("briefing" in json(r)), r.stdout);

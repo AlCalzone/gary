@@ -21,7 +21,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { boardDir, readJson } from "./lib/board-store.mjs";
 import { listClaims } from "./lib/claims.mjs";
-import { instanceName, loadInstance, paths } from "./lib/config.mjs";
+import { instanceName, loadInstance, modelsOf, paths } from "./lib/config.mjs";
 import { OWN_ID, focusAttachNote, focusBriefing, parseDoneMessage } from "./lib/focus-brief.mjs";
 import { FOCUS_MATCHES, MAX_SUMMARY, checkFocus, endFocus, failFocus, readFocus, readFocuses, startFocus } from "./lib/focus.mjs";
 import { readSnapshotItems } from "./lib/fixes.mjs";
@@ -102,6 +102,7 @@ async function brief(itemId, out) {
 		headRef: entry?.headRef ?? null,
 		checkout: p.checkout,
 		defaultBranch: branch,
+		model: modelsOf(instance.config).models.review,
 		previous: await readFocus(itemId),
 		working,
 		origin: origin?.found ? { sessionId: origin.sessionId, cwd: origin.cwd, transcript: origin.transcript, lastActiveAt: origin.lastActiveAt } : null,
