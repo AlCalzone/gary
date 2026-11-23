@@ -14,7 +14,7 @@ Who writes to GitHub depends on the home `config.json`. SPEC.md "Accounts" is th
 
 - With a bot, use the `as` values from SPEC.md "Routes".
 - Without a bot, a route that would be `as: "bot"` becomes `as: "me"` when it has a prefill: `reply`, `request_logs`, `reopen`, and the body of a `review`. A `review` keeps only its body as `text`. Its inline comments go into that body as a list with `path:line`, because a prefill cannot carry inline comments.
-- Without a bot, routes without a prefill (inline review comments, `move` to a repo, `chore`) appear only with `allowOwnTokenPushes: true`. They keep `as: "bot"`. The server runs them under the maintainer's login, and the card shows his avatar.
+- Without a bot, routes without a prefill (inline review comments, `move` to a repo, `chore`) appear only with `allowOwnTokenPushes: true`. They keep `as: "bot"`. The server runs them under the maintainer's login, and the card shows the maintainer's avatar.
 - `address_review`, `take_over`, `revise`, `drive` and `follow_up` with `as: "agent"` push code. Offer them only with a bot or with `allowOwnTokenPushes: true`. The same holds for a `take_over` or `revise` in the API form, with `as: "bot"`.
 - Without a bot and without `allowOwnTokenPushes`, no account may set labels or assignees. Write no `wants` and no `wantsReason`, and attempt no label or assignee change. `gary wants --json` then lists nothing and says why in `skipped`. Name a label the item needs in a finding, so the maintainer can set it on GitHub.
 

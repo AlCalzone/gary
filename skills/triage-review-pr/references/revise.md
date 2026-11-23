@@ -2,7 +2,7 @@
 
 The maintainer clicked `revise` (the "Change" card) on a PR we already control: a PR by the maintainer, by the bot, by another bot or Copilot, or a contributor PR with `takenOver: true`. On any other contributor PR, return `status: "failed"`: the first push there is a take-over, see `take-over.md`. You get the action file with the instructions in `text`, the item doc with the review's findings and threads, and a scratch directory. The action has no params.
 
-`text` is the change he wants. The agent proposed it on the card and he may have edited it, so follow it as he sent it. An empty `text` is a failed request.
+`text` is the change the maintainer wants. The agent proposed it on the card and the maintainer may have edited it, so follow it as they sent it. An empty `text` is a failed request.
 
 The limits in `push-to-pr.md`, "What a take-over or a change never does", apply.
 
@@ -19,7 +19,7 @@ A `revise` route with `params.via: "api"` never reaches you. The server commits 
 
 ## Open review threads
 
-A revise carries no thread decisions. Leave every open thread as it is: no reply, no resolve. The threads stay in `threads` with their verdicts, and the returned routes offer `address_review` or `drive` for them where the rules allow it. The one exception is a thread that your change made pointless, like a comment on a file the instructions told you to delete. Keep it in `threads` and say in its `note` that the change covers it, so he can dismiss it in the next `address_review`.
+A revise carries no thread decisions. Leave every open thread as it is: no reply, no resolve. The threads stay in `threads` with their verdicts, and the returned routes offer `address_review` or `drive` for them where the rules allow it. The one exception is a thread that your change made pointless, like a comment on a file the instructions told you to delete. Keep it in `threads` and say in its `note` that the change covers it, so the maintainer can dismiss it in the next `address_review`.
 
 ## Last step
 

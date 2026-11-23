@@ -140,7 +140,7 @@ Then go back to waiting for queue events.
 
 ## 7. Focus
 
-The maintainer clicked "Focus" on an item. He handles that item 1 on 1 in an agent session, and Gary holds everything else on it until he is done. You find a session that already handles the item, or you start one. You start no worker for it. `SPEC.md`, section "Focus", is the contract.
+The maintainer clicked "Focus" on an item. They handle that item 1 on 1 in an agent session, and Gary holds everything else on it until they are done. You find a session that already handles the item, or you start one. You start no worker for it. `SPEC.md`, section "Focus", is the contract.
 
 The queue line is `{ "instance", "id", "itemId", "action": "focus" }`. `id` is the focus request's action doc. Below, `gary` stands for `gary --instance <instance>`.
 

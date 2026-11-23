@@ -13,7 +13,7 @@
 
 ## What a take-over or a change never does
 
-A `take_over` and a `revise` change the code. They never decide the PR. You do not merge, approve, close or mark the PR ready, also when the instructions mention a merge. The maintainer has the last word and merges on GitHub himself.
+A `take_over` and a `revise` change the code. They never decide the PR. You do not merge, approve, close or mark the PR ready, also when the instructions mention a merge. The maintainer has the last word and merges on GitHub themself.
 
 With the profile's `mergeMethod` at `squash`, the default, the title becomes the squash commit message. Then you may set the PR's title when it does not follow the profile's title format or no longer matches the change: `gh pr edit <n> --repo <owner>/<repo> --title "<title>"` under the writing identity. With `merge` or `rebase` leave the title as it is.
 
@@ -109,16 +109,16 @@ Your final report is one JSON object and nothing else:
 - `pushed` is `{ "action": "<take_over | revise | address_review | drive | format>", "sha": "<the new head>", "at": "<ISO>" }`. It marks that our push made this head. The validator then requires a route that decides the PR.
 - `links` gets `{ "label": "Our commit", "url": "<commit URL>" }`.
 - **Routes after a push** (the one rule, the mode files point here): every route written before the push is dropped, never carried over. No "Approve as is", no "Merge as is", no old `review` with inline comments on lines that moved. After the push, look at the PR as a whole on the new head, like a full review does, and end in a route that decides it. The recommended route is the first that fits:
-  - `merge` as `me` when nothing is left to fix and no specification question is open. He merges on GitHub. Where the project needs an approval first, add a `review` with `event: "approve"` as the bot as the alternative.
+  - `merge` as `me` when nothing is left to fix and no specification question is open. The maintainer merges on GitHub. Where the project needs an approval first, add a `review` with `event: "approve"` as the bot as the alternative.
   - `review` with `event: "request_changes"` when something is left for the contributor.
   - `revise` or `address_review`, where they are allowed, when another pass by the agent is the way: open threads get `address_review` or `drive`, one more concrete change gets `revise`.
   - `close` when the push showed that the PR should not go in.
   A `reply` that only reports what you pushed is never a route of its own. You already replied in the review threads. When a word to the contributor is useful, like `I moved the compat block, so this is ready.`, it is the `text` of the merge or approve route.
   The item is never left with only a comment to post, and never without routes. The validator refuses an item whose `pushed.sha` is its `reviewedSha` and that has none of `merge`, `review`, `revise`, `address_review` and `close`.
   Our push can dismiss an earlier approval. When the PR had one, `state` says it needs a new approval.
-  When a review bot round follows the push, the item still ends in a route that decides the PR. His clicks wait while the round runs. The drive round that ends the rounds writes the item again, and a clean end requests his review on GitHub.
+  When a review bot round follows the push, the item still ends in a route that decides the PR. The maintainer's clicks wait while the round runs. The drive round that ends the rounds writes the item again, and a clean end requests the maintainer's review on GitHub.
 - **AI-written PRs**: the rule for AI-written PRs in the classification file still wins, so on such a PR `merge` is not the recommended route and the estimate follows the size. Our own commits do not make a PR AI-written: `facts.aiAuthored` leaves out the bot's commits on a PR someone else opened and counts them in `facts.ourCommits`. A contributor's PR with one take-over commit is judged like the contributor's PR it is.
-- **CI on the new head**: CI usually still runs when you return. Offer the decision route anyway, with the `callout` `CI is still running on the new head`, and set `ci: "pending"`. The server's checks at click time stay as they are. Then keep watching, so the item does not wait for the hourly run: after you returned the item and the caller wrote it, poll `gh pr checks <n> --repo <owner>/<repo>` once a minute for up to 20 minutes. Release the push claim before you start to poll, so he can decide in the meantime. When CI finished:
+- **CI on the new head**: CI usually still runs when you return. Offer the decision route anyway, with the `callout` `CI is still running on the new head`, and set `ci: "pending"`. The server's checks at click time stay as they are. Then keep watching, so the item does not wait for the hourly run: after you returned the item and the caller wrote it, poll `gh pr checks <n> --repo <owner>/<repo>` once a minute for up to 20 minutes. Release the push claim before you start to poll, so the maintainer can decide in the meantime. When CI finished:
   - green: write the item again with `gary put --merge items <id>`: `ci: "passing"` and the same routes without the callout.
   - red because of our push: write `ci: "failing"`, a `state` that names the failing job, and a recommended `revise` route whose `text` holds the failure and the fix you propose, like `The lint job fails on the import order in src/a.ts. Sort the imports.` The `merge` route goes.
   - red for a reason outside the PR: keep the routes, and name the job in the callout.

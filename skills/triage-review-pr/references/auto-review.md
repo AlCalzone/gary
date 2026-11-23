@@ -1,6 +1,6 @@
 # The automatic first review doc
 
-A contributor's PR of a kind the instance names can get one review without the maintainer's click (SPEC.md, "Automatic first review"). You write the doc. The routine posts it with `gary auto-review post`, and that command refuses a doc that breaks a rule here. The maintainer agreed to this for certain findings only, so when in doubt, leave a finding out. It stays on the board item for his own review.
+A contributor's PR of a kind the instance names can get one review without the maintainer's click (SPEC.md, "Automatic first review"). You write the doc. The routine posts it with `gary auto-review post`, and that command refuses a doc that breaks a rule here. The maintainer agreed to this for certain findings only, so when in doubt, leave a finding out. It stays on the board item for the maintainer's own review.
 
 Write `<scratch>/auto-review.json` only when the brief says the PR may get one:
 

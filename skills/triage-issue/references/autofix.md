@@ -1,6 +1,6 @@
 # Fix mode: repro test, fix, draft PR
 
-The routine starts fix mode for an item whose triage returned a `follow_up` route with `as: "agent"`, or when the maintainer clicked one. That item is usually an issue, sometimes a PR whose finding suggested a separate fix. You get the item doc, the snapshot entry, the route's `text` with the plan, and `params.finding` when the request named one. The goal is a draft PR that the maintainer can review: a test that fails on the default branch, the smallest fix that makes it pass, and a description he can check in a minute.
+The routine starts fix mode for an item whose triage returned a `follow_up` route with `as: "agent"`, or when the maintainer clicked one. That item is usually an issue, sometimes a PR whose finding suggested a separate fix. You get the item doc, the snapshot entry, the route's `text` with the plan, and `params.finding` when the request named one. The goal is a draft PR that the maintainer can review: a test that fails on the default branch, the smallest fix that makes it pass, and a description the maintainer can check in a minute.
 
 The profile's `rules/issues.md` holds the project's commands and conventions: how to set up a worktree, how to write and run the repro test, which checks to run before pushing, the commit message format. Read it before you start.
 
@@ -15,7 +15,7 @@ Opening the draft PR is one of the few things the routine may do without a click
 
 Claim the item with `gary claim <itemId> fix --run <run>`, plus `--request <action doc id>` when a clicked `start_fix` started you, and release it with `gary release <itemId> fix --run <run>` when you are done, also on failure. Exit code 3 means another run holds it, or for an autonomous fix that the limit `maxPendingAutoFixes` is reached: stop and return the item unchanged. Pass the limit's message on to the caller, which names it in the run summary.
 
-For an autonomous fix, read the queue right before you start and again right before you open the PR. When a `start_fix` request for this item is queued or claimed, the item is the maintainer's: stop without opening a PR, release the claim, and return the item unchanged. A fix he started with instructions follows those instructions exactly. An autonomous fix uses your own approach, unless the route's `text` gives one.
+For an autonomous fix, read the queue right before you start and again right before you open the PR. When a `start_fix` request for this item is queued or claimed, the item is the maintainer's: stop without opening a PR, release the claim, and return the item unchanged. A fix the maintainer started with instructions follows those instructions exactly. An autonomous fix uses your own approach, unless the route's `text` gives one.
 
 ## 0a. Fix state
 
@@ -74,7 +74,7 @@ Open it under the writing identity:
 gh pr create --repo <owner>/<repo> --draft --base <default branch> --head triage/issue-<n> --title "<title>" --body-file <scratch>/pr-body.md
 ```
 
-Right after `gh pr create`, before anything else can fail, record the PR: `gary fix-record <itemId> --pr <number> --branch triage/issue-<n> --run <run> --by routine`, or `--by maintainer` when he started the fix with a click.
+Right after `gh pr create`, before anything else can fail, record the PR: `gary fix-record <itemId> --pr <number> --branch triage/issue-<n> --run <run> --by routine`, or `--by maintainer` when the maintainer started the fix with a click.
 
 The title follows the project's format for PR titles.
 
@@ -102,7 +102,7 @@ It answers one JSON object.
 
 Return the issue's item doc as one JSON object and nothing else:
 
-- `category`: `land`, because reading the draft PR is his step that finishes it.
+- `category`: `land`, because reading the draft PR is the maintainer's step that finishes it.
 - `state`: what the fix changes and that the test failed before and passes after. Example: `Draft fix #431 stops the retry loop on a 413. The repro test failed on the default branch and passes with the fix.`
 - `links`: `{ "label": "Draft fix", "url": "<PR URL>" }`.
 - A fix that changed a file under the profile's `sensitivePaths`: `state` names the path and says to read that part of the diff with care, like `Draft fix #431 changes .github/bot-scripts/escalate.cjs. Read that diff with care.` Say nothing about the PR counting as sensitive or about limited pushes. The PR is ours alone while only the bot and the maintainer commit to it. `facts.sensitiveOurs` on its entry shows that.

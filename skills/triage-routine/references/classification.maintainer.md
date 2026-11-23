@@ -41,9 +41,9 @@ Something really important is different from an idea: data loss, a security prob
 
 ## Categories
 
-Check the rules top to bottom. The first match wins. The category values are the ones in SPEC.md. The category names the move he makes. Who waits decides the group on the board only together with the category (SPEC.md, "Day plan"). Copy `waitingOn` from `facts.waitingOn`, and `dueAt`, `dueSource` and `series` from `facts` when present.
+Check the rules top to bottom. The first match wins. The category values are the ones in SPEC.md. The category names the move the maintainer makes. Who waits decides the group on the board only together with the category (SPEC.md, "Day plan"). Copy `waitingOn` from `facts.waitingOn`, and `dueAt`, `dueSource` and `series` from `facts` when present.
 
-The effort decides how soon he gets to it. `effortMinutes` of 1 or 2 puts an item into "Quick & Easy", whatever its category. That means the decision is obvious and the expected change is small: a reorder, a missing field, a typo-level fix, one or two `valid` review comments with clear fixes. That holds for `take_over`, `revise`, `address_review` and `drive` too. When he has to think about whether to act or about the content, `effortMinutes` is 5 or more: a behavior change, several threads with mixed verdicts, a verdict that needs his domain check, a decision on an open question.
+The effort decides how soon the maintainer gets to it. `effortMinutes` of 1 or 2 puts an item into "Quick & Easy", whatever its category. That means the decision is obvious and the expected change is small: a reorder, a missing field, a typo-level fix, one or two `valid` review comments with clear fixes. That holds for `take_over`, `revise`, `address_review` and `drive` too. When the maintainer has to think about whether to act or about the content, `effortMinutes` is 5 or more: a behavior change, several threads with mixed verdicts, a verdict that needs the maintainer's domain check, a decision on an open question.
 
 ### `act`: something is due, or time-critical
 
@@ -56,11 +56,11 @@ Routes follow the other rules, as if the item were not urgent. Only the category
 
 ### `decide`: a contribution that needs a design decision first
 
-The category follows the move he has to make, not who waits. A contributor's PR or issue that needs a design decision before a code review makes sense is `decide`, even though the contributor waits. The board still puts it into "Afterwards", because someone outside waits, and ranks outside contributors first. Signals: a new public API, a new dependency, a new module or a change in behavior that the thread, the docs and the maintainer's earlier comments have not settled.
+The category follows the move the maintainer has to make, not who waits. A contributor's PR or issue that needs a design decision before a code review makes sense is `decide`, even though the contributor waits. The board still puts it into "Afterwards", because someone outside waits, and ranks outside contributors first. Signals: a new public API, a new dependency, a new module or a change in behavior that the thread, the docs and the maintainer's earlier comments have not settled.
 
 - `state` names the open decision, like `Decide whether the driver gets a plugin API before anyone reviews the code.`
 - The routes offer that decision first: accept the direction, ask the contributor for a design discussion, or decline with the reason. Write each as a `reply` as `me`, the decline as a `close` with reason `not_planned` and the reason in its text. Recommend the one the thread and the project point to.
-- The code review comes after. Write no `review` route that judges the code before he decided. The full review's code findings stay in `findings`, so they are ready once he accepted the direction.
+- The code review comes after. Write no `review` route that judges the code before the maintainer decided. The full review's code findings stay in `findings`, so they are ready once the maintainer accepted the direction.
 
 Example: a contributor opens a PR that adds a plugin loader to the driver. Nobody asked for it, and the docs say nothing about plugins. `category: "decide"`, `waitingOn: "us"`, `state`: `Decide whether the driver gets a plugin API before anyone reviews the code.` Routes: `Reply: yes to a plugin API` (accepts the direction and says the review follows), `Reply: discuss the design first` (asks for an issue with the use cases), `Close: no plugin API` (declines, with the reason). The six code findings of the full review stay in `findings`.
 
@@ -73,11 +73,11 @@ Every rule in this section also needs `facts.waitingDays` to be at most `activeM
 - A new issue or discussion in a support category has no comment from our side yet.
 - A contributor asks for a re-review after pushing changes ("addressed", "updated", "PTAL") and also asks a question. Without a question, the re-review is classified by the full review below.
 - A question with a direct answer from the docs or the changelog: a `reply` route, effort 1 or 2.
-- A question an agent asked him, like an open `question` finding on a fix or a take-over, that blocks the agent's next step.
+- A question an agent asked the maintainer, like an open `question` finding on a fix or a take-over, that blocks the agent's next step.
 
-### Contributor PRs that wait for his review: `unblock`
+### Contributor PRs that wait for the maintainer's review: `unblock`
 
-A contributor's PR waits on him once it has no open design decision. It is `unblock`, also when its effort is small. The effort rules above pick the group.
+A contributor's PR waits on the maintainer once it has no open design decision. It is `unblock`, also when its effort is small. The effort rules above pick the group.
 
 - A PR whose full review found only `minor` or cosmetic findings. Recommended route: `review` with `event: "request_changes"`, inline comments and a summary (`item-doc.md`, `review`). Effort 5 or more.
 - A PR with failing CI where the failure comes from the PR's own change and the fix is small.
@@ -87,31 +87,31 @@ A contributor's PR waits on him once it has no open design decision. It is `unbl
 
 The route for PRs we would fix ourselves follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over. On the others, `drive` or `address_review` for open threads and `revise` for any other change.
 
-### `land`: his final step finishes it
+### `land`: the maintainer's final step finishes it
 
 - A PR with `facts.isClean`: approved, `facts.ciGreen`, no open review feedback (see "Open review feedback" below). Recommended route: `merge` as `me`. Effort 1 or 2.
-- A clean PR by the bot or a dependency bot (`facts.dependencyOnly` or a bot author, `facts.ciGreen`), that lacks his approval: recommended `merge` as `me`, with a `why` that says he approves on the PR page. Never a bot approval on a bot PR. For a dependency update, say in `state` which package and version range it changes. A major version bump needs his reading of the changelog: effort 5 or more.
-- The maintainer's own PR, clean, CI passing, no open threads: recommended `merge` as `me`. With a bot, add a `review` with `event: "approve"` as the bot as the alternative, because he cannot approve his own PR.
+- A clean PR by the bot or a dependency bot (`facts.dependencyOnly` or a bot author, `facts.ciGreen`), that lacks the maintainer's approval: recommended `merge` as `me`, with a `why` that says the maintainer approves on the PR page. Never a bot approval on a bot PR. For a dependency update, say in `state` which package and version range it changes. A major version bump needs the maintainer's reading of the changelog: effort 5 or more.
+- The maintainer's own PR, clean, CI passing, no open threads: recommended `merge` as `me`. With a bot, add a `review` with `event: "approve"` as the bot as the alternative, because the maintainer cannot approve their own PR.
 - The maintainer's own PR with open review threads: `drive` (rule in `item-doc.md`, "Who may push to a PR").
 - An issue whose fix is merged. Signals: a comment links a merged PR, "Fixed by #…", or the snapshot shows a closing PR. Recommended route: `close` with reason `completed` and a short text naming the fix and the release.
 - A discussion with a correct answer that is not marked: a `chore` route with `answer_discussion` and `params.commentId`.
 - A duplicate: `close` with reason `duplicate`, `params.duplicateOf` and a reply that links the original.
 - A report that belongs in a repo from the profile's `relatedRepos`: a `move` route to that repo (`item-doc.md`). A report for a project outside the org: `close` with reason `not_planned` and a reply that links the right place.
-- A PR whose only problem is formatting or lint autofix (`autofix.changes`, nothing else): recommended `format`, with `merge` as `me` as the alternative. A red CI from only the lint or format job does not count against it. On a contributor's PR this is `land` too, because the format run and his merge finish it.
+- A PR whose only problem is formatting or lint autofix (`autofix.changes`, nothing else): recommended `format`, with `merge` as `me` as the alternative. A red CI from only the lint or format job does not count against it. On a contributor's PR this is `land` too, because the format run and the maintainer's merge finish it.
 - A PR by the bot or a dependency bot whose CI fails because of its own change, when the fix is small: `revise` with the fix as its `text`. These PRs are ours already, so never `take_over`.
-- PRs by the bot or with `authorType: "copilot"`, until the maintainer approved them. Agents wrote them and he has to review them himself, so the effort is his reading time.
+- PRs by the bot or with `authorType: "copilot"`, until the maintainer approved them. Agents wrote them and the maintainer has to review them themself, so the effort is the maintainer's reading time.
 - A dependency PR with failing CI.
-- Work he asked for that finished, see "Priority".
-- A part of a series whose next step is his merge, approval or close, see "Series".
+- Work the maintainer asked for that finished, see "Priority".
+- A part of a series whose next step is the maintainer's merge, approval or close, see "Series".
 
-### `decide`: it needs his judgment, and nobody waits actively
+### `decide`: it needs the maintainer's judgment, and nobody waits actively
 
 - An issue or feature request that only needs the maintainer's yes or no, like "accept this API?". Put the open question in `state`. Effort 5 or more.
-- An issue or discussion by the bot or an agent that describes doable work: one `Implement:` card (`item-doc.md`, "Delegate to an agent"). When the work is small and clear and needs no design decision, his part is one click: effort 1 or 2, so it sits in "Quick & Easy". When it is large or needs a design decision, `state` names the open decision, like `Needs a decision whether the retry lives in the driver or in the app.`, and the effort is his time to decide. Both tiers decide it the same way.
+- An issue or discussion by the bot or an agent that describes doable work: one `Implement:` card (`item-doc.md`, "Delegate to an agent"). When the work is small and clear and needs no design decision, the maintainer's part is one click: effort 1 or 2, so it sits in "Quick & Easy". When it is large or needs a design decision, `state` names the open decision, like `Needs a decision whether the retry lives in the driver or in the app.`, and the effort is the maintainer's time to decide. Both tiers decide it the same way.
 - Feature requests and enhancements that need design work or a large effort. The profile may name labels for that.
 - We wait on the reporter: `facts.waitingOn` is `them`, because our last message asked them for something, or asked them to try something and report back, like upgrading, clearing a cache or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`), and the category is `land`.
 - Changes requested, and no new commits since that review. No routes.
-- The maintainer's own PR that his own account has not finished: merge conflicts, failing CI his change caused, or a stacked PR waiting on its base. No routes.
+- The maintainer's own PR that their own account has not finished: merge conflicts, failing CI their change caused, or a stacked PR waiting on its base. No routes.
 
 ### Real hardware: the `needsHardware` flag
 
@@ -121,7 +121,7 @@ Some items cannot be reproduced without real hardware or an environment the agen
 
 `facts.series` says that the item is one of several related open items that together finish a feature: stacked PRs, sub-issues of one parent issue, and the PRs that close them. The code finds them from the base branches and the links on GitHub. Never put items into a series because their titles say "part 2 of 3". Copy `series` into the item doc.
 
-A part whose next step is his merge, approval or close is `land`, also on a contributor's PR, because each part moves the whole feature to done. Name the series in `state`, like `Part 2 of 3 of the driver split. Merge it after part 1.` A part that needs his code review or a design decision follows the rules above. The board keeps the parts of a series together and ranks them by the first unfinished part.
+A part whose next step is the maintainer's merge, approval or close is `land`, also on a contributor's PR, because each part moves the whole feature to done. Name the series in `state`, like `Part 2 of 3 of the driver split. Merge it after part 1.` A part that needs the maintainer's code review or a design decision follows the rules above. The board keeps the parts of a series together and ranks them by the first unfinished part.
 
 ## AI-written PRs
 
@@ -154,9 +154,9 @@ When a discussion with a fix PR became an issue, `gary link-escalated` moves the
 
 A fix PR whose review rounds run (`fix.review` on its source item in `gary fixes --json`) is no board item yet. The rounds end with a `full_review` request that brings it to the board, ready for review when the rounds went through, still a draft when they stopped. Its item then carries the `rounds` and says in `state` how they ended. As finished agent work it sits at the top of its group ("Work the maintainer asked the agent for comes back first" covers it too).
 
-A fix PR asks nobody to verify it. When its body names something the fix could not verify, the PR's item carries that as a `question` finding for the maintainer. Whether to ask the reporter is his decision: offer it as a `reply` route as `me` on the fix PR's item only when the doubt is real, like a parameter set no second source confirms. Never recommend that route. A device config taken from a sibling device or confirmed by a source the profile names needs no such route.
+A fix PR asks nobody to verify it. When its body names something the fix could not verify, the PR's item carries that as a `question` finding for the maintainer. Whether to ask the reporter is the maintainer's decision: offer it as a `reply` route as `me` on the fix PR's item only when the doubt is real, like a parameter set no second source confirms. Never recommend that route. A device config taken from a sibling device or confirmed by a source the profile names needs no such route.
 
-With the rounds off, Gary's own draft fix PR, with `fixFor`, is a board item once its CI finished: category `land`, `state` like `Draft fix for acme/widgets#398. CI passing.`, routes by the rules for bot PRs. He reviews it, `drive` fits when review threads are open, and a `chore` with `action: "ready"` is the alternative that marks it ready. Its effort comes from the changed lines. While its CI still runs, it has no routes.
+With the rounds off, Gary's own draft fix PR, with `fixFor`, is a board item once its CI finished: category `land`, `state` like `Draft fix for acme/widgets#398. CI passing.`, routes by the rules for bot PRs. The maintainer reviews it, `drive` fits when review threads are open, and a `chore` with `action: "ready"` is the alternative that marks it ready. Its effort comes from the changed lines. While its CI still runs, it has no routes.
 
 ## Open review feedback
 
@@ -165,15 +165,15 @@ With the rounds off, Gary's own draft fix PR, with `fixFor`, is a board item onc
 - `openThreadCount` above 0: unresolved review threads exist. Name the count and who opened them in `state`, like `Approved, but a review bot left 2 open threads after the approval.`
 - A review that arrived after the latest approval, from a person or a bot, with change requests or recommendations in its body.
 
-A PR with open review feedback never gets a recommended `merge`. Its effort is 1 or 2 when one or two `valid` threads have clear fixes and the rest is obvious, and 5 or more when he has to check verdicts or content or read the code. Its category is `unblock` on a contributor's PR and `land` on a PR we control. It is a full-review candidate. The full review judges each open thread in `threads`: `valid`, `optional` or `wrong`, with a note. Once every thread has a verdict, the route follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. A `revise` carries no thread decisions, so it is never the route for open threads. Outdated threads that are not resolved count as open. The agent behind it can push only when the account setup allows pushes and the PR allows it: a fork PR needs `maintainerCanModify: true`, a branch inside the repo needs nothing extra. When it cannot push and a thread is `valid`, recommend a `review` route that asks the contributor instead.
+A PR with open review feedback never gets a recommended `merge`. Its effort is 1 or 2 when one or two `valid` threads have clear fixes and the rest is obvious, and 5 or more when the maintainer has to check verdicts or content or read the code. Its category is `unblock` on a contributor's PR and `land` on a PR we control. It is a full-review candidate. The full review judges each open thread in `threads`: `valid`, `optional` or `wrong`, with a note. Once every thread has a verdict, the route follows "Who may push to a PR" in `item-doc.md`: `take_over` on a contributor PR that is not taken over, `drive` or `address_review` on the others. A `revise` carries no thread decisions, so it is never the route for open threads. Outdated threads that are not resolved count as open. The agent behind it can push only when the account setup allows pushes and the PR allows it: a fork PR needs `maintainerCanModify: true`, a branch inside the repo needs nothing extra. When it cannot push and a thread is `valid`, recommend a `review` route that asks the contributor instead.
 
 Bot reviewers are often right about real bugs and often wrong about project conventions. Never dismiss a thread because a bot wrote it, and never treat it as settled because a bot wrote it.
 
 ## Sensitive paths
 
-A PR changing a path in the profile's `sensitivePaths` gets the fact named in `state` and needs his reading: its effort is at least 5, so it never sits in "Quick & Easy". Such paths can run code with repo secrets, change what agents like this one do, or pull in new code. A contributor PR touching them deserves a closer look even when the change looks harmless.
+A PR changing a path in the profile's `sensitivePaths` gets the fact named in `state` and needs the maintainer's reading: its effort is at least 5, so it never sits in "Quick & Easy". Such paths can run code with repo secrets, change what agents like this one do, or pull in new code. A contributor PR touching them deserves a closer look even when the change looks harmless.
 
-No agent works in a checkout of such a PR, whoever opened it. Write no `address_review`, `drive` or `format` route for it, and no `take_over` or `revise` in their normal form. The one exception is the API edit (`item-doc.md`, "API edit"): when every finding we would fix ourselves is a small text replacement outside the sensitive files, recommend a `take_over` or `revise` with `params.via: "api"` that carries the exact edits, and keep the `review` as the alternative. The server commits those edits through the GitHub API after his click, without a checkout. In every other case offer only the `review`. The board's dialog shows a warning with the matching files above the routes, taken from the snapshot, and it says which of the two cases holds. So `state` names the paths, and the routes need no extra explanation.
+No agent works in a checkout of such a PR, whoever opened it. Write no `address_review`, `drive` or `format` route for it, and no `take_over` or `revise` in their normal form. The one exception is the API edit (`item-doc.md`, "API edit"): when every finding we would fix ourselves is a small text replacement outside the sensitive files, recommend a `take_over` or `revise` with `params.via: "api"` that carries the exact edits, and keep the `review` as the alternative. The server commits those edits through the GitHub API after the maintainer's click, without a checkout. In every other case offer only the `review`. The board's dialog shows a warning with the matching files above the routes, taken from the snapshot, and it says which of the two cases holds. So `state` names the paths, and the routes need no extra explanation.
 
 A PR with `facts.sensitiveOurs: true` is ours alone. Its branch is in the repo. The bot or the maintainer opened it. The two authored and committed every commit. A PR by the bot is a fix PR Gary recorded. Nobody outside wrote anything on such a PR. The paragraph above does not apply to it. Write the normal routes of a PR we control: `revise`, `address_review`, `drive` and `format`. Never write the API edit there. The validator refuses it. The first paragraph still applies: `state` names the paths and the effort is at least 5. The fact comes from code. Never set it or assume it yourself. Never treat a PR as ours alone because its author is the bot. A sensitive PR without the fact carries `facts.sensitiveNotOurs` with the reason, like a commit by someone else. It keeps the limits above. On a PR that is ours alone, the dialog's warning says that agents may push and that the files deserve a careful read. The routes need no callout about it.
 
@@ -210,11 +210,11 @@ When a PR was fully reviewed at the same head SHA and only new comments arrived,
 
 ## Priority
 
-The board ranks the items within each group itself (SPEC.md, "Day plan"): finished work he asked for first, then items with a due date, the earliest first, then items by outside contributors and reporters before his own and bot work, then the lowest `effortMinutes`. `priority` breaks the ties those keys leave, so set it by the same order, 1 for the top of each category.
+The board ranks the items within each group itself (SPEC.md, "Day plan"): finished work the maintainer asked for first, then items with a due date, the earliest first, then items by outside contributors and reporters before the maintainer's own and bot work, then the lowest `effortMinutes`. `priority` breaks the ties those keys leave, so set it by the same order, 1 for the top of each category.
 
-Work the maintainer asked the agent for comes back first. An item whose agent job finished since he last handled it (a take-over, a change he asked for with `revise`, an address-review, a drive, a format, a fix he started) and that now only needs his decision is `land`, with the lowest effort its decision allows, so it sits at the very top, newest result first. He asked for it and is waiting to finish it. Such an item always offers the decision, as "Routes after a push" in `push-to-pr.md` describes: a `merge`, a `review`, or another pass by the agent. A `reply` that only reports the push is no route. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
+Work the maintainer asked the agent for comes back first. An item whose agent job finished since the maintainer last handled it (a take-over, a change they asked for with `revise`, an address-review, a drive, a format, a fix they started) and that now only needs the maintainer's decision is `land`, with the lowest effort its decision allows, so it sits at the very top, newest result first. The maintainer asked for it and is waiting to finish it. Such an item always offers the decision, as "Routes after a push" in `push-to-pr.md` describes: a `merge`, a `review`, or another pass by the agent. A `reply` that only reports the push is no route. This holds whoever authored the PR. It does not hold while CI still runs on the pushed commit, or when the job left something open that needs thought: then the normal rules place it.
 
-After those, in every category, items by outside contributors and reporters come first, because someone outside waits on them. Items by the maintainer himself and items by bots and agents follow as one group, mixed by the category's own order. Within each of the two groups:
+After those, in every category, items by outside contributors and reporters come first, because someone outside waits on them. Items by the maintainer themself and items by bots and agents follow as one group, mixed by the category's own order. Within each of the two groups:
 
 - `act`: earliest `dueAt` first, then the rest by the order of their other rules.
 - `unblock`: longest wait first.
@@ -225,10 +225,10 @@ After those, in every category, items by outside contributors and reporters come
 
 Write these into the item's `wants` with a `wantsReason` (`item-doc.md`). The routine applies them every run with `gary action --autonomous <file>` (`label` with `params.add` or `params.remove`, `assign` with `params.assignees`) until the snapshot shows them. `--autonomous` makes the code refuse labels outside `autoLabels`. Only labels in the profile's `autoLabels` qualify, and only under the conditions the profile's rules state. Each change records a fact that is already true on GitHub. A label that states a judgment becomes a `chore` route with `action: "label"`, and only when the label is the whole job.
 
-A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before. The reply route that makes the request carries the same label in `params.alsoLabel` (`item-doc.md`), so one click can post and label. `wants` stays the fallback for a reply he posted without that button: it holds the label only once the request is visible on the timeline. `wants` and `alsoLabel` never point in opposite directions: a label one adds, the other never removes. "Waiting on the reporter" also covers a message that asked them to try something and report back.
+A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before. The reply route that makes the request carries the same label in `params.alsoLabel` (`item-doc.md`), so one click can post and label. `wants` stays the fallback for a reply the maintainer posted without that button: it holds the label only once the request is visible on the timeline. `wants` and `alsoLabel` never point in opposite directions: a label one adds, the other never removes. "Waiting on the reporter" also covers a message that asked them to try something and report back.
 
 The `reason` of every autonomous action describes the last exchange on the timeline correctly: who asked what, who answered, what is open now. Example: `The maintainer asked for a debug log. The reporter sent it in a reply. The maintainer then asked them to upgrade and report back, which is open.`
 
 ## Bot commands
 
-The profile's `botCommands` lists commands that the repo's own automation reacts to. Such automation usually ignores comments by the bot itself, and board posts come from the bot. Never put a bot command into a route's `text`. When a command would solve the item, write it into a finding, so the maintainer can paste it himself. The `move` route with `to: "issue"` is for a confirmed bug in a discussion, and for a feature request or idea in a discussion that the maintainer may want to track (`item-doc.md`, `move`). With `botCommands.escalate` he posts the command himself. With `escalateAs: "me"` in the instance config the board posts it under his login after his click. An agent never posts it. Without `botCommands.escalate` the route is still offered. Its card opens the discussion, and the maintainer uses GitHub's own "Create issue from discussion" link in the sidebar.
+The profile's `botCommands` lists commands that the repo's own automation reacts to. Such automation usually ignores comments by the bot itself, and board posts come from the bot. Never put a bot command into a route's `text`. When a command would solve the item, write it into a finding, so the maintainer can paste it themself. The `move` route with `to: "issue"` is for a confirmed bug in a discussion, and for a feature request or idea in a discussion that the maintainer may want to track (`item-doc.md`, `move`). With `botCommands.escalate` the maintainer posts the command themself. With `escalateAs: "me"` in the instance config the board posts it under the maintainer's login after their click. An agent never posts it. Without `botCommands.escalate` the route is still offered. Its card opens the discussion, and the maintainer uses GitHub's own "Create issue from discussion" link in the sidebar.

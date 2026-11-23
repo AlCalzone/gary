@@ -42,7 +42,7 @@ The exception. The route's `callout` said why pushing to the branch is not possi
    - a `state` that names the replacement PR,
    - `takenOver: true`.
 
-The new PR is a draft. The maintainer marks it ready himself. The replace mode requests no review bot review.
+The new PR is a draft. The maintainer marks it ready themself. The replace mode requests no review bot review.
 
 The routes of the returned item follow "Routes after a push" in `push-to-pr.md`: routes from before the push are dropped, and `reviewedSha` is the new head.
 
