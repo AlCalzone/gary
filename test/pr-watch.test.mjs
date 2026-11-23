@@ -74,17 +74,17 @@ const timeline = [
 	{ at: at(19, 11), author: "widgets-bot", side: "us", kind: "thread_comment" },
 ];
 const ff = facts.feedbackFacts(timeline, [ourCommit(at(18, 9))], { me: "octocat", bot: "widgets-bot", writeLogin: "widgets-bot", reviewBots: ["copilot"] });
-t.check("feedback facts name his last review and its kind, the last outside comment, our last commit and the review bot rounds", ff.lastMeAt === at(19, 9) && ff.lastMeKind === "review" && ff.lastOthersAt === at(19, 10) && ff.ourLastCommitAt === at(18, 9) && ff.reviewBotReviews === 1, ff);
+t.check("feedback facts name the maintainer's last review and its kind, the last outside comment, our last commit and the review bot rounds", ff.lastMeAt === at(19, 9) && ff.lastMeKind === "review" && ff.lastOthersAt === at(19, 10) && ff.ourLastCommitAt === at(18, 9) && ff.reviewBotReviews === 1, ff);
 
-// Restart: a fix PR whose drive finished before the watch existed, with his review after our last push
+// Restart: a fix PR whose drive finished before the watch existed, with the maintainer's review after our last push
 setFixes({ "issue-23": [record] });
 setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, feedback: { ourLastCommitAt: at(18, 9), reviewBotReviews: 1, lastMeAt: at(19, 9) } } });
 setOverrides(pr19({ reviews: [review(user("octocat"), at(19, 9), "CHANGES_REQUESTED")] }));
 let r = gary("watch-queue", "--once");
 const expected = { instance: "widgets", id: "watch-pr-19", itemId: "pr-19", action: "drive", event: "maintainer-feedback", pr: 19, at: at(19, 9) };
-t.check("restart: his unhandled review on a fix PR with a finished drive prints one event", r.status === 0 && JSON.stringify(feedbackLines(r)) === JSON.stringify([expected]) && !existsSync(driveFile), r.stdout + r.stderr);
+t.check("restart: the maintainer's unhandled review on a fix PR with a finished drive prints one event", r.status === 0 && JSON.stringify(feedbackLines(r)) === JSON.stringify([expected]) && !existsSync(driveFile), r.stdout + r.stderr);
 let o = json(gary("pr-watch", "list", "--json"));
-t.check("list names the fix PR with his unhandled feedback", o.prs?.length === 1 && o.prs[0].why === "fix" && o.prs[0].stage === "watch" && o.prs[0].me === at(19, 9) && o.prs[0].others === null && o.prs[0].pushWork === false, o);
+t.check("list names the fix PR with the maintainer's unhandled feedback", o.prs?.length === 1 && o.prs[0].why === "fix" && o.prs[0].stage === "watch" && o.prs[0].me === at(19, 9) && o.prs[0].others === null && o.prs[0].pushWork === false, o);
 
 // A running watcher prints each review once, the first time right at its start
 const watcher = spawn(process.execPath, [GARY, "watch-queue", "--all"], { env: { ...env, GARY_WATCH_POLL_MS: "200" }, stdio: ["ignore", "pipe", "pipe"] });
@@ -107,21 +107,21 @@ t.check("round as a dry run writes nothing", r.status === 0 && json(r).dryRun ==
 r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", at(19, 9));
 o = json(r);
 let doc = actions().find((a) => a.id === o.actionId);
-t.check("round queues an open drive request for his feedback", r.status === 0 && doc?.action === "drive" && doc.status === "queued" && doc.result === "" && doc.params.trigger === "maintainer" && doc.params.by === "fix" && doc.params.fixFor === "issue-23" && doc.params.at === at(19, 9), [o, doc]);
+t.check("round queues an open drive request for the maintainer's feedback", r.status === 0 && doc?.action === "drive" && doc.status === "queued" && doc.result === "" && doc.params.trigger === "maintainer" && doc.params.by === "fix" && doc.params.fixFor === "issue-23" && doc.params.at === at(19, 9), [o, doc]);
 let drive = read(driveFile);
-t.check("round writes the watch with his feedback seen", drive.stage === "watch" && drive.watch === true && drive.by === "fix" && drive.actionId === o.actionId && drive.seenAt.me === at(19, 9) && drive.maxRounds === 3, drive);
+t.check("round writes the watch with the maintainer's feedback seen", drive.stage === "watch" && drive.watch === true && drive.by === "fix" && drive.actionId === o.actionId && drive.seenAt.me === at(19, 9) && drive.maxRounds === 3, drive);
 r = gary("watch-queue", "--once");
-t.check("the queued round prints as a request and his review prints no second event", JSON.stringify(lines(r)) === JSON.stringify([{ instance: "widgets", id: o.actionId, itemId: "pr-19", action: "drive" }]), r.stdout);
+t.check("the queued round prints as a request and the maintainer's review prints no second event", JSON.stringify(lines(r)) === JSON.stringify([{ instance: "widgets", id: o.actionId, itemId: "pr-19", action: "drive" }]), r.stdout);
 r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", at(19, 9));
 t.check("a second round while one is queued is refused", r.status === 3 && /already works/.test(json(r).result) && actions().length === 1, r.stdout);
 o = json(gary("fixes", "--json"))["issue-23"];
-t.check("the fix chip names no review bot round while his round runs", o.review === undefined, o);
+t.check("the fix chip names no review bot round while the maintainer's round runs", o.review === undefined, o);
 
 // The round ends through fix-review finish. The PR was marked ready once, so it is not marked again
 r = gary("fix-review", "finish", "--pr", "19", "--outcome", "done", "--reason", "Addressed both threads of the maintainer.", "--seen-me", at(19, 10));
 o = json(r);
 const fullReview = actions().find((a) => a.id === o.reviewId);
-t.check("finish after his round queues the full review and marks nothing ready", r.status === 0 && !writes().some((w) => w.mutation === "markPullRequestReadyForReview") && fullReview?.params.trigger === "maintainer" && fullReview.params.ready === true && actions().find((a) => a.id === drive.actionId).status === "done", [o, writes(), fullReview]);
+t.check("finish after the maintainer's round queues the full review and marks nothing ready", r.status === 0 && !writes().some((w) => w.mutation === "markPullRequestReadyForReview") && fullReview?.params.trigger === "maintainer" && fullReview.params.ready === true && actions().find((a) => a.id === drive.actionId).status === "done", [o, writes(), fullReview]);
 drive = read(driveFile);
 t.check("finish leaves the PR watched with the seen mark of the round", drive.stage === "watch" && drive.actionId === undefined && drive.seenAt.me === at(19, 10), drive);
 rmSync(join(actionsDir, o.reviewId + ".json"));
@@ -131,9 +131,9 @@ r = gary("pr-watch", "round", "--pr", "19", "--by", "me", "--at", at(19, 9));
 t.check("a round for handled feedback is refused", r.status === 3 && /already handled/.test(json(r).result), r.stdout);
 setOverrides(pr19({ reviews: [review(user("octocat"), at(19, 9), "CHANGES_REQUESTED"), review(user("octocat"), at(19, 12))] }));
 r = gary("watch-queue", "--once");
-t.check("his next review prints a new event", JSON.stringify(feedbackLines(r).map((l) => l.at)) === JSON.stringify([at(19, 12)]), r.stdout);
+t.check("the maintainer's next review prints a new event", JSON.stringify(feedbackLines(r).map((l) => l.at)) === JSON.stringify([at(19, 12)]), r.stdout);
 
-// During the review bot rounds his feedback goes into the next round and ends nothing
+// During the review bot rounds the maintainer's feedback goes into the next round and ends nothing
 reset();
 const now = new Date().toISOString();
 const soon = new Date(Date.now() + 60000).toISOString();
@@ -142,7 +142,7 @@ mkdirSync(driveDir, { recursive: true });
 writeFileSync(driveFile, JSON.stringify({ actionId: "pr-19-1", repo: "acme/widgets", number: 19, by: "fix", fixFor: "issue-23", maxRounds: 3, reviewBot: "copilot", rounds: [], lastPushedSha: SHA, watch: true, stage: "review", copilotRounds: 2, seenAt: { me: now, others: now }, reviewRequestedAt: now }));
 setOverrides(pr19({ reviews: [review(user("octocat"), soon, "CHANGES_REQUESTED")] }));
 r = gary("watch-queue", "--once");
-t.check("his review during the rounds prints no event and keeps the drive waiting", r.stdout.trim() === "" && read(driveFile).stage === "review" && actions()[0].status === "queued", r.stdout);
+t.check("the maintainer's review during the rounds prints no event and keeps the drive waiting", r.stdout.trim() === "" && read(driveFile).stage === "review" && actions()[0].status === "queued", r.stdout);
 t.check("the chip shows the round over the PR's life", JSON.stringify(json(gary("fixes", "--json"))["issue-23"].review) === '{"reviewer":"copilot","round":2,"maxRounds":3}');
 setOverrides(pr19({ reviews: [review(user("octocat"), soon, "CHANGES_REQUESTED"), review(bot("copilot-pull-request-reviewer"), soon)] }));
 r = gary("watch-queue", "--once");
@@ -278,7 +278,7 @@ r = gary("pr-watch", "review", "--pr", "19", "--sha", NEW, "--after", "pr-19-rev
 t.check("a sensitive PR that is not ours alone gets no review bot round", r.status === 3 && /sensitive files/.test(json(r).result) && writes().length === 0, r.stdout);
 setOverrides({});
 
-// The clean end of a round requests his review
+// The clean end of a round requests the maintainer's review
 reset();
 setFixes({ "issue-23": [record] });
 setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, feedback: {} } });
@@ -287,10 +287,10 @@ r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA);
 t.check("done without the flag requests no review", r.status === 0 && json(r).maintainerReview === undefined && writes().length === 0, [r.stdout, writes()]);
 r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
 o = json(r);
-t.check("done --request-maintainer requests his review as the bot after the state change", r.status === 0 && o.maintainerReview?.requested === true && read(driveFile).stage === "watch" && writes().length === 1 && writes()[0].mutation === "requestReviews" && writes()[0].as === "widgets-bot" && JSON.stringify(writes()[0].variables) === '{"id":"PR_19","users":["U_octocat"]}', [o, writes()]);
+t.check("done --request-maintainer requests the maintainer's review as the bot after the state change", r.status === 0 && o.maintainerReview?.requested === true && read(driveFile).stage === "watch" && writes().length === 1 && writes()[0].mutation === "requestReviews" && writes()[0].as === "widgets-bot" && JSON.stringify(writes()[0].variables) === '{"id":"PR_19","users":["U_octocat"]}', [o, writes()]);
 setOverrides({ "requests-19": { isDraft: false, reviewRequests: { nodes: [{ requestedReviewer: { login: "octocat" } }] } } });
 r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
-t.check("done --request-maintainer with his review pending requests nothing", r.status === 0 && /already requested/.test(json(r).maintainerReview?.skipped) && writes().length === 1, [r.stdout, writes()]);
+t.check("done --request-maintainer with the maintainer's review pending requests nothing", r.status === 0 && /already requested/.test(json(r).maintainerReview?.skipped) && writes().length === 1, [r.stdout, writes()]);
 setOverrides({});
 r = gary("pr-watch", "done", "--pr", "19", "--sha", SHA, "--request-maintainer");
 t.check("done --request-maintainer on a draft requests nothing", r.status === 0 && /is a draft/.test(json(r).maintainerReview?.skipped) && writes().length === 1, [r.stdout, writes()]);
@@ -307,7 +307,7 @@ t.check("paused: done --request-maintainer requests nothing and keeps the drive"
 gary("resume");
 writeFileSync(join(itemsDir, "pr-25.json"), JSON.stringify({ kind: "pr", repo: "acme/widgets", number: 25, author: "hubot", authorType: "contributor", takenOver: true, pushed: { action: "take_over", sha: "5".repeat(40), at: at(18, 9) } }));
 r = gary("pr-watch", "done", "--pr", "25", "--sha", "5".repeat(40), "--request-maintainer");
-t.check("done --request-maintainer on a taken-over PR requests his review", r.status === 0 && json(r).maintainerReview?.requested === true && writes().at(-1)?.variables.id === "PR_25", [r.stdout, writes()]);
+t.check("done --request-maintainer on a taken-over PR requests the maintainer's review", r.status === 0 && json(r).maintainerReview?.requested === true && writes().at(-1)?.variables.id === "PR_25", [r.stdout, writes()]);
 setOverrides({});
 
 // Paused and without an account that may push

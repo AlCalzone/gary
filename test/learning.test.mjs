@@ -57,7 +57,7 @@ const items = {
 };
 for (const [id, data] of Object.entries(items)) writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(data));
 
-const proposal = (id, extra) => ({ id, createdAt: "2026-11-18T08:00:00Z", title: "Close stale config PRs", why: "He closed three of them.", evidence: [{ at: "2026-11-17T10:00:00Z", itemId: "pr-12", type: "chose_alternative", gist: "close instead of reply" }], target: "profile", file: "rules/classification.md", heading: "## Stale PRs", text: "- Close config PRs after 30 days without reply.", status: "open", decidedAt: null, reason: "", ...extra });
+const proposal = (id, extra) => ({ id, createdAt: "2026-11-18T08:00:00Z", title: "Close stale config PRs", why: "The maintainer closed three of them.", evidence: [{ at: "2026-11-17T10:00:00Z", itemId: "pr-12", type: "chose_alternative", gist: "close instead of reply" }], target: "profile", file: "rules/classification.md", heading: "## Stale PRs", text: "- Close config PRs after 30 days without reply.", status: "open", decidedAt: null, reason: "", ...extra });
 const gary = (...args) => spawnSync(process.execPath, [GARY, ...args], { env, encoding: "utf8" });
 const putFile = (name, data) => {
 	const f = join(T, name);
@@ -145,7 +145,7 @@ try {
 	const overrides = logOf("thread_override").filter((e) => e.itemId === "pr-12");
 	t.check("only valid defaults to fix: fixing an optional thread is an override, dismissing one is not", overrides.length === 1 && overrides[0].thread.verdict === "optional" && overrides[0].decision === "fix", overrides);
 
-	// Routes he does himself report to /api/decision
+	// Routes the maintainer does themself report to /api/decision
 	const before = actionDocs().length;
 	r = await api("/api/decision", { instance: "widgets", itemId: "issue-21", routeId: "r2", text: "Can you check again?" });
 	t.check("/api/decision answers ok", r.data.ok, r);
@@ -167,14 +167,14 @@ try {
 	// dismiss_route
 	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-21", routeId: "r1", text: "x".repeat(501) });
 	t.check("a reason over 500 characters is refused", r.status === 400, r);
-	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-21", routeId: "r1", text: "Not fixed for him" });
+	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-21", routeId: "r1", text: "Not fixed for them" });
 	t.check("dismiss_route answers ok", r.data.ok && r.data.reanalyze === false, r);
 	let item = JSON.parse(readFileSync(join(BOARD, "items", "issue-21.json"), "utf8"));
 	t.check("the route is gone and the next one is recommended", item.routes.length === 1 && item.routes[0].id === "r2" && item.routes[0].recommended === true && item.hint === "Reply: ask", item);
-	t.check("dismissedRoutes remembers it", item.dismissedRoutes?.[0]?.type === "close" && item.dismissedRoutes[0].reason === "Not fixed for him" && !!item.dismissedRoutes[0].at, item.dismissedRoutes);
+	t.check("dismissedRoutes remembers it", item.dismissedRoutes?.[0]?.type === "close" && item.dismissedRoutes[0].reason === "Not fixed for them" && !!item.dismissedRoutes[0].at, item.dismissedRoutes);
 	t.check("findings pointing to it lose the routeId", item.findings[0].routeId === undefined, item.findings);
 	t.check("the dismissal is a done board action doc", actionDocs().some((a) => a.itemId === "issue-21" && a.action === "dismiss_route" && a.status === "done" && a.via === "board"), actionDocs());
-	t.check("the dismissal is in the decision log", logOf("dismissed_route").some((e) => e.itemId === "issue-21" && e.wasRecommended === true && e.reason === "Not fixed for him"), log());
+	t.check("the dismissal is in the decision log", logOf("dismissed_route").some((e) => e.itemId === "issue-21" && e.wasRecommended === true && e.reason === "Not fixed for them"), log());
 	r = await api("/api/action", { instance: "widgets", action: "dismiss_route", itemId: "issue-22", routeId: "r1" });
 	item = JSON.parse(readFileSync(join(BOARD, "items", "issue-22.json"), "utf8"));
 	t.check("dismissing the last route leaves no routes and no hint", r.data.reanalyze === true && item.routes.length === 0 && item.hint === undefined, item);
@@ -188,7 +188,7 @@ try {
 	item = JSON.parse(readFileSync(join(BOARD, "items", "issue-21.json"), "utf8"));
 	t.check("a replace keeps dismissedRoutes", r.status === 0 && item.dismissedRoutes?.length === 1, r.stdout + r.stderr);
 	r = gary("put", "items", "issue-21", putFile("i21b.json", { ...doc, routes: [{ id: "r1", type: "close", as: "me", title: "Close: fixed", recommended: true }], hint: "Close: fixed" }));
-	t.check("a doc that brings back a dismissed type is refused with the reason", r.status === 1 && /dismissed the close route/.test(r.stdout) && /Not fixed for him/.test(r.stdout), r.stdout);
+	t.check("a doc that brings back a dismissed type is refused with the reason", r.status === 1 && /dismissed the close route/.test(r.stdout) && /Not fixed for them/.test(r.stdout), r.stdout);
 
 	// Proposals on the board
 	const st = await state();

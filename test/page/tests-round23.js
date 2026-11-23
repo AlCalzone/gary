@@ -1,5 +1,5 @@
   // ---------- round 23 ----------
-  // The link of a fix PR to the issue an escalated discussion became: a timeline line, and no work of his
+  // The link of a fix PR to the issue an escalated discussion became: a timeline line, and no work of the maintainer's
   {
     const dlg = document.getElementById("detail");
     const at = iso(60000);

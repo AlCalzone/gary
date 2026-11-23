@@ -1,5 +1,5 @@
   // ---------- round 17 ----------
-  // A bot PR whose round for his review waits while the session that opened it is active
+  // A bot PR whose round for the maintainer's review waits while the session that opened it is active
   {
     const base = "https://github.com/acme/widgets";
     const common = { kind: "pr", author: "widgets-bot", authorType: "bot", section: "review", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full",
@@ -23,7 +23,7 @@
     ok("hold: the row shows a short marker", chip("pr-9981")?.textContent === "Waits for session" && /around /.test(chip("pr-9981").title), chip("pr-9981")?.outerHTML);
     ok("hold: a row without a hold has no marker", !chip("pr-9983"));
     await openItem("pr-9981");
-    ok("hold: the dialog names his review, the session and when Gary acts", !box().hidden && box().querySelector(".hold-line")?.textContent === "Your review from " + time(reviewed) + " waits: the session that opened this PR in ~/repositories/widgets/master was active at " + time(active) + ". Gary starts the round after 30 quiet minutes, around " + time(until) + ".", box().textContent);
+    ok("hold: the dialog names the maintainer's review, the session and when Gary acts", !box().hidden && box().querySelector(".hold-line")?.textContent === "Your review from " + time(reviewed) + " waits: the session that opened this PR in ~/repositories/widgets/master was active at " + time(active) + ". Gary starts the round after 30 quiet minutes, around " + time(until) + ".", box().textContent);
     ok("hold: the dialog says how to act sooner", box().querySelector(".hold-sooner")?.textContent === "To act sooner, address it in that session yourself.");
     await openItem("pr-9982");
     ok("hold: without a known kind it says feedback", /^Your feedback from /.test(box().querySelector(".hold-line")?.textContent ?? ""), box().textContent);

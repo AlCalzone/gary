@@ -31,7 +31,7 @@
     lb.click(); await wait(10);
     const card = () => pcards()[0];
     ok("setting only: the dialog has the settings group and no rules group", dlg.open && pcards().length === 1 && !document.getElementById("learn-settings").hidden && document.getElementById("learn-rules").hidden);
-    ok("setting only: heading and intro do not talk about his decisions or rules", document.getElementById("learn-settings-title").textContent === "A setting Gary would change"
+    ok("setting only: heading and intro do not talk about the maintainer's decisions or rules", document.getElementById("learn-settings-title").textContent === "A setting Gary would change"
       && document.getElementById("learn-settings-intro").textContent === "Gary measured this itself. Nothing changes until you click." && !/decision|decided|rule/i.test(shown()), shown());
     ok("setting: the card has the plain title", card().querySelector(".p-title").textContent === "Use the faster model for obvious items");
     ok("setting: the first paragraph says what was measured, with the numbers", paras(card())[0] === "For a while, a faster and cheaper model sorted the same items as the standard model. Its answers were not used. "
@@ -178,7 +178,7 @@
     document.getElementById("d-close").click(); await wait(5);
 
     await openItem("pr-9952");
-    ok("comment edit: a review he posts himself has no Edit link", lis().length === 2 && !openCard().querySelector(".c-edit") && lis()[0].querySelector(".c-text").textContent === "Metadata comments are for general information about the device.");
+    ok("comment edit: a review the maintainer posts themself has no Edit link", lis().length === 2 && !openCard().querySelector(".c-edit") && lis()[0].querySelector(".c-text").textContent === "Metadata comments are for general information about the device.");
     document.getElementById("d-close").click(); await wait(5);
     window.__reply = () => ({ ok: true, result: { dryRun: true } });
     items(F); await wait(5);

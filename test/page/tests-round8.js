@@ -53,7 +53,7 @@
     await openItem("disc-9802");
     const btns = () => [...cards()[0].querySelectorAll(".card-actions button")];
     ok("me: a recommended escalation has a primary post button and a quiet copy button", btns().map((b) => b.textContent).join() === "Escalate to an issue,Copy command, open GitHub" && btns()[0].classList.contains("primary") && btns()[1].classList.contains("quiet") && !btns()[1].classList.contains("primary"));
-    ok("me: the post button shows his avatar", avatarOf(btns()[0], "octocat"));
+    ok("me: the post button shows the maintainer's avatar", avatarOf(btns()[0], "octocat"));
     ok("me: the row says who posts what", cards()[0].querySelector(".escalate-note")?.textContent === "The discussion becomes a bug issue. The button posts @widgets-bot escalate under your GitHub login.");
     n = __calls.length;
     btns()[0].click(); await wait(10);

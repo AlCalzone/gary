@@ -118,7 +118,7 @@ t.check("fixReview off in config.json stays off", c.fixReviewOf({ ...withBot, fi
 t.check("fixReview fills the fields config.json leaves out", JSON.stringify(c.fixReviewOf({ ...withBot, fixReview: { maxRounds: 1, requestAs: "bot" } }, reviewBots)) === '{"reviewer":"copilot","requestAs":"bot","maxRounds":1,"markReady":true,"reason":null,"noReviewBot":false}');
 t.check("requestAs bot needs a bot", /no bot is configured/.test(c.fixReviewOf({ ...base, allowOwnTokenPushes: true, fixReview: { requestAs: "bot" } }, reviewBots).reason));
 t.check("a full fixReview is valid", c.validateConfig({ ...base, fixReview: { reviewer: "copilot", requestAs: "me", maxRounds: 2, markReady: false } }).length === 0);
-const frErrors = c.validateConfig({ ...base, fixReview: { reviewer: "gemini", requestAs: "him", maxRounds: 4, markReady: "yes" } });
+const frErrors = c.validateConfig({ ...base, fixReview: { reviewer: "gemini", requestAs: "them", maxRounds: 4, markReady: "yes" } });
 t.check("fixReview refuses values outside its lists", frErrors.length === 4 && frErrors.some((e) => /"fixReview.reviewer" must be one of copilot, off/.test(e)) && frErrors.some((e) => /"fixReview.requestAs" must be one of me, bot/.test(e)) && frErrors.some((e) => /"fixReview.maxRounds" must be 1, 2 or 3/.test(e)) && frErrors.some((e) => /"fixReview.markReady" must be true or false/.test(e)), frErrors);
 t.check("fixReview must be an object", c.validateConfig({ ...base, fixReview: "copilot" }).some((e) => /"fixReview" must be/.test(e)));
 const frCheck = c.checkConfig({ ...base, fixReview: { reviewer: "copilot", waitMinutes: 10 } });

@@ -36,12 +36,12 @@
     ok("design decision: a contributor's PR that waits on us is Decide in Afterwards", rowsOf("after").includes("pr-1921") && document.querySelector('.row[data-id="pr-1921"] .cat').textContent === "Decide");
     ok("design decision: without anyone waiting it goes to When you have time", rowsOf("later").includes("pr-1922"));
 
-    // Ranking: finished work he asked for, then due items, then outside contributors, then the lowest effort
+    // Ranking: finished work the maintainer asked for, then due items, then outside contributors, then the lowest effort
     const sha = "c".repeat(40);
     items([it(1931, { effortMinutes: 5 }), it(1932, { effortMinutes: 30, category: "land", authorType: "maintainer", author: "octocat" }), it(1933, { effortMinutes: 60, category: "act", dueAt: day19(4), dueSource: "milestone 2026.12" }),
       it(1934, { effortMinutes: 10 }), ["pr-1935", { ...it(1935)[1], kind: "pr", url: base19 + "/pull/1935", authorType: "bot", author: "widgets-bot", category: "land", effortMinutes: 30, reviewedSha: sha, pushed: { action: "take_over", sha, at: iso(5000) }, routes: [{ id: "r1", type: "merge", as: "me", title: "Merge", recommended: true }] }]]);
     await wait(10); await openGroups();
-    ok("ranking: finished asked-for work, then due, then contributors by effort, then his own: " + rowsOf("after").join(), rowsOf("after").join() === "pr-1935,issue-1933,issue-1931,issue-1934,issue-1932");
+    ok("ranking: finished asked-for work, then due, then contributors by effort, then the maintainer's own: " + rowsOf("after").join(), rowsOf("after").join() === "pr-1935,issue-1933,issue-1931,issue-1934,issue-1932");
 
     // Series: the items sit together, in series order, at the place of the first unfinished one
     const s = (position) => ({ series: { id: "pr-1941", title: "Split the driver, part 1", position, size: 2 } });

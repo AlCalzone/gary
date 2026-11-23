@@ -22,7 +22,7 @@ window.makeRouteFixtures = (iso) => {
         { severity: "minor", text: "The reporter runs driver 15.3.0, two releases behind. The NVM restore fix landed in 15.4.0." },
       ],
       routes: [
-        { id: "r1", type: "reply", as: "me", title: "Reply: a PR is welcome", why: "He already found the cause and only asked where the check belongs.", text: "Thanks for digging into this! A PR is welcome. The check belongs in `Controller.getNodeProtocolInfo()`, right after the response is parsed.", recommended: true, draftHash: "h1" },
+        { id: "r1", type: "reply", as: "me", title: "Reply: a PR is welcome", why: "The reporter already found the cause and only asked where the check belongs.", text: "Thanks for digging into this! A PR is welcome. The check belongs in `Controller.getNodeProtocolInfo()`, right after the response is parsed.", recommended: true, draftHash: "h1" },
         { id: "r2", type: "close", as: "me", title: "Close: the restore fixed it", params: { reason: "completed" }, text: "", draftHash: "h2" },
         { id: "r3", type: "follow_up", as: "agent", title: "Start fix: warn on empty protocol info", text: "", draftHash: "h3" },
         { id: "r4", type: "move", as: "bot", title: "Move to widgets-desktop", why: "The second half of the report is about the UI's network graph.", params: { to: "widgets-desktop" }, text: "Thanks for the report! The graph part of this looks like a Widgets Desktop problem. Please open a new issue in acme/widgets-desktop with your UI version and a screenshot of the network graph.", draftHash: "h4" },
@@ -134,7 +134,7 @@ window.makeRouteFixtures = (iso) => {
     issue(9490, {
       title: "Hub does not wake the thermostat for a setpoint change",
       author: "someone",
-      story: "The reporter attached no log, and the setting he changed is not in the summary.",
+      story: "The reporter attached no log, and the setting they changed is not in the summary.",
       state: "We need a debug log before anyone can look.",
       routes: [{ id: "r1", type: "request_logs", as: "me", actor: "me", title: "Ask: driver log on debug", recommended: true, draftHash: "h1",
         text: "Please make a driver log on loglevel `debug` and attach it here.", params: { alsoLabel: { add: ["waiting for info ⏳"], remove: [] } } }],
@@ -257,7 +257,7 @@ window.makeRouteFixtures = (iso) => {
     }),
   ];
 };
-// Rule proposals the server derives from his deviations
+// Rule proposals the server derives from the maintainer's deviations
 window.makeProposalFixtures = (iso) => [
   ["p1", {
     title: "Do not suggest closing feature requests the maintainer asked for",

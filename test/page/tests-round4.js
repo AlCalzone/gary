@@ -61,7 +61,7 @@
     const W = window.__board.instances[0];
     window.__board.instances = [{ ...W, bot: null, accountMode: "own" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("issue-9490");
-    ok("own mode: the label button carries his avatar", avatarOf(lb(), "octocat"));
+    ok("own mode: the label button carries the maintainer's avatar", avatarOf(lb(), "octocat"));
     window.__board.instances = [{ ...W, bot: null, accountMode: "none" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("issue-9490");
     ok("no bot and no own mode: no label button", !lb() && !!cardBtn("Copy again", cards()[0]));
@@ -155,7 +155,7 @@
     const card0 = cards()[0];
     ok("the rewritten draft shows the new text", card0.querySelector("textarea").value === "Thanks! This is fixed in 15.4.0.");
     const prev = card0.querySelector("details.prev-draft");
-    ok("his edited draft stays available, collapsed", !!prev && !prev.open && prev.querySelector("summary").textContent === "Your previous draft" && prev.querySelector("pre").textContent === "My own reply that I wrote by hand.");
+    ok("the maintainer's edited draft stays available, collapsed", !!prev && !prev.open && prev.querySelector("summary").textContent === "Your previous draft" && prev.querySelector("pre").textContent === "My own reply that I wrote by hand.");
     items(with_("issue-9471", (d) => ({ ...d, reviewedAt: new Date().toISOString(), hint: "Close: fixed in 15.4.0" }))); await wait(10);
     ok("the line stays until the dialog closes", !up.hidden);
     document.getElementById("d-close").click(); await wait(5);
@@ -229,7 +229,7 @@
     window.__board.instances[0].paused = false;
     window.__board.instances = [{ ...W, bot: null, accountMode: "own" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("disc-9492");
-    ok("answer: own mode carries his avatar", avatarOf(ab(), "octocat"));
+    ok("answer: own mode carries the maintainer's avatar", avatarOf(ab(), "octocat"));
     window.__board.instances = [{ ...W, bot: null, accountMode: "none" }]; window.dispatchEvent(new Event("board:info")); await wait(10);
     await openItem("disc-9492");
     ok("answer: hidden without bot and own mode", !ab());
@@ -320,13 +320,13 @@
       ok("auto review: the meta row says it waits for the contributor", [...document.querySelectorAll("#d-meta .auto-review-tag")].map((e) => e.textContent).join() === "Reviewed automatically, waiting for the contributor");
       ok("auto review: the block above the story says so and links the review", !block.hidden && block.querySelector(".ar-lead span").textContent === "Reviewed automatically, waiting for the contributor." && block.querySelector("a")?.getAttribute("href") === AR.url && block.nextElementSibling === document.getElementById("d-story"));
       ok("auto review: it lists what was asked and the open offer", block.querySelector("li")?.textContent === AR.asked[0] && /It offered to push the formatting\. No answer yet\./.test(block.textContent));
-      ok("auto review: the item keeps its own cards for his review", cards().length > 0);
+      ok("auto review: the item keeps its own cards for the maintainer's review", cards().length > 0);
       document.getElementById("d-close").click(); await wait(5);
       items(withAuto(["pr-9496"], { ...AR, waiting: false, changed: ["pushed", "replied"], offer: { ...AR.offer, state: "accepted" } })); await wait(10);
       await reveal();
       ok("auto review: after the author pushed, the PR is back in the plan", inGroups("pr-9496") && line.hidden);
       await openItem("pr-9496");
-      ok("auto review: his card shows what was asked and what changed since", block.querySelector(".ar-lead span").textContent === "Reviewed automatically. Since then the author pushed, the author replied." && block.querySelector("li")?.textContent === AR.asked[0] && /The author accepted the offer/.test(block.textContent));
+      ok("auto review: the maintainer's card shows what was asked and what changed since", block.querySelector(".ar-lead span").textContent === "Reviewed automatically. Since then the author pushed, the author replied." && block.querySelector("li")?.textContent === AR.asked[0] && /The author accepted the offer/.test(block.textContent));
       ok("auto review: the meta row no longer says waiting", [...document.querySelectorAll("#d-meta .auto-review-tag")].map((e) => e.textContent).join() === "Reviewed automatically");
       document.getElementById("d-close").click(); await wait(5);
       items(withAuto(["pr-9496"], { ...AR, asked: ["<img src=x onerror=alert(1)>"], url: "javascript:alert(1)" })); await wait(10);
@@ -402,14 +402,14 @@
     items(F); await wait(5);
   }
 
-  // Outside contributors and reporters come before his own and bot work. The stored priority orders within each
+  // Outside contributors and reporters come before the maintainer's own and bot work. The stored priority orders within each
   {
     const mk = (n, authorType, priority) => ["o-" + n, simple(n, "land", 2, priority, { authorType, author: authorType === "bot" ? "widgets-bot" : authorType === "maintainer" ? "octocat" : "someone" })];
     items([mk(1, "maintainer", 1), mk(2, "bot", 2), mk(3, "contributor", 3)]); await wait(10);
     const order = () => [...document.querySelectorAll("#group-quick .row")].map((r) => r.dataset.id).join();
-    ok("ranking: the contributor comes first even with a lower priority, then his own and the bot's by priority", order() === "o-3,o-1,o-2", order());
+    ok("ranking: the contributor comes first even with a lower priority, then the maintainer's own and the bot's by priority", order() === "o-3,o-1,o-2", order());
     items([mk(1, "maintainer", 3), mk(2, "bot", 2), mk(3, "contributor", 1)]); await wait(10);
-    ok("ranking: the priority orders his own and the bot's rows", order() === "o-3,o-2,o-1", order());
+    ok("ranking: the priority orders the maintainer's own and the bot's rows", order() === "o-3,o-2,o-1", order());
     items(F); await wait(5);
   }
 

@@ -30,7 +30,7 @@
 				"type": "reply",
 				"as": "me",
 				"title": "Reply: a PR is welcome",
-				"why": "He already found the cause and only asked where the check belongs.",
+				"why": "The reporter already found the cause and only asked where the check belongs.",
 				"text": "Thanks for digging into this! A PR is welcome. The check belongs in `Controller.getNodeProtocolInfo()`, right after the response is parsed.",
 				"recommended": true
 			},

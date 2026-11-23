@@ -17,7 +17,7 @@
     const pairA = edit("reconcile-merge-a", { title: "Keep the test rule in one place", finding: "duplicate", file: "rules/review.md", before: "- Ask for a test on every bug fix.", after: "- " + longLine, group: "merge-tests",
       evidence: [{ type: "text", gist: "Both files ask for tests on bug fixes", file: "rules/review.md" }] });
     const pairB = edit("reconcile-merge-b", { title: "Keep the test rule in one place", finding: "duplicate", file: "rules/classification.md", before: "Bug fixes need a test.\n", after: "", group: "merge-tests",
-      evidence: [{ type: "text", gist: "Both files ask for tests on bug fixes", file: "rules/review.md" }, { type: "log", gist: "He kept asking for tests", count: 4 }] });
+      evidence: [{ type: "text", gist: "Both files ask for tests on bug fixes", file: "rules/review.md" }, { type: "log", gist: "The maintainer kept asking for tests", count: 4 }] });
     learn.gone.clear(); learn.known.clear(); learn.added.clear();
 
     // The group counts once

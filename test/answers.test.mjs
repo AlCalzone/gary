@@ -95,7 +95,7 @@ try {
 	t.check("each answer is logged as answered_finding", answered.length === 2 && answered[0].itemId === "pr-12" && answered[0].finding.key === "f1" && answered[0].finding.severity === "question" && answered[0].finding.text === findings[0].text && answered[0].text === "Yes, 0x00 means off.", answered);
 	t.check("the note is logged as agent_note", log().some((e) => e.type === "agent_note" && e.text === "Also check the tests."), log());
 	const anchor = sinceAnchor(stored(), docs);
-	t.check("the send counts as his last choice", anchor?.kind === "choice" && anchor.label === "Analyze again", anchor);
+	t.check("the send counts as the maintainer's last choice", anchor?.kind === "choice" && anchor.label === "Analyze again", anchor);
 
 	// A page write cannot bring answers past the checks
 	r = await api("/api/db", { op: "set", path: "actions/widgets/pr-12-1", data: { itemId: "pr-12", action: "reanalyze", params: { answers: [{ finding: "f9", text: "x" }] }, text: "", status: "queued", via: "queue", createdAt: new Date().toISOString() } });

@@ -44,7 +44,7 @@ const node = {
 let act = activityOf("pr", node, ctx, { before: { ci: [{ at: at(17, 0), state: "passing" }] }, ci: "failing", at: at(18, 15) });
 const kinds = act.events.map((e) => e.kind).join();
 t.check("the activity lists comments, replies, reviews, thread replies, commits and status events in order", kinds === "comment,comment,comment,comment,reply,review,thread_reply,commit,commit,ready,labeled", act.events);
-t.check("a comment by someone outside that mentions him or ends in a question asks him", act.events.filter((e) => e.asks).map((e) => e.at).join() === [at(18, 1), at(18, 4)].join(), act.events);
+t.check("a comment by someone outside that mentions the maintainer or ends in a question asks the maintainer", act.events.filter((e) => e.asks).map((e) => e.at).join() === [at(18, 1), at(18, 4)].join(), act.events);
 t.check("an automated comment keeps its side", act.events[2].side === "automated");
 t.check("a review keeps its state, a pending one is left out", act.events.filter((e) => e.kind === "review").map((e) => e.state).join() === "changes_requested");
 t.check("the first comment of a thread is left out, its replies stay", act.events.filter((e) => e.kind === "thread_reply").map((e) => e.by).join() === BOT);
@@ -63,9 +63,9 @@ t.check("an issue keeps the newest 60 events", act.events.length === 60 && act.e
 const click = { itemId: "pr-1", routeId: "r1", route: "take_over", action: "take_over", status: "done", createdAt: at(19, 10) };
 const watch = { itemId: "pr-1", action: "drive", params: { by: "watch" }, status: "queued", createdAt: at(19, 12) };
 let a = sinceAnchor({ seenAt: at(19, 20) }, [click, watch]);
-t.check("his newest click is the anchor, before a later dialog open", a?.kind === "choice" && a.at === at(19, 10) && a.label === "Take over", a);
+t.check("the maintainer's newest click is the anchor, before a later dialog open", a?.kind === "choice" && a.at === at(19, 10) && a.label === "Take over", a);
 a = sinceAnchor({ handled: { at: at(19, 11), routeId: "r2", routeType: "reply" } }, [click, watch]);
-t.check("a prefill he used later is the anchor", a?.kind === "choice" && a.at === at(19, 11) && a.label === "Reply", a);
+t.check("a prefill the maintainer used later is the anchor", a?.kind === "choice" && a.at === at(19, 11) && a.label === "Reply", a);
 a = sinceAnchor({}, [click, { itemId: "pr-1", routeId: "r3", route: "close", action: "dismiss_route", createdAt: at(19, 13) }, { itemId: "pr-1", action: "reanalyze", via: "queue", createdAt: at(19, 13) }]);
 t.check("a dismissal is named, before the analysis it queued", a?.label === "Dismissed Close", a);
 a = sinceAnchor({}, [{ itemId: "pr-1", action: "snooze", params: { days: 3 }, via: "board", createdAt: at(19, 14) }]);
@@ -130,13 +130,13 @@ t.check("the summary names the anchor", s.anchor === anchor);
 const later = { ...activity, events: [...activity.events, ev(21, "jpoeppelman1", "them", "commit", { sha: "d".repeat(40) }), ev(22, "octocat", "us", "comment")], ci: [...activity.ci, { at: at(19, 23), state: "passing" }] };
 s = sinceSummary(later, anchor, { me: ME, bot: BOT, actions });
 const byText = (re) => s.groups.find((g) => re.test(g.text));
-t.check("a push after his change request answers it", byText(/^You requested changes$/)?.note === undefined, byText(/^You requested changes/));
+t.check("a push after the maintainer's change request answers it", byText(/^You requested changes$/)?.note === undefined, byText(/^You requested changes/));
 t.check("our comment after a question answers it", byText(/^hubot wrote/)?.note === undefined && byText(/^You wrote 1 comment$/), s.groups);
 t.check("the commits of one author stay one group", byText(/^jpoeppelman1 pushed 9 commits$/), s.groups);
 t.check("CI back to green says so", s.groups.at(-1).text === "CI passing again" && s.groups.at(-1).icon === "ciPass", s.groups.at(-1));
 const round = { itemId: "pr-1", action: "drive", params: { by: "watch" }, status: "done", createdAt: at(19, 16, 30), finishedAt: at(19, 17, 30), result: "" };
 s = sinceSummary(activity, anchor, { me: ME, bot: BOT, actions: [...actions, round] });
-t.check("a finished round after his change request answers it", s.groups.find((g) => g.text === "You requested changes")?.note === undefined, s.groups);
+t.check("a finished round after the maintainer's change request answers it", s.groups.find((g) => g.text === "You requested changes")?.note === undefined, s.groups);
 s = sinceSummary({ events: [ev(11, "alice", "them", "review", { state: "approved" }), ev(12, "alice", "them", "review", { state: "commented" }), ev(13, "bob", "them", "review", { state: "approved" }), ev(14, "carol", "them", "force_push"), ev(15, "carol", "them", "force_push")], openThreads: [], ci: [] }, anchor, { me: ME, bot: BOT });
 t.check("review states and force-pushes", JSON.stringify(s.groups.map((g) => g.text)) === JSON.stringify(["alice reviewed 2 times, approved", "bob approved", "carol force-pushed 2 times"]), s.groups.map((g) => g.text));
 s = sinceSummary({ events: [ev(9, "hubot", "them", "comment")], openThreads: [], ci: [{ at: at(18, 0), state: "failing" }] }, anchor, { me: ME, bot: BOT });
@@ -149,7 +149,7 @@ s = sinceSummary({ events: [], openThreads: [], ci: [] }, anchor, { actions: [li
 t.check("the link of the fix PR is one line", JSON.stringify(s.groups) === JSON.stringify([{ at: at(19, 20), kind: "linked", icon: "link", text: "Linked the fix PR to #50" }]), s.groups);
 s = sinceSummary({ events: [], openThreads: [], ci: [] }, anchor, { actions: [link(at(10, 0))] });
 t.check("a link from before the anchor gives no line", s.groups.length === 0, s.groups);
-t.check("the link is no choice of his", sinceAnchor({}, [link(at(19, 20))]) === null);
+t.check("the link is no choice of the maintainer's", sinceAnchor({}, [link(at(19, 20))]) === null);
 
 // `gary snapshot --out`: the work list goes into the run directory, never over the baseline
 const { outPath } = await import("../scripts/snapshot.mjs");

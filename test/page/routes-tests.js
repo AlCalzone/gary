@@ -32,7 +32,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("items without routes are not shown", !document.querySelector('.row[data-id="issue-9478"]') && !document.querySelector('.row[data-id="issue-9479"]') && !!document.querySelector('.row[data-id="issue-9471"]'));
   items(F); await wait(10);
 
-  // reply in his name, findings per route, cards, chevrons, tints
+  // reply in the maintainer's name, findings per route, cards, chevrons, tints
   await openItem("issue-9471");
   ok("four cards, the recommended one open", cards().length === 4 && cards().filter((c) => c.classList.contains("open")).length === 1 && openCard() === cards()[0]);
   ok("verdict leads into the cards", document.getElementById("d-verdict").nextElementSibling === document.getElementById("d-routes") && !document.querySelector("#d-verdict svg"));
@@ -45,18 +45,18 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("close without text is a compact row with one button and no body", cards()[1].classList.contains("compact") && !cards()[1].querySelector(".card-body") && [...cards()[1].querySelectorAll(".card-actions button")].length === 1 && !!cardBtn("Open GitHub to close", cards()[1]));
   ok("a route finding is the card's body, others stay in the findings list", /stored node data looks corrupted/.test(cards()[2].querySelector(".card-finding").textContent) && !/corrupted/.test(document.getElementById("d-findings").textContent) && /two releases behind/.test(document.getElementById("d-findings").textContent));
   const replyBtn = cardBtn("Copy reply, open GitHub");
-  ok("reply in his name: label, his avatar, external icon", !!replyBtn && /octocat/.test(replyBtn.querySelector("img")?.src ?? "") && !!replyBtn.querySelector(".ext"));
+  ok("reply in the maintainer's name: label, their avatar, external icon", !!replyBtn && /octocat/.test(replyBtn.querySelector("img")?.src ?? "") && !!replyBtn.querySelector(".ext"));
   const ta201 = openCard().querySelector("textarea");
   ta201.value = "A PR is welcome! Edited."; ta201.dispatchEvent(new Event("input"));
   let calls = __calls.length;
   replyBtn.click(); await wait(20);
-  ok("reply in his name copies, opens the anchor and never calls the server", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls);
+  ok("reply in the maintainer's name copies, opens the anchor and never calls the server", window.__clip === "A PR is welcome! Edited." && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9471" && __calls.length === calls);
   const hd0 = () => cards()[0].querySelector(".card-top > .head-done");
   ok("a used prefill card collapses, with the confirmation in its header row", !expandedCard() && !hd0().hidden && !!hd0().querySelector("svg") && /^Copied and opened, \d\d:\d\d$/.test(hd0().textContent) && cards()[0].classList.contains("settled") && cards()[0].querySelector(".card-x").hidden);
   ok("the done row is muted against the open suggestions", getComputedStyle(cards()[0].querySelector(".card-head .r-hint")).opacity < 1 && getComputedStyle(cards()[2].querySelector(".card-head .r-hint")).opacity === "1");
   ok("no other card opens in its place", cards().filter((c) => c.classList.contains("open")).length === 0);
   await expand(0);
-  ok("he can expand it again, and the header confirmation moves into the card", openCard() === cards()[0] && hd0().hidden);
+  ok("the maintainer can expand it again, and the header confirmation moves into the card", openCard() === cards()[0] && hd0().hidden);
   const om = openCard().querySelector(".card-actions .status.opened");
   ok("a used prefill says so in words with the time, and never Done", !!om && !!om.querySelector("svg") && /^Copied and opened on GitHub, \d\d:\d\d$/.test(om.textContent) && !om.classList.contains("done") && !/Done/.test(openCard().querySelector(".card-actions").textContent) && handledToday("issue-9471"));
   ok("the used button turns into a secondary Copy again", !cardBtn("Copy reply, open GitHub") && cardBtn("Copy again")?.classList.contains("quiet") && !cardBtn("Copy again").classList.contains("primary") && !cardBtn("Copy again").disabled);
@@ -152,7 +152,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   cardBtn("Open GitHub to file the issue").click(); await wait(20);
   ok("follow_up me opens the new-issue form with title and body encoded", window.__opened.at(-1) === "https://github.com/acme/widgets/issues/new?title=Docs%3A%20soft%20reset%20after%20restoreNVM&body=" + encodeURIComponent("The docs for `restoreNVM` do not mention the soft reset afterwards.\nApps should wait for the driver ready event again.") && __calls.length === calls);
 
-  // review with diff hunks, merge in his name, chore row, take_over replace
+  // review with diff hunks, merge in the maintainer's name, chore row, take_over replace
   await openItem("pr-9473");
   const checks = [...openCard().querySelectorAll(".checklist input[type=checkbox]")];
   ok("review: checklist with all comments checked, path:line and text", checks.length === 2 && checks.every((c) => c.checked) && /zw100\.json:41/.test(openCard().querySelector(".checklist").textContent) && !!openCard().querySelector(".checklist code.ic"));
@@ -190,7 +190,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   await openItem("pr-9473");
   ok("with a take_over covering every judged thread the list moves onto that card", document.getElementById("d-threads").hidden && cards()[3].querySelectorAll(".decisions > li").length === 2);
   calls = __calls.length;
-  ok("merge in his name is a compact green row", cards()[1].classList.contains("compact") && cardBtn("Open GitHub to merge", cards()[1])?.classList.contains("intent-finish"));
+  ok("merge in the maintainer's name is a compact green row", cards()[1].classList.contains("compact") && cardBtn("Open GitHub to merge", cards()[1])?.classList.contains("intent-finish"));
   cardBtn("Open GitHub to merge", cards()[1]).click(); await wait(20);
   ok("merge never calls the server", window.__opened.at(-1) === "https://github.com/acme/widgets/pull/9473" && __calls.length === calls);
   ok("chore: a compact row with one button from its action", cards()[2].classList.contains("compact") && [...cards()[2].querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Update branch");
@@ -254,7 +254,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   calls = __calls.length;
   cardBtn("Copy escalate command, open GitHub", cards()[0]).click(); await wait(20);
   ok("escalate copies exactly the command and opens the discussion", window.__clip === "@widgets-bot escalate" && window.__opened.at(-1) === "https://github.com/acme/widgets/discussions/9476#issue-comment-box" && __calls.length === calls);
-  ok("escalate shows his avatar", avatarOf(cardBtn("Copy again", cards()[0]), "octocat") && /^Copied and opened on GitHub/.test(cards()[0].querySelector(".status.opened").textContent));
+  ok("escalate shows the maintainer's avatar", avatarOf(cardBtn("Copy again", cards()[0]), "octocat") && /^Copied and opened on GitHub/.test(cards()[0].querySelector(".status.opened").textContent));
 
   // issue to a discussion
   await openItem("issue-9477");
@@ -353,7 +353,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("fix card: the agent's preset turns the switch on and shows why", ask().checked && expandedCard().querySelector(".ask-reporter-why")?.textContent === "Only the reporter has this device revision.");
   ask().click();
   cardBtn("Start fix").click(); await wait(20);
-  ok("fix card: he can turn a preset off", __calls.at(-1).input.askReporter === false);
+  ok("fix card: the maintainer can turn a preset off", __calls.at(-1).input.askReporter === false);
   document.getElementById("d-close").click(); await wait(5);
   items(F); await wait(10);
 
@@ -510,7 +510,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
 
   // Items the agent could not analyze: one "open" route and a notice
   await openItem("issue-9481");
-  ok("blocked: a compact Open on GitHub row with his avatar and no dismiss", cards().length === 1 && cards()[0].classList.contains("compact") && cards()[0].classList.contains("intent-away")
+  ok("blocked: a compact Open on GitHub row with the maintainer's avatar and no dismiss", cards().length === 1 && cards()[0].classList.contains("compact") && cards()[0].classList.contains("intent-away")
     && avatarOf(cardBtn("Open on GitHub", cards()[0]), "octocat") && !cards()[0].querySelector(".card-x") && /Read it yourself/.test(cards()[0].textContent));
   ok("blocked: the notice names the safety filter", /triggered the model's safety filter/.test(document.querySelector("#d-routes .blocked-note")?.textContent ?? "")
     && !!(document.querySelector("#d-routes .blocked-note").compareDocumentPosition(cards()[0]) & Node.DOCUMENT_POSITION_FOLLOWING));
@@ -631,7 +631,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   const acct = (login) => ({ login, avatarUrl: "https://github.com/" + login + ".png?size=80" });
   const ZW = window.__board;
   ok("title and storage come from the board info", document.getElementById("board-title").textContent === "widgets triage" && document.title === "widgets triage" && document.getElementById("dry-run").hidden);
-  // What the server sends per route for an account mode: "none" has no bot, "own" runs bot routes under his login
+  // What the server sends per route for an account mode: "none" has no bot, "own" runs bot routes under the maintainer's login
   const PUSHING = new Set(["address_review", "take_over", "revise", "drive", "follow_up"]);
   const PREFILL = new Set(["reply", "request_logs", "reopen", "follow_up"]);
   const served = (mode) => F.map(([id, d]) => [id, { ...d, routes: d.routes.map((r) => {
@@ -653,7 +653,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("per-repo keys move to the instance's keys once", localStorage.getItem(OLD) === null && /legacy/.test(localStorage.getItem("gary:gadgets:drafts") || ""));
   items(served("none")); await wait(10);
   await openItem("issue-9472");
-  ok("no bot: request_logs is a prefill with his avatar", !!cardBtn("Copy request, open GitHub") && /jdoe/.test(cardBtn("Copy request, open GitHub").querySelector("img")?.src ?? "") && !!openCard().querySelector("textarea.tall"));
+  ok("no bot: request_logs is a prefill with the maintainer's avatar", !!cardBtn("Copy request, open GitHub") && /jdoe/.test(cardBtn("Copy request, open GitHub").querySelector("img")?.src ?? "") && !!openCard().querySelector("textarea.tall"));
   calls = __calls.length;
   cardBtn("Copy request, open GitHub").click(); await wait(20);
   ok("no bot: the prefill copies and opens GitHub, never the server", /loglevel `debug`/.test(window.__clip) && window.__opened.at(-1) === "https://github.com/acme/widgets/issues/9472" && __calls.length === calls);
@@ -665,7 +665,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("no bot: unavailable routes are hidden", cards().length === 3 && !cards().some((c) => /Start fix/.test(c.textContent)));
   const mv = cards().find((c) => /Move/.test(c.textContent));
   mv.querySelector(".card-head").click(); await wait(5);
-  ok("no bot: a move offers only closing with the canned text, in his name", [...openCard().querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Copy text, open GitHub to close");
+  ok("no bot: a move offers only closing with the canned text, in the maintainer's name", [...openCard().querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Copy text, open GitHub to close");
   await openItem("pr-9473");
   ok("no bot: a review with inline comments, the chore and take_over are hidden", cards().length === 1 && /Merge/.test(cards()[0].textContent));
   await openItem("disc-9476");
@@ -680,20 +680,20 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   cards().find((c) => /Reply/.test(c.textContent)).querySelector(".card-head").click(); await wait(5);
   ok("no bot: the prefill has no confirm and no bot name", !!cardBtn("Copy reply, open GitHub") && !/bot/.test(openCard().querySelector(".card-actions").textContent));
 
-  // Own mode: bot routes run under his login after the click
+  // Own mode: bot routes run under the maintainer's login after the click
   applyBoardInfo(gadgetsOnly("own", false));
   items(served("own")); await wait(10);
   await openItem("pr-9473");
-  ok("own: the review runs under his login with his avatar", /jdoe/.test(cardBtn("Request changes")?.querySelector("img")?.src ?? "") && /Runs right away under your GitHub login/.test(openCard().textContent));
+  ok("own: the review runs under the maintainer's login with their avatar", /jdoe/.test(cardBtn("Request changes")?.querySelector("img")?.src ?? "") && /Runs right away under your GitHub login/.test(openCard().textContent));
   cardBtn("Request changes").click(); await wait(5);
   ok("own: the confirm says as you", !!cardBtn("Confirm: request changes as you"));
   calls = __calls.length;
   cardBtn("Confirm: request changes as you").click(); await wait(20);
   ok("own: the click goes to the server", __calls.length === calls + 1 && __calls.at(-1).routeId === "r1");
-  ok("own: take_over commits as him", (() => { const c = cards()[3]; c.querySelector(".card-head").click(); return /Commits as jdoe/.test(c.textContent); })());
+  ok("own: take_over commits as the maintainer", (() => { const c = cards()[3]; c.querySelector(".card-head").click(); return /Commits as jdoe/.test(c.textContent); })());
   await openItem("issue-9471");
   cards()[3].querySelector(".card-head").click(); await wait(5);
-  ok("own: a move transfers as him and closes as a prefill", avatarOf(cardBtn("Transfer to widgets-desktop"), "jdoe") && !!cardBtn("Copy text, open GitHub to close") && !openCard().querySelector(".card-head .avatar, .card-head .actor-icon:not(.chev)"));
+  ok("own: a move transfers as the maintainer and closes as a prefill", avatarOf(cardBtn("Transfer to widgets-desktop"), "jdoe") && !!cardBtn("Copy text, open GitHub to close") && !openCard().querySelector(".card-head .avatar, .card-head .actor-icon:not(.chev)"));
   document.getElementById("d-close").click(); await wait(5);
   ok("nothing names the widgets project in the second project's page chrome", !/widgets/i.test(document.title + document.querySelector("header").textContent));
 

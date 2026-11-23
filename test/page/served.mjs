@@ -260,14 +260,14 @@ try {
 	ok("kind icon follows the live state", await until(`(document.querySelector('.row[data-id="widgets/issue-21"] .r-kind svg') ?? document.querySelector('.handled-row[data-id="widgets/issue-21"] .h-kind svg'))?.getAttribute("aria-label") === "Issue, closed as completed"`));
 	setStub({});
 
-	// Routes in his name: the board copies and opens GitHub, the server is never asked to write
+	// Routes in the maintainer's name: the board copies and opens GitHub, the server is never asked to write
 	await ev(`window.__apiCalls = 0; const f = window.fetch; window.fetch = (u, o) => { if (String(u).includes("/api/action")) window.__apiCalls++; return f(u, o); };
 		window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; };
 		Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__clip = t; } } });`);
 	writeFileSync(itemFile("issue-21"), JSON.stringify({ ...json(itemFile("issue-21")), title: "Probe 21 reopened" }));
 	setStub({});
 	await openItem("issue-21");
-	ok("his buttons carry his avatar", await until(`!!document.querySelector("#d-routes .card.open .me-btn img.avatar[src*='octocat']")`));
+	ok("the maintainer's buttons carry their avatar", await until(`!!document.querySelector("#d-routes .card.open .me-btn img.avatar[src*='octocat']")`));
 	await ev(`const ta = document.querySelector("#d-routes .card.open textarea"); ta.value += " (edited)"; ta.dispatchEvent(new Event("input"));`);
 	await press("Copy reply, open GitHub");
 	ok("me route: clipboard gets the edited text", await until(`String(window.__clip).endsWith(" (edited)")`));
@@ -589,7 +589,7 @@ try {
 	const autoFile = join(HOME, "state", "auto-reviews.json");
 	const autoSha = "a".repeat(40);
 	const autoAt = new Date(Date.now() - 60000).toISOString();
-	// Any PR he has not handled, hidden or snoozed works
+	// Any PR the maintainer has not handled, hidden or snoozed works
 	const autoId = await ev(`return [...state.items].find(([k, d]) => d.kind === "pr" && !handledOf(k, d) && !isHiddenItem(d) && !isSnoozed(d) && !workingOf(d))?.[0].split("/")[1];`);
 	const autoNumber = Number(autoId.split("-")[1]);
 	const autoRow = `document.querySelector('#auto-waiting .handled-row[data-id="widgets/${autoId}"]')`;

@@ -112,14 +112,14 @@ o = json(r);
 t.check("finish as a dry run names the ready mark and the review it would queue", o.dryRun === true && /markPullRequestReadyForReview/.test(o.invocations?.[0]?.stdin.query ?? "") && o.wouldWrite.action.action === "full_review" && existsSync(driveFile) && writes().length === 1, o);
 r = gary("fix-review", "finish", "--pr", "19", "--outcome", "done", "--reason", "Copilot found nothing new after round 1.", "--request-maintainer", "--dry-run");
 o = json(r);
-t.check("a dry run with --request-maintainer names the ready mark, then his review request as the bot", o.dryRun === true && o.invocations?.length === 2 && /markPullRequestReadyForReview/.test(o.invocations[0].stdin.query) && /requestReviews\(input: \{ pullRequestId: \$id, userIds: \$users, union: true \}\)/.test(o.invocations[1].stdin.query) && o.invocations[1].as === "widgets-bot" && JSON.stringify(o.invocations[1].stdin.variables.users) === '["U_octocat"]' && o.maintainerReview?.dryRun === true && writes().length === 1, o);
+t.check("a dry run with --request-maintainer names the ready mark, then the maintainer's review request as the bot", o.dryRun === true && o.invocations?.length === 2 && /markPullRequestReadyForReview/.test(o.invocations[0].stdin.query) && /requestReviews\(input: \{ pullRequestId: \$id, userIds: \$users, union: true \}\)/.test(o.invocations[1].stdin.query) && o.invocations[1].as === "widgets-bot" && JSON.stringify(o.invocations[1].stdin.variables.users) === '["U_octocat"]' && o.maintainerReview?.dryRun === true && writes().length === 1, o);
 // GitHub shows the PR as ready once the command marked it
 writeFileSync(OVERRIDES, JSON.stringify({ "requests-19": { isDraft: false } }));
 r = gary("fix-review", "finish", "--pr", "19", "--outcome", "done", "--reason", "Copilot found nothing new after round 1.", "--request-maintainer");
 o = json(r);
 writeFileSync(OVERRIDES, "{}");
 t.check("done: the PR is marked ready as the bot", r.status === 0 && o.ready === true && writes().length === 3 && writes()[1].mutation === "markPullRequestReadyForReview" && writes()[1].as === "widgets-bot" && writes()[1].variables.id === "PR_19", [o, writes()]);
-t.check("done --request-maintainer: the bot requests his review after the ready mark", o.maintainerReview?.requested === true && writes()[2].mutation === "requestReviews" && writes()[2].as === "widgets-bot" && JSON.stringify(writes()[2].variables) === '{"id":"PR_19","users":["U_octocat"]}', [o, writes()]);
+t.check("done --request-maintainer: the bot requests the maintainer's review after the ready mark", o.maintainerReview?.requested === true && writes()[2].mutation === "requestReviews" && writes()[2].as === "widgets-bot" && JSON.stringify(writes()[2].variables) === '{"id":"PR_19","users":["U_octocat"]}', [o, writes()]);
 let review = actions().find((a) => a.id === o.reviewId);
 t.check("done: a full review of the PR item is queued with the rounds", review?.itemId === "pr-19" && review.action === "full_review" && review.status === "queued" && review.result === "" && review.via === "queue" && review.params.outcome === "done" && review.params.ready === true && review.params.number === 19 && review.params.repo === "acme/widgets" && review.params.fixFor === "issue-23" && review.params.rounds[0].open[0] === "A test for the timeout branch." && review.params.lastPushedSha === "a".repeat(40) && /nothing new after round 1/.test(review.text), review);
 r = gary("watch-queue", "--once");
@@ -151,7 +151,7 @@ r = gary("fix-review", "start", "--pr", "19", "--sha", SHA, "--run", "run-1");
 t.check("requestAs bot requests the review with the bot's token", json(r).started === true && writes()[0].as === "widgets-bot" && read(driveFile).maxRounds === 2 && read(driveFile).markReady === false, [r.stdout, writes()]);
 r = gary("fix-review", "finish", "--pr", "19", "--outcome", "done", "--reason", "Two rounds are done.", "--request-maintainer");
 t.check("markReady false leaves the PR a draft after a done drive", json(r).ready === false && writes().length === 1 && actions().some((a) => a.action === "full_review" && a.params.ready === false), r.stdout);
-t.check("a draft gets no review request for him", /is a draft/.test(json(r).maintainerReview?.skipped), r.stdout);
+t.check("a draft gets no review request for the maintainer", /is a draft/.test(json(r).maintainerReview?.skipped), r.stdout);
 reset();
 editConfig((c) => ({ ...c, fixReview: { reviewer: "off" } }));
 r = gary("fix-review", "start", "--pr", "19", "--sha", SHA, "--run", "run-1");
@@ -160,7 +160,7 @@ editConfig(({ fixReview, ...c }) => c);
 r = gary("doctor", "--json");
 t.check("doctor names the fix review and the fix limit", /up to 3 copilot review rounds, requested as you, then it is marked ready/.test(r.stdout) && /at most 10 automatic fix PRs pending/.test(r.stdout), r.stdout.slice(0, 1500));
 
-// Without a review bot in the profile the rounds are skipped, and the fix PR goes straight to ready and to his card
+// Without a review bot in the profile the rounds are skipped, and the fix PR goes straight to ready and to the maintainer's card
 reset();
 const noBot = join(T, "profile-no-review-bot");
 cpSync(PROFILE, noBot, { recursive: true });
@@ -175,7 +175,7 @@ o = json(r);
 writeFileSync(OVERRIDES, "{}");
 t.check("without a review bot start requests no review and says why", r.status === 0 && o.started === false && /lists no review bot/.test(o.skipped) && !writes().some((w) => w.mutation === "requestCopilotCodeReview"), [o, writes()]);
 t.check("without a review bot the fix PR is marked ready and its full review is queued", o.ready === true && writes()[0]?.mutation === "markPullRequestReadyForReview" && actions().some((a) => a.action === "full_review" && a.params.outcome === "done" && a.params.ready === true && a.params.rounds.length === 0 && a.params.lastPushedSha === SHA) && !existsSync(driveFile), [o, actions()]);
-t.check("without a review bot his review is requested", o.maintainerReview?.requested === true && writes().some((w) => w.mutation === "requestReviews"), [o, writes()]);
+t.check("without a review bot the maintainer's review is requested", o.maintainerReview?.requested === true && writes().some((w) => w.mutation === "requestReviews"), [o, writes()]);
 r = gary("pr-watch", "review", "--pr", "19", "--sha", "8".repeat(40), "--action", "x");
 t.check("without a review bot pr-watch review skips the round and exits 0", r.status === 0 && json(r).requested === false && /lists no review bot/.test(json(r).skipped) && !existsSync(driveFile), r.stdout);
 r = gary("doctor");
@@ -191,12 +191,12 @@ const setFixes = (o2) => writeFileSync(join(state, "fixes.json"), JSON.stringify
 editConfig((c) => ({ ...c, maxPendingAutoFixes: 2 }));
 setFixes({ "issue-101": [record(201, "routine")], "issue-102": [record(202, "maintainer")] });
 r = gary("claim", "issue-103", "fix", "--run", "hourly");
-t.check("below the limit the routine's fix claim is granted, his own fixes do not count", r.status === 0 && json(r).ok === true, r.stdout);
+t.check("below the limit the routine's fix claim is granted, the maintainer's own fixes do not count", r.status === 0 && json(r).ok === true, r.stdout);
 r = gary("claim", "issue-104", "fix", "--run", "hourly");
 t.check("at the limit the claim is refused with the numbers", r.status === 3 && /limit of pending automatic fixes is reached: 2 of 2/.test(json(r).error) && json(r).limit.pending === 2 && json(r).limit.max === 2 && !existsSync(join(state, "claims", "issue-104.fix.json")), r.stdout);
 writeFileSync(join(actionsDir, "issue-104-1.json"), JSON.stringify({ itemId: "issue-104", action: "start_fix", status: "queued", via: "queue", createdAt: new Date().toISOString() }));
 r = gary("claim", "issue-104", "fix", "--run", "request-1", "--request", "issue-104-1");
-t.check("a fix he clicked is claimed at the limit", r.status === 0 && json(r).ok === true, r.stdout);
+t.check("a fix the maintainer clicked is claimed at the limit", r.status === 0 && json(r).ok === true, r.stdout);
 gary("release", "issue-104", "fix", "--run", "request-1");
 rmSync(join(actionsDir, "issue-104-1.json"));
 gary("release", "issue-103", "fix", "--run", "hourly");
@@ -227,7 +227,7 @@ const fs = await (async () => {
 })();
 const none = { claims: [], actions: [], records: {}, snapshot: {}, repo: "acme/widgets", drives: {} };
 t.check("pending counts the routine's running jobs and its draft and open PRs", fs.pendingAutoFixes({ ...none, claims: [{ itemId: "issue-1", kind: "fix", at: "2026-11-18T10:00:00Z", expired: false }], records: { "issue-2": [record(30, "routine")], "issue-3": [record(31, "maintainer")] } }) === 2);
-t.check("a queued fix he clicked does not count while it runs", fs.pendingAutoFixes({ ...none, claims: [{ itemId: "issue-1", kind: "fix", at: "2026-11-18T10:00:00Z", expired: false }], actions: [{ id: "a", data: { itemId: "issue-1", action: "start_fix", status: "queued" } }] }) === 0);
+t.check("a queued fix the maintainer clicked does not count while it runs", fs.pendingAutoFixes({ ...none, claims: [{ itemId: "issue-1", kind: "fix", at: "2026-11-18T10:00:00Z", expired: false }], actions: [{ id: "a", data: { itemId: "issue-1", action: "start_fix", status: "queued" } }] }) === 0);
 
 removeDir(T);
 t.done();

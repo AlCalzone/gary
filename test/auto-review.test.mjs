@@ -127,7 +127,7 @@ t.check("another bot's PR gets none", refused(post(), "author"));
 override({ author: { login: "copilot-swe-agent", __typename: "Bot" } });
 t.check("a Copilot PR gets none", refused(post(), "author"));
 override({ authorAssociation: "COLLABORATOR" });
-t.check("a collaborator's PR gets none, also when the profile does not list him", refused(post(), "author"));
+t.check("a collaborator's PR gets none, also when the profile does not list them", refused(post(), "author"));
 override({ authorAssociation: "MEMBER" });
 t.check("an organization member's PR gets none", refused(post(), "author"));
 override({ headRefName: "claude/add-w1" });
@@ -142,7 +142,7 @@ override();
 r = gary("auto-review", "post", "--pr", "25", "--sha", "6".repeat(40), "--run", "run-1", "--file", docFile);
 t.check("a moved head gets none", refused(r, "head-moved"), r.stdout);
 
-// Once the maintainer joined, the thread is his
+// Once the maintainer joined, the thread is theirs
 override({ timelineComments: { totalCount: 1, nodes: [{ author: user(ME), createdAt: iso(5), body: "Thanks", url: `${PR}#issuecomment-1` }] } });
 t.check("a maintainer's comment ends it", refused(post(), "maintainer-active"));
 override({ allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ author: user(ME), state: "COMMENTED", submittedAt: iso(5), url: `${PR}#pullrequestreview-5` }] } });
@@ -237,7 +237,7 @@ writeFileSync(recordsFile, JSON.stringify({ "pr-25": read(recordsFile)["pr-25"] 
 // Our own review under the maintainer's login is no maintainer activity
 const ownEntry = { author: "hubot", reviews: [{ url: REVIEW_URL, submittedAt: iso(6) }], facts: { timeline: [{ at: iso(2), author: "hubot", side: "them", kind: "opened" }, { at: iso(6), author: ME, side: "us", kind: "review" }, { at: iso(6, 0), author: ME, side: "us", kind: "thread_comment" }] } };
 t.check("the automatic review itself does not count as the maintainer joining", lib.maintainerJoinedAt(ownEntry, { maintainers: [ME], ownReviewUrls: [REVIEW_URL] }) === null && lib.maintainerJoinedAt(ownEntry, { maintainers: [ME], ownReviewUrls: [] }) === iso(6));
-t.check("his later comment counts", lib.maintainerJoinedAt({ ...ownEntry, facts: { timeline: [...ownEntry.facts.timeline, { at: iso(8), author: ME, side: "us", kind: "comment" }] } }, { maintainers: [ME], ownReviewUrls: [REVIEW_URL] }) === iso(8));
+t.check("the maintainer's later comment counts", lib.maintainerJoinedAt({ ...ownEntry, facts: { timeline: [...ownEntry.facts.timeline, { at: iso(8), author: ME, side: "us", kind: "comment" }] } }, { maintainers: [ME], ownReviewUrls: [REVIEW_URL] }) === iso(8));
 
 // The format offer
 reset();
@@ -266,13 +266,13 @@ t.check("the profile's templates replace the core texts", r.status === 0 && writ
 rmSync(join(profile, "templates", "auto-review-closing.md"));
 rmSync(join(profile, "templates", "format-offer.md"));
 
-// Without a bot the review goes out under the maintainer's own login, when he allowed that
+// Without a bot the review goes out under the maintainer's own login, when they allowed that
 reset();
 setConfig({ enabled: true, maxPerRun: 1 }, { bot: null, allowOwnTokenPushes: true });
 r = post();
-t.check("own mode: the review goes out under his login", r.status === 0 && json(r).posted === true && writes()[0].as === ME && writes()[0].variables.event === "REQUEST_CHANGES", [r.stdout, writes()]);
+t.check("own mode: the review goes out under the maintainer's login", r.status === 0 && json(r).posted === true && writes()[0].as === ME && writes()[0].variables.event === "REQUEST_CHANGES", [r.stdout, writes()]);
 override({ reviewRequestEvents: { nodes: [{ createdAt: soon(5), actor: { login: "hubot" }, requestedReviewer: { __typename: "User", login: ME } }] } });
-t.check("own mode: a re-request for his login counts", json(gary("auto-review", "check", "--pr", "25")).reason === "re_requested");
+t.check("own mode: a re-request for the maintainer's login counts", json(gary("auto-review", "check", "--pr", "25")).reason === "re_requested");
 setConfig({ enabled: true, maxPerRun: 1 }, { bot: { login: BOT, tokenFile: join(T, "bot-token") }, allowOwnTokenPushes: false });
 reset();
 post();

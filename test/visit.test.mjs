@@ -1,4 +1,4 @@
-// The refresh after he opened an item on GitHub from the board: his review or comment there becomes `visited` and
+// The refresh after the maintainer opened an item on GitHub from the board: their review or comment there becomes `visited` and
 // queues one reanalyze, with the mark time clamped and the focus hold intact. Runs offline against the fake gh.
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -64,10 +64,10 @@ const timeline = [
 	{ at: iso(now - 3 * min), author: "hubot", side: "them", kind: "review" },
 ];
 let v = ownVisit(timeline, [{ author: "octocat", state: "CHANGES_REQUESTED", submittedAt: iso(now - 4 * min) }], { me: "octocat", after: now - 10 * min });
-t.check("his newest inline comment counts as a review with the state of his review", v?.kind === "review" && v.state === "changes_requested" && v.at === iso(now - 4 * min), v);
+t.check("the maintainer's newest inline comment counts as a review with the state of their review", v?.kind === "review" && v.state === "changes_requested" && v.at === iso(now - 4 * min), v);
 v = ownVisit(timeline, [], { me: "octocat", after: now - 4.5 * min });
 t.check("a review without a listed state has state null", v?.kind === "review" && v.state === null, v);
-t.check("nothing of his after the time gives null", ownVisit(timeline, [], { me: "octocat", after: now - 4 * min }) === null);
+t.check("nothing of the maintainer's after the time gives null", ownVisit(timeline, [], { me: "octocat", after: now - 4 * min }) === null);
 t.check("a comment gives kind comment", ownVisit(timeline.slice(0, 1), [], { me: "octocat", after: now - 10 * min })?.kind === "comment");
 t.check("no login gives null", ownVisit(timeline, [], { me: null, after: now - 10 * min }) === null);
 
@@ -102,8 +102,8 @@ try {
 	r = await refresh("pr-5", mark);
 	let v5 = item("pr-5").visited;
 	let q5 = reanalyses("pr-5");
-	t.check("his approval after the mark and the analysis is recorded as visited", r.data.ok && v5?.at === reviewAt && v5.kind === "review" && v5.state === "approved" && r.data.result.visited?.state === "approved" && r.data.result.queued === true, [r, v5]);
-	t.check("it queues exactly one reanalyze that names what he did", q5.length === 1 && q5[0].status === "queued" && q5[0].params.by === "github_visit" && q5[0].params.visited.at === reviewAt && /approved the PR on GitHub/.test(q5[0].text), q5);
+	t.check("the maintainer's approval after the mark and the analysis is recorded as visited", r.data.ok && v5?.at === reviewAt && v5.kind === "review" && v5.state === "approved" && r.data.result.visited?.state === "approved" && r.data.result.queued === true, [r, v5]);
+	t.check("it queues exactly one reanalyze that names what the maintainer did", q5.length === 1 && q5[0].status === "queued" && q5[0].params.by === "github_visit" && q5[0].params.visited.at === reviewAt && /approved the PR on GitHub/.test(q5[0].text), q5);
 	t.check("the item keeps its routes until the new analysis", item("pr-5").routes.length === 1 && item("pr-5").reviewedAt === reviewedAt);
 
 	r = await refresh("pr-6", mark);
@@ -118,8 +118,8 @@ try {
 	t.check("a merged PR is stored live and gets no visit", r.data.ok && r.data.result.state === "merged" && item("pr-10").live?.state === "merged" && item("pr-10").visited === undefined && reanalyses("pr-10").length === 0, r);
 	r = await refresh("issue-11", mark);
 	const v11 = item("issue-11").visited;
-	t.check("his comment on an issue is a comment visit, also when someone answered after it", r.data.ok && v11?.kind === "comment" && v11.state === null && v11.at === iso(now - 3 * min), v11);
-	t.check("the reanalyze for a comment says he commented", reanalyses("issue-11").length === 1 && /and commented on GitHub/.test(reanalyses("issue-11")[0].text), reanalyses("issue-11"));
+	t.check("the maintainer's comment on an issue is a comment visit, also when someone answered after it", r.data.ok && v11?.kind === "comment" && v11.state === null && v11.at === iso(now - 3 * min), v11);
+	t.check("the reanalyze for a comment says the maintainer commented", reanalyses("issue-11").length === 1 && /and commented on GitHub/.test(reanalyses("issue-11")[0].text), reanalyses("issue-11"));
 
 	// The same review after the first reanalyze finished queues nothing again
 	const done = reanalyses("pr-5")[0];

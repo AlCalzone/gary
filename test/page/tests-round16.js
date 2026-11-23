@@ -1,5 +1,5 @@
   // ---------- round 16 ----------
-  // The timeline of what happened since his last choice, at the top of the dialog
+  // The timeline of what happened since the maintainer's last choice, at the top of the dialog
   {
     const base = "https://github.com/acme/widgets";
     const common = { kind: "pr", author: "someone", authorType: "contributor", section: "review", effortMinutes: 5, priority: 1, updatedAt: iso(1000), reviewDepth: "full",
@@ -23,7 +23,7 @@
 
     await openItem("pr-9971");
     const det = box().querySelector("details");
-    ok("since: the heading names the day and his choice", !box().hidden && det?.querySelector("summary").textContent === "Since your last choice, Nov 19 (Take over)", box().textContent);
+    ok("since: the heading names the day and the maintainer's choice", !box().hidden && det?.querySelector("summary").textContent === "Since your last choice, Nov 19 (Take over)", box().textContent);
     ok("since: open by default, one line per group with its callout", det.open && [...det.querySelectorAll("li")].map((li) => li.textContent).join("|") === "jpoeppelman1 pushed 8 commits|Copilot reviewed 3 times · 2 threads still open|widgets-bot pushed 1 commit (Change)|You added label bug", det.textContent);
     ok("since: icons where the page has them, a plain dot otherwise", [...det.querySelectorAll(".s-dot")].map((d) => d.childElementCount).join() === "1,1,1,0" && det.querySelector(".s-note").textContent === " · 2 threads still open");
     ok("since: it sits under the title and meta, before the story and the verdict", !!(document.getElementById("d-meta").compareDocumentPosition(box()) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(box().compareDocumentPosition(document.getElementById("d-story")) & Node.DOCUMENT_POSITION_FOLLOWING));
@@ -34,7 +34,7 @@
     const before = __writes.length;
     await close();
     const seen = __writes.slice(before).find((w) => w[1] === "items/widgets/pr-9971");
-    ok("since: closing the dialog stores the time he opened it", seen?.[0] === "update" && Object.keys(seen[2]).join() === "seenAt" && Date.parse(seen[2].seenAt) <= Date.now() && Date.parse(seen[2].seenAt) > Date.now() - 60000, seen);
+    ok("since: closing the dialog stores the time the maintainer opened it", seen?.[0] === "update" && Object.keys(seen[2]).join() === "seenAt" && Date.parse(seen[2].seenAt) <= Date.now() && Date.parse(seen[2].seenAt) > Date.now() - 60000, seen);
     await openItem("pr-9971");
     ok("since: open again on the next visit", box().querySelector("details").open);
     await close();

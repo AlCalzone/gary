@@ -1,5 +1,5 @@
   // ---------- round 18 ----------
-  // He answers each finding where it is shown, and one click sends all answers with Analyze again
+  // The maintainer answers each finding where it is shown, and one click sends all answers with Analyze again
   {
     const base = "https://github.com/acme/widgets";
     const findings = [

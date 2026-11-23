@@ -125,17 +125,17 @@ const ids = (list) => list.map((e) => (typeof e === "string" ? e : e.id)).sort()
 const byId = Object.fromEntries(snap.changed.map((e) => [e.id, e]));
 check("it keeps the threads of covered repos", ids(snap.changed).join() === ["other.lib.pr-5", "mine.tool.pr-7", "other.lib.issue-4", "other.lib.pr-8", "third.app.disc-2"].sort().join(), ids(snap.changed));
 check("a maintainer repo and an excluded repo never reach it", !ids([...snap.changed, ...snap.quiet]).some((id) => /acme\.widgets|skipped\./.test(id)));
-check("a thread he closed himself holds no news and is left out", !ids([...snap.changed, ...snap.quiet]).includes("other.lib.issue-9"));
-check("a thread with only a +1 and a bot since his comment is quiet", snap.quiet.join() === "other.lib.issue-3", snap.quiet);
+check("a thread the maintainer closed themself holds no news and is left out", !ids([...snap.changed, ...snap.quiet]).includes("other.lib.issue-9"));
+check("a thread with only a +1 and a bot since the maintainer's comment is quiet", snap.quiet.join() === "other.lib.issue-3", snap.quiet);
 check("every entry carries its repo", snap.changed.every((e) => typeof e.repo === "string" && e.id === contributionId(e.repo, e.kind, e.number)));
 const own = byId["mine.tool.pr-7"].facts;
-check("his own PR: author, the change request and the news after his comment", own.involvement.includes("author") && own.changesRequestedBy.join() === "bob" && own.lookedVia === "comment" && own.news.map((n) => n.kind).join() === "review,comment", own);
-check("a mention inside a quote is no mention, the question still asks him", own.news.at(-1).mentionsMe === undefined && own.news.at(-1).asksMe === true && !/@octocat/.test(own.news.at(-1).excerpt));
-check("a review request carries the involvement and nothing he looked at", byId["other.lib.pr-5"].facts.involvement.join() === "review_requested" && byId["other.lib.pr-5"].facts.lookedAt === null && byId["other.lib.pr-5"].facts.reviewRequested === true);
+check("the maintainer's own PR: author, the change request and the news after their comment", own.involvement.includes("author") && own.changesRequestedBy.join() === "bob" && own.lookedVia === "comment" && own.news.map((n) => n.kind).join() === "review,comment", own);
+check("a mention inside a quote is no mention, the question still asks the maintainer", own.news.at(-1).mentionsMe === undefined && own.news.at(-1).asksMe === true && !/@octocat/.test(own.news.at(-1).excerpt));
+check("a review request carries the involvement and nothing the maintainer looked at", byId["other.lib.pr-5"].facts.involvement.join() === "review_requested" && byId["other.lib.pr-5"].facts.lookedAt === null && byId["other.lib.pr-5"].facts.reviewRequested === true);
 const answered = byId["other.lib.issue-4"].facts;
 check("the news drop bots and keep the maintainer's answer", answered.news.length === 1 && answered.news[0].by === "dave" && answered.involvement.join() === "commenter", answered);
-check("a merged PR of his carries who merged it", byId["other.lib.pr-8"].facts.closed.by === "dave" && byId["other.lib.pr-8"].facts.closed.how === "merged" && byId["other.lib.pr-8"].facts.news.some((n) => n.kind === "merged"));
-check("only he is us in the timeline, so a maintainer who spoke last waits on him", byId["other.lib.issue-4"].facts.timeline.find((e) => e.author === "dave").side === "them" && byId["other.lib.issue-4"].facts.waitingOn === "us");
+check("a merged PR of the maintainer's carries who merged it", byId["other.lib.pr-8"].facts.closed.by === "dave" && byId["other.lib.pr-8"].facts.closed.how === "merged" && byId["other.lib.pr-8"].facts.news.some((n) => n.kind === "merged"));
+check("only the instance's maintainer is us in the timeline, so a maintainer who spoke last waits on them", byId["other.lib.issue-4"].facts.timeline.find((e) => e.author === "dave").side === "them" && byId["other.lib.issue-4"].facts.waitingOn === "us");
 check("no cut without a cap", snap.cut === undefined && snap.stale.issues === 0);
 const log = readFileSync(ghLog, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((l) => /ContributionsSearch/.test(l.stdin));
 const queries = log.map((l) => JSON.parse(l.stdin).variables.q);
@@ -146,7 +146,7 @@ check("the staged entries keep repo, state and activity", pending.items["other.l
 
 cli(["snapshot", "--commit"]);
 
-// Got it: the stored item's time counts as his last look
+// Got it: the stored item's time counts as the maintainer's last look
 writeFileSync(join(BOARD, "items", "other.lib.issue-4.json"), JSON.stringify({ repo: "other/lib", kind: "issue", number: 4, gotIt: { at: ago(3) } }));
 r = cli(["snapshot", "--out", out]);
 snap = JSON.parse(readFileSync(out, "utf8"));
@@ -174,7 +174,7 @@ r = cli(["snapshot", "--out", out]);
 snap = JSON.parse(readFileSync(out, "utf8"));
 check("the cap keeps maxItems threads and says where it cut", snap.changed.length + snap.quiet.length <= 10 && snap.cut?.search === "involved" && snap.cut.max === 10 && /stopped at maxItems 10/.test(r.stderr) && /"involved" matched 14 threads/.test(snap.cut.message), { cut: snap.cut, stderr: r.stderr });
 const kept = ids([...snap.changed, ...snap.quiet, ...snap.unchanged]);
-check("the cap keeps who waits on him first", kept.includes("other.lib.pr-5") && kept.includes("mine.tool.pr-7"), kept);
+check("the cap keeps who waits on the maintainer first", kept.includes("other.lib.pr-5") && kept.includes("mine.tool.pr-7"), kept);
 writeConfig({ include: ["mine/*"] });
 writeFileSync(ghData, JSON.stringify(searches()));
 writeFileSync(ghLog, "");
@@ -199,7 +199,7 @@ check("an fyi item without routes passes with newsAt", errs({ ...base, category:
 check("an fyi item needs newsAt", errs({ ...base, category: "fyi" }).includes("newsAt"));
 check("a maintainer instance refuses fyi", validateItem("issue-4", { ...base, repo: "acme/widgets", category: "fyi", newsAt: ago(6) }, { mode: "bot", profile: { ...PROFILE_DEFAULTS, repo: "acme/widgets" } }).errors.some((e) => e.code === "category" && /Only a contributions instance/.test(e.message)));
 const withRoute = (route) => ({ ...base, category: "unblock", hint: route.title, priority: 1, routes: [{ id: "r1", recommended: true, ...route }] });
-check("a reply he posts himself passes", errs(withRoute({ type: "reply", as: "me", title: "Reply: thanks", text: "Thanks" })).length === 0);
+check("a reply the maintainer posts themself passes", errs(withRoute({ type: "reply", as: "me", title: "Reply: thanks", text: "Thanks" })).length === 0);
 check("a bot reply is refused", errs(withRoute({ type: "reply", as: "bot", title: "Reply: thanks", text: "Thanks" })).includes("contribution-as"));
 check("agent routes and merges are refused", errs(withRoute({ type: "follow_up", as: "agent", title: "Start fix: x", text: "x" })).includes("contribution-route") && errs(withRoute({ type: "merge", as: "me", title: "Merge: x" })).includes("contribution-route"));
 check("label buttons and wants are refused", errs(withRoute({ type: "reply", as: "me", title: "Reply: x", text: "x", params: { alsoLabel: { add: ["bug"] } } })).includes("contribution-part") && errs({ ...base, category: "decide", wants: { assignees: ["x"] }, wantsReason: "x" }).includes("contribution-wants"));
@@ -208,7 +208,7 @@ const fyiFile = join(T, "fyi.json");
 writeFileSync(fyiFile, JSON.stringify({ ...base, category: "fyi", newsAt: ago(6) }));
 r = cli(["put", "items", "other.lib.issue-4", fyiFile]);
 const stored = JSON.parse(readFileSync(join(BOARD, "items", "other.lib.issue-4.json"), "utf8"));
-check("gary put writes an fyi item and keeps his Got it", r.status === 0 && stored.category === "fyi" && typeof stored.gotIt?.at === "string", r.stdout + r.stderr);
+check("gary put writes an fyi item and keeps the maintainer's Got it", r.status === 0 && stored.category === "fyi" && typeof stored.gotIt?.at === "string", r.stdout + r.stderr);
 
 // ---------- no writes to GitHub ----------
 
@@ -278,7 +278,7 @@ try {
 	const after = JSON.parse(readFileSync(join(BOARD, "items", "other.lib.issue-4.json"), "utf8"));
 	check("Got it stores its time on the item", got.data.ok === true && after.gotIt?.at === got.data.gotIt.at, got);
 	const logged = readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8"))).find((a) => a.action === "got_it");
-	check("Got it is logged as his choice", logged?.status === "done" && logged.itemId === "other.lib.issue-4" && logged.params?.by === undefined);
+	check("Got it is logged as the maintainer's choice", logged?.status === "done" && logged.itemId === "other.lib.issue-4" && logged.params?.by === undefined);
 	check("a maintainer instance answers its own clicks as before", (await api("/api/action", { instance: "widgets", action: "got_it", itemId: "pr-404" })).data.result === "The board is out of date, reload it.");
 } finally {
 	child.kill("SIGTERM");

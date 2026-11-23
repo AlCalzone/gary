@@ -142,9 +142,9 @@ const action = (json, extra = env) => {
 const maintainer = (number, params = {}) => JSON.stringify({ action: "request_review", kind: "pr", number, params: { reviewer: "maintainer", ...params } });
 let o = action(maintainer(12));
 const sent = o.result?.invocations;
-t.check("the maintainer's review is requested as the bot with his id and union", o.status === 0 && sent?.length === 1 && sent[0].as === "widgets-bot" && /requestReviews\(input: \{ pullRequestId: \$id, userIds: \$users, union: true \}\)/.test(sent[0].stdin.query) && JSON.stringify(sent[0].stdin.variables) === '{"id":"PR_12","users":["U_octocat"]}', o);
+t.check("the maintainer's review is requested as the bot with the maintainer's id and union", o.status === 0 && sent?.length === 1 && sent[0].as === "widgets-bot" && /requestReviews\(input: \{ pullRequestId: \$id, userIds: \$users, union: true \}\)/.test(sent[0].stdin.query) && JSON.stringify(sent[0].stdin.variables) === '{"id":"PR_12","users":["U_octocat"]}', o);
 const skips = [
-	["he wrote the PR", maintainer(26), /You wrote PR #26/],
+	["the maintainer wrote the PR", maintainer(26), /You wrote PR #26/],
 	["the PR is a draft", maintainer(13), /PR #13 is a draft/],
 	["the PR is closed", maintainer(15), /PR #15 is closed/],
 	["the PR is merged", maintainer(16), /PR #16 is merged/],
@@ -155,7 +155,7 @@ for (const [why, json, reason] of skips) {
 }
 writeFileSync(OVERRIDES, JSON.stringify({ "requests-12": { reviewRequests: { nodes: [{ requestedReviewer: { login: "hubot" } }, { requestedReviewer: { login: "OctoCat" } }] } } }));
 o = action(maintainer(12));
-t.check("skipped when his review is already requested", o.status === 0 && /already requested/.test(o.skipped) && o.result?.invocations?.length === 0, o);
+t.check("skipped when the maintainer's review is already requested", o.status === 0 && /already requested/.test(o.skipped) && o.result?.invocations?.length === 0, o);
 writeFileSync(OVERRIDES, JSON.stringify({ "requests-12": { reviewRequests: { nodes: [{ requestedReviewer: { login: "hubot" } }, { requestedReviewer: {} }] } } }));
 o = action(maintainer(12));
 t.check("a pending request of someone else or of a team does not count", o.status === 0 && o.skipped === undefined && o.result?.invocations?.length === 1, o);
@@ -168,7 +168,7 @@ o = action(maintainer(21));
 t.check("an issue number is refused", o.status === 1 && /not found/.test(o.result), o);
 const own = makeHome(tempDir(), { bot: null, allowOwnTokenPushes: true });
 o = action(maintainer(12), own.env);
-t.check("skipped when writes run under his own login", o.status === 0 && /your own login/.test(o.skipped) && o.result?.invocations?.length === 0, o);
+t.check("skipped when writes run under the maintainer's own login", o.status === 0 && /your own login/.test(o.skipped) && o.result?.invocations?.length === 0, o);
 const none = makeHome(tempDir(), { bot: null });
 o = action(maintainer(12), none.env);
 t.check("refused without an account that may write", o.status === 1 && /cannot write to GitHub/.test(o.result), o);

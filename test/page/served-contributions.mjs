@@ -70,7 +70,7 @@ try {
 	ok("a short FYI lands in Quick & Easy, a long read in When you have time", (await ev(`return ${groupOf("other.lib.issue-4")};`)) === "group-quick" && (await ev(`return ${groupOf("third.app.disc-2")};`)) === "group-later");
 	ok("FYI has no group of its own", (await ev(`return [...document.querySelectorAll("section.group")].map((g) => g.id).join();`)) === "group-quick,group-after,group-later");
 	ok("an actionable item keeps its group", (await ev(`return ${groupOf("other.lib.pr-5")};`)) === "group-after");
-	ok("an FYI item he said Got it to stays off the board", !(await ev(`return !!${rowOf("other.lib.issue-6")};`)));
+	ok("an FYI item the maintainer said Got it to stays off the board", !(await ev(`return !!${rowOf("other.lib.issue-6")};`)));
 	ok("the day bar names FYI by its time, like every category", await ev(`return [...document.querySelectorAll(".split-key")].some((k) => /^FYI \\d/.test(k.textContent));`));
 	const light = await ev(CONTRAST);
 	ok("the FYI chip text has 4.5:1 on its tint and its ink 3:1 on the page, light", light.text >= 4.5 && light.dot >= 3);

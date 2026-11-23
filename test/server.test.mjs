@@ -373,11 +373,11 @@ await expect("a waiting drive blocks a review", "pr-12", "r17", {}, (r) => r.sta
 rmSync(join(home, "state", "drive", "pr-12.json"));
 st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
 check("a finished job leaves the item without working", st.working === undefined, st.working);
-// A watched PR that only waits for his feedback blocks none of his clicks
+// A watched PR that only waits for the maintainer's feedback blocks none of their clicks
 writeFileSync(join(home, "state", "drive", "pr-12.json"), JSON.stringify({ repo: REPO, number: 12, by: "watch", watch: true, stage: "watch", copilotRounds: 1, rounds: [], seenAt: {} }));
 st = (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "pr-12");
 check("a watch is no push work", st.working === undefined, st.working);
-await expect("a watch does not block his merge click", "pr-12", "r3", {}, refused(/yours to do on GitHub/));
+await expect("a watch does not block the maintainer's merge click", "pr-12", "r3", {}, refused(/yours to do on GitHub/));
 await expect("a watch does not block a review", "pr-12", "r20", {}, (r) => r.data.ok === true && invocations(r).includes("WATCHED_REVIEW"));
 rmSync(join(home, "state", "drive", "pr-12.json"));
 await expect("take_over defaults to push", "pr-16", "r3", {}, (r) => r.data.ok && r.data.queued);
@@ -476,9 +476,9 @@ const byRoute = (itemId, routeId) => docs.filter((d) => d.itemId === itemId && d
 const ar = byRoute("pr-12", "r2")[0];
 check("address_review doc is queued with decisions", ar?.status === "queued" && ar.action === "address_review" && ar.params.decisions.length === 2 && ar.params.decisions[0].note === "fix it" && ar.text === "Run note", ar);
 const sf = byRoute("issue-21", "r8")[0];
-check("start_fix doc carries text, finding and the switch he set", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2","askReporter":true}', sf);
+check("start_fix doc carries text, finding and the switch the maintainer set", sf?.action === "start_fix" && sf.text === "Use a mock node" && JSON.stringify(sf.params) === '{"finding":"f2","askReporter":true}', sf);
 const ev18 = byRoute("pr-18", "r1").find((a) => a.status === "done");
-check("the review goes out with the event he picked", ev18?.status === "done" && ev18.params.event === "comment" && ev18.params.comments.length === 1, ev18);
+check("the review goes out with the event the maintainer picked", ev18?.status === "done" && ev18.params.event === "comment" && ev18.params.comments.length === 1, ev18);
 check("a changed review event is logged for learning", readFileSync(join(home, "state", "decisions.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).some((e) => e.type === "changed_event" && e.itemId === "pr-18" && e.from === "request_changes" && e.to === "comment" && e.route.type === "review"));
 check("drive doc", byRoute("pr-13", "r1")[0]?.params?.maxRounds === 3 && byRoute("pr-12", "r11")[0]?.params?.maxRounds === 2, docs.filter((d) => d.action === "drive"));
 check("take_over default doc", byRoute("pr-16", "r3")[0]?.action === "take_over" && byRoute("pr-16", "r3")[0]?.params?.mode === "push", byRoute("pr-16", "r3"));
@@ -524,11 +524,11 @@ await sleep(100);
 const h60 = itemNow("issue-60").handled;
 check("a reported prefill sets handled with verified null", h60?.routeId === "r1" && h60.routeType === "reply" && h60.verified === null && Date.parse(h60.at) > Date.now() - 10000, h60);
 
-// Every prefill button he used is kept per route and served on the route
+// Every prefill button the maintainer used is kept per route and served on the route
 const docsNow = () => readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8")));
 const route64 = async (rid) => (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === "issue-64").routes.find((x) => x.id === rid);
 const openedStore = () => JSON.parse(readFileSync(join(home, "state", "opened.json"), "utf8"));
-check("a route he did not use carries no opened mark", (await route64("r1")).opened === undefined);
+check("a route the maintainer did not use carries no opened mark", (await route64("r1")).opened === undefined);
 await api("/api/decision", { instance: "widgets", itemId: "issue-64", routeId: "r1", text: "Edited reply" });
 let o64 = await route64("r1");
 check("a reported prefill is served as opened with its time", Date.parse(o64.opened?.at) > Date.now() - 10000 && Object.keys(o64.opened).join() === "at" && o64.done === undefined, o64);
@@ -573,7 +573,7 @@ check("the state serves live and handled", refreshedItems.find((i) => i.id === "
 r = await refresh("issue-70");
 check("a refresh of an item without handled only refreshes the fields", r.data.ok && r.data.result.verified === undefined && itemNow("issue-70").handled === undefined, r);
 
-// The timeline since his last choice comes from the snapshot's activity and his clicks
+// The timeline since the maintainer's last choice comes from the snapshot's activity and the maintainer's clicks
 const snapFile = join(home, "state", "snapshot.json");
 const hAt = Date.parse(itemNow("issue-60").handled.at);
 const iso = (ms) => new Date(ms).toISOString();
@@ -587,8 +587,8 @@ writeFileSync(snapFile, JSON.stringify({ items: {
 } }));
 const sinceOf = async (id) => (await api("/api/state")).data.items.find((i) => i.instance === "widgets" && i.id === id).since;
 let since = await sinceOf("issue-60");
-check("the timeline starts at his last choice and groups the comments after it", since?.anchor.kind === "choice" && since.anchor.label === "Reply" && since.groups.length === 1 && since.groups[0].text === "hubot wrote 2 comments" && since.groups[0].note === "asked you something, no answer yet", since);
-check("an item he never chose on or opened has no timeline", (await sinceOf("issue-70")) === undefined);
+check("the timeline starts at the maintainer's last choice and groups the comments after it", since?.anchor.kind === "choice" && since.anchor.label === "Reply" && since.groups.length === 1 && since.groups[0].text === "hubot wrote 2 comments" && since.groups[0].note === "asked you something, no answer yet", since);
+check("an item the maintainer never chose on or opened has no timeline", (await sinceOf("issue-70")) === undefined);
 const seen = iso(Date.now() - 60000);
 r = await api("/api/db", { op: "update", path: "items/widgets/issue-70", data: { seenAt: seen } });
 since = await sinceOf("issue-70");

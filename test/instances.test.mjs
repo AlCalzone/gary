@@ -227,7 +227,7 @@ try {
 	const gconfigText = readFileSync(gconfig, "utf8");
 	writeFileSync(gconfig, JSON.stringify({ ...JSON.parse(gconfigText), bot: null, allowOwnTokenPushes: true }));
 	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
-	t.check("doctor checks his own login with allowOwnTokenPushes", /^ok\s+push access\s+octocat may push to acme\/Gadgets$/m.test(r.stdout), r.stdout);
+	t.check("doctor checks the maintainer's own login with allowOwnTokenPushes", /^ok\s+push access\s+octocat may push to acme\/Gadgets$/m.test(r.stdout), r.stdout);
 	writeFileSync(gconfig, JSON.stringify({ ...JSON.parse(gconfigText), bot: null, allowOwnTokenPushes: false }));
 	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain });
 	t.check("doctor reads no repo when no account writes", /^ok\s+push access\s+not checked: no account writes/m.test(r.stdout), r.stdout);

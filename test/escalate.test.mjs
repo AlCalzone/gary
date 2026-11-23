@@ -104,7 +104,7 @@ try {
 	const d34 = stateItems.find((i) => i.id === "disc-34");
 	t.check("a due date the snapshot no longer has is not served", d34.dueAt === undefined && d34.dueSource === undefined, d34);
 	t.check("a missing category comes from the snapshot", stateItems.find((i) => i.id === "disc-35").discussionCategory === "Ideas");
-	t.check("the route is still served as his own", (await dry.route("widgets", "disc-31", "r2")).actor === "me");
+	t.check("the route is still served as the maintainer's own", (await dry.route("widgets", "disc-31", "r2")).actor === "me");
 
 	let r = await dry.click("prefill", "disc-31");
 	t.check("with the default prefill setting nothing is posted", refused(r, /yours to do on GitHub.*"escalateAs": "me"/s), r);
@@ -143,7 +143,7 @@ try {
 	const inv = r.data.result?.invocations ?? [];
 	t.check("the dry run shows one comment mutation", r.data.ok === true && r.data.result.dryRun === true && inv.length === 1 && /addDiscussionComment/.test(inv[0].stdin.query), r);
 	t.check("the text is exactly the profile's command", JSON.stringify(inv[0]?.stdin.variables) === JSON.stringify({ id: "D_31", body: COMMAND }), inv[0]);
-	t.check("it goes out under his own login, also with a bot configured", inv[0]?.as === "octocat" && inst("widgets").bot?.login === "widgets-bot", inv[0]);
+	t.check("it goes out under the maintainer's own login, also with a bot configured", inv[0]?.as === "octocat" && inst("widgets").bot?.login === "widgets-bot", inv[0]);
 	r = await dry.click("widgets", "disc-31");
 	t.check("a repeat gets 409", r.status === 409 && r.data.duplicate === true, r);
 	const doc = actionsOf(widgets.home).find((a) => a.itemId === "disc-31");
@@ -292,7 +292,7 @@ try {
 	r = await fast.api("/api/refresh", { instance: "widgets", itemId: "disc-35" });
 	t.check("a refresh that finds the discussion closed links it too", r.data.ok === true && (await until(() => edits().length === 2 && !!records(linked.home)["issue-52"]?.[0]?.linked)), [r, records(linked.home)]);
 
-	// He copies the command and posts it himself
+	// The maintainer copies the command and posts it themself
 	const answers = JSON.parse(readFileSync(linkAnswers, "utf8"));
 	const inCopied = { number: 50, repository: { nameWithOwner: "acme/copied" } };
 	writeFileSync(linkAnswers, JSON.stringify({ ...answers, "escalated-issue-50": inCopied, "link-pr-63": pr(63, 31) }));

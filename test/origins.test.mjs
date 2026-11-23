@@ -256,11 +256,11 @@ try {
 	t.check("Gary's fix PR and a contributor's PR are served without an origin", served("pr-21") && !("origin" in served("pr-21")) && served("pr-50") && !("origin" in served("pr-50")));
 	t.check("without unhandled feedback the PR gets no hold", !("hold" in served("pr-19")), served("pr-19")?.hold);
 
-	// His review in the snapshot that no round handled, while the session was active 7 minutes ago
+	// The maintainer's review in the snapshot that no round handled, while the session was active 7 minutes ago
 	const stateNow = async () => (await (await fetch(`http://127.0.0.1:${port}/api/state`, { headers: { "X-Board-Token": token } })).json()).items ?? [];
 	writeFileSync(join(state, "snapshot.json"), JSON.stringify({ items: { "pr-19": bot(19, "fix/led-red", { headSha: SHA, feedback: { ourLastCommitAt: pushed, lastMeAt: reviewed3, lastMeKind: "review" } }) } }));
 	let hold = (await stateNow()).find((i) => i.id === "pr-19")?.hold;
-	t.check("while the session is active, the server serves the hold with his review, its time and when it ends", JSON.stringify(hold) === JSON.stringify({ feedbackAt: reviewed3, feedbackKind: "review", lastActiveAt: ago(7), until: ago(-23) }), hold);
+	t.check("while the session is active, the server serves the hold with the maintainer's review, its time and when it ends", JSON.stringify(hold) === JSON.stringify({ feedbackAt: reviewed3, feedbackKind: "review", lastActiveAt: ago(7), until: ago(-23) }), hold);
 	const reviewed4 = after(19, 200);
 	writeFileSync(driveFile, JSON.stringify({ ...read(driveFile), held: { feedbackAt: reviewed4, by: "me", session: ID.a, since: ago(6) } }));
 	hold = (await stateNow()).find((i) => i.id === "pr-19")?.hold;

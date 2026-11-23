@@ -1,5 +1,5 @@
   // ---------- round 22 ----------
-  // Opened on GitHub: the mark on a link click, the refresh on return, the merged state and his review on GitHub
+  // Opened on GitHub: the mark on a link click, the refresh on return, the merged state and the maintainer's review on GitHub
   {
     const base = "https://github.com/acme/widgets";
     const dlg = document.getElementById("detail");
@@ -86,7 +86,7 @@
     ok("closed while the dialog is open: the cards go and the line says closed", cardsNow().length === 0 && document.getElementById("d-handled").textContent === "Closed on GitHub. It leaves the board with the next run." && /closed/i.test(document.getElementById("d-ref").textContent));
     await shut();
 
-    // His review or comment on GitHub
+    // The maintainer's review or comment on GitHub
     const visited = { at: iso(60000), kind: "review", state: null };
     items([pr(2207, { visited })]); await wait(10);
     const rowChip = () => document.querySelector('#board .group .row[data-id="pr-2207"] .visit-chip');

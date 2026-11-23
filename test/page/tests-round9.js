@@ -44,7 +44,7 @@
 
     await openItem("pr-9902");
     ok("api edit: a change card shows every edit, also one that shortens the text", hunk().length === 2 && hunk()[1].path === "docs/guide.md" && hunk()[1].rows.map((r) => r[0]).join() === "h-del,h-del,h-add");
-    ok("api edit: in own mode the button names his login", !!cardBtn("Commit the text edits", card()) && avatarOf(cardBtn("Commit the text edits", card()), "octocat") && !cardBtn("Change", card()));
+    ok("api edit: in own mode the button names the maintainer's login", !!cardBtn("Commit the text edits", card()) && avatarOf(cardBtn("Commit the text edits", card()), "octocat") && !cardBtn("Change", card()));
     ok("api edit: a PR we control gets the same banner", /package\.json and 1 more\. Gary only commits the text edits shown below, outside these files\./.test(banner().textContent));
     cardBtn("Commit the text edits", card()).click(); await wait(10);
     ok("api edit: a change needs no note to confirm", !!cardBtn("Confirm: commit to the PR as you", card()));
