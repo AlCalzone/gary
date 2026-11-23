@@ -714,6 +714,7 @@ button.card-head:hover .chev { color: var(--fg); }
 .hunk .h-del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .hunk .h-hdr { color: var(--muted); }
 .hunk .h-ctx { color: var(--muted); }
+.hunk.numbered span::before { content: attr(data-n); display: inline-block; width: 4ch; margin-right: 12px; text-align: right; color: var(--faint); user-select: none; }
 .c-note { display: block; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
 /* The agent's verdict is a quiet colored word. The maintainer's decision is a control whose chosen side is filled. */
 .vlabel { font-family: var(--font-body); font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap; color: var(--muted); }
@@ -4224,9 +4225,20 @@ function closeReasonBadge(d, r) {
 function diffHunk(text) {
   const lines = str(text).replace(/\n$/, "").split("\n");
   if (!str(text).trim()) return null;
-  return h("pre", { class: "hunk" }, lines.slice(-12).map((l) => h("span", {
-    class: l.startsWith("@@") ? "h-hdr" : l.startsWith("+") ? "h-add" : l.startsWith("-") ? "h-del" : "h-ctx", text: l + "\n",
-  })));
+  // A removed line carries its number in the old file, every other line its number in the new one
+  let oldN = null;
+  let newN = null;
+  const numbers = lines.map((l) => {
+    const hdr = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(l);
+    if (hdr) { oldN = Number(hdr[1]); newN = Number(hdr[2]); return null; }
+    if (newN === null) return null;
+    if (l.startsWith("-")) return oldN++;
+    if (!l.startsWith("+")) oldN++;
+    return newN++;
+  });
+  return hunkPre(lines.map((l, i) => hunkRow(
+    l.startsWith("@@") ? "h-hdr" : l.startsWith("+") ? "h-add" : l.startsWith("-") ? "h-del" : "h-ctx", "", l, numbers[i],
+  )).slice(-12));
 }
 
 // Split a comment into prose and the replacement code of its suggestion blocks
@@ -4270,8 +4282,20 @@ function guessHunkLines(text, firstAdded, start) {
   return rows.map((l, i) => ({ kind: l.startsWith("+") ? "add" : "ctx", text: l.slice(1), line: start - at + i }));
 }
 
-function hunkRow(cls, sign, text) {
-  return h("span", { class: cls, text: sign + text + "\n" });
+function hunkRow(cls, sign, text, line) {
+  const row = h("span", { class: cls, text: sign + text + "\n" });
+  if (Number.isInteger(line)) row.dataset.n = line;
+  return row;
+}
+
+// The gutter for line numbers shows only when a row has one
+function hunkPre(rows) {
+  return h("pre", { class: rows.some((r) => r.dataset.n) ? "hunk numbered" : "hunk" }, rows);
+}
+
+// Rows for consecutive lines, numbered from `first` when it is known
+function hunkRows(cls, sign, texts, first) {
+  return texts.map((t, i) => hunkRow(cls, sign, t, first === null ? null : first + i));
 }
 
 // A suggestion shows as a diff: the commented lines removed, the replacement added.
@@ -4292,15 +4316,15 @@ function commentBody(c, shown) {
     const before = mapped ? mapped.filter((l) => l.line !== null && l.line < start).slice(-3) : [];
     return [
       words(str(c.text).trim()),
-      h("pre", { class: "hunk" },
-        ...before.map((l) => hunkRow("h-ctx", " ", l.text)),
-        ...c.original.replace(/\n$/, "").split("\n").map((t) => hunkRow("h-del", "-", t)),
-        ...c.suggestion.replace(/\n$/, "").split("\n").map((t) => hunkRow("h-add", "+", t))),
+      hunkPre([
+        ...before.map((l) => hunkRow("h-ctx", " ", l.text, l.line)),
+        ...hunkRows("h-del", "-", c.original.replace(/\n$/, "").split("\n"), start),
+        ...hunkRows("h-add", "+", c.suggestion.replace(/\n$/, "").split("\n"), start)]),
     ].filter(Boolean);
   }
   const { prose, suggestions } = splitSuggestions(c.text);
   const parts = [words(prose)].filter(Boolean);
-  if (!suggestions.length) return [diffHunk(c.diffHunk), ...parts];
+  if (!suggestions.length) return [diffHunk(c.diffHunk), ...parts].filter(Boolean);
   const end = Number.isInteger(c.line) ? c.line : null;
   const start = Number.isInteger(c.startLine) ? c.startLine : end;
   const added = suggestions.flatMap((sug) => sug.split("\n"));
@@ -4309,17 +4333,19 @@ function commentBody(c, shown) {
   if (mapped && target.length === end - start + 1) {
     const before = mapped.filter((l) => l.line !== null && l.line < start).slice(-3);
     const after = mapped.filter((l) => l.line !== null && l.line > end).slice(0, 3);
-    parts.push(h("pre", { class: "hunk" },
-      ...before.map((l) => hunkRow("h-ctx", " ", l.text)),
-      ...target.map((l) => hunkRow("h-del", "-", l.text)),
-      ...added.map((t) => hunkRow("h-add", "+", t)),
-      ...after.map((l) => hunkRow("h-ctx", " ", l.text))));
+    // Lines below the replacement move by the lines it adds or drops
+    const shift = added.length - target.length;
+    parts.push(hunkPre([
+      ...before.map((l) => hunkRow("h-ctx", " ", l.text, l.line)),
+      ...target.map((l) => hunkRow("h-del", "-", l.text, l.line)),
+      ...hunkRows("h-add", "+", added, start),
+      ...after.map((l) => hunkRow("h-ctx", " ", l.text, l.line + shift))]));
     return parts;
   }
   const range = start !== null && end !== null && start < end ? "lines " + start + "-" + end : end !== null ? "line " + end : "the marked lines";
   return [diffHunk(c.diffHunk), ...parts,
     h("span", { class: "c-note", text: "Suggested replacement for " + range + ":" }),
-    h("pre", { class: "hunk" }, added.map((t) => hunkRow("h-add", "+", t)))];
+    hunkPre(hunkRows("h-add", "+", added, start))].filter(Boolean);
 }
 
 function segControl(label, options, value, onPick) {

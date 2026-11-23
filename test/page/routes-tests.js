@@ -161,6 +161,8 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   ok("review: each comment shows its diff hunk with added and removed lines", hunks.length === 2 && !!hunks[0].querySelector(".h-add") && !!hunks[0].querySelector(".h-del") && hunks.every((x) => x.querySelectorAll("span").length <= 12)
     && !!(hunks[0].compareDocumentPosition(hunks[0].parentElement.querySelector(".c-text")) & Node.DOCUMENT_POSITION_FOLLOWING));
   ok("review button label and color from the event", cardBtn("Request changes")?.classList.contains("intent-push"));
+  ok("review: diff rows carry line numbers, old ones on removed lines", hunks[0].classList.contains("numbered") && hunks[0].querySelector(".h-del").dataset.n === "40" && hunks[0].querySelector(".h-add").dataset.n === "40" && !hunks[0].querySelector(".h-hdr").dataset.n);
+  ok("review: a comment without a diff hunk draws only its text", commentBody({ text: "Plain text" }).every(Boolean) && commentBody({ text: "Why\n```suggestion\nx\n```", line: 3 }).every(Boolean));
   const evSeg = () => [...openCard().querySelectorAll(".review-event .seg")];
   ok("review: a switch for the event, preset from the route", evSeg().map((b) => b.textContent).join() === "Request changes,Comment,Approve" && evSeg().find((b) => b.getAttribute("aria-pressed") === "true").textContent === "Request changes");
   evSeg()[1].click(); await wait(5);
