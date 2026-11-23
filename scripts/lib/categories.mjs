@@ -2,6 +2,11 @@
 // Items written before categories carry `section`. normalizeCategory maps it, so those items stay on the board until the routine writes them again.
 
 export const CATEGORIES = ["act", "unblock", "land", "decide"];
+// A contributions instance adds `fyi`: news for him on a thread he follows, and nothing to do
+export const FYI = "fyi";
+
+/** The categories an item of an instance of `kind` may carry. */
+export const categoriesFor = (kind) => (kind === "contributions" ? [...CATEGORIES, FYI] : CATEGORIES);
 export const OLD_SECTIONS = ["active", "easy", "almost", "review", "deferred", "hardware"];
 
 const FROM_SECTION = { active: "unblock", easy: "land", almost: "land", deferred: "decide", hardware: "decide" };
@@ -19,7 +24,7 @@ export function categoryFromSection(section, item = {}) {
  */
 export function normalizeCategory(item) {
 	if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-	const hasCategory = CATEGORIES.includes(item.category);
+	const hasCategory = CATEGORIES.includes(item.category) || item.category === FYI;
 	const out = { ...item };
 	// Before categories, `category` held only a discussion's category name on GitHub
 	if (!hasCategory && typeof item.category === "string" && item.kind === "discussion") {

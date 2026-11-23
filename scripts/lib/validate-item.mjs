@@ -3,7 +3,7 @@ import { ID_PATTERN } from "./board-store.mjs";
 import { fixBlock } from "./fixes.mjs";
 import { apiEditProblems } from "./api-edit.mjs";
 import { FINDING_ID } from "./findings.mjs";
-import { CATEGORIES, normalizeCategory } from "./categories.mjs";
+import { CATEGORIES, FYI, categoriesFor, normalizeCategory } from "./categories.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
 const KINDS = ["pr", "issue", "discussion"];
@@ -30,14 +30,38 @@ const POSTING_TYPES = new Set(["reply", "request_logs", "reopen", "review", "fol
 
 const isString = (v) => typeof v === "string" && v.trim().length > 0;
 
+// He runs every route of a contributions instance on GitHub himself: the board copies the text and opens the thread
+const CONTRIBUTION_ROUTES = ["reply", "review", "close", "open"];
+// Fields that come from a profile, a bot, a checkout or an agent job, none of which a contributions instance has
+const MAINTAINER_FIELDS = ["wants", "wantsReason", "pushed", "takenOver", "autofix", "fixFor", "rounds", "needsHardware"];
+
+/** The rules a contributions item adds: fyi carries `newsAt`, routes are prefills, and nothing needs a profile or a bot. */
+function checkContribution(item, err) {
+	const fyi = item.category === FYI;
+	if (fyi && !Number.isFinite(Date.parse(item.newsAt ?? ""))) err("newsAt", "an fyi item needs newsAt, the time of the newest relevant event its state reports");
+	if (!fyi && item.newsAt !== undefined && item.newsAt !== null) err("newsAt", "newsAt belongs to fyi items only");
+	if (item.gotIt !== undefined && item.gotIt !== null && !(isObject(item.gotIt) && Object.keys(item.gotIt).every((k) => k === "at") && Number.isFinite(Date.parse(item.gotIt.at ?? "")))) err("gotIt", "gotIt must be { at: ISO }, set by the board");
+	for (const key of MAINTAINER_FIELDS) if (item[key] !== undefined && item[key] !== null && item[key] !== false) err(`contribution-${key}`, `${key} is not for a contributions instance, which has no profile, bot or checkout`);
+	(Array.isArray(item.routes) ? item.routes : []).forEach((r, i) => {
+		if (!isObject(r)) return;
+		const where = `routes[${i}] (${r.type})`;
+		if (!CONTRIBUTION_ROUTES.includes(r.type)) err("contribution-route", `${where}: a contributions instance offers only ${CONTRIBUTION_ROUTES.join(", ")}, because Gary writes nothing to GitHub there`);
+		else if (r.as !== "me") err("contribution-as", `${where}: every route of a contributions instance is as "me", a text he posts himself`);
+		const params = isObject(r.params) ? r.params : {};
+		if (params.alsoLabel !== undefined || params.alsoAnswer !== undefined) err("contribution-part", `${where}: alsoLabel and alsoAnswer need a bot, which a contributions instance has none of`);
+		if (r.type === "review" && Array.isArray(params.comments) && params.comments.length) err("contribution-comments", `${where}: a review he posts himself carries no inline comments. Put them into the text`);
+	});
+}
+
 /**
  * Returns `{ errors, warnings }` for one item. Each entry is `{ code, message }`.
  * `mode` is the account mode from accountMode(), `profile` the loaded profile.json, `repos` the instance's allowed repos
  * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known. `sensitive` says whether
  * the PR's snapshot entry lists sensitive files: true, false, or undefined without an entry. `sensitiveOurs` says
- * that the entry also marks the PR as ours alone.
+ * that the entry also marks the PR as ours alone. `kind` is the instance's kind: a contributions instance allows the
+ * category `fyi` and only routes he runs on GitHub himself.
  */
-export function validateItem(id, doc, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false }) {
+export function validateItem(id, doc, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false, kind = "maintainer" }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
@@ -59,8 +83,11 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 	else if (!repos.some((r) => r.toLowerCase() === item.repo.toLowerCase())) err("repo", `${item.repo} is not a repository of this instance (${repos.join(", ")})`);
 	for (const key of ["title", "url", "author", "state"]) if (!isString(item[key])) err(`missing-${key}`, `${key} is required`);
 	if (!AUTHOR_TYPES.includes(item.authorType)) err("authorType", `authorType must be one of ${AUTHOR_TYPES.join(", ")}`);
+	const categories = categoriesFor(kind);
 	if (item.section !== undefined) err("section", `section ${JSON.stringify(item.section)} is unknown. Items carry category: ${CATEGORIES.join(", ")}`);
-	else if (!CATEGORIES.includes(item.category)) err("category", `category must be one of ${CATEGORIES.join(", ")}${item.category === undefined ? "" : `, not ${JSON.stringify(item.category)}`}`);
+	else if (!categories.includes(item.category)) err("category", `category must be one of ${categories.join(", ")}${item.category === undefined ? "" : `, not ${JSON.stringify(item.category)}`}${item.category === FYI ? ". Only a contributions instance has fyi items" : ""}`);
+	if (kind === "contributions") checkContribution(item, err);
+	else if (item.newsAt !== undefined || item.gotIt !== undefined) err("fyi-fields", "newsAt and gotIt belong to fyi items of a contributions instance");
 	if (item.needsHardware !== undefined && typeof item.needsHardware !== "boolean") err("needsHardware", "needsHardware must be true or false");
 	if (item.waitingOn !== undefined && !WAITING_ON.includes(item.waitingOn)) err("waitingOn", `waitingOn must be one of ${WAITING_ON.join(", ")}, copied from facts.waitingOn`);
 	checkDue(item, err);

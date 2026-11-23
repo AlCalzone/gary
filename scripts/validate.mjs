@@ -15,7 +15,7 @@ export async function main(argv) {
 	let ids = argv.filter((a) => !a.startsWith("--"));
 	if (!ids.length) ids = (await readdir(dir)).filter((n) => n.endsWith(".json") && !n.startsWith(".")).map((n) => n.slice(0, -5)).sort();
 
-	const options = { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instanceName()).repos };
+	const options = { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instanceName()).repos, kind: loadInstance(instanceName()).kind };
 	const sources = await loadFixSources();
 	const results = [];
 	for (const id of ids) {
