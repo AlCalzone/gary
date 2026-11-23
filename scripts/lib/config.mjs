@@ -8,7 +8,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -24,17 +24,31 @@ export const DEFAULT_PORT = 7878;
 // It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it
 export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150 };
 export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", ...Object.keys(CONTRIBUTIONS_DEFAULTS)];
-// How the instance's tab looks on the board: `{ icon, color, background }`. `background` also tints the page in that color
+// How the instance's tab looks on the board: `{ icon, color, background, favorite }`. `background` also tints the page in that color, and a favorite comes before the other tabs
 export const TAB_ICONS = ["zap", "home", "star", "globe", "heart", "user", "shield", "bot", "sparkles", "wrench", "lightbulb", "plug", "eye", "pr", "issue", "discussion", "commit", "comments"];
 export const TAB_COLORS = ["orange", "blue", "green", "purple", "rose", "gray"];
 
+// The image files a tab icon may be, with the content type the board server sends
+export const TAB_ICON_TYPES = { ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+export const TAB_ICON_MAX_BYTES = 1024 * 1024;
+const isIconFile = (v) => typeof v === "string" && v.length <= 500 && Object.hasOwn(TAB_ICON_TYPES, extname(v).toLowerCase());
+
+/** The image file a config's `tab.icon` names, as `{ file, type }`, or null for a built-in icon or none. A relative path starts at the instance's directory. */
+export function tabIconFile(config, dir) {
+	const icon = config?.tab?.icon;
+	if (!isIconFile(icon)) return null;
+	const path = expandHome(icon);
+	return { file: isAbsolute(path) ? path : resolve(dir, path), type: TAB_ICON_TYPES[extname(icon).toLowerCase()] };
+}
+
 function checkTab(errors, unknown, tab) {
 	if (tab === undefined) return;
-	if (!tab || typeof tab !== "object" || Array.isArray(tab)) return void errors.push('"tab" must be { "icon", "color", "background" }');
-	for (const key of Object.keys(tab)) if (!["icon", "color", "background"].includes(key)) unknown.push(`unknown field "tab.${key}"`);
-	if (tab.icon !== undefined && !TAB_ICONS.includes(tab.icon)) errors.push(`"tab.icon" must be one of ${TAB_ICONS.join(", ")}`);
+	if (!tab || typeof tab !== "object" || Array.isArray(tab)) return void errors.push('"tab" must be { "icon", "color", "background", "favorite" }');
+	for (const key of Object.keys(tab)) if (!["icon", "color", "background", "favorite"].includes(key)) unknown.push(`unknown field "tab.${key}"`);
+	if (tab.icon !== undefined && !TAB_ICONS.includes(tab.icon) && !isIconFile(tab.icon)) errors.push(`"tab.icon" must be an image file (${Object.keys(TAB_ICON_TYPES).join(", ")}) or one of ${TAB_ICONS.join(", ")}`);
 	if (tab.color !== undefined && !TAB_COLORS.includes(tab.color)) errors.push(`"tab.color" must be one of ${TAB_COLORS.join(", ")}`);
 	if (tab.background !== undefined && typeof tab.background !== "boolean") errors.push('"tab.background" must be true or false');
+	if (tab.favorite !== undefined && typeof tab.favorite !== "boolean") errors.push('"tab.favorite" must be true or false');
 	if (tab.background === true && tab.color === undefined) errors.push('"tab.background" needs "tab.color"');
 }
 export const MAX_ITEMS_RANGE = [10, 500];

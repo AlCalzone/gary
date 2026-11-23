@@ -2,7 +2,7 @@
 // Local board server: serves board/board.html on 127.0.0.1 for every instance under the root and runs approved actions.
 // The gary MCP server starts it through startBoardServer(). `node server/server.mjs` runs it on its own.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, watch, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, watch, writeSync } from "node:fs";
 import { appendFile, readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -24,7 +24,7 @@ import { latest, pendingHold, requestReviewRound, stageOf, unhandledFeedback } f
 import { BLOCKING_FIX_STATES, driveDir, fixBlock, fixForOf, fixPrNumbers, fixStateOf, loadFixSources, pendingAutoFixes, readSnapshotItems } from "../scripts/lib/fixes.mjs";
 import { endFocus, focusDir, focusHold, isHeld, readFocuses, safeLink } from "../scripts/lib/focus.mjs";
 import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
-import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
+import { INSTANCE_NAME, ROOT, TAB_ICON_MAX_BYTES, tabIconFile, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { linkEscalated } from "../scripts/lib/escalation.mjs";
 import { READ_ONLY_MESSAGE, accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
@@ -511,7 +511,8 @@ export function instanceInfo(name) {
 	return {
 		name,
 		title: i.title,
-		...(i.config.tab && { tab: i.config.tab }),
+		// A file icon is served by the server, so the page gets a URL in place of the path
+		...(i.config.tab && { tab: tabIconFile(i.config, instanceDir(name)) ? { ...i.config.tab, icon: undefined, iconUrl: `tab-icon/${name}` } : i.config.tab }),
 		kind: i.kind,
 		repos: i.repos,
 		// A contributions instance spans repos, so it has no one repo to link
@@ -2418,6 +2419,20 @@ export async function startBoardServer({
 		if (url.pathname === "/logo.svg" && req.method === "GET") {
 			res.writeHead(200, { "Content-Type": "image/svg+xml", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Cache-Control": "max-age=3600", "X-Content-Type-Options": "nosniff" });
 			return res.end(await readFile(join(ROOT, "logo-outlined.svg")));
+		}
+
+		if (url.pathname.startsWith("/tab-icon/") && req.method === "GET") {
+			const name = url.pathname.slice("/tab-icon/".length);
+			const icon = INSTANCE_NAME.test(name) && names().includes(name) ? tabIconFile(settingsOf(name).instance?.config, instanceDir(name)) : null;
+			let body = null;
+			try {
+				if (icon && statSync(icon.file).size <= TAB_ICON_MAX_BYTES) body = await readFile(icon.file);
+			} catch {
+				// A missing file answers 404, and the page then shows the tab without an icon
+			}
+			if (!body) return json(res, 404, { error: "Not found." });
+			res.writeHead(200, { "Content-Type": icon.type, "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff" });
+			return res.end(body);
 		}
 
 		if (!url.pathname.startsWith("/api/")) return json(res, 404, { error: "Not found." });

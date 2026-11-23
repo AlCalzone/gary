@@ -7,21 +7,21 @@
 /* Layout: a quiet header, then one bordered block per group with its own header band; rows are single lines that end in state icons, the effort figure and the age */
 :root {
   --tint: 5%;
-  --bg: #edf0f7;
-  --surface: #fcfcfe;
-  --surface-2: #f3f4fa;
-  --today: #eef3fd;
-  --today-line: #d8e1f6;
-  --today-hover: #e5ecfb;
+  --bg-0: #edf0f7;
+  --surface-0: #fcfcfe;
+  --surface-2-0: #f3f4fa;
+  --today-0: #eef3fd;
+  --today-line-0: #d8e1f6;
+  --today-hover-0: #e5ecfb;
   --fg: #1d2030;
   --muted: #525a72;
   --faint: #636a80;
-  --line: #e2e5f0;
-  --line-strong: #cfd4e3;
+  --line-0: #e2e5f0;
+  --line-strong-0: #cfd4e3;
   --accent: #4560c4;
   --accent-fg: #ffffff;
   --accent-soft: #e3e9fb;
-  --bar-track: #dce4f7;
+  --bar-track-0: #dce4f7;
   --bar: #6680d6;
   --violet: #7652c4;
   --act-finish: #23704b;
@@ -61,21 +61,21 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --tint: 8%;
-    --bg: #11131b;
-    --surface: #191c27;
-    --surface-2: #202432;
-    --today: #1b2235;
-    --today-line: #2c3654;
-    --today-hover: #222a42;
+    --bg-0: #11131b;
+    --surface-0: #191c27;
+    --surface-2-0: #202432;
+    --today-0: #1b2235;
+    --today-line-0: #2c3654;
+    --today-hover-0: #222a42;
     --fg: #e8eaf2;
     --muted: #a6adc2;
     --faint: #878ea3;
-    --line: #2a2f3f;
-    --line-strong: #383e52;
+    --line-0: #2a2f3f;
+    --line-strong-0: #383e52;
     --accent: #a2b5ff;
     --accent-fg: #11131b;
     --accent-soft: #27304d;
-    --bar-track: #2a3250;
+    --bar-track-0: #2a3250;
     --bar: #a2b5ff;
     --violet: #c3b0f5;
     --act-finish: #9fdc7c;
@@ -112,21 +112,21 @@
 }
 :root[data-theme="dark"] {
   --tint: 8%;
-  --bg: #11131b;
-  --surface: #191c27;
-  --surface-2: #202432;
-  --today: #1b2235;
-  --today-line: #2c3654;
-  --today-hover: #222a42;
+  --bg-0: #11131b;
+  --surface-0: #191c27;
+  --surface-2-0: #202432;
+  --today-0: #1b2235;
+  --today-line-0: #2c3654;
+  --today-hover-0: #222a42;
   --fg: #e8eaf2;
   --muted: #a6adc2;
   --faint: #878ea3;
-  --line: #2a2f3f;
-  --line-strong: #383e52;
+  --line-0: #2a2f3f;
+  --line-strong-0: #383e52;
   --accent: #a2b5ff;
   --accent-fg: #11131b;
   --accent-soft: #27304d;
-  --bar-track: #2a3250;
+  --bar-track-0: #2a3250;
   --bar: #a2b5ff;
   --violet: #c3b0f5;
   --act-finish: #9fdc7c;
@@ -195,7 +195,7 @@ a:hover { text-decoration: underline; }
 /* Header */
 header { display: flex; flex-direction: column; gap: 14px; }
 .top { display: flex; align-items: center; gap: 14px; }
-.logo { flex: none; width: 84px; height: 56px; margin: -8px -4px -8px -10px; }
+.logo { flex: none; width: 120px; height: 80px; margin: -12px -6px -12px -14px; }
 .logo[hidden] { display: none; }
 /* The logo carries the name, so the heading stays for screen readers only */
 h1.by-logo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -219,9 +219,12 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .tab:hover { color: var(--fg); }
 .tab { display: inline-flex; align-items: center; gap: 6px; }
 .tab .i { width: 15px; height: 15px; color: var(--tab-ink, currentColor); }
+.tab-img { height: 16px; width: auto; max-width: 48px; object-fit: contain; }
+.tab-img[hidden] { display: none; }
 .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--tab-ink, var(--fg)); font-weight: 600; }
-/* A project's own tint on the page background, from its config */
-html[data-tint] body { background: color-mix(in srgb, var(--page-tint) 7%, var(--bg)); }
+:root { --bg: var(--bg-0); --surface: var(--surface-0); --surface-2: var(--surface-2-0); --line: var(--line-0); --line-strong: var(--line-strong-0); --today: var(--today-0); --today-line: var(--today-line-0); --today-hover: var(--today-hover-0); --bar-track: var(--bar-track-0); }
+/* A project's tint: every surface is its neutral color with a share of the tab's color mixed in */
+html[data-tint] { --bg: color-mix(in srgb, var(--page-tint) 7%, var(--bg-0)); --surface: color-mix(in srgb, var(--page-tint) 6%, var(--surface-0)); --surface-2: color-mix(in srgb, var(--page-tint) 8%, var(--surface-2-0)); --line: color-mix(in srgb, var(--page-tint) 12%, var(--line-0)); --line-strong: color-mix(in srgb, var(--page-tint) 16%, var(--line-strong-0)); --today: color-mix(in srgb, var(--page-tint) 9%, var(--today-0)); --today-line: color-mix(in srgb, var(--page-tint) 14%, var(--today-line-0)); --today-hover: color-mix(in srgb, var(--page-tint) 11%, var(--today-hover-0)); --bar-track: color-mix(in srgb, var(--page-tint) 12%, var(--bar-track-0)); }
 .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .combined .r-num { display: none; }
 @media (min-width: 561px) {
@@ -1044,7 +1047,7 @@ textarea {
 <div class="wrap">
   <header>
     <div class="top">
-      <img class="logo" id="logo" src="logo.svg" alt="" width="84" height="56" hidden>
+      <img class="logo" id="logo" src="logo.svg" alt="" width="120" height="80" hidden>
       <h1 id="board-title">Gary</h1>
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
       <span class="paused-mark" id="paused" title="No GitHub writes. Run `gary resume` to turn them on." hidden>Paused</span>
@@ -1296,6 +1299,7 @@ const c = (cx, cy, r, extra) => ["circle", { cx, cy, r, ...extra }];
 
 // Stroke icons on a 24-unit grid, after Lucide (ISC license)
 const ICONS = {
+  layers: [p("M12 2 2 7l10 5 10-5-10-5z"), p("M2 17l10 5 10-5"), p("M2 12l10 5 10-5")],
   zap: [p("M13 2 3 14h9l-1 8 10-12h-9l1-8z")],
   home: [p("M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"), p("M9 22V12h6v10")],
   star: [p("M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z")],
@@ -3861,13 +3865,15 @@ function renderTabs() {
     bar.replaceChildren();
     return;
   }
-  const tabs = [["all", "All", null], ...boardInfo.instances.map((x) => [x.name, x.title, tabStyle(x)])];
+  // Favorites come first. The sort is stable, so the others keep the server's order
+  const ordered = [...boardInfo.instances].sort((a, b) => Number(tabStyle(b).favorite) - Number(tabStyle(a).favorite));
+  const tabs = [["all", "All", { icon: "layers" }], ...ordered.map((x) => [x.name, x.title, tabStyle(x)])];
   const buttons = tabs.map(([name, label, style]) => h("button", {
     type: "button", role: "tab", class: "tab", "data-tab": name,
     style: style && style.ink ? "--tab-ink: " + style.ink : null,
     "aria-selected": state.tab === name ? "true" : "false", tabindex: state.tab === name ? "0" : "-1",
     onclick: () => setTab(name),
-  }, style && style.icon ? icon(style.icon) : null, label));
+  }, style && style.iconUrl ? tabImage(style.iconUrl) : style && style.icon ? icon(style.icon) : null, label));
   bar.replaceChildren(...buttons);
 }
 
@@ -3875,12 +3881,21 @@ function renderTabs() {
 const TAB_INKS = { orange: "act", blue: "unblock", green: "land", purple: "decide", rose: "fyi", gray: "snoozed" };
 const TAB_ICONS = new Set(["zap", "home", "star", "globe", "heart", "user", "shield", "bot", "sparkles", "wrench", "lightbulb", "plug", "eye", "pr", "issue", "discussion", "commit", "comments"]);
 
+// An image file as the tab's icon. A file that does not load leaves the tab with its title only
+function tabImage(url) {
+  const img = h("img", { class: "tab-img", src: url, alt: "" });
+  img.addEventListener("error", () => { img.hidden = true; });
+  return img;
+}
+
 function tabStyle(inst) {
   const t = inst && inst.tab && typeof inst.tab === "object" ? inst.tab : {};
   return {
     icon: TAB_ICONS.has(str(t.icon)) ? str(t.icon) : "",
+    iconUrl: /^tab-icon\/[A-Za-z0-9._-]+$/.test(str(t.iconUrl)) ? str(t.iconUrl) : "",
     ink: Object.hasOwn(TAB_INKS, str(t.color)) ? "var(--cat-" + TAB_INKS[str(t.color)] + "-ink)" : "",
     background: t.background === true,
+    favorite: t.favorite === true,
   };
 }
 

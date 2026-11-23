@@ -1,11 +1,11 @@
 // gary doctor: checks the installation without changing anything. --json prints the checks as JSON.
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, autoReviewOf, escalationOf, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
+import { ROOT, TAB_ICON_MAX_BYTES, tabIconFile, autoReviewOf, escalationOf, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { canReadProjects, readLogin, storedScopes } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
@@ -54,6 +54,16 @@ async function checkInstall(attempt) {
 		}
 	});
 
+}
+
+// A tab icon that names a file: the file must exist and stay under the size the server sends
+function tabIconCheck(config, add) {
+	const icon = tabIconFile(config, dirname(paths().config));
+	if (!icon) return;
+	const size = existsSync(icon.file) ? statSync(icon.file).size : -1;
+	if (size < 0) add("tab icon", "fail", `${icon.file} is missing, so the tab shows no icon`);
+	else if (size > TAB_ICON_MAX_BYTES) add("tab icon", "fail", `${icon.file} is larger than 1 MB, so the board does not send it`);
+	else add("tab icon", "ok", icon.file);
 }
 
 async function checkInstance() {
@@ -151,6 +161,7 @@ async function checkInstance() {
 			if (!link.enabled) return [link.pattern ? "warn" : "ok", `off: ${link.reason}. A fix PR of an escalated discussion is not linked to its issue`];
 			return ["ok", `a comment by ${link.bot} that matches ${link.pattern} names the issue an escalated discussion became. Its fix PRs get "fixes #<issue>"`];
 		});
+		tabIconCheck(config, add);
 		add("pause", isPaused() ? "warn" : "ok", isPaused() ? "paused: nothing goes to GitHub and queued agent requests wait. `gary resume` ends it" : "not paused");
 		await attempt("checkout", async () => {
 			if (!config.checkout) return ["warn", "no checkout in config.json, fixes need a local clone"];
@@ -209,6 +220,7 @@ async function checkContributions(config, attempt, add) {
 		const { models } = modelsOf(config);
 		return ["ok", `worker ${models.worker}, standard ${models.standard} for the classification. master ${models.master}, not checked: the host sets the master session's model`];
 	});
+	tabIconCheck(config, add);
 	add("pause", isPaused() ? "warn" : "ok", isPaused() ? "paused: the board stays up and queued analyses wait. `gary resume` ends it" : "not paused");
 	await attempt("port", async () => {
 		const { port } = rootConfig();

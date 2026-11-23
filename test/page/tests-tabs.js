@@ -22,6 +22,15 @@
   tabBtns()[1].click(); await wait(5);
   ok("tab style: another project's tab drops the tint", !("tint" in document.documentElement.dataset));
   tabBtns()[0].click(); await wait(5);
+  window.__board.instances[1].tab = { favorite: true };
+  applyBoardInfo(window.__board); await wait(5);
+  ok("tab style: a favorite comes right after All", tabBtns().map((b) => b.textContent).join() === "All,contoso-gadgets,widgets" && !!tabBtns()[0].querySelector("svg"));
+  window.__board.instances[1].tab = { iconUrl: "tab-icon/gadgets" };
+  applyBoardInfo(window.__board); await wait(5);
+  ok("tab style: a file icon shows as an image", tabBtns()[2].querySelector("img.tab-img")?.getAttribute("src") === "tab-icon/gadgets" && !tabBtns()[2].querySelector("svg"));
+  window.__board.instances[1].tab = { iconUrl: "https://example.com/x.png" };
+  applyBoardInfo(window.__board); await wait(5);
+  ok("tab style: an icon URL from elsewhere is ignored", !tabBtns()[2].querySelector("img"));
   delete window.__board.instances[1].tab;
   applyBoardInfo(window.__board); await wait(5);
   ok("combined: both projects' #12 are on the board with their full refs", rowsIn("quick").concat(rowsIn("after"), rowsIn("later")).some((r) => r.querySelector(".r-ref")?.textContent === "acme/widgets#12")

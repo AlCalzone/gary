@@ -1396,9 +1396,9 @@ The dialog of an `fyi` item has one "Got it" button. It sends `{ instance, actio
 
 ### Tab style
 
-Every instance config, of both kinds, takes an optional `tab: { icon, color, background }`. The board shows the icon in front of the tab's title and draws the icon and the selected tab's underline in the color. With `background: true` the page background takes a light tint of that color while the board shows only this instance. The tab across all instances has no tint. `background` needs `color`.
+Every instance config, of both kinds, takes an optional `tab: { icon, color, background, favorite }`. A tab with `favorite: true` comes right after the tab across all instances, before the others. The tab across all instances has a fixed icon. The board shows the icon in front of the tab's title and draws the icon and the selected tab's underline in the color. With `background: true` the page takes a tint of that color while the board shows only this instance: the background, the cards, the lines and the plan's highlight are each their neutral color with a fixed share of the tab color mixed in, so they keep fitting each other. The tab across all instances has no tint. `background` needs `color`.
 
-- `icon`: one of `zap`, `home`, `star`, `globe`, `heart`, `user`, `shield`, `bot`, `sparkles`, `wrench`, `lightbulb`, `plug`, `eye`, `pr`, `issue`, `discussion`, `commit`, `comments`.
+- `icon`: an image file (`.svg`, `.png`, `.jpg`, `.jpeg`, `.webp`, at most 1 MB), as an absolute path, a `~/` path or a path relative to the instance's directory. The server sends it at `/tab-icon/<instance>` and gives the page `tab.iconUrl` in place of the path. `gary doctor` checks the file. Or one of the built-in icons `zap`, `home`, `star`, `globe`, `heart`, `user`, `shield`, `bot`, `sparkles`, `wrench`, `lightbulb`, `plug`, `eye`, `pr`, `issue`, `discussion`, `commit`, `comments`.
 - `color`: one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`. These are the category colors, so both themes define them.
 
 The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg`. With several instances the logo replaces the heading "Gary", which stays for screen readers.
