@@ -37,11 +37,13 @@
   --cat-land: #dcf1e4;
   --cat-decide: #e5e1fa;
   --cat-snoozed: #e9e9f1;
+  --cat-fyi: #f9e1ee;
   --cat-act-ink: #a8481f;
   --cat-unblock-ink: #255f99;
   --cat-land-ink: #1f6a45;
   --cat-decide-ink: #5a43b3;
   --cat-snoozed-ink: #5a6175;
+  --cat-fyi-ink: #9a2c6a;
   --ok: #2a7a52;
   --ok-soft: #e0f2e8;
   --warn: #8f5d0c;
@@ -89,11 +91,13 @@
     --cat-land: #1d3f2b;
     --cat-decide: #372e63;
     --cat-snoozed: #2e3242;
+    --cat-fyi: #4a2239;
     --cat-act-ink: #f4a582;
     --cat-unblock-ink: #8cc0f0;
     --cat-land-ink: #86d9a4;
     --cat-decide-ink: #bbaefa;
     --cat-snoozed-ink: #a6adc2;
+    --cat-fyi-ink: #f3a8d2;
     --ok: #8fd4ae;
     --ok-soft: #1d3529;
     --warn: #efc27c;
@@ -138,11 +142,13 @@
   --cat-land: #1d3f2b;
   --cat-decide: #372e63;
   --cat-snoozed: #2e3242;
+  --cat-fyi: #4a2239;
   --cat-act-ink: #f4a582;
   --cat-unblock-ink: #8cc0f0;
   --cat-land-ink: #86d9a4;
   --cat-decide-ink: #bbaefa;
   --cat-snoozed-ink: #a6adc2;
+  --cat-fyi-ink: #f3a8d2;
   --ok: #8fd4ae;
   --ok-soft: #1d3529;
   --warn: #efc27c;
@@ -453,6 +459,7 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .cat-land { --ink: var(--cat-land-ink); background: var(--cat-land); }
 .cat-decide { --ink: var(--cat-decide-ink); background: var(--cat-decide); }
 .cat-snoozed { --ink: var(--cat-snoozed-ink); background: var(--cat-snoozed); }
+.cat-fyi { --ink: var(--cat-fyi-ink); background: var(--cat-fyi); }
 .show-all { margin: 4px 10px 8px; }
 .sum { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .list { display: flex; flex-direction: column; }
@@ -634,6 +641,9 @@ button.card-head { cursor: pointer; }
 .dismiss-box .field { width: 100%; }
 .dismiss-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .farewell { margin: 0; padding: 12px 2px; color: var(--muted); font-size: 14px; }
+/* An FYI item's one action: he read the news */
+.fyi-ack { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 14px; border-radius: 10px; background: var(--cat-fyi); }
+.fyi-ack p { margin: 0; flex: 1 1 16em; font-size: 13.5px; line-height: 1.5; color: var(--fg); }
 .card-head .chev { width: 16px; height: 16px; flex: none; color: var(--muted); transition: transform 0.15s ease; }
 .card.open .card-head .chev { transform: rotate(180deg); }
 button.card-head:hover .chev { color: var(--fg); }
@@ -1122,6 +1132,8 @@ const CATEGORIES = [
   { id: "unblock", label: "Unblock" },
   { id: "land", label: "Land" },
   { id: "decide", label: "Decide" },
+  // Only a contributions instance has it: news on a thread he follows, and nothing to do
+  { id: "fyi", label: "FYI" },
 ];
 const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
 const categoryLabel = (id) => (CATEGORIES.find((c) => c.id === id) || {}).label || "";
@@ -1791,7 +1803,7 @@ function quietLine(id) {
 function quietRow(key, d, ...rest) {
   return h("li", { class: "handled-row", "data-id": key },
     h("span", { class: "h-kind" }, iconEntry(kindStatus(key, d))),
-    h("span", { class: "h-num", text: combinedView() ? itemRef(d) : "#" + str(d.number) }),
+    h("span", { class: "h-num", text: showsRepo(d) ? itemRef(d) : "#" + str(d.number) }),
     h("span", { class: "h-title", text: str(d.title) || "(no title)" }),
     ...rest);
 }
@@ -2559,6 +2571,8 @@ function groupOf(d) {
   const due = dueDays(d);
   const cat = categoryIdOf(d);
   if ((effort != null && effort <= QUICK_EFFORT_MAX) || (cat === "act" && due != null && due <= DUE_SOON_DAYS)) return "quick";
+  // Nobody waits on news, so a longer FYI read waits for spare time
+  if (cat === "fyi") return "later";
   if (cat !== "decide" || outsideWaits(d)) return "after";
   return "later";
 }
@@ -2626,7 +2640,8 @@ function buildRow(id, d, dim, slot) {
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
   const type = AUTHOR_ICONS[authorTypeOf(d)];
-  if (type) icons.push(icon(type[0], type[2], "muted"));
+  // In a contributions instance the only maintainer is he himself
+  if (type) icons.push(icon(type[0], authorTypeOf(d) === "maintainer" && isContributionsItem(d) ? "Opened by you" : type[2], "muted"));
   const meta = icons.length ? h("span", { class: "r-meta" }, icons) : null;
   return h("button", {
     class: "row" + (dim ? " dim" : ""), type: "button", "data-id": id, "data-slot": slot, "aria-haspopup": "dialog",
@@ -2634,11 +2649,11 @@ function buildRow(id, d, dim, slot) {
   },
     h("span", { class: "r-kind" }, iconEntry(kindStatus(id, d))),
     h("span", { class: "r-rev" }, review ? iconEntry(review) : null),
-    h("span", { class: "r-num", text: combinedView() ? "" : "#" + str(d.number) }),
+    h("span", { class: "r-num", text: showsRepo(d) ? "" : "#" + str(d.number) }),
     h("span", { class: "r-cat" }, categoryChip(d)),
     h("span", { class: "r-main" },
-      // The combined tab names the repo, so the full ref gets its own quiet line above the title
-      combinedView() ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
+      // A view across repos names the repo, so the full ref gets its own quiet line above the title
+      showsRepo(d) ? h("span", { class: "r-ref", text: itemRef(d) }) : null,
       chip || dcat || held || visit || flags.length ? h("span", { class: "r-titleline" }, h("span", { class: "r-title", title, text: title }), ...flags, dcat, chip, held, visit) : h("span", { class: "r-title", title, text: title }),
       hint ? hintEl(hint) : null),
     authorEl(d, "r-author", false),
@@ -2889,7 +2904,7 @@ function renderListNow() {
     sec.more.hidden = ordered.length <= shown;
   }
 
-  els.board.classList.toggle("combined", combinedView());
+  els.board.classList.toggle("combined", tabSpansRepos());
   renderHandled(handledRows);
   renderFixParked(fixParkedRows);
   renderAnalyzing(analyzingRows);
@@ -2973,6 +2988,18 @@ function itemRef(d) {
   return str(d.ref) || (str(d.repo) ? str(d.repo) + "#" + str(d.number) : "#" + str(d.number));
 }
 
+// A contributions instance spans repos and writes nothing to GitHub
+const isContributionsItem = (d) => instOf(d).kind === "contributions";
+// Rows and the dialog name the repo where the view spans repos
+const showsRepo = (d) => combinedView() || isContributionsItem(d);
+
+// An FYI item is open while his last Got it is older than the news it reports
+function fyiOpen(d) {
+  const news = parseTime(d.newsAt);
+  const got = parseTime(d.gotIt && d.gotIt.at);
+  return !Number.isFinite(got) || !(got >= news);
+}
+
 // What the project's formatter and lint autofix would change on this PR, from the agent's dry run
 function autofixBadge(d) {
   const a = d.kind === "pr" && d.autofix && typeof d.autofix === "object" ? d.autofix : null;
@@ -2984,7 +3011,7 @@ function autofixBadge(d) {
 }
 
 function renderDetailHead(d, dim) {
-  const ref = ghLink(d.url, combinedView() ? itemRef(d) : "#" + str(d.number), "ref");
+  const ref = ghLink(d.url, showsRepo(d) ? itemRef(d) : "#" + str(d.number), "ref");
   ref.dataset.focusKey = "head:link";
   if (ref.tagName === "A") ref.title = "Open on GitHub";
   // Review badges below the verdict replace the single review icon in the dialog
@@ -3777,6 +3804,12 @@ function applyBoardInfo(b) {
 // More than one instance shows tabs. "All" combines them and names every item with its full ref.
 const multiInstance = () => boardInfo.instances.length > 1;
 const combinedView = () => multiInstance() && state.tab === "all";
+// The rows of the combined tab and of a contributions tab come from several repos
+function tabSpansRepos() {
+  if (combinedView()) return true;
+  const name = multiInstance() ? state.tab : boardInfo.instances[0] && boardInfo.instances[0].name;
+  return (instanceByName(str(name)) || {}).kind === "contributions";
+}
 
 function loadTab() {
   try {
@@ -4838,7 +4871,36 @@ function renderRoutes(id, d, locked) {
     }
     nodes.unshift(detail.blockedEl);
   }
+  if (d.category === "fyi") nodes.push(gotItBlock(id, locked));
   placeChildren(detail.routes, nodes);
+}
+
+// "Got it" on an FYI item hides it until the routine finds news again. Built once per opened item
+function gotItBlock(id, locked) {
+  if (!detail.gotIt || detail.gotIt.id !== id) {
+    const button = h("button", { class: "btn primary", type: "button", "data-focus-key": "fyi:got-it", text: "Got it", onclick: () => gotIt(id) });
+    detail.gotIt = { id, button, el: h("div", { class: "fyi-ack" }, h("p", { text: "Nothing to do for you here. Got it hides this until there is news." }), button) };
+  }
+  detail.gotIt.button.disabled = locked || state.busy.has(id);
+  return detail.gotIt.el;
+}
+
+async function gotIt(key) {
+  if (state.busy.has(key)) return;
+  state.notes.delete(key);
+  state.busy.add(key);
+  render();
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    await state.mcp.callTool(SERVER, "got_it", { instance: refOf(key).instance, itemId: refOf(key).id });
+    if (detail.id === key) closeDetail();
+  } catch (e) {
+    const p = e && e.code === "tool_error" ? refusalPayload(e) : null;
+    state.notes.set(key, refusalNote(e, key) || { kind: "failed", text: p ? resultString(p.result) || "Sending failed." : routeFailure(e, null) });
+  } finally {
+    state.busy.delete(key);
+    render();
+  }
 }
 
 const BLOCKED_NOTES = {
@@ -5013,7 +5075,8 @@ function updateFooter(d, locked) {
   zc.dismiss.hidden = d.hidden === true;
   // While the item is in focus, the session has it: no Analyze again, and no second focus
   const f = focusOf(d);
-  zc.focus.hidden = !!f && f.status !== "failed";
+  // A focus session works in a checkout, which a contributions instance has none of
+  zc.focus.hidden = (!!f && f.status !== "failed") || isContributionsItem(d);
   zc.analyze.hidden = focusHeld(d);
   if (zc.analyze.hidden) detail.analyze.hidden = true;
   // A sent instruction clears its draft, so the note empties as well
@@ -5262,7 +5325,7 @@ function evidenceLine(e, p) {
   const itemId = str(e.itemId);
   const key = itemKeyOf(str(p.instance) || refOf(itemId).instance, itemId);
   const d = key ? state.items.get(key) : null;
-  const num = d ? (combinedView() ? str(d.ref) || "#" + str(d.number) : "#" + str(d.number)) : itemId;
+  const num = d ? (showsRepo(d) ? str(d.ref) || "#" + str(d.number) : "#" + str(d.number)) : itemId;
   const at = Date.parse(str(e.at));
   const day = Number.isFinite(at) ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   const ref = key
@@ -5992,7 +6055,8 @@ function subscribe(db) {
       // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
       // A PR that waits after its automatic review stays loaded too, so the waiting line can list it
       // An item in focus stays loaded too, so its card stays in the plan while the session works on it
-      if (d && typeof d === "object" && (routesOf(d).length || fixParked(d) || autoWaiting(d) || focusHeld(d))) next.set(doc.id, d);
+      // An FYI item has news and nothing to do, so it stays loaded without routes until he says Got it
+      if (d && typeof d === "object" && (d.category === "fyi" ? fyiOpen(d) : routesOf(d).length || fixParked(d) || autoWaiting(d) || focusHeld(d))) next.set(doc.id, d);
       // Once the server carries the mark, it decides, including clearing it after the next run
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
