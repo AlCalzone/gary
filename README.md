@@ -70,3 +70,8 @@ Gary keeps project facts, project rules and your personal style apart:
 - [docs/board.md](docs/board.md): working with the board day to day.
 - [docs/internals.md](docs/internals.md): commands, server, state and tests, for people changing Gary.
 - [SPEC.md](SPEC.md): the contract between the skills, the scripts and the board.
+
+---
+
+> [!NOTE]
+> This project is fully vibe-coded. I did not read any code. I won't. It helps me read the code that matters.
