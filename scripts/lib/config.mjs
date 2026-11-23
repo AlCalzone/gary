@@ -17,8 +17,27 @@ const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const REPO_NAME = /^[\w.-]{1,100}$/;
 
-export const INSTANCE_KINDS = ["maintainer"];
+export const INSTANCE_KINDS = ["maintainer", "contributions"];
 export const DEFAULT_PORT = 7878;
+
+// A contributions instance follows the maintainer's own threads outside the repos of his maintainer instances.
+// It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it
+export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150 };
+export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", ...Object.keys(CONTRIBUTIONS_DEFAULTS)];
+export const MAX_ITEMS_RANGE = [10, 500];
+// `owner/name` or `owner/*`
+const REPO_GLOB = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?:\*|[\w.-]{1,100})$/;
+const MAX_REPO_GLOBS = 200;
+
+/** Whether an instance config is of the contributions kind. */
+export const isContributions = (config) => config?.kind === "contributions";
+
+/** Whether `repo` (owner/name) matches a glob of `include` or `exclude`, compared without regard to case. */
+export function repoMatches(repo, glob) {
+	const [owner, name] = String(repo ?? "").toLowerCase().split("/");
+	const [gOwner, gName] = String(glob ?? "").toLowerCase().split("/");
+	return !!owner && !!name && owner === gOwner && (gName === "*" || gName === name);
+}
 
 export const CONFIG_DEFAULTS = {
 	kind: "maintainer",
@@ -250,7 +269,7 @@ export function instanceFacts(name) {
 	const dir = instanceDir(name);
 	const config = readJsonSync(join(dir, "config.json"));
 	const at = (p) => (isAbsolute(expandHome(p)) ? expandHome(p) : resolve(dir, expandHome(p)));
-	const profile = typeof config?.profile === "string" ? at(config.profile) : null;
+	const profile = typeof config?.profile === "string" && !isContributions(config) ? at(config.profile) : null;
 	const repo = profile ? readJsonSync(join(profile, "profile.json"))?.repo ?? null : null;
 	const checkout = typeof config?.checkout === "string" ? at(config.checkout) : null;
 	return { name, dir, config, repo, checkout };
@@ -364,6 +383,7 @@ const isStringList = (v, pattern) => Array.isArray(v) && v.every((s) => typeof s
  * are only warnings, so a config written for a newer Gary does not take the board down.
  */
 export function checkConfig(data) {
+	if (isContributions(data)) return checkContributionsConfig(data);
 	const errors = [];
 	const unknown = [];
 	const known = ["profile", "me", "checkout", "fixReview", "autoReview", "models", ...Object.keys(CONFIG_DEFAULTS)];
@@ -413,6 +433,31 @@ export function checkConfig(data) {
 			check(errors, ar.maxPerRun === undefined || isInt(ar.maxPerRun, 0, 50), `"autoReview.maxPerRun" must be a whole number from 0 to 50`);
 		}
 	}
+	checkModels(data.models, "instance", errors, unknown);
+	return { errors, unknown };
+}
+
+// Fields of a maintainer instance that mean nothing without a profile, a bot or a checkout
+const MAINTAINER_ONLY = ["profile", "checkout", "bot", "allowOwnTokenPushes", "maxFullReviewsPerRun", "maxAutoFixesPerRun", "maxPendingAutoFixes", "fixReview", "fastTier", "escalateAs", "autoReview"];
+
+/** The problems in the config.json of a contributions instance, split like checkConfig. */
+function checkContributionsConfig(data) {
+	const errors = [];
+	const unknown = [];
+	for (const key of Object.keys(data)) {
+		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
+		else if (MAINTAINER_ONLY.includes(key)) errors.push(`"${key}" is only for maintainer instances. A contributions instance has no profile, bot or checkout`);
+		else check(unknown, CONTRIBUTIONS_FIELDS.includes(key), `unknown field "${key}"`);
+	}
+	check(errors, typeof data.me === "string" && LOGIN.test(data.me), `"me" must be your GitHub login`);
+	check(errors, data.title === undefined || (typeof data.title === "string" && data.title.trim().length > 0 && data.title.length <= 60), `"title" must be the tab title, at most 60 characters`);
+	for (const key of ["include", "exclude"]) {
+		const v = data[key];
+		check(errors, v === undefined || (Array.isArray(v) && v.length <= MAX_REPO_GLOBS && v.every((g) => typeof g === "string" && REPO_GLOB.test(g))), `"${key}" must be a list of at most ${MAX_REPO_GLOBS} repositories like "owner/name" or "owner/*"`);
+	}
+	for (const key of ["activeWindowDays", "activeMaxWaitDays"]) check(errors, data[key] === undefined || isInt(data[key], 1, 3650), `"${key}" must be a whole number of days`);
+	const [min, max] = MAX_ITEMS_RANGE;
+	check(errors, data.maxItems === undefined || isInt(data.maxItems, min, max), `"maxItems" must be a whole number from ${min} to ${max}`);
 	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };
 }
@@ -563,6 +608,7 @@ function readConfig(name) {
 		const { errors, unknown } = checkConfig(data);
 		unknownFields.set(file, unknown);
 		if (errors.length) throw new SettingsError(`Config ${file} is invalid:\n- ${errors.join("\n- ")}`);
+		if (isContributions(data)) return { ...CONTRIBUTIONS_DEFAULTS, ...data, bot: null, allowOwnTokenPushes: false, fastTier: "off", escalateAs: "prefill" };
 		return { ...CONFIG_DEFAULTS, ...data, bot: data.bot ?? null };
 	});
 }
@@ -581,11 +627,20 @@ export function instancePath(name, path) {
 	return isAbsolute(p) ? p : resolve(instanceDir(name), p);
 }
 
-export const profileDirFor = (name) => instancePath(name, loadConfigFor(name).profile);
+/** The profile directory of an instance, or null for a contributions instance, which has none. */
+export const profileDirFor = (name) => {
+	const config = loadConfigFor(name);
+	return isContributions(config) ? null : instancePath(name, config.profile);
+};
 
 const profilePath = (name) => join(profileDirFor(name), "profile.json");
 
+// The profile code reads for a contributions instance. It names no repo, maintainers, labels or commands
+const contributionsProfile = (config) => ({ ...PROFILE_DEFAULTS, name: config.title, repo: null });
+
 function readProfile(name) {
+	const config = loadConfigFor(name);
+	if (isContributions(config)) return contributionsProfile(config);
 	const file = profilePath(name);
 	return cached(profileCache, file, () => {
 		const data = readSettings(file, "Profile");
@@ -598,6 +653,8 @@ function readProfile(name) {
 
 /** Loads and validates the profile.json of one instance, with the same fallback as loadConfigFor. */
 export function loadProfileFor(name) {
+	const config = loadConfigFor(name);
+	if (isContributions(config)) return contributionsProfile(config);
 	return withFallback(profilePath(name), () => readProfile(name));
 }
 
@@ -621,7 +678,7 @@ export function settingsWarningsFor(name) {
 	const out = [];
 	const files = [configPath(name)];
 	try {
-		files.push(profilePath(name));
+		if (profileDirFor(name)) files.push(profilePath(name));
 	} catch {
 		// Without a config there is no profile to name
 	}
@@ -654,6 +711,7 @@ export function loadInstance(name) {
 	const dir = instanceDir(name);
 	const state = join(dir, "state");
 	const own = join(dir, "personal.md");
+	const contributions = isContributions(config);
 	return {
 		name,
 		kind: config.kind,
@@ -663,10 +721,10 @@ export function loadInstance(name) {
 		config,
 		profile,
 		profileDir: profileDirFor(name),
-		// A maintainer instance triages the one repository of its profile
-		repos: [profile.repo],
+		// A maintainer instance triages the one repository of its profile. A contributions instance covers the repos its snapshot found
+		repos: contributions ? contributionRepos(name, state) : [profile.repo],
 		title: profile.name,
-		checkout: config.checkout ? instancePath(name, config.checkout) : null,
+		checkout: !contributions && config.checkout ? instancePath(name, config.checkout) : null,
 		personal: [personalFile(), ...(existsSync(own) ? [own] : [])],
 		paused: pausedIn(state),
 		...(settingsError && { settingsError }),
@@ -681,7 +739,8 @@ export function loadInstance(name) {
 export function instanceSettingsFiles(name) {
 	const files = [join(instanceDir(name), "config.json")];
 	try {
-		files.push(join(profileDirFor(name), "profile.json"));
+		const dir = profileDirFor(name);
+		if (dir) files.push(join(dir, "profile.json"));
 	} catch {
 		// Without a readable config there is no profile to watch yet
 	}
@@ -716,17 +775,61 @@ export function allowedRepo(instance, repo) {
 	return asInstance(instance).repos.some((r) => r.toLowerCase() === repo.toLowerCase());
 }
 
-/** The local clone for a repo of the instance, or null. */
+/** The local clone for a repo of the instance, or null. A contributions instance has none. */
 export function checkoutFor(instance, repo) {
 	const i = asInstance(instance);
 	return allowedRepo(i, repo) ? i.checkout : null;
 }
 
-/** The profile's rules file of a topic for a repo of the instance, like rules/review.md, or null. */
+/** The profile's rules file of a topic for a repo of the instance, like rules/review.md, or null. A contributions instance has none. */
 export function rulesFor(instance, repo, topic) {
 	const i = asInstance(instance);
-	if (!allowedRepo(i, repo) || !/^[a-z0-9-]+$/.test(topic ?? "")) return null;
+	if (!i.profileDir || !allowedRepo(i, repo) || !/^[a-z0-9-]+$/.test(topic ?? "")) return null;
 	return join(i.profileDir, "rules", `${topic}.md`);
+}
+
+/**
+ * The repos of every maintainer instance on this machine, in lower case. A contributions instance never covers them.
+ * It reads the files without validating them, so a broken instance still keeps its repo out.
+ */
+export function maintainerRepos(names = instanceNames()) {
+	const out = new Set();
+	for (const n of names) {
+		const f = instanceFacts(n);
+		if (f.config && !isContributions(f.config) && typeof f.repo === "string") out.add(f.repo.toLowerCase());
+	}
+	return out;
+}
+
+// The repos per snapshot file, keyed by path, mtime and size
+const snapshotRepos = new Map();
+
+function reposOfSnapshot(file) {
+	let key;
+	try {
+		const st = statSync(file);
+		key = `${st.mtimeMs}:${st.size}`;
+	} catch {
+		return [];
+	}
+	const hit = snapshotRepos.get(file);
+	if (hit?.key === key) return hit.repos;
+	const items = readJsonSync(file)?.items;
+	const repos = [...new Set(Object.values(items && typeof items === "object" ? items : {}).map((e) => e?.repo).filter((r) => typeof r === "string" && REPO.test(r)))];
+	snapshotRepos.set(file, { key, repos });
+	return repos;
+}
+
+/**
+ * The repos a contributions instance may name: those of its staged and its committed snapshot, minus every repo of a
+ * maintainer instance on this machine. Sorted, in the case the snapshot has.
+ */
+export function contributionRepos(name, state = join(instanceDir(name), "state")) {
+	const blocked = maintainerRepos(instanceNames().filter((n) => n !== name));
+	const all = [...reposOfSnapshot(join(state, "snapshot.pending.json")), ...reposOfSnapshot(join(state, "snapshot.json"))];
+	const seen = new Map();
+	for (const r of all) if (!blocked.has(r.toLowerCase()) && !seen.has(r.toLowerCase())) seen.set(r.toLowerCase(), r);
+	return [...seen.values()].sort();
 }
 
 /** The reference of an item across repos: owner/name#number. */
@@ -758,8 +861,8 @@ export function paths() {
 		out.personal = personalFiles();
 		out.state = stateDir();
 		out.profile = profileDir();
-		const { checkout } = loadConfig();
-		if (checkout) out.checkout = homePath(checkout);
+		const { checkout, kind } = loadConfig();
+		if (checkout && kind !== "contributions") out.checkout = homePath(checkout);
 	} catch (e) {
 		out.error = e.message;
 	}
