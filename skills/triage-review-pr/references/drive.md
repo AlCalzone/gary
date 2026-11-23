@@ -33,7 +33,7 @@ The caller passes the action file, the item file, the state file path (on a PR t
 6. When nothing is left to fix, push nothing. Still reply in the threads that need an answer, then stop.
 7. Make the fixes in the worktree, one commit per round, like `fix: address review feedback (round 2)` in the project's format. Push as `push-to-pr.md` describes. Reply in every handled thread and resolve it, as `address-review.md` describes, with your verdict's reason as the reply for dismissed ones.
 8. Append the round to the state file, with `lastPushedSha` set to the head you pushed.
-9. If rounds remain and this round fixed something, request a review from the review bot. On a watched PR, run `gary pr-watch review --pr <n> --sha <head> --action <action id> --seen-me <read at>`, and add `--seen-others <read at>` when this round judged other people's feedback. It requests the review, counts the round and refuses with exit code 3 when the PR had all its rounds: then the drive ends. On any other PR, write
+9. If rounds remain, this round fixed something and the profile lists a review bot, request a review from the review bot. On a watched PR, run `gary pr-watch review --pr <n> --sha <head> --action <action id> --seen-me <read at>`, and add `--seen-others <read at>` when this round judged other people's feedback. It requests the review, counts the round and refuses with exit code 3 when the PR had all its rounds: then the drive ends. It answers `skipped` with exit code 0 when the profile lists no review bot: then the drive ends cleanly. On any other PR, write
    ```json
    { "itemId": "<itemId>", "action": "request_review", "params": { "reviewer": "<reviewBot>" }, "text": "" }
    ```
@@ -108,7 +108,7 @@ The routes of the returned item follow "Routes after a push" in `push-to-pr.md`:
 
 ## A drive after a push by another job
 
-A `revise`, `take_over` or `address_review` job that pushed to a watched PR requests a Copilot review with `gary pr-watch review --after`. That writes a `drive` action doc with `params.after` naming the job, or `api_edit` after the server's API edit, and puts the state file into the stage `review`. The master starts your first round when the review arrived. Everything above holds, with these differences:
+A `revise`, `take_over` or `address_review` job that pushed to a watched PR requests a review bot review with `gary pr-watch review --after`, when the profile lists a review bot. That writes a `drive` action doc with `params.after` naming the job, or `api_edit` after the server's API edit, and puts the state file into the stage `review`. The master starts your first round when the review arrived. Everything above holds, with these differences:
 
 - Your first round starts with a review to address. `n` is the number of rounds in the state file plus 1.
 - The head must equal `lastPushedSha`, the job's push.
@@ -122,7 +122,7 @@ A `revise`, `take_over` or `address_review` job that pushed to a watched PR requ
 - "Who may push to a PR" holds: the PR is by the bot or has `takenOver: true`, as `gary pr-watch` checked. The preconditions of `push-to-pr.md` hold, with the PR's current head as the SHA for `gary push-check`. A head other than `lastPushedSha` is fine when every newer commit is by the maintainer or the bot. A commit by anyone else stops the round. A bot PR can carry commits by other people, and then it is not ours alone: `gary push-check` decides that, never you.
 - The maintainer's threads and comments follow "The maintainer's threads" below. Other people's follow "Other people's threads", and only with `params.trigger: "others"`.
 - A plain PR comment that asks for a change counts like a thread. Answer such comments in one PR comment as the writing identity, saying what you changed or why not. Post nothing else.
-- When review bot rounds remain and the round pushed, request the next one with `gary pr-watch review`, as step 9 says. The drive then continues as above.
+- When the profile lists a review bot, review bot rounds remain and the round pushed, request the next one with `gary pr-watch review`, as step 9 says. The drive then continues as above.
 - When the round ends without a next review bot round: on a fix PR, end through `gary fix-review finish` as in the section above. On any other PR, return `{ status: "done", result, resultParts, item }` as `push-to-pr.md` describes, with the round appended to `rounds`, and run `gary pr-watch done`, with `--request-maintainer` when the round ended cleanly. Its item is the PR reviewed again on the new head, with a card for every thread that stayed open for his decision.
 
 ### The maintainer's threads

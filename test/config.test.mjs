@@ -104,12 +104,17 @@ const withBot = { ...base, bot: { login: "b", tokenFile: "t" } };
 t.check("maxPendingAutoFixes defaults to 10", c.loadInstance("widgets").config.maxPendingAutoFixes === 10 && c.CONFIG_DEFAULTS.maxPendingAutoFixes === 10);
 t.check("maxPendingAutoFixes takes 0 and whole numbers only", c.validateConfig({ ...base, maxPendingAutoFixes: 0 }).length === 0 && c.validateConfig({ ...base, maxPendingAutoFixes: 25 }).length === 0
 	&& c.validateConfig({ ...base, maxPendingAutoFixes: -1 }).some((e) => /"maxPendingAutoFixes" must be a whole number/.test(e)) && c.validateConfig({ ...base, maxPendingAutoFixes: "10" }).length === 1 && c.validateConfig({ ...base, maxPendingAutoFixes: 1.5 }).length === 1);
-t.check("fixReview defaults to three Copilot rounds requested as me, then ready, when the instance can push", JSON.stringify(c.fixReviewOf(withBot, reviewBots)) === '{"reviewer":"copilot","requestAs":"me","maxRounds":3,"markReady":true,"reason":null}');
+t.check("fixReview defaults to three Copilot rounds requested as me, then ready, when the instance can push", JSON.stringify(c.fixReviewOf(withBot, reviewBots)) === '{"reviewer":"copilot","requestAs":"me","maxRounds":3,"markReady":true,"reason":null,"noReviewBot":false}');
 t.check("fixReview defaults to on with allowOwnTokenPushes too", c.fixReviewOf({ ...base, allowOwnTokenPushes: true }, reviewBots).reviewer === "copilot");
 t.check("fixReview is off without an account that may push", c.fixReviewOf({ ...base, bot: null }, reviewBots).reviewer === "off" && /no account may push/.test(c.fixReviewOf({ ...base, bot: null }, reviewBots).reason));
-t.check("fixReview is off when the profile lists no copilot review bot", /does not list copilot/.test(c.fixReviewOf(withBot, { reviewBots: [] }).reason));
+t.check("fixReview skips the rounds when the profile lists no review bot", (() => {
+	const fr = c.fixReviewOf(withBot, { reviewBots: [] });
+	return fr.reviewer === "off" && fr.noReviewBot === true && /lists no review bot/.test(fr.reason);
+})());
+t.check("without an account that may push the missing review bot does not matter", c.fixReviewOf({ ...base, bot: null }, { reviewBots: [] }).noReviewBot === false);
+t.check("the review bot is the first of reviewBots, or null", c.reviewBotOf({ reviewBots: ["copilot"] }) === "copilot" && c.reviewBotOf({ reviewBots: [] }) === null && c.reviewBotOf({}) === null);
 t.check("fixReview off in config.json stays off", c.fixReviewOf({ ...withBot, fixReview: { reviewer: "off" } }, reviewBots).reviewer === "off");
-t.check("fixReview fills the fields config.json leaves out", JSON.stringify(c.fixReviewOf({ ...withBot, fixReview: { maxRounds: 1, requestAs: "bot" } }, reviewBots)) === '{"reviewer":"copilot","requestAs":"bot","maxRounds":1,"markReady":true,"reason":null}');
+t.check("fixReview fills the fields config.json leaves out", JSON.stringify(c.fixReviewOf({ ...withBot, fixReview: { maxRounds: 1, requestAs: "bot" } }, reviewBots)) === '{"reviewer":"copilot","requestAs":"bot","maxRounds":1,"markReady":true,"reason":null,"noReviewBot":false}');
 t.check("requestAs bot needs a bot", /no bot is configured/.test(c.fixReviewOf({ ...base, allowOwnTokenPushes: true, fixReview: { requestAs: "bot" } }, reviewBots).reason));
 t.check("a full fixReview is valid", c.validateConfig({ ...base, fixReview: { reviewer: "copilot", requestAs: "me", maxRounds: 2, markReady: false } }).length === 0);
 const frErrors = c.validateConfig({ ...base, fixReview: { reviewer: "gemini", requestAs: "him", maxRounds: 4, markReady: "yes" } });

@@ -38,7 +38,7 @@ Fields of `profile.json`:
 | `name`, `repo` | The project's name and its `owner/name` |
 | `maintainers` | Logins that count as "us" |
 | `botLogins` | Bots whose posts count as automated |
-| `reviewBots` | Review bots Gary may request, today only `copilot` |
+| `reviewBots` | Review bots Gary may request, today only `copilot`. Empty means no review bot rounds |
 | `relatedRepos` | Repos an item can be moved to |
 | `sensitivePaths` | Globs no agent may touch in someone else's PR, like `.github/**` |
 | `autoLabels` | Labels Gary may set without a click |
@@ -133,7 +133,7 @@ Both suggestions are cards on the board. Your click changes the setting. `gary s
 { "fixReview": { "reviewer": "copilot", "requestAs": "me", "maxRounds": 3, "markReady": true } }
 ```
 
-On its own fix PRs Gary requests a review from the review bot, pushes fixes for its comments, and marks the PR ready. `"reviewer": "off"` turns that off.
+On its own fix PRs Gary requests a review from the review bot, pushes fixes for its comments, and marks the PR ready. `"reviewer": "off"` turns that off. Without a review bot in the profile's `reviewBots`, a fix PR skips the rounds: Gary marks it ready and puts it on your board right after it opens.
 
 ## Your contributions elsewhere
 

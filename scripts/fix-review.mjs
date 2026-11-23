@@ -1,6 +1,8 @@
 // The review rounds a fix PR of Gary gets without a click. They run as a drive with `by: "fix"`.
 //   gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run]
 //     Requests the first review and writes the waiting drive. The fix worker calls it right after `gary fix-record`.
+//     When the profile lists no review bot, it skips the rounds: it marks the PR ready, queues its full review and
+//     requests the maintainer's review, like a finish with `done`.
 //   gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer] [--dry-run]
 //     Ends a round: marks the PR ready after the first `done`, and queues the full review of the PR item.
 //     With --request-maintainer and `done` the writing identity then requests the maintainer's review.
@@ -57,12 +59,13 @@ async function start(argv) {
 	if (rest.filter((a) => a !== "--dry-run").length || !out.pr || !out.run) throw new Error(USAGE);
 	if (typeof out.sha !== "string" || !/^[0-9a-f]{7,64}$/.test(out.sha)) throw new Error("--sha must be the head commit of the fix PR");
 	const c = await context(out.pr);
-	if (c.settings.reviewer === "off") return { ok: true, started: false, reason: c.settings.reason ?? "fixReview is off" };
+	if (c.settings.reviewer === "off" && !c.settings.noReviewBot) return { ok: true, started: false, reason: c.settings.reason ?? "fixReview is off" };
 	const focus = focusHold(c.itemId);
 	if (focus) return { ok: false, started: false, refused: true, result: focusRefusal(c.itemId, focus) };
 	if (isPaused()) return { ok: false, started: false, paused: true, result: PAUSED_MESSAGE };
 	const stateFile = join(driveDir(), c.itemId + ".json");
 	if (await readJson(stateFile)) return { ok: true, started: false, reason: `The review rounds of PR #${c.number} already run` };
+	if (c.settings.noReviewBot) return skipRounds(c, out.sha, dryRun);
 
 	const request = await runAction({ action: "request_review", kind: "pr", number: c.number, repo: c.repo, params: { reviewer: c.settings.reviewer, as: c.settings.requestAs }, dryRun });
 	if (!request.ok) return { ok: false, started: false, result: `The review was not requested: ${request.result}` };
@@ -79,6 +82,45 @@ async function start(argv) {
 	await mkdir(driveDir(), { recursive: true });
 	await writeAtomic(stateFile, { actionId, ...drive });
 	return { ok: true, started: true, actionId, itemId: c.itemId, statePath: stateFile, maxRounds: c.settings.maxRounds };
+}
+
+/**
+ * Ends the rounds of a fix PR before they start, because the profile lists no review bot: marks the PR ready when
+ * `fixReview.markReady` is on, queues its full review and requests the maintainer's review.
+ */
+async function skipRounds(c, sha, dryRun) {
+	const skipped = "The profile lists no review bot, so the fix PR gets no review rounds.";
+	const invocations = [];
+	let ready = false;
+	let readyNote = null;
+	if (c.settings.markReady !== false && !c.record.readyAt) {
+		const r = await runAction({ action: "ready", kind: "pr", number: c.number, repo: c.repo, params: {}, dryRun });
+		if (r.ok) {
+			ready = true;
+			if (dryRun) invocations.push(...r.result.invocations);
+		} else if (r.paused) return { ok: false, started: false, paused: true, result: PAUSED_MESSAGE };
+		else readyNote = `Marking the PR ready failed: ${r.result}`;
+	}
+	const now = new Date().toISOString();
+	const review = {
+		action: "full_review",
+		params: { repo: c.repo, number: c.number, by: "fix", fixFor: c.fixFor, outcome: "done", ready: ready || !!c.record.readyAt, rounds: [], lastPushedSha: sha },
+		text: [skipped, readyNote].filter(Boolean).join(" "),
+		status: "queued",
+		via: "queue",
+		createdAt: now,
+		finishedAt: null,
+		result: "",
+	};
+	if (dryRun) {
+		const maintainerReview = await requestMaintainerReview({ repo: c.repo, number: c.number, dryRun, markedReady: ready });
+		if (maintainerReview.invocations) invocations.push(...maintainerReview.invocations);
+		return { ok: true, started: false, skipped, dryRun: true, ready, invocations, maintainerReview, wouldWrite: { action: { itemId: c.itemId, ...review } } };
+	}
+	if (ready) await recordFixReady(c.number, now);
+	const reviewId = await writeAction(c.itemId, review);
+	const maintainerReview = await requestMaintainerReview({ repo: c.repo, number: c.number });
+	return { ok: true, started: false, skipped, ready, ...(readyNote && { warning: readyNote }), reviewId, itemId: c.itemId, maintainerReview };
 }
 
 async function finish(argv) {

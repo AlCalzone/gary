@@ -6,7 +6,7 @@
 //   gary pr-watch review --pr <n> --sha <head> [--action <id> | --after <id> --run <run>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run]
 //     Requests the next review bot round after a push, within the cap of 3 per PR. A drive round names its action
 //     doc with --action. A revise, take_over or address_review job names its own doc with --after, and gets a new
-//     drive action doc claimed by --run.
+//     drive action doc claimed by --run. Without a review bot in the profile it requests nothing and answers `skipped`.
 //   gary pr-watch done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]
 //     Ends a round without a next review bot round. The PR goes back to waiting for the maintainer's feedback.
 //     With --request-maintainer the writing identity then requests his review.

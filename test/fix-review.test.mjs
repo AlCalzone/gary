@@ -1,9 +1,9 @@
 // The review rounds of Gary's own fix PRs: the hand-off from the fix to the drive, the two end states, the watcher's
 // drive events, the pause, and the limit on pending automatic fixes. Runs offline against the fake gh.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { GARY, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
+import { GARY, PROFILE, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 
 const t = runner("fix-review");
 const T = tempDir();
@@ -159,6 +159,29 @@ t.check("reviewer off starts nothing", r.status === 0 && json(r).started === fal
 editConfig(({ fixReview, ...c }) => c);
 r = gary("doctor", "--json");
 t.check("doctor names the fix review and the fix limit", /up to 3 copilot review rounds, requested as you, then it is marked ready/.test(r.stdout) && /at most 10 automatic fix PRs pending/.test(r.stdout), r.stdout.slice(0, 1500));
+
+// Without a review bot in the profile the rounds are skipped, and the fix PR goes straight to ready and to his card
+reset();
+const noBot = join(T, "profile-no-review-bot");
+cpSync(PROFILE, noBot, { recursive: true });
+writeFileSync(join(noBot, "profile.json"), JSON.stringify({ ...read(join(PROFILE, "profile.json")), reviewBots: [] }));
+editConfig((c) => ({ ...c, profile: noBot }));
+const fixesFile = join(state, "fixes.json");
+const fixes = read(fixesFile);
+writeFileSync(fixesFile, JSON.stringify({ ...fixes, "issue-23": fixes["issue-23"].map(({ readyAt, ...x }) => x) }));
+writeFileSync(OVERRIDES, JSON.stringify({ "requests-19": { isDraft: false } }));
+r = gary("fix-review", "start", "--pr", "19", "--sha", SHA, "--run", "run-1");
+o = json(r);
+writeFileSync(OVERRIDES, "{}");
+t.check("without a review bot start requests no review and says why", r.status === 0 && o.started === false && /lists no review bot/.test(o.skipped) && !writes().some((w) => w.mutation === "requestCopilotCodeReview"), [o, writes()]);
+t.check("without a review bot the fix PR is marked ready and its full review is queued", o.ready === true && writes()[0]?.mutation === "markPullRequestReadyForReview" && actions().some((a) => a.action === "full_review" && a.params.outcome === "done" && a.params.ready === true && a.params.rounds.length === 0 && a.params.lastPushedSha === SHA) && !existsSync(driveFile), [o, actions()]);
+t.check("without a review bot his review is requested", o.maintainerReview?.requested === true && writes().some((w) => w.mutation === "requestReviews"), [o, writes()]);
+r = gary("pr-watch", "review", "--pr", "19", "--sha", "8".repeat(40), "--action", "x");
+t.check("without a review bot pr-watch review skips the round and exits 0", r.status === 0 && json(r).requested === false && /lists no review bot/.test(json(r).skipped) && !existsSync(driveFile), r.stdout);
+r = gary("doctor");
+t.check("doctor says a fix PR skips the rounds", /no rounds: the profile lists no review bot\. A fix PR is marked ready and goes to your board/.test(r.stdout), r.stdout);
+editConfig((c) => ({ ...c, profile: PROFILE }));
+writeFileSync(fixesFile, JSON.stringify(fixes));
 
 // The limit on pending automatic fixes
 reset();

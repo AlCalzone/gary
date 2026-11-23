@@ -139,6 +139,7 @@ async function checkInstance() {
 			const fr = fixReviewOf(config, loadProfile());
 			// A warning only when config.json asks for the rounds and they cannot run
 			const asked = config.fixReview !== undefined && config.fixReview.reviewer !== "off";
+			if (fr.noReviewBot) return ["ok", `no rounds: ${fr.reason}. A fix PR ${fr.markReady ? "is marked ready and " : ""}goes to your board right after it opens`];
 			if (fr.reviewer === "off") return [asked ? "warn" : "ok", `off${fr.reason ? `: ${fr.reason}` : ""}. A fix PR stays a draft until you look at it`];
 			return ["ok", `a fix PR gets up to ${fr.maxRounds} ${fr.reviewer} review round${fr.maxRounds === 1 ? "" : "s"}, requested as ${fr.requestAs === "bot" ? "the bot" : "you"}${fr.markReady ? ", then it is marked ready" : ", and stays a draft"}`];
 		});

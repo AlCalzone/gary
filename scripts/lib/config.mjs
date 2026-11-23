@@ -86,18 +86,23 @@ export const FIX_REVIEWERS = ["copilot", "off"];
 export const FIX_REVIEW_REQUESTERS = ["me", "bot"];
 export const FIX_REVIEW_DEFAULTS = { reviewer: "copilot", requestAs: "me", maxRounds: 3, markReady: true };
 
+/** The review bot Gary requests after a push, or null when the profile lists none. */
+export const reviewBotOf = (profile) => (profile?.reviewBots ?? [])[0] ?? null;
+
 /**
- * The review rounds a fix PR of Gary gets on its own: `{ reviewer, requestAs, maxRounds, markReady, reason }`.
+ * The review rounds a fix PR of Gary gets on its own: `{ reviewer, requestAs, maxRounds, markReady, reason, noReviewBot }`.
  * `reviewer` is "off" when the config says so or when the rounds cannot run, and `reason` then says why.
+ * `noReviewBot` is true when only the missing review bot stops the rounds. The fix PR then goes straight to ready.
  */
 export function fixReviewOf(config, profile) {
 	const set = { ...FIX_REVIEW_DEFAULTS, ...(config.fixReview ?? {}) };
-	const off = (reason) => ({ ...set, reviewer: "off", reason });
+	const off = (reason, extra = {}) => ({ ...set, reviewer: "off", reason, noReviewBot: false, ...extra });
 	if (set.reviewer === "off") return off(config.fixReview ? "fixReview.reviewer is off in config.json" : null);
 	if (!config.bot && config.allowOwnTokenPushes !== true) return off("no account may push: there is no bot and allowOwnTokenPushes is false");
+	if (!reviewBotOf(profile)) return off("the profile lists no review bot", { noReviewBot: true });
 	if (!(profile.reviewBots ?? []).includes(set.reviewer)) return off(`the profile does not list ${set.reviewer} in reviewBots`);
 	if (set.requestAs === "bot" && !config.bot) return off('fixReview.requestAs is "bot", but no bot is configured');
-	return { ...set, reason: null };
+	return { ...set, reason: null, noReviewBot: false };
 }
 
 export const FAST_TIERS = ["off", "shadow", "on"];

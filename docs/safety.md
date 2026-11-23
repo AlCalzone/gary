@@ -32,7 +32,7 @@ On Gary's own fix PRs, and only there, three more things happen:
 2. It pushes the fixes for the bot's comments to the fix branch, for up to 3 rounds.
 3. It marks the PR ready for review.
 
-After the rounds the fix PR shows up as its own card for your review. `fixReview` in the instance's `config.json` sets the reviewer, the rounds and the account.
+Without a review bot in the profile, steps 1 and 2 are skipped. After the rounds the fix PR shows up as its own card for your review. `fixReview` in the instance's `config.json` sets the reviewer, the rounds and the account.
 
 When you turn a discussion with such a PR into an issue, the bot adds one line `fixes #<issue>` to the PR's description. This needs a bot and `escalateResult` in the profile.
 

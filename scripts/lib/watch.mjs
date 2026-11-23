@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { runAction } from "./actions.mjs";
 import { ID_PATTERN, boardDir, readJson, writeAtomic } from "./board-store.mjs";
 import { ACTION_KINDS, listClaims } from "./claims.mjs";
-import { fixReviewOf, instanceName, loadInstance } from "./config.mjs";
+import { fixReviewOf, instanceName, loadInstance, reviewBotOf } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { sensitiveOurs, touchesSensitive } from "./facts.mjs";
 import { accountMode, writeLogin } from "./gh.mjs";
@@ -246,7 +246,7 @@ export async function watchContext(number, { takingOver = false } = {}) {
 	}
 	if (!pr) throw new Error(`PR #${number} is no PR by the bot, no fix PR Gary recorded in fixes.json and no PR it took over. Only those are watched.`);
 	const settings = fixReviewOf(instance.config, instance.profile);
-	return { ...pr, settings, cap: pr.why === "fix" ? Math.min(settings.maxRounds ?? REVIEW_ROUND_CAP, REVIEW_ROUND_CAP) : REVIEW_ROUND_CAP };
+	return { ...pr, settings, reviewBot: reviewBotOf(instance.profile), cap: pr.why === "fix" ? Math.min(settings.maxRounds ?? REVIEW_ROUND_CAP, REVIEW_ROUND_CAP) : REVIEW_ROUND_CAP };
 }
 
 /** The drive file a watched PR starts from when it has none yet. */
@@ -259,7 +259,7 @@ export function baseDrive(c) {
 		watch: true,
 		stage: "watch",
 		maxRounds: c.cap,
-		reviewBot: c.why === "fix" && c.settings.reviewer !== "off" ? c.settings.reviewer : "copilot",
+		reviewBot: c.why === "fix" && c.settings.reviewer !== "off" ? c.settings.reviewer : c.reviewBot,
 		...(c.why === "fix" && { markReady: c.settings.markReady }),
 		rounds: [],
 		lastPushedSha: c.entry?.headSha ?? c.item?.reviewedSha ?? null,
@@ -293,7 +293,8 @@ async function pushJob(id, itemId) {
  * A drive round names its action doc with `actionId`, or the drive file has one. A job that pushed outside a drive
  * passes `after`, the id of its own action doc, or `apiEdit` for an API edit of the server. Then a new `drive` action
  * doc is written, claimed by `run`, and `sha` must be a new head. Throws `Refused` when a rule says no.
- * Returns `{ ok: false, paused: true }` while the instance is paused.
+ * Returns `{ ok: false, paused: true }` while the instance is paused, and `{ ok: true, requested: false, skipped }`
+ * when the profile lists no review bot.
  */
 export async function requestReviewRound({ number, sha, actionId, after, apiEdit = false, run, seen = {}, dryRun = false }) {
 	if (typeof sha !== "string" || !/^[0-9a-f]{7,64}$/.test(sha)) throw new Error("--sha must be the PR's head commit");
@@ -303,6 +304,7 @@ export async function requestReviewRound({ number, sha, actionId, after, apiEdit
 	const itemId = prItemId(number);
 	const job = after !== undefined ? await pushJob(after, itemId) : null;
 	const c = await watchContext(number, { takingOver: job?.action === "take_over" });
+	if (!c.reviewBot) return { ok: true, requested: false, skipped: "The profile lists no review bot, so no review bot round is requested. Go on as if the rounds were done.", itemId: c.itemId };
 	if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 	if (!writeLogin()) throw new Refused("No account may push: the instance has no bot and allowOwnTokenPushes is off.");
 	if (c.entry && touchesSensitive(c.entry) && !sensitiveOurs(c.entry)) throw new Refused(`PR #${c.number} changes sensitive files and is not ours alone, so it gets no review bot rounds.`);
@@ -319,7 +321,7 @@ export async function requestReviewRound({ number, sha, actionId, after, apiEdit
 	const used = reviewRoundsUsed(drive, feedbackOf(c));
 	const cap = c.why === "fix" ? Math.min(reviewRoundCap(drive), c.cap) : REVIEW_ROUND_CAP;
 	if (used >= cap) throw new Refused(`PR #${c.number} had ${used} of ${cap} review bot rounds. No more are requested.`);
-	const reviewer = drive.reviewBot ?? "copilot";
+	const reviewer = drive.reviewBot ?? c.reviewBot;
 	const request = await runAction({ action: "request_review", kind: "pr", number: c.number, repo: c.repo, params: { reviewer, as: c.why === "fix" ? c.settings.requestAs : "me" }, dryRun });
 	if (request.paused) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 	if (!request.ok) return { ok: false, result: `The review was not requested: ${request.result}` };

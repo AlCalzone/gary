@@ -75,13 +75,14 @@ git -C <checkout> update-ref -d refs/triage/fix-pr-<n>
 
 ## Review bot round after a push
 
-On a watched PR, the push of a `revise`, a `take_over` in the push mode or an `address_review` is followed by a Copilot review while the PR has review bot rounds left. A watched PR is an open PR by the instance's bot, Gary's fix PRs among them, a PR whose item has `takenOver: true`, and the PR your take-over just pushed to. Right after the push, before you set your action doc to `done`, run:
+On a watched PR, when the profile lists a review bot, the push of a `revise`, a `take_over` in the push mode or an `address_review` is followed by a review from that bot while the PR has review bot rounds left. A watched PR is an open PR by the instance's bot, Gary's fix PRs among them, a PR whose item has `takenOver: true`, and the PR your take-over just pushed to. Right after the push, before you set your action doc to `done`, run:
 
 ```bash
 gary pr-watch review --pr <n> --sha <the head you pushed> --after <your action id> --run <run>
 ```
 
-- Exit code 0: Copilot reviews the push. The PR is now in the drive's stage `review`, and the drive rounds of `drive.md` take over when the review arrives. Say it in the returned `state`, like `Copilot reviews the new head, round 1 of 3.`
+- Exit code 0 with `requested: true`: the review bot reviews the push. The PR is now in the drive's stage `review`, and the drive rounds of `drive.md` take over when the review arrives. Say it in the returned `state`, like `Copilot reviews the new head, round 1 of 3.`
+- Exit code 0 with `skipped`: the profile lists no review bot, so nothing was requested. Go on as if the rounds were done: the returned item offers the decision.
 - Exit code 3: a rule said no. The PR had its 3 review bot rounds, it changes sensitive files and is not ours alone, or the head is the one from before your job. Exit code 1 for a PR that is not watched. Exit code 4 while the instance is paused. In each case go on as before.
 
 Run it only after a push. A job that pushed nothing runs no command. `format` never runs it. A `drive` round requests its next review through step 9 of `drive.md`.
