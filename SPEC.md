@@ -152,10 +152,10 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
   "escalateResult": "^Escalated to an issue: #(\\d+)",   // or null: the comment the bot posts when a discussion became an issue, with the issue number as the one capture group. Without it fix PRs are not linked to that issue
   "requiredTools": ["mcp__widgets-logs__loadLogFile"],   // checked at the start of a run
   "automatedComments": [           // comments a workflow posts on its own. They do not count as anyone's turn in the snapshot facts
-    { "name": "logfile feedback", "pattern": "<!-- LOGFILE_COMMENT_TAG -->", "origin": "the workflow that posts it" }
+    { "name": "logfile feedback", "pattern": "<!-- log-feedback -->", "origin": "the workflow that posts it" }
   ],
   "aiAuthors": ["devin"],          // extra names of AI agents for facts.aiAuthored, matched as case-insensitive parts of a commit author's name or login
-  "autoReviewPaths": { "config": ["config/devices/**"] },   // globs per kind of PR that may get an automatic review. A PR is of a kind when every changed file matches one of its globs
+  "autoReviewPaths": { "config": ["data/devices/**"] },   // globs per kind of PR that may get an automatic review. A PR is of a kind when every changed file matches one of its globs
   "formatCommand": "npm run fmt",  // or null: the one-line command a contributor runs to format. The automatic review names it when it cannot offer to push
   "dueDateFields": ["Due", "Due date", "Target date", "Deadline", "End date"]   // date fields of a GitHub Projects item that give the item its due date, matched without regard to case. The default is shown
 }
@@ -552,7 +552,7 @@ The item dialog shows what happened on GitHub since the maintainer's last choice
 Since your last choice, Nov 19 (Take over)
 ●  jpoeppelman1 pushed 8 commits
 ●  Copilot reviewed 3 times · 2 threads still open
-●  zwave-js-bot pushed 1 commit (Change)
+●  widgets-bot pushed 1 commit (Change)
 ●  You requested changes · not addressed yet
 ```
 

@@ -1,0 +1,147 @@
+# Configuration
+
+Gary has three layers. Each kind of change has one place.
+
+- **Core**: this repository. It holds no repo name, no account name and no path of one machine. Nobody edits it to adapt the tool.
+- **Profile**: one directory per project, named by `profile` in the instance's `config.json`. It can live in its own repo or inside your project.
+- **Home**: `~/.config/gary/` or `$GARY_HOME`.
+
+```
+~/.config/gary/
+  config.json                 the board's port, default models
+  personal.md                 your rules and writing style, for all projects
+  instances/<name>/
+    config.json               this project on this machine
+    personal.md               optional, your rules for this project
+    state/                    the board's data
+```
+
+The agents read a rule in this order: core, the profile file of the same topic, the shared `personal.md`, the instance's `personal.md`. A later file wins.
+
+The limits in [safety.md](safety.md) cannot be changed by a profile or by `personal.md`.
+
+## The profile
+
+`profiles/template/` is the skeleton. The `triage-setup` skill fills it from your repo.
+
+- `profile.json`: project facts, see below.
+- `rules/classification.md`: what goes into which category.
+- `rules/voice.md`: how the project writes.
+- `rules/review.md`: how PRs are reviewed, the formatter commands.
+- `rules/issues.md`: how issues and discussions are triaged.
+- `templates/*.md`: canned texts, like a request for logs.
+
+Fields of `profile.json`:
+
+| Field | Meaning |
+| --- | --- |
+| `name`, `repo` | The project's name and its `owner/name` |
+| `maintainers` | Logins that count as "us" |
+| `botLogins` | Bots whose posts count as automated |
+| `reviewBots` | Review bots Gary may request, today only `copilot` |
+| `relatedRepos` | Repos an item can be moved to |
+| `sensitivePaths` | Globs no agent may touch in someone else's PR, like `.github/**` |
+| `autoLabels` | Labels Gary may set without a click |
+| `botCommands` | Commands your bot understands, like `escalate` |
+| `escalateResult` | Pattern of the comment your bot posts after it turned a discussion into an issue |
+| `automatedComments` | Patterns of bot comments that are noise |
+| `aiAuthors` | Logins whose PRs count as AI-written |
+| `autoReviewPaths` | Paths the automatic first review may cover |
+| `formatCommand` | The comment a contributor can post to have the PR formatted |
+| `requiredTools` | Tools the agents need, like an MCP server for logs |
+| `dueDateFields` | GitHub Project fields read as due dates |
+
+## An instance's config.json
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `profile` | | Path of the profile directory |
+| `me` | | Your GitHub login |
+| `checkout` | | Local checkout of the repo |
+| `bot` | `null` | `{ "login", "tokenFile" }` of the bot account |
+| `allowOwnTokenPushes` | `false` | Without a bot, run writes under your own login |
+| `activeWindowDays` | `30` | Issues and discussions without activity for longer are left out |
+| `maxFullReviewsPerRun` | `10` | Full reviews per hourly run |
+| `maxAutoFixesPerRun` | `2` | Fixes Gary starts on its own per run. `0` turns them off |
+| `maxPendingAutoFixes` | `10` | Open automatic fixes at a time |
+| `fixReview` | | Review rounds on Gary's own fix PRs, see below |
+| `autoReview` | off | The one review without a click, see [safety.md](safety.md#the-automatic-first-review) |
+| `escalateAs` | `prefill` | `me` posts the escalate command under your login after your click |
+| `fastTier` | `off` | A faster model for obvious items, see below |
+| `models` | | Models per role, see below |
+| `tab` | | The project's look on the board, see below |
+
+`gary doctor` and `gary setup` refuse unknown fields, so typos get caught.
+
+### Tab
+
+```json
+{ "tab": { "icon": "zap", "color": "#0071bc", "background": true, "favorite": true } }
+```
+
+- `icon`: an image file, or one of `zap`, `home`, `star`, `globe`, `heart`, `user`, `shield`, `bot`, `sparkles`, `wrench`, `lightbulb`, `plug`, `eye`, `pr`, `issue`, `discussion`, `commit`, `comments`.
+- `color`: a hex color, or one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`.
+- `background`: tint the whole page in that color while the tab is open. The board derives every surface, line and accent from the one color.
+- `favorite`: show this tab before the others.
+
+### Models
+
+By default the master and the workers run on Sonnet. Every review, fix and push runs on Opus. The quick classification runs on Sonnet.
+
+```json
+{ "models": { "master": "sonnet", "worker": "sonnet", "review": "opus", "standard": "sonnet", "fast": "haiku" } }
+```
+
+Set it in `~/.config/gary/config.json` for the machine, or in an instance's `config.json` for one project. `gary models` prints what applies.
+
+The master's own model is set on the scheduled task. The `triage-setup` skill does that or tells you where.
+
+### Fast tier
+
+Obvious items, like a green dependency update, can be classified by a smaller model. `fastTier` controls it:
+
+- `off`: the default.
+- `shadow`: the fast model runs next to the standard one, without effect. Gary compares both.
+- `on`: the fast model decides obvious items.
+
+Gary suggests switching to `on` once both agree on at least 95 percent of 40 or more comparisons. In `on` mode it keeps checking a sample. It suggests going back when the fast model does worse.
+
+Both suggestions are cards on the board. Your click changes the setting. `gary shadow report --week` shows the numbers.
+
+### Review rounds on fix PRs
+
+```json
+{ "fixReview": { "reviewer": "copilot", "requestAs": "me", "maxRounds": 3, "markReady": true } }
+```
+
+On its own fix PRs Gary requests a review from the review bot, pushes fixes for its comments, and marks the PR ready. `"reviewer": "off"` turns that off.
+
+## Your contributions elsewhere
+
+A contributions instance follows your own threads in repos outside your projects:
+
+- your open PRs, issues and discussions
+- the PRs that wait for your review
+- the threads you commented on, reviewed or were mentioned in
+
+```sh
+gary setup --kind contributions --exclude "your-name/*"
+gary --instance contributions doctor
+```
+
+It is its own tab. It needs no profile, bot or checkout. Gary writes nothing to GitHub for it. A reply card copies the text and opens the thread.
+
+Next to Act, Unblock, Land and Decide it has a fifth category, **FYI**: something new and relevant happened, and there is nothing to do. Examples are a maintainer's decision, a release with your fix, or your PR merged by someone else.
+
+"Got it" hides an FYI item until there is news again. Noise like "+1" comments, bot posts, label changes and CI reruns never shows up.
+
+Its `config.json`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `kind` | | `"contributions"` |
+| `me` | | Your GitHub login |
+| `include`, `exclude` | `[]` | Repos as `owner/name` or `owner/*` |
+| `maxItems` | `150` | Cap of one snapshot. The snapshot says when the cap cuts |
+| `activeWindowDays` | `30` | Threads without activity for longer are left out |
+| `models`, `tab` | | As above |

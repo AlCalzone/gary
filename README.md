@@ -4,171 +4,65 @@
 
 <p align="center"><em>Get Anything Ready for You</em></p>
 
-Gary turns the open PRs, issues and discussions of your projects into a plan for your day. Every item comes briefed, with the next step prepared: a review, a reply, a fix. You read, click, and keep the last word.
+Gary turns the open PRs, issues and discussions of your GitHub projects into a plan for your day. Every item comes briefed, with the next step prepared: a review, a reply, a fix. You read, click and keep the last word.
 
-<!-- Screenshot of the board goes here. -->
+![The board with two projects](docs/images/board.png)
 
-## Who does what
+## What you get
 
-| You | The agent |
-| --- | --- |
-| Install Gary once and run `gary setup` | Runs one master Claude session per machine, which starts a worker per project every hour |
-| Create your project profile with the `triage-setup` skill | Fetches the repo's state, reviews PRs, triages issues and discussions |
-| Open the board and read the briefings | Writes the briefings and suggested actions to the board |
-| Click the suggestions you agree with, or dismiss them | Carries out what you clicked: reviews, fixes, changes to PRs, replies by the bot |
-| Merge, approve and close on GitHub | Opens fix PRs for clear bugs and takes them through review rounds |
-| Edit the rules as plain text | Proposes new rules from your decisions |
-| Pause and resume Gary | Runs every other `gary` command |
+**A plan for today.** Items are grouped by the attention they need, from "Quick & Easy" to "When you have time". An item with nothing to do is hidden until it changes on GitHub.
 
-The commands you run yourself are listed under [Commands you run](#commands-you-run). Every other `gary` command is for the agent. [docs/internals.md](docs/internals.md) describes them.
+**The next step, prepared.** Each item has a one-line verdict, a short story of the thread, and cards with suggested actions. A review comes with inline suggestions you can uncheck or edit.
 
-## Install
+![A PR with a prepared review](docs/images/item.png)
 
-As a Claude Code plugin, the repository is its own marketplace:
+**Your name stays yours.** A reply in your name is copied for you, and the thread opens on GitHub. You post it there. Merging, approving and closing are always yours.
+
+![An issue with a prepared reply](docs/images/reply.png)
+
+**An agent for the longer jobs.** One click starts a fix with a failing test as a draft PR, takes over a stalled PR, or addresses review comments.
+
+**Rules in plain text.** Gary proposes a rule when you keep correcting it the same way. You accept, edit or dismiss it.
+
+**One board for everything.** Several projects share one board, each in its own tab. A [contributions tab](docs/configuration.md#your-contributions-elsewhere) follows your threads in other people's repos.
+
+## Setup
+
+You need Node 24 or newer, the `gh` CLI with a login, and Claude Code.
 
 ```sh
-claude plugin marketplace add <git URL or path of this repository>
+claude plugin marketplace add AlCalzone/gary
 claude plugin install gary@gary
 gary setup
 ```
 
-From a plain clone:
+Then start a Claude session and ask it to set up Gary for your repo. It reads your labels, CODEOWNERS, templates and recent replies, and drafts a profile for you to review. It also creates the hourly task that keeps the board fresh.
 
-```sh
-git clone <git URL> ~/repositories/gary
-cd ~/repositories/gary && npm install
-bin/gary setup --register-mcp
-```
+Open the board at `http://gary.localhost:7878/`.
 
-`gary setup` asks in the terminal for your GitHub login, the first repo, its local checkout and the account setup. It creates the home directory, by default `~/.config/gary/`, with a shared, empty `personal.md`, and one instance in `instances/<name>/` with `config.json` and `state/`. It never overwrites an existing `config.json` without `--force` and never touches an existing `personal.md`. From a clone it also links the skills into `~/.claude/skills` and the `gary` command into `~/.local/bin`, and registers the MCP server with `--register-mcp`.
+[docs/setup.md](docs/setup.md) covers the install from a clone, the three account setups and the commands you run.
 
-### Accounts
+## Configuration
 
-Pick one of three setups:
+Gary keeps project facts, project rules and your personal style apart:
 
-- **With a bot account**: replies, reviews, labels and pushes that you approve go out as the bot. `setup` asks for its login and a file with its token. This is the setup with the most one-click actions.
-- **Without a bot**: Gary prepares texts, and you post them yourself on GitHub. Actions without a text, like a transfer, a label or inline review comments, are not offered. Agents push nothing.
-- **Without a bot, own token allowed** (`allowOwnTokenPushes`): like the first setup, but everything runs under your own `gh` login.
+- **Profile**: one directory per project with `profile.json`, `rules/*.md` and `templates/*.md`. A team can share it.
+- **Home**: `~/.config/gary/` with your `personal.md` and one `config.json` per project.
+- **Core**: this repository. It names no repo, account or machine.
 
-### Create the profile
-
-Start a Claude session and ask it to set up Gary. The `triage-setup` skill reads your repo, read-only: labels, CODEOWNERS, the contributing guide, issue templates, workflows and your recent replies. It drafts the profile for you to review:
-
-- `profile.json`: the repo, maintainers, bot logins, related repos, sensitive paths, labels Gary may set on its own, bot commands.
-- `rules/*.md`: how items are classified, how you write, how PRs and issues are reviewed in this project.
-- `templates/*.md`: canned texts, like a request for logs.
-
-It asks only what it cannot read: your login, whether a bot posts for you, your writing preferences for `personal.md`. Then it runs `gary doctor` and creates the one hourly scheduled task for the machine, if it does not exist yet. It never writes to GitHub.
-
-## Daily use
-
-Open the board at `http://gary.localhost:<port>/` or `http://127.0.0.1:<port>/`, with the port from `~/.config/gary/config.json`. One board serves all your projects: the tab "All" combines them, and each project has its own tab. In "All", items show their full ref, like `acme/widgets#412`. Items are grouped by how much attention they need, from "Quick & Easy" to "When you have time". An item with nothing to do right now is not shown. It comes back when it changes on GitHub. An issue or discussion with a fix in progress leaves the groups too: the fix PR carries the work, and the line "Has a fix in progress" below the groups lists such items until the PR is merged or closed, or the reporter writes again.
-
-Each item has a short verdict, a story of what happened so far, and cards with suggested actions. One card is recommended. A card shows who acts after your click:
-
-- **You**: replies to people, every close and every merge. The board copies the text and opens the thread on GitHub. You post or merge there yourself.
-- **The bot**: reviews with inline comments, requests for logs, labels, transfers. They are sent after your click. Anything that posts text asks for a second confirm first.
-- **The agent**: work that takes a session, like taking over a contributor's PR, changing a PR we already control, addressing review comments, or writing a fix with a test as a PR. The request starts within seconds.
-
-A card whose action is done collapses and shows its confirmation in its header row, like "Done · view on GitHub" or "Copied and opened on GitHub, 21:42". An item you handled leaves the plan when you close it and waits in the line "Handled, waiting for the next run".
-
-After the agent pushed to a PR, the item offers the decision: merge, a review with what is left, or another pass by the agent. While the agent is changing a PR, the cards that decide it are hidden.
-
-Gary's reviews never list formatting problems. When the project's formatter or lint autofix would change a PR, the item shows a badge and a "Format" card that commits exactly those fixes to the PR, without taking it over.
-
-**One review can go out without your click, and it is off by default.** With `"autoReview": { "enabled": true }` in the instance's `config.json`, a PR by an outside contributor that only touches the paths your profile names in `autoReviewPaths` gets one review from the bot before you first look at it. It holds only findings the agent is certain about and can show with a concrete case, as a change request, and ends with "A maintainer will review this PR after these are addressed." Questions, taste and everything uncertain stay on your own card. When the formatter would change the PR, the review offers once to push that as one commit, and does it when the PR's author answers with a thumbs-up or a yes. The PR then waits in the line "Reviewed automatically, waiting" below the groups and returns to your plan when the contributor pushes, replies or re-requests a review. Its card shows what was asked and what changed since. `gary doctor` shows the setting.
-
-A reply that asks the reporter for something has a second button that also sets the project's "waiting" label, and the label is set by the next run when you post without it.
-
-On review cards you can uncheck inline comments, edit their text and switch each open review thread between Fix and Dismiss. A suggested code change stays as the agent wrote it. Only comments the agent judged valid start on Fix. A review with a finding goes out as "Request changes", a clean PR gets an approval, and a switch on the card lets you pick another type before sending.
-
-The card that starts a fix has a switch "Ask the reporter to test", off by default. Without it, a fix PR mentions nobody and asks nobody to confirm.
-
-When a suggestion is wrong, dismiss its card and say why. The agent never offers that kind of action on the item again and takes your reason into account. "Analyze again" sends the item back to the agent, optionally with a note.
-
-**Focus** works on one item 1 on 1 with an agent. The button sits in the footer of every item. The master session looks for a session that already works on the item, like the one that has its PR branch checked out, or starts a new one in a new worktree. In T3 Code that is a T3 thread. The new session reads Gary's analysis, posts a short summary and waits for you. It follows Gary's rules: it acts as the bot, drafts text in your name for you to post, never merges, and posts under your account only when you tell it to. Meanwhile Gary holds the item: no worker, review round or push touches it, and the hourly run only refreshes its facts. The item stays in your plan with the chip "In focus" and a link to the session. When you tell the session you are done, it sends Gary a summary, and Gary analyzes the item again with that summary. A session that has been quiet for 30 minutes shows as "Focus paused", with "Resume" and "End focus". Gary still touches nothing until you click one of them or archive the session.
-
-Items Gary could not analyze show one card that opens the thread on GitHub, so you decide yourself. That happens when the model's safety filter stopped the agent or the analysis failed three times. "Analyze again" retries.
-
-Gary learns from your decisions. When you often dismiss the same kind of card, pick the alternative, or rewrite drafts the same way, it proposes a small rule. Proposals appear on the board behind the lightbulb in the header. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`. Gary can also suggest a setting, like using the faster model for obvious items. That card shows what Gary measured, and one click changes the setting in the instance's `config.json`. Once a week Gary also checks its rules for ones that repeat, conflict or name things that no longer exist, and proposes a change as a before and after. "Check rules" in the suggestions dialog, or `gary reconcile`, runs that check sooner.
-
-## Commands you run
-
-Run these in any terminal. `gary` reads its settings from `~/.config/gary/`. You never run them inside the triage session. That session calls `gary` on its own and shares the same settings and state.
-
-With one project, the current folder does not matter. With several, `gary` picks the instance from where you run it: inside a project's checkout or one of its worktrees, `gary pause` pauses that project. Elsewhere, name it with `--instance <name>`, or use `--all` with `pause`, `resume` and `doctor`. When `gary` cannot tell which instance you mean, it lists them and does nothing. Commands that change something print the instance they acted on.
-
-From a clone, `gary setup` links the command into `~/.local/bin`, which must be on your `PATH`. A plugin install puts `gary` on the `PATH` inside Claude Code sessions only. There you run a command by typing `! gary pause` in a session, or you ask Claude to run it.
-
-- `gary setup`: install or reconfigure Gary on this machine. `gary setup --instance <name>` adds a project. `gary setup --kind contributions` adds the instance for your threads in other repos.
-- `gary instances`: list the projects on this machine.
-- `gary doctor`: check the installation without changing anything: Node, `gh` and its login, the bot token, the profile, the checkout, the port, the skill links, the pause switch, the models, and whether the automatic review is on.
-- `gary models`: print which model runs the master, the workers, the reviews and the classification.
-- `gary pause`: stop every write to GitHub at once. The board stays up, nothing needs a restart.
-- `gary resume`: end the pause.
-- `gary decisions --since <date>`: show the log of your decisions that Gary learns from.
-- `gary proposals`: list the proposals and their status.
-- `gary reconcile`: ask Gary to check its rules now.
-- `gary validate`: check the stored items against the rules, read-only.
-- `gary auto-review list`: show the reviews Gary posted without a click, and which PRs still wait for their contributor.
-- `gary focus list`: show the items in focus with their sessions. `gary focus end <itemId>` ends a focus like the board's "End focus".
-
-While paused, every click that would post, review, label or transfer is refused with "Gary is paused. Nothing was sent." Agent requests still queue and start after `gary resume`. Snoozing, dismissing a suggestion and deciding proposals keep working. The board header shows the pause.
-
-## Several projects
-
-One machine can run Gary for several repos. Each repo gets its own instance with its own settings, pause switch and decision log, and its own tab on the one board. Ask Claude to set up Gary for the next repo, and the `triage-setup` skill creates a new instance next to the existing ones. The board picks it up without a restart, and the next hourly run includes it. Your shared `personal.md` applies to all instances. Each instance can add its own `personal.md` on top. Instances of the same project on different machines can share one profile.
-
-## Your contributions elsewhere
-
-A contributions instance follows your own threads in repos outside your maintainer instances: your open PRs, your issues and discussions, the PRs that wait for your review, and the threads you commented on, reviewed or were mentioned in. It is its own tab on the board, and every row names its repo, like `other/lib#5`. Next to Act, Unblock, Land and Decide it has a fifth category, FYI: something new and relevant happened since you last looked, like a maintainer's decision, a release with your fix or your PR merged by someone else, and there is nothing to do. "Got it" hides such an item until there is news again. Noise like "+1" comments, bot posts, label changes and CI reruns never shows up.
-
-Gary writes nothing to GitHub for this instance. A reply card copies the text and opens the thread, and you post it yourself. There is no profile, bot or checkout to set up:
-
-```sh
-gary setup --kind contributions --exclude "your-name/*"
-gary --instance contributions doctor
-```
-
-`include` and `exclude` in its `config.json` take `owner/name` or `owner/*`. `maxItems` (default 150) caps one snapshot, and the snapshot says when the cap cuts.
-
-One master Claude session runs everything, started every hour by one scheduled task. It starts the board server, starts one worker per instance for the triage, and watches the queue of all instances to start a worker for each request you click. A worker is a child session where the harness supports it, otherwise a headless `claude -p` run, otherwise the master does the job itself.
-
-Which model does what is the `models` setting. By default the master and the workers run on Sonnet, and every review, fix and push runs on Opus. The quick classification runs on Sonnet, and on Haiku for obvious items when `fastTier` is on. Set other models in `~/.config/gary/config.json` for the machine, or in an instance's `config.json` for one project:
-
-```json
-{ "models": { "master": "sonnet", "worker": "sonnet", "review": "opus", "standard": "sonnet", "fast": "haiku" } }
-```
-
-`gary models` prints what applies. Gary starts workers and subagents on these models itself. The master session is the one exception: its model is set on the scheduled task or its thread, and the `triage-setup` skill does that or tells you where. Workers report only by writing files into their instance's state, so nothing depends on messages between sessions.
-
-`gary serve` starts the board server without a Claude session. `gary migrate` moves an installation from the older one-board-per-instance layout to this one.
-
-## Adapting Gary
-
-Gary has three layers. Each kind of change has one place:
-
-- **Core**: this repository. It holds no repo name, no account name and no path of one machine, so nobody edits it to adapt the tool. `profiles/template/` is the skeleton for a new profile.
-- **Profile**: one directory per project, named by `profile` in `config.json`. It can live in its own repo or inside your project, so a team can share it. Project facts go into `profile.json`, project rules into `rules/classification.md`, `rules/voice.md`, `rules/review.md` and `rules/issues.md`, canned texts into `templates/`.
-- **Home**: `~/.config/gary/` or `$GARY_HOME`. `personal.md` holds your own rules and writing style for all projects. `config.json` holds the board's port. Each instance lives in `instances/<name>/` with its `config.json`, an optional `personal.md` for that project, and `state/` with the board's data.
-
-Quick classification of obvious items, like a green dependency update or an item waiting on its reporter, can run on a smaller, faster model. `fastTier` in the instance's `config.json` controls it: `off` by default, `shadow` to let it run next to the standard model without effect, `on` to use it. In shadow mode Gary compares both and suggests switching to `on` once they agree on at least 95 percent of 40 or more comparisons. In `on` mode it keeps checking a sample against the standard model and against your own decisions, and suggests going back to `shadow` when the fast model does worse. Both suggestions are cards on the board, and your click changes the setting. `gary shadow report --week` shows the numbers.
-
-The agents read a rule in this order: the core, then the profile file of the same topic, then the shared `personal.md`, then the instance's `personal.md`. A later file wins. The safety limits below cannot be changed by a profile or by `personal.md`.
+[docs/configuration.md](docs/configuration.md) lists every setting.
 
 ## Safety
 
-- **What reaches GitHub**: only what you clicked, plus labels from the profile's `autoLabels` and assignments that record a fact, like a draft fix PR that exists. The routine also opens draft fix PRs on new branches without a click, up to `maxAutoFixesPerRun` per run (`0` turns this off), using the agent's own approach unless the card says otherwise. A fix you start with instructions follows your instructions exactly, and your click always wins over an autonomous attempt on the same item. While a fix is in progress, in draft or open as a PR, the item says so plainly and offers no way to start another fix. At most `maxPendingAutoFixes` (default 10) of these automatic fixes are pending at a time. A fix PR you merged or closed frees a slot, and fixes you started yourself do not count. On Gary's own fix PRs, and only there, three more things happen without a click: Gary requests a Copilot review, pushes the fixes for its comments to the fix branch for up to 3 rounds, and marks the PR ready for review. `fixReview` in the instance's `config.json` sets the reviewer (`copilot` or `off`), the account that requests it (`me` or `bot`), the number of rounds and whether the PR is marked ready. After the rounds the fix PR shows up as its own card for your review, within seconds. When you turn a discussion with such a PR into an issue, the bot adds one line `fixes #<issue>` to the PR's description. Merging the PR then closes the issue. This needs a bot and `escalateResult` in the project's profile. Merging, approving and closing stay yours. Nothing else happens without a click.
-- **Under which account**: with a bot, everything Gary writes goes out as the bot. Without one, you post yourself, or Gary uses your own login when you allowed it. Requesting a Copilot review runs under your own login, unless `fixReview.requestAs` is `bot`. With `"escalateAs": "me"` in the instance's `config.json`, the button that turns a discussion into an issue posts the project's escalate command under your own login, after your click and a confirm. It is off by default, and the board then copies the command for you.
-- **The one review without a click**: with `autoReview.enabled` set to true, and only then, one review reaches a contributor without your click. `gary auto-review post` is the only path, and its code refuses everything outside these rules: the PR is by an outside contributor, is no draft, is not AI-written, touches only the profile's `autoReviewPaths` and none of its `sensitivePaths`, you or another maintainer never commented or reviewed on it, and it has no automatic review yet. Every finding in it is marked certain and names its concrete case, and the review never approves. A second one needs the PR's author to press "Re-request review", and never happens after you joined the thread. `maxPerRun` limits how many go out per run. The format commit after an accepted offer is the existing "Format" job: tools and configuration from the base branch, never code from the PR.
-- **Never without a click**: comments, approvals, merges, closes, every other review, and every push to a branch that is not Gary's own fix branch, apart from the format commit a contributor accepted. The escalate command is posted only by your click on its button. No agent can post it.
-- **Sensitive files**: no agent works in a checkout of a PR that changes a path in the profile's `sensitivePaths`, like workflows or agent instruction files. The PR's dialog says so and names the files. The one push such a PR can get is a small text edit outside those files, like a wrong link in a doc. The card shows it as a diff, and after your click and a confirm the server commits exactly that through the GitHub API, without checking out the branch. One kind of PR is exempt: a PR on a branch of your repo that only you and the bot have committed to, like a fix Gary wrote itself. Nobody outside wrote anything on it. Agents may push to it like to any PR of yours. Gary checks the commits for that, again right before each push. The dialog still names the files, because you should read such changes with care before you merge. Merges and closes are always done by you on GitHub, also after the agent took over a PR.
-- **Untrusted content**: issue texts, PR diffs and attached files are treated as data. Instructions inside them are never followed, and agents never run code from a PR branch.
-- **Stale clicks**: before sending, the server checks that nobody commented and nobody pushed since the review. Otherwise it asks you to confirm again.
-- **Dry run**: `node server/server.mjs --dry-run` starts the board without writing anything to GitHub.
-- **Pause**: `gary pause` stops all writes at once. A paused run still triages and records in its run directory what it would have labeled, fixed or reviewed automatically.
+- Only what you clicked reaches GitHub. The few exceptions are opt-in or limited to Gary's own fix PRs.
+- With a bot account, everything Gary writes goes out as the bot.
+- Issue texts, diffs and attachments are data. Agents never follow instructions in them and never run code from a PR branch.
+- `gary pause` stops every write at once.
+
+[docs/safety.md](docs/safety.md) has the full list.
 
 ## More
 
-- [docs/internals.md](docs/internals.md): the commands the agents run, the board server and its endpoints, the MCP server, the state layout, the tests. For people changing Gary itself and for the agents' skills.
-- `SPEC.md`: the contract between the skills, the scripts and the board.
+- [docs/board.md](docs/board.md): working with the board day to day.
+- [docs/internals.md](docs/internals.md): commands, server, state and tests, for people changing Gary.
+- [SPEC.md](SPEC.md): the contract between the skills, the scripts and the board.

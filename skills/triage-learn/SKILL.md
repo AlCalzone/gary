@@ -81,12 +81,12 @@ One proposal holds one small, concrete rule, in his words where possible. Exampl
   "id": "learn-2026-11-19-debug-package",
   "createdAt": "2026-11-19T07:00:00Z",
   "title": "Ask for the UI debug package in log requests",
-  "why": "He edited 3 log requests on different items this week and each time added the sentence about the Z-Wave JS UI debug package.",
+  "why": "He edited 3 log requests on different items this week and each time added the sentence about the debug package.",
   "evidence": [ { "at": "…", "itemId": "disc-…", "type": "edited_text", "gist": "added the debug package sentence to request_logs" } ],
   "target": "profile",
   "file": "templates/request-logs.md",
   "heading": "",
-  "text": "In Z-Wave JS UI, you can also create a debug package that contains the log and the device info.",
+  "text": "In the desktop app, you can also create a debug package that contains the log and the device info.",
   "status": "open"
 }
 ```

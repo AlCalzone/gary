@@ -109,7 +109,7 @@ The route for PRs we would fix ourselves follows "Who may push to a PR" in `item
 - An issue or feature request that only needs the maintainer's yes or no, like "accept this API?". Put the open question in `state`. Effort 5 or more.
 - An issue or discussion by the bot or an agent that describes doable work: one `Implement:` card (`item-doc.md`, "Delegate to an agent"). When the work is small and clear and needs no design decision, his part is one click: effort 1 or 2, so it sits in "Quick & Easy". When it is large or needs a design decision, `state` names the open decision, like `Needs a decision whether the retry lives in the driver or in the app.`, and the effort is his time to decide. Both tiers decide it the same way.
 - Feature requests and enhancements that need design work or a large effort. The profile may name labels for that.
-- We wait on the reporter: `facts.waitingOn` is `them`, because our last message asked them for something, or asked them to try something and report back, like upgrading, re-interviewing or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`), and the category is `land`.
+- We wait on the reporter: `facts.waitingOn` is `them`, because our last message asked them for something, or asked them to try something and report back, like upgrading, clearing a cache or testing a build. No routes, so the item stays off the board until it changes on GitHub or our request is older than `activeMaxWaitDays`. Then the recommended route is `close` with reason `not_planned` (`item-doc.md`), and the category is `land`.
 - Changes requested, and no new commits since that review. No routes.
 - The maintainer's own PR that his own account has not finished: merge conflicts, failing CI his change caused, or a stacked PR waiting on its base. No routes.
 
@@ -212,7 +212,7 @@ Write these into the item's `wants` with a `wantsReason` (`item-doc.md`). The ro
 
 A label that marks "we asked for info" becomes true only after the request is on GitHub, which takes a click. Never add it before. The reply route that makes the request carries the same label in `params.alsoLabel` (`item-doc.md`), so one click can post and label. `wants` stays the fallback for a reply he posted without that button: it holds the label only once the request is visible on the timeline. `wants` and `alsoLabel` never point in opposite directions: a label one adds, the other never removes. "Waiting on the reporter" also covers a message that asked them to try something and report back.
 
-The `reason` of every autonomous action describes the last exchange on the timeline correctly: who asked what, who answered, what is open now. Example: `The maintainer asked for a re-interview log. The reporter sent it in a reply. The maintainer then asked them to upgrade and report back, which is open.`
+The `reason` of every autonomous action describes the last exchange on the timeline correctly: who asked what, who answered, what is open now. Example: `The maintainer asked for a debug log. The reporter sent it in a reply. The maintainer then asked them to upgrade and report back, which is open.`
 
 ## Bot commands
 

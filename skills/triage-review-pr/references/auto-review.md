@@ -8,10 +8,10 @@ Write `<scratch>/auto-review.json` only when the brief says the PR may get one:
 {
   "summary": "The value range of parameter 3 does not match the manual.",
   "findings": [
-    { "severity": "major", "text": "Parameter 3 allows 0 to 255, but the manual lists 0 to 99.", "ref": "config/devices/acme/w1.json:12", "certain": true, "evidence": "The value 200 passes the range check and the device rejects it." }
+    { "severity": "major", "text": "Parameter 3 allows 0 to 255, but the manual lists 0 to 99.", "ref": "data/devices/w1.json:12", "certain": true, "evidence": "The value 200 passes the range check and the device rejects it." }
   ],
   "comments": [
-    { "path": "config/devices/acme/w1.json", "line": 12, "text": "The manual lists 0 to 99.", "original": "\t\t\"maxValue\": 255,", "suggestion": "\t\t\"maxValue\": 99,", "finding": 0 }
+    { "path": "data/devices/w1.json", "line": 12, "text": "The manual lists 0 to 99.", "original": "\t\t\"maxValue\": 255,", "suggestion": "\t\t\"maxValue\": 99,", "finding": 0 }
   ]
 }
 ```

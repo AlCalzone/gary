@@ -564,7 +564,7 @@ export function checkProfile(data) {
 	checkEscalateResult(data.escalateResult, errors);
 	const paths = data.autoReviewPaths;
 	if (paths !== undefined) {
-		if (!paths || typeof paths !== "object" || Array.isArray(paths)) errors.push(`"autoReviewPaths" must map a kind to a list of globs, like { "config": ["config/devices/**"] }`);
+		if (!paths || typeof paths !== "object" || Array.isArray(paths)) errors.push(`"autoReviewPaths" must map a kind to a list of globs, like { "config": ["data/devices/**"] }`);
 		else {
 			for (const [kind, globs] of Object.entries(paths)) {
 				if (!AUTO_REVIEW_KINDS.includes(kind)) unknown.push(`unknown field "autoReviewPaths.${kind}"`);

@@ -1,6 +1,8 @@
 # Gary internals
 
-This page is for people changing Gary itself and for the agents' skills. A maintainer who only uses Gary needs the [README](../README.md). `SPEC.md` is the contract. When this page and the spec disagree, the spec wins.
+This page is for people changing Gary itself and for the agents' skills. To use Gary, read [setup.md](setup.md), [board.md](board.md), [configuration.md](configuration.md) and [safety.md](safety.md).
+
+`SPEC.md` is the contract. When this page and the spec disagree, the spec wins.
 
 ## How the pieces connect
 
@@ -55,7 +57,7 @@ The contract is the SPEC section "One server, one master".
 - **The fallback** after a safety-filter stop is the `standard` model. `modelsOf` returns it as `fallback: { model, relation }`. `relation` is `smaller` only for a known order (`haiku`, `sonnet`, `opus`), and the finding's text follows it. With the same model in both roles `fallback` is `null` and the worker blocks the item without a retry.
 - **`gary watch-queue --all`** prints one line per queued agent request of any instance that is not paused: `{ "instance", "id", "itemId", "action" }`.
 - **`gary paths --root`** prints `core` and `root` from any directory. `gary instances --json` returns `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served` and `current`. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`.
-- **Kinds**: an instance has a `kind`, today only `maintainer`. Rules that differ by kind live in files named for it, like `skills/triage-routine/references/classification.maintainer.md`. Each instance has a list of allowed repos. For `maintainer` it is the profile's one `repo`, and an action on an item of another repo is refused.
+- **Kinds**: an instance has a `kind`, `maintainer` or `contributions`. Rules that differ by kind live in files named for it, like `skills/triage-routine/references/classification.maintainer.md`. Each instance has a list of allowed repos. For `maintainer` it is the profile's one `repo`, and an action on an item of another repo is refused.
 - **Item identity**: every item doc carries `repo` (`owner/name`) next to `kind` and `number`. Ids are opaque (`^[a-z0-9][a-z0-9._-]{0,99}$`), and no code derives anything from one. Outside one instance an item is `{ instance, id }`. The server adds `instance` and `ref` (`owner/name#number`) to every item it serves. Decision log entries carry `instance`, `instanceKind` and `repo`.
 - **API**: every endpoint names the instance. `GET /api/state` returns `board.instances[]` with each instance's title, kind, repos, bot, account mode, pause switch, related repos, bot commands and review bots, and items and proposals of all instances, each with `instance`. Clicks, decisions and board actions send `instance` in the body. Every SSE event names its instance.
 - **Board page**: a combined tab "All" first, then one tab per instance. In "All", items show `owner/name#number`. Links, avatars, bot names and commands come from the item's own instance. Browser storage keys are `gary:<instance>:…`.
@@ -127,7 +129,21 @@ It sends the write through the board server, so it queues behind clicks on the s
 
 ### gary watch-queue
 
-`gary watch-queue` prints one line like `{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}` for every queued, unclaimed action, first the existing ones oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued. For every drive that waits for its review bot it reads the PR once a minute and prints one more line with `"event": "review-arrived"`, or `"review-timeout"` after 30 minutes, so the next round starts without the hourly run. For every watched PR, the bot's open PRs and the taken-over PRs, it reads the PR every 3 minutes and once at its start, and prints a line with `"event": "maintainer-feedback"` when the maintainer reviewed or commented after our last push and no round handled it yet. A bot PR whose origin session was active in the last 30 minutes gets no line. Feedback that `gary pr-watch round` refused for that session, recorded as `held` in the drive file, prints once more after the session has been quiet for 30 minutes. A reconcile pass the maintainer asked for prints `{"instance":"widgets","id":"reconcile","itemId":null,"action":"reconcile","at":"…"}` once per request, until a pass ran. While a focus holds an item, nothing of it prints except focus requests, and everything held back prints once the focus ended. Each focus record is read once a minute: after 30 quiet minutes, and every 30 minutes while it is paused, it prints `{"instance":"widgets","id":"focus-pr-412","itemId":"pr-412","action":"focus","event":"check","harness":"t3code","session":"…","status":"active"}`, so the master looks at the session and runs `gary focus check`.
+`gary watch-queue` prints one line per queued, unclaimed action:
+
+```json
+{"id":"pr-412-1763400000000","itemId":"pr-412","action":"address_review"}
+```
+
+It prints the existing ones first, oldest first, then each new one as it is written. The master session runs it under Monitor. `--once` prints the current queue and exits. While Gary is paused it prints nothing, and requests stay queued.
+
+It also prints lines for things it polls:
+
+- **Waiting drives**: for every drive that waits for its review bot, it reads the PR once a minute. It prints a line with `"event": "review-arrived"`, or `"review-timeout"` after 30 minutes. The next round then starts without the hourly run.
+- **Watched PRs**: for the bot's open PRs and the taken-over PRs, it reads the PR every 3 minutes and once at its start. It prints `"event": "maintainer-feedback"` when the maintainer reviewed or commented after our last push and no round handled it yet.
+- **Busy origin sessions**: a bot PR whose origin session was active in the last 30 minutes gets no line. Feedback that `gary pr-watch round` refused for that session is recorded as `held` in the drive file. It prints once more after the session has been quiet for 30 minutes.
+- **Reconcile**: a pass the maintainer asked for prints `{"instance":"widgets","id":"reconcile","itemId":null,"action":"reconcile","at":"…"}` once per request, until a pass ran.
+- **Focus**: while a focus holds an item, nothing of it prints except focus requests. Everything held back prints once the focus ended. Each focus record is read once a minute. After 30 quiet minutes, and every 30 minutes while it is paused, it prints a line with `"action":"focus","event":"check"`, the `harness`, the `session` and the `status`. The master then looks at the session and runs `gary focus check`.
 
 ### gary api-edit
 
@@ -210,9 +226,9 @@ Edits reach open pages without a manual reload. When `board/board.html` changes,
 The server can write to GitHub, so it locks itself down:
 
 - On the first start it writes a random token to `<root>/state/server-token` with mode 600. The page gets the token inline. Every `/api` request must send it, except `GET /api/health`.
-- It rejects any `Origin` other than its own and any `Host` other than `127.0.0.1:<port>` or `localhost:<port>`.
+- It rejects any `Origin` other than its own and any `Host` other than `127.0.0.1:<port>`, `localhost:<port>` or `gary.localhost:<port>`.
 - It accepts only JSON bodies up to 256 KB and sends no CORS headers. It serves nothing besides the board page.
-- The page runs under a strict Content-Security-Policy. Images may come only from GitHub, for the avatars.
+- The page runs under a strict Content-Security-Policy. Images may come only from the server itself and from GitHub, for the avatars.
 - GitHub actions run one at a time per item, so a double click cannot run twice. Writes run one at a time per file.
 
 ## What a click can run
