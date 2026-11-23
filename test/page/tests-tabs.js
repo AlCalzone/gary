@@ -12,6 +12,18 @@
   const allRows = () => [...document.querySelectorAll("#board .row")];
   ok("two instances: All first, then one tab per instance title, no counts", !tabsBar.hidden && tabBtns().map((b) => b.textContent).join() === "All,widgets,contoso-gadgets" && tabBtns()[0].getAttribute("aria-selected") === "true");
   ok("the header names the board, not one project", document.getElementById("board-title").textContent === "Gary");
+  // A tab's icon, color and page tint come from the instance's config
+  window.__board.instances[1].tab = { icon: "zap", color: "blue", background: true };
+  applyBoardInfo(window.__board); await wait(5);
+  ok("tab style: the tab shows its icon and color, the label stays", !!tabBtns()[2].querySelector("svg") && tabBtns()[2].style.getPropertyValue("--tab-ink") === "var(--cat-unblock-ink)" && tabBtns()[2].textContent === "contoso-gadgets" && !tabBtns()[1].querySelector("svg"));
+  ok("tab style: the tab across all projects has no page tint", !("tint" in document.documentElement.dataset));
+  tabBtns()[2].click(); await wait(5);
+  ok("tab style: the project's own tab tints the page", "tint" in document.documentElement.dataset && document.documentElement.style.getPropertyValue("--page-tint") === "var(--cat-unblock-ink)");
+  tabBtns()[1].click(); await wait(5);
+  ok("tab style: another project's tab drops the tint", !("tint" in document.documentElement.dataset));
+  tabBtns()[0].click(); await wait(5);
+  delete window.__board.instances[1].tab;
+  applyBoardInfo(window.__board); await wait(5);
   ok("combined: both projects' #12 are on the board with their full refs", rowsIn("quick").concat(rowsIn("after"), rowsIn("later")).some((r) => r.querySelector(".r-ref")?.textContent === "acme/widgets#12")
     || allRows().some((r) => r.querySelector(".r-ref")?.textContent === "acme/widgets#12"));
   for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();

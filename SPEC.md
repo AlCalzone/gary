@@ -1332,6 +1332,7 @@ Round one is read-only. Gary writes nothing to GitHub for this kind: no bot, no 
   "kind": "contributions",
   "me": "octocat",                 // his GitHub login. The searches run as his stored gh login
   "title": "Contributions",        // the tab title, at most 60 characters
+  "tab": { "icon": "user", "color": "rose", "background": true },   // optional, how the tab looks, see "Tab style"
   "include": [],                   // only these repos when not empty: "owner/name" or "owner/*", at most 200
   "exclude": [],                   // never these repos, same form
   "activeWindowDays": 30,          // threads he took part in count with activity in this window
@@ -1392,6 +1393,15 @@ An `fyi` item carries `newsAt`, the newest relevant event its `state` reports, a
 The dialog of an `fyi` item has one "Got it" button. It sends `{ instance, action: "got_it", itemId }` to `/api/action`. The server refuses it for an item that is not `fyi` or whose repo is not allowed. Otherwise it sets `gotIt: { at }` on the item, a maintainer field that `gary put` keeps, and writes a done action doc with `action: "got_it"` and `via: "board"`, which "Since your last choice" names "Got it". The board hides an `fyi` item while `gotIt.at` is not older than its `newsAt`. The next snapshot counts `gotIt.at` as his last look, so only later news reach the classification. When it finds relevant news, the routine writes a newer `newsAt` and the item is back.
 
 ### Server
+
+### Tab style
+
+Every instance config, of both kinds, takes an optional `tab: { icon, color, background }`. The board shows the icon in front of the tab's title and draws the icon and the selected tab's underline in the color. With `background: true` the page background takes a light tint of that color while the board shows only this instance. The tab across all instances has no tint. `background` needs `color`.
+
+- `icon`: one of `zap`, `home`, `star`, `globe`, `heart`, `user`, `shield`, `bot`, `sparkles`, `wrench`, `lightbulb`, `plug`, `eye`, `pr`, `issue`, `discussion`, `commit`, `comments`.
+- `color`: one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`. These are the category colors, so both themes define them.
+
+The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg`. With several instances the logo replaces the heading "Gary", which stays for screen readers.
 
 `board.instances[]` carries `kind: "contributions"`, `readOnly: true` and `repoUrl: null`. `/api/action` takes only `got_it`, `reanalyze` with answers, `dismiss_route`, `accept_proposal` and `dismiss_proposal` for this kind. Every route click, every second button, `focus`, `end_focus` and `request_reconcile` answer `{ ok: false, result: "This is a contributions instance. Gary writes nothing to GitHub for it: post the text on GitHub yourself.", readOnly: true }`. A page write of a queued agent request other than `reanalyze` answers 409. The prefill report to `/api/decision` and `/api/refresh` work as for every instance, with the repo check above. `gary action` refuses every action for this kind, and the `gh` wrapper refuses every write while such an instance is in scope, so no code path can reach GitHub.
 

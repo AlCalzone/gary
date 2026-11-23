@@ -31,6 +31,10 @@ check("maintainer fields are errors in a contributions config", ["profile", "che
 check("include and exclude take owner/name or owner/*", problems.some((p) => p.startsWith('"include" must')) && problems.some((p) => p.startsWith('"exclude" must')));
 check("maxItems has a range, title a length", problems.some((p) => p.startsWith('"maxItems" must be a whole number from 10 to 500')) && problems.some((p) => p.startsWith('"title" must')));
 check("an unknown field is named", problems.includes('unknown field "typo"'));
+check("a tab takes an icon, a color and a background, in both kinds", validateConfig({ kind: "contributions", me: "octocat", tab: { icon: "user", color: "rose", background: true } }).length === 0 && validateConfig({ profile: "p", me: "me", tab: { icon: "zap", color: "blue" } }).length === 0);
+const tabProblems = validateConfig({ kind: "contributions", me: "octocat", tab: { icon: "rocket", color: "#ff0000", background: "yes", size: 2 } });
+check("a tab refuses unknown icons, colors and fields", tabProblems.some((p) => p.startsWith('"tab.icon" must')) && tabProblems.some((p) => p.startsWith('"tab.color" must')) && tabProblems.some((p) => p.startsWith('"tab.background" must')) && tabProblems.includes('unknown field "tab.size"'), tabProblems);
+check("a background needs a color", validateConfig({ kind: "contributions", me: "octocat", tab: { background: true } }).some((p) => p.startsWith('"tab.background" needs')));
 check("a maintainer config still needs a profile", validateConfig({ kind: "maintainer", me: "octocat" }).some((p) => p.startsWith('"profile" must')));
 check("a maintainer config treats the contributions fields as unknown", validateConfig({ kind: "maintainer", me: "octocat", profile: "x", maxItems: 20 }).join() === 'unknown field "maxItems"');
 

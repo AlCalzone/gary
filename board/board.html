@@ -195,6 +195,10 @@ a:hover { text-decoration: underline; }
 /* Header */
 header { display: flex; flex-direction: column; gap: 14px; }
 .top { display: flex; align-items: center; gap: 14px; }
+.logo { flex: none; width: 84px; height: 56px; margin: -8px -4px -8px -10px; }
+.logo[hidden] { display: none; }
+/* The logo carries the name, so the heading stays for screen readers only */
+h1.by-logo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .dry { font-size: 11.5px; font-weight: 600; color: var(--warn); padding: 1px 7px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--warn); }
 .dry[hidden] { display: none; }
@@ -213,10 +217,17 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .tabs[hidden] { display: none; }
 .tab { padding: 6px 0 8px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: var(--muted); font: 500 14px/1.2 var(--font-body); cursor: pointer; }
 .tab:hover { color: var(--fg); }
-.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+.tab { display: inline-flex; align-items: center; gap: 6px; }
+.tab .i { width: 15px; height: 15px; color: var(--tab-ink, currentColor); }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--tab-ink, var(--fg)); font-weight: 600; }
+/* A project's own tint on the page background, from its config */
+html[data-tint] body { background: color-mix(in srgb, var(--page-tint) 7%, var(--bg)); }
 .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
-.combined .row { grid-template-columns: 16px 16px 0 4.9em minmax(0, 1fr) 7.5em 3.4em 3.6em; }
 .combined .r-num { display: none; }
+@media (min-width: 561px) {
+  .combined .row { grid-template-columns: 16px 16px 4.9em minmax(0, 1fr) 7.5em 3.4em 3.6em; grid-template-areas: "kind rev cat main author effort age"; }
+  .combined .r-meta { grid-column: 1 / 4; }
+}
 .row.moved { animation: moved 2.4s ease-out; }
 @keyframes moved { from { background: var(--accent-soft); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .row.moved { animation: none; background: var(--accent-soft); } }
@@ -1003,6 +1014,10 @@ textarea {
     padding: 12px 14px;
     gap: 0 8px;
   }
+  .combined .row {
+    grid-template-columns: 16px 16px 4.9em 18px minmax(0, 1fr) 3.4em 3.4em;
+    grid-template-areas: "kind rev cat author . effort age" ". . meta meta meta meta meta" "main main main main main main main";
+  }
   .row .r-main { grid-area: main; grid-row: 3; padding-top: 4px; }
   .r-meta { grid-area: meta; }
   .r-author .a-name { display: none; }
@@ -1029,6 +1044,7 @@ textarea {
 <div class="wrap">
   <header>
     <div class="top">
+      <img class="logo" id="logo" src="logo.svg" alt="" width="84" height="56" hidden>
       <h1 id="board-title">Gary</h1>
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
       <span class="paused-mark" id="paused" title="No GitHub writes. Run `gary resume` to turn them on." hidden>Paused</span>
@@ -1280,6 +1296,11 @@ const c = (cx, cy, r, extra) => ["circle", { cx, cy, r, ...extra }];
 
 // Stroke icons on a 24-unit grid, after Lucide (ISC license)
 const ICONS = {
+  zap: [p("M13 2 3 14h9l-1 8 10-12h-9l1-8z")],
+  home: [p("M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"), p("M9 22V12h6v10")],
+  star: [p("M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z")],
+  globe: [c(12, 12, 10), p("M2 12h20"), p("M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z")],
+  heart: [p("M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z")],
   pr: [c(18, 18, 3), c(6, 6, 3), p("M13 6h3a2 2 0 0 1 2 2v7"), p("M6 9v12")],
   issue: [c(12, 12, 9), c(12, 12, 1.5)],
   discussion: [p("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z")],
@@ -3833,19 +3854,48 @@ function setTab(name) {
 }
 
 function renderTabs() {
+  renderTint();
   const bar = document.getElementById("tabs");
   bar.hidden = !multiInstance();
   if (bar.hidden) {
     bar.replaceChildren();
     return;
   }
-  const tabs = [["all", "All"], ...boardInfo.instances.map((x) => [x.name, x.title])];
-  const buttons = tabs.map(([name, label]) => h("button", {
-    type: "button", role: "tab", class: "tab", "data-tab": name, text: label,
+  const tabs = [["all", "All", null], ...boardInfo.instances.map((x) => [x.name, x.title, tabStyle(x)])];
+  const buttons = tabs.map(([name, label, style]) => h("button", {
+    type: "button", role: "tab", class: "tab", "data-tab": name,
+    style: style && style.ink ? "--tab-ink: " + style.ink : null,
     "aria-selected": state.tab === name ? "true" : "false", tabindex: state.tab === name ? "0" : "-1",
     onclick: () => setTab(name),
-  }));
+  }, style && style.icon ? icon(style.icon) : null, label));
   bar.replaceChildren(...buttons);
+}
+
+// The colors a tab may name in the instance config, as the category inks that both themes define
+const TAB_INKS = { orange: "act", blue: "unblock", green: "land", purple: "decide", rose: "fyi", gray: "snoozed" };
+const TAB_ICONS = new Set(["zap", "home", "star", "globe", "heart", "user", "shield", "bot", "sparkles", "wrench", "lightbulb", "plug", "eye", "pr", "issue", "discussion", "commit", "comments"]);
+
+function tabStyle(inst) {
+  const t = inst && inst.tab && typeof inst.tab === "object" ? inst.tab : {};
+  return {
+    icon: TAB_ICONS.has(str(t.icon)) ? str(t.icon) : "",
+    ink: Object.hasOwn(TAB_INKS, str(t.color)) ? "var(--cat-" + TAB_INKS[str(t.color)] + "-ink)" : "",
+    background: t.background === true,
+  };
+}
+
+// The page takes the tint of the one project it shows. The tab across all projects has none
+function renderTint() {
+  const name = multiInstance() ? state.tab : boardInfo.instances[0] && boardInfo.instances[0].name;
+  const s = tabStyle(instanceByName(str(name)));
+  const root = document.documentElement;
+  if (s.background && s.ink) {
+    root.dataset.tint = "";
+    root.style.setProperty("--page-tint", s.ink);
+  } else {
+    delete root.dataset.tint;
+    root.style.removeProperty("--page-tint");
+  }
 }
 
 function setupTabs() {
@@ -3897,12 +3947,23 @@ function renderSettings() {
   }
 }
 
+// The logo shows once it loaded. It replaces the heading only while the heading says the same as its wordmark
+function showLogo() {
+  const img = document.getElementById("logo");
+  const loaded = img.complete && img.naturalWidth > 0;
+  img.hidden = !loaded;
+  const h1 = document.getElementById("board-title");
+  h1.classList.toggle("by-logo", loaded && h1.textContent === "Gary");
+}
+document.getElementById("logo").addEventListener("load", showLogo);
+
 function renderMarkers() {
   renderSettings();
   const one = boardInfo.instances.length === 1 ? boardInfo.instances[0] : null;
   const title = one ? one.title + " triage" : "Gary";
   document.title = title;
   document.getElementById("board-title").textContent = title;
+  showLogo();
   document.getElementById("dry-run").hidden = boardInfo.dryRun !== true;
   const scope = state.tab === "all" || !multiInstance() ? boardInfo.instances : boardInfo.instances.filter((x) => x.name === state.tab);
   const paused = scope.filter((x) => x.paused);

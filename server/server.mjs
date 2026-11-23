@@ -406,7 +406,7 @@ const CSP = [
 	"style-src 'unsafe-inline' https://fonts.googleapis.com",
 	"font-src https://fonts.gstatic.com",
 	"connect-src 'self'",
-	"img-src data: https://github.com https://avatars.githubusercontent.com",
+	"img-src 'self' data: https://github.com https://avatars.githubusercontent.com",
 	"base-uri 'none'",
 	"form-action 'none'",
 	"frame-ancestors 'none'",
@@ -511,6 +511,7 @@ export function instanceInfo(name) {
 	return {
 		name,
 		title: i.title,
+		...(i.config.tab && { tab: i.config.tab }),
 		kind: i.kind,
 		repos: i.repos,
 		// A contributions instance spans repos, so it has no one repo to link
@@ -2412,6 +2413,11 @@ export async function startBoardServer({
 				"X-Frame-Options": "DENY",
 			});
 			return res.end(body);
+		}
+
+		if (url.pathname === "/logo.svg" && req.method === "GET") {
+			res.writeHead(200, { "Content-Type": "image/svg+xml", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Cache-Control": "max-age=3600", "X-Content-Type-Options": "nosniff" });
+			return res.end(await readFile(join(ROOT, "logo-outlined.svg")));
 		}
 
 		if (!url.pathname.startsWith("/api/")) return json(res, 404, { error: "Not found." });

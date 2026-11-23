@@ -23,7 +23,20 @@ export const DEFAULT_PORT = 7878;
 // A contributions instance follows the maintainer's own threads outside the repos of his maintainer instances.
 // It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it
 export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150 };
-export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", ...Object.keys(CONTRIBUTIONS_DEFAULTS)];
+export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", ...Object.keys(CONTRIBUTIONS_DEFAULTS)];
+// How the instance's tab looks on the board: `{ icon, color, background }`. `background` also tints the page in that color
+export const TAB_ICONS = ["zap", "home", "star", "globe", "heart", "user", "shield", "bot", "sparkles", "wrench", "lightbulb", "plug", "eye", "pr", "issue", "discussion", "commit", "comments"];
+export const TAB_COLORS = ["orange", "blue", "green", "purple", "rose", "gray"];
+
+function checkTab(errors, unknown, tab) {
+	if (tab === undefined) return;
+	if (!tab || typeof tab !== "object" || Array.isArray(tab)) return void errors.push('"tab" must be { "icon", "color", "background" }');
+	for (const key of Object.keys(tab)) if (!["icon", "color", "background"].includes(key)) unknown.push(`unknown field "tab.${key}"`);
+	if (tab.icon !== undefined && !TAB_ICONS.includes(tab.icon)) errors.push(`"tab.icon" must be one of ${TAB_ICONS.join(", ")}`);
+	if (tab.color !== undefined && !TAB_COLORS.includes(tab.color)) errors.push(`"tab.color" must be one of ${TAB_COLORS.join(", ")}`);
+	if (tab.background !== undefined && typeof tab.background !== "boolean") errors.push('"tab.background" must be true or false');
+	if (tab.background === true && tab.color === undefined) errors.push('"tab.background" needs "tab.color"');
+}
 export const MAX_ITEMS_RANGE = [10, 500];
 // `owner/name` or `owner/*`
 const REPO_GLOB = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?:\*|[\w.-]{1,100})$/;
@@ -386,11 +399,12 @@ export function checkConfig(data) {
 	if (isContributions(data)) return checkContributionsConfig(data);
 	const errors = [];
 	const unknown = [];
-	const known = ["profile", "me", "checkout", "fixReview", "autoReview", "models", ...Object.keys(CONFIG_DEFAULTS)];
+	const known = ["profile", "me", "checkout", "fixReview", "autoReview", "models", "tab", ...Object.keys(CONFIG_DEFAULTS)];
 	for (const key of Object.keys(data)) {
 		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
 		else check(unknown, known.includes(key), `unknown field "${key}"`);
 	}
+	checkTab(errors, unknown, data.tab);
 	check(errors, data.kind === undefined || INSTANCE_KINDS.includes(data.kind), `"kind" must be one of ${INSTANCE_KINDS.join(", ")}`);
 	check(errors, typeof data.profile === "string" && data.profile.length > 0, `"profile" must name the project profile directory`);
 	check(errors, typeof data.me === "string" && LOGIN.test(data.me), `"me" must be your GitHub login`);
@@ -449,6 +463,7 @@ function checkContributionsConfig(data) {
 		else if (MAINTAINER_ONLY.includes(key)) errors.push(`"${key}" is only for maintainer instances. A contributions instance has no profile, bot or checkout`);
 		else check(unknown, CONTRIBUTIONS_FIELDS.includes(key), `unknown field "${key}"`);
 	}
+	checkTab(errors, unknown, data.tab);
 	check(errors, typeof data.me === "string" && LOGIN.test(data.me), `"me" must be your GitHub login`);
 	check(errors, data.title === undefined || (typeof data.title === "string" && data.title.trim().length > 0 && data.title.length <= 60), `"title" must be the tab title, at most 60 characters`);
 	for (const key of ["include", "exclude"]) {
