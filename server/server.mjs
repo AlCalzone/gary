@@ -43,7 +43,7 @@ const IN_FOCUS = [409, { ok: false, result: "This item is in focus. Gary starts 
 // `FAILED_FOCUS_MS` sets how long a failed focus request shows on its item
 const FAILED_FOCUS_MS = 24 * 3600000;
 const UNKNOWN_INSTANCE = "Unknown instance.";
-// The board actions a contributions instance takes. Gary writes nothing to GitHub there, starts no agent that pushes and has no checkout for a focus
+// The only actions a contributions instance takes. Every other click would write to GitHub, push or need a checkout
 const CONTRIBUTION_ACTIONS = new Set(["got_it", "reanalyze", "dismiss_route", "accept_proposal", "dismiss_proposal"]);
 const READ_ONLY = [200, { ok: false, result: READ_ONLY_MESSAGE, readOnly: true }];
 const ITEM_ID = idPattern("items");
