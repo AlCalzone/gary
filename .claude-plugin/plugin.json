@@ -3,6 +3,7 @@
 	"displayName": "Gary",
 	"version": "0.1.0",
 	"description": "Turns the open PRs, issues and discussions of your GitHub projects into a plan for your day, with the next step prepared by Claude. You read, click and keep the last word.",
+	"license": "MIT",
 	"keywords": ["github", "triage", "maintainer"],
 	"mcpServers": {
 		"gary": {

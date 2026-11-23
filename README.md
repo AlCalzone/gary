@@ -70,6 +70,10 @@ Gary keeps project facts, project rules and your personal style apart:
 - [docs/board.md](docs/board.md): working with the board day to day.
 - [docs/internals.md](docs/internals.md): commands, server, state and tests, for people changing Gary.
 
+## License
+
+[MIT](LICENSE)
+
 ---
 
 > [!NOTE]
