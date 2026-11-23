@@ -201,7 +201,14 @@ a:hover { text-decoration: underline; }
 header { display: flex; flex-direction: column; gap: 14px; }
 .top { display: flex; align-items: center; gap: 14px; }
 .logo { flex: none; width: 69px; height: 90px; margin: -14px 0 -14px -4px; }
-.logo[hidden] { display: none; }
+.logo img { display: block; width: 100%; height: 100%; }
+.logo[hidden], .logo .dark-logo { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo .light-logo { display: none; }
+  :root:not([data-theme="light"]) .logo .dark-logo { display: block; }
+}
+:root[data-theme="dark"] .logo .light-logo { display: none; }
+:root[data-theme="dark"] .logo .dark-logo { display: block; }
 /* The logo carries the name, so the heading stays for screen readers only */
 h1.by-logo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
@@ -1055,7 +1062,7 @@ textarea {
 <div class="wrap">
   <header>
     <div class="top">
-      <img class="logo" id="logo" src="logo.svg" alt="" width="69" height="90" hidden>
+      <span class="logo" id="logo" hidden><img class="light-logo" src="logo.svg" alt="" width="69" height="90"><img class="dark-logo" src="logo-dark.svg" alt="" width="69" height="90"></span>
       <h1 id="board-title">Gary</h1>
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
       <span class="paused-mark" id="paused" title="No GitHub writes. Run `gary resume` to turn them on." hidden>Paused</span>
@@ -4038,15 +4045,15 @@ function renderSettings() {
   }
 }
 
-// The logo shows once it loaded. It replaces the heading only while the heading says the same as its wordmark
+// The logo shows once both theme versions loaded. It replaces the heading only while the heading says the same as its wordmark
 function showLogo() {
-  const img = document.getElementById("logo");
-  const loaded = img.complete && img.naturalWidth > 0;
-  img.hidden = !loaded;
+  const box = document.getElementById("logo");
+  const loaded = [...box.querySelectorAll("img")].every((img) => img.complete && img.naturalWidth > 0);
+  box.hidden = !loaded;
   const h1 = document.getElementById("board-title");
   h1.classList.toggle("by-logo", loaded && h1.textContent === "Gary");
 }
-document.getElementById("logo").addEventListener("load", showLogo);
+for (const img of document.querySelectorAll("#logo img")) img.addEventListener("load", showLogo);
 // GitHub's mark is a filled shape, unlike the stroke icons
 {
   const svg = document.createElementNS(SVG_NS, "svg");
