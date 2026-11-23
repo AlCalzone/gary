@@ -10,6 +10,18 @@ const READ_ONLY_FLAGS = ["--jq", "-q", "--paginate", "--slurp", "-H", "--header"
 
 export const GRAPHQL_ARGS = ["api", "graphql", "--input", "-"];
 
+export const READ_ONLY_MESSAGE = "This is a contributions instance. Gary writes nothing to GitHub for it: post the text on GitHub yourself.";
+
+/** Whether the instance in scope is a contributions instance, which never writes to GitHub. */
+function readOnlyInstance() {
+	try {
+		return loadConfig().kind === "contributions";
+	} catch {
+		// Without a resolvable instance nothing marks the call as read-only
+		return false;
+	}
+}
+
 /**
  * Which account `gh` acts as for writes:
  * "bot" with a configured bot, "own" without a bot but with allowOwnTokenPushes, "none" otherwise.
@@ -81,6 +93,17 @@ export function isWrite(args, input) {
 export async function readLogin(which) {
 	const env = which === "bot" ? { ...process.env, ...GH_ENV, GH_TOKEN: botToken() } : storedLoginEnv();
 	return (await run(["api", "user", "--jq", ".login"], "", env)).trim();
+}
+
+/**
+ * The OAuth scopes of the stored gh login, from the X-OAuth-Scopes header of a read of the user, as a list.
+ * null means GitHub sent no such header, like for a fine-grained token, so the scopes are unknown. Read-only.
+ */
+export async function storedScopes() {
+	const out = await run(["api", "-i", "user"], "", storedLoginEnv());
+	const line = out.split(/\r?\n/).find((l) => /^x-oauth-scopes:/i.test(l));
+	if (!line) return null;
+	return line.slice(line.indexOf(":") + 1).split(",").map((x) => x.trim()).filter(Boolean);
 }
 
 /** Checks that the stored gh login is `me` from config.json and returns it. */
@@ -213,6 +236,8 @@ export async function postEscalateCommand({ repo, number, dryRun = false }) {
 }
 
 function run(args, input, env) {
+	// Every write of every helper passes here, so no code path can write for a contributions instance
+	if (isWrite(args, input) && readOnlyInstance()) return Promise.reject(new Error(READ_ONLY_MESSAGE));
 	return new Promise((resolve, reject) => {
 		const child = execFile(
 			"gh",

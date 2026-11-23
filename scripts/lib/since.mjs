@@ -79,7 +79,7 @@ const CHOICE_NAMES = {
 	reply: "Reply", request_logs: "Ask for a log", close: "Close", reopen: "Reopen", merge: "Merge", review: "Review",
 	address_review: "Address review", follow_up: "Implement", take_over: "Take over", revise: "Change", drive: "Drive",
 	format: "Format", move: "Move", chore: "Chore", open: "Open on GitHub", escalate: "Escalate",
-	reanalyze: "Analyze again", full_review: "Full review", start_fix: "Start fix", snooze: "Snooze", dismiss: "Snooze until new activity",
+	reanalyze: "Analyze again", full_review: "Full review", start_fix: "Start fix", snooze: "Snooze", dismiss: "Snooze until new activity", got_it: "Got it",
 };
 const choiceName = (type) => CHOICE_NAMES[type] ?? String(type ?? "").replace(/_/g, " ");
 

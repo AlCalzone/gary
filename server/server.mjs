@@ -26,7 +26,7 @@ import { endFocus, focusDir, focusHold, isHeld, readFocuses, safeLink } from "..
 import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { linkEscalated } from "../scripts/lib/escalation.mjs";
-import { accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
+import { READ_ONLY_MESSAGE, accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
@@ -43,6 +43,9 @@ const IN_FOCUS = [409, { ok: false, result: "This item is in focus. Gary starts 
 // `FAILED_FOCUS_MS` sets how long a failed focus request shows on its item
 const FAILED_FOCUS_MS = 24 * 3600000;
 const UNKNOWN_INSTANCE = "Unknown instance.";
+// The board actions a contributions instance takes. Gary writes nothing to GitHub there, starts no agent that pushes and has no checkout for a focus
+const CONTRIBUTION_ACTIONS = new Set(["got_it", "reanalyze", "dismiss_route", "accept_proposal", "dismiss_proposal"]);
+const READ_ONLY = [200, { ok: false, result: READ_ONLY_MESSAGE, readOnly: true }];
 const ITEM_ID = idPattern("items");
 const MAX_TEXT = 65536;
 const MAX_NOTE = 1000;
@@ -504,12 +507,15 @@ export function instanceInfo(name) {
 	if (!i) {
 		return { name, title: name, kind: null, repos: [], repoUrl: null, me: null, bot: null, accountMode: "none", paused, relatedRepos: [], botCommands: {}, escalateAs: "prefill", reviewBots: [], settingsError: error };
 	}
+	const contributions = i.kind === "contributions";
 	return {
 		name,
 		title: i.title,
 		kind: i.kind,
 		repos: i.repos,
-		repoUrl: `https://github.com/${i.repos[0]}`,
+		// A contributions instance spans repos, so it has no one repo to link
+		repoUrl: contributions ? null : `https://github.com/${i.repos[0]}`,
+		...(contributions && { readOnly: true }),
 		me: account(i.config.me),
 		bot: account(i.config.bot?.login),
 		accountMode: mode ?? "none",
@@ -1397,10 +1403,13 @@ export async function startBoardServer({
 		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
 		if (body.action === "dismiss_route") return handleDismissRoute(name, body);
 		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(name, body);
+		if ((body.action === "request_reconcile" || body.action === "end_focus") && settingsOf(name).instance?.kind === "contributions") return READ_ONLY;
 		if (body.action === "request_reconcile") return handleReconcileRequest(name);
 		if (body.action === "end_focus") return handleEndFocus(name, body);
-		const { error: settingsError } = settingsOf(name);
+		const { error: settingsError, instance: settings } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
+		if (settings?.kind === "contributions" && !CONTRIBUTION_ACTIONS.has(body.action)) return READ_ONLY;
+		if (body.action === "got_it") return handleGotIt(name, body);
 		if (body.action === "focus") return handleFocus(name, body);
 		if (body.action === "reanalyze") {
 			if (typeof body.itemId === "string" && focusHold(body.itemId, name)) return IN_FOCUS;
@@ -2196,6 +2205,30 @@ export async function startBoardServer({
 		});
 	}
 
+	/**
+	 * "Got it" on an fyi item of a contributions instance: he read the news. The item leaves the board until the routine
+	 * finds new relevant activity, and the snapshot counts this time as his last look at the thread.
+	 */
+	async function handleGotIt(name, body) {
+		const { itemId } = body;
+		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return outdated;
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const file = itemFile(name, itemId);
+			const at = new Date().toISOString();
+			let refused = null;
+			await withLock(docLocks, file, async () => {
+				const item = await readJson(file);
+				if (!item) return void (refused = outdated);
+				if (item.category !== "fyi") return void (refused = [200, { ok: false, result: "Only an FYI item takes Got it." }]);
+				await writeAtomic(file, { ...item, gotIt: { at } });
+			});
+			if (refused) return refused;
+			await logClick(name, itemId, { action: "got_it", params: {}, text: "", status: "done", via: "board", createdAt: at, finishedAt: at, result: "" });
+			return [200, { ok: true, result: "Hidden until there is news.", gotIt: { at } }];
+		});
+	}
+
 	// "End focus": the hold ends without a summary, and the agent analyzes the item again
 	async function handleEndFocus(name, body) {
 		const { itemId } = body;
@@ -2315,6 +2348,10 @@ export async function startBoardServer({
 			if (path.startsWith("actions/") && isObject(data.params) && data.params.answers !== undefined) return [400, { error: "Answers to findings go through /api/action." }];
 			if (path.startsWith("actions/") && AGENT_ACTIONS.includes(data.action) && data.status === "queued" && typeof data.itemId === "string" && focusHold(data.itemId, name)) {
 				return [409, { error: IN_FOCUS[1].result, focus: true }];
+			}
+			// A contributions instance starts no agent job but the analysis
+			if (path.startsWith("actions/") && data.action !== "reanalyze" && [...AGENT_ACTIONS, "focus"].includes(data.action) && settingsOf(name).instance?.kind === "contributions") {
+				return [409, { error: READ_ONLY_MESSAGE, readOnly: true }];
 			}
 		}
 		const write = { op: body.op, path, data };

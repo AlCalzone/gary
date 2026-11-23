@@ -1,6 +1,6 @@
-import { allowedRepo, instanceName, loadConfig, loadProfile, repoParts, withInstance } from "./config.mjs";
+import { allowedRepo, instanceName, isContributions, loadConfig, loadProfile, repoParts, withInstance } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
-import { GRAPHQL_ARGS, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReview, verifyOwnLogin, writeLogin } from "./gh.mjs";
+import { GRAPHQL_ARGS, READ_ONLY_MESSAGE, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReview, verifyOwnLogin, writeLogin } from "./gh.mjs";
 
 export const KINDS = ["pr", "issue", "discussion"];
 const BOARD_ACTIONS = ["dismiss", "snooze"];
@@ -466,6 +466,7 @@ export async function runAction({ instance, repo, ...request } = {}) {
 	if (instance) return withInstance(instance, () => runAction({ repo, ...request }));
 	const { action, kind, number, params, text, dryRun = false, autonomous = false, markedReady = false } = request;
 	try {
+		if (isContributions(loadConfig())) return { ok: false, result: READ_ONLY_MESSAGE, readOnly: true };
 		if (isPaused()) return { ok: false, result: PAUSED_MESSAGE, paused: true };
 		const ctx = validate({ action, kind, number, params, text });
 		// The repo comes from the item. Without one the instance's own repo applies
