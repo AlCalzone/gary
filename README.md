@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo-outlined.svg" alt="Gary" width="360">
+  <img src="logo-outlined.svg" alt="Gary" width="300">
 </p>
 
 <p align="center"><em>Get Anything Ready for You</em></p>
