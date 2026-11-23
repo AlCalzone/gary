@@ -1,8 +1,8 @@
 // gary action --dry-run against the fake gh: validation, account rules and the writes it would send.
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { GARY, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
+import { GARY, PROFILE, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 
 const CASES = [
 	[false, '{"action":"approve","kind":"pr","number":12}', 'Unknown action'],
@@ -80,6 +80,8 @@ const CASES = [
 	[true, '{"action":"comment","kind":"pr","number":12,"text":"Ask the bot to escalate it"}', 'addComment'],
 	[true, '{"action":"comment","kind":"pr","number":12,"text":"hi"}', 'addComment'],
 	[true, '{"action":"merge","kind":"pr","number":12}', 'mergePullRequest'],
+	[true, '{"action":"merge","kind":"pr","number":12}', '"method": "SQUASH"'],
+	[true, '{"action":"merge","kind":"pr","number":12,"params":{"method":"rebase"}}', '"method": "REBASE"'],
 	[true, '{"action":"label","kind":"issue","number":21,"params":{"add":["bug"]}}', 'addLabelsToLabelable'],
 	// Lookups that the fake gh answers from the fixtures
 	[true, '{"action":"ready","kind":"pr","number":13}', "markPullRequestReadyForReview"],
@@ -112,6 +114,18 @@ for (const [ok, json, match] of CASES) {
 	const r = spawnSync(process.execPath, [GARY, "action", "--dry-run"], { input: json, env, encoding: "utf8" });
 	const out = r.stdout + r.stderr;
 	t.check(`${ok ? "ok" : "refused"}: ${json}`, (r.status === 0) === ok && out.includes(match), out.slice(0, 400));
+}
+
+// The profile's mergeMethod is the default of a merge
+{
+	const mdir = join(dir, "merge-method");
+	const profile = join(mdir, "profile");
+	cpSync(PROFILE, profile, { recursive: true });
+	writeFileSync(join(profile, "profile.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(PROFILE, "profile.json"), "utf8")), mergeMethod: "merge" }));
+	const { env: menv } = makeHome(mdir, { profile });
+	const merge = (json) => spawnSync(process.execPath, [GARY, "action", "--dry-run"], { input: json, env: menv, encoding: "utf8" }).stdout;
+	t.check("a merge uses the profile's mergeMethod", merge('{"action":"merge","kind":"pr","number":12}').includes('"method": "MERGE"'));
+	t.check("params.method wins over the profile's mergeMethod", merge('{"action":"merge","kind":"pr","number":12,"params":{"method":"squash"}}').includes('"method": "SQUASH"'));
 }
 
 // The maintainer's review: requested by the writing identity, or skipped with nothing sent

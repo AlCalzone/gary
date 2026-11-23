@@ -202,6 +202,7 @@ export const PROFILE_DEFAULTS = {
 	autofixCommands: [],
 	autofixSetup: null,
 	commitFormat: null,
+	mergeMethod: "squash",
 	escalateResult: null,
 	dueDateFields: ["Due", "Due date", "Target date", "Deadline", "End date"],
 };
@@ -548,6 +549,7 @@ function checkEscalateResult(pattern, errors) {
 
 // `COMMIT_FORMATS` lists the formats an API edit's commit message can follow. A `commitFormat` of null asks for one plain line
 export const COMMIT_FORMATS = ["conventional"];
+export const PROFILE_MERGE_METHODS = ["squash", "merge", "rebase"];
 
 export const MAX_AUTOFIX_COMMANDS = 10;
 const MAX_COMMAND = 500;
@@ -604,6 +606,7 @@ export function checkProfile(data) {
 	const cmd = data.formatCommand;
 	check(errors, cmd === undefined || cmd === null || (typeof cmd === "string" && cmd.trim().length > 0 && cmd.length <= 200 && !/[`\n\r]/.test(cmd)), `"formatCommand" must be the one-line command a contributor runs to format, at most 200 characters, without backticks`);
 	checkAutofix(data, errors);
+	check(errors, data.mergeMethod === undefined || PROFILE_MERGE_METHODS.includes(data.mergeMethod), `"mergeMethod" must be one of ${PROFILE_MERGE_METHODS.map((m) => `"${m}"`).join(", ")}`);
 	check(errors, data.commitFormat === undefined || data.commitFormat === null || COMMIT_FORMATS.includes(data.commitFormat), `"commitFormat" must be null or one of ${COMMIT_FORMATS.map((f) => `"${f}"`).join(", ")}`);
 	return { errors, unknown };
 }

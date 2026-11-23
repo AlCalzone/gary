@@ -78,11 +78,11 @@ export const ACTIONS = {
 	},
 	merge: {
 		description:
-			"Merge the PR. `params.method` is squash (default), merge or rebase. Optional `params.sha` makes the merge fail when the PR head moved.",
+			"Merge the PR. `params.method` is squash, merge or rebase, by default the profile's mergeMethod. Optional `params.sha` makes the merge fail when the PR head moved.",
 		kinds: ["pr"],
 		params: ["method", "sha"],
 		run: async (ctx) => {
-			const method = ctx.params.method ?? "squash";
+			const method = ctx.params.method ?? loadProfile().mergeMethod;
 			if (!Object.hasOwn(MERGE_METHODS, method)) {
 				throw new Error(`params.method must be one of ${Object.keys(MERGE_METHODS).join(", ")}`);
 			}

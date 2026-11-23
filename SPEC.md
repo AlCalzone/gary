@@ -160,6 +160,7 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
   "autofixCommands": ["npx prettier --write --ignore-unknown {files}", "npx eslint --fix {files}"],   // default []: the formatter and lint autofix commands of the format check. Empty means no format check, no `autofix`, no `format` route and no format offer
   "autofixSetup": "npm ci",        // default null: one command that prepares a fresh worktree of the base branch before the commands run
   "commitFormat": "conventional",  // or null, the default: the format of an API edit's commit message, see "API edit"
+  "mergeMethod": "squash",         // the default: squash, merge or rebase. The default method of the `merge` action. Only with squash may an agent set a PR's title for the commit
   "dueDateFields": ["Due", "Due date", "Target date", "Deadline", "End date"]   // date fields of a GitHub Projects item that give the item its due date, matched without regard to case. The default is shown
 }
 ```
@@ -1020,7 +1021,7 @@ GitHub actions, executed with `gh` under the account of the current mode (see Ac
 | action | params | effect |
 | --- | --- | --- |
 | `comment` | | post `text` on the PR, issue or discussion |
-| `merge` | `method` (default `squash`), `sha` | merge the PR. With `sha` the merge fails when the head moved since the review. The board never offers it |
+| `merge` | `method` (`squash`, `merge` or `rebase`, default the profile's `mergeMethod`), `sha` | merge the PR. With `sha` the merge fails when the head moved since the review. The board never offers it |
 | `ready` | | mark a draft PR ready for review |
 | `close` | `reason` (`completed`, `not_planned`, `duplicate`), `duplicateOf` | optional `text` as comment first, then close. The board offers it only inside a `move` route |
 | `review` | `event`, `comments: [{ path, line, startLine, text }]`, `sha` | one PR review with body `text` and inline comments |

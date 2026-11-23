@@ -47,7 +47,7 @@ registerHooks({
 });
 
 const PARAMS = {
-	merge: "`method`: squash (default), merge or rebase. `sha`: expected head SHA, the merge fails when the PR head moved.",
+	merge: "`method`: squash, merge or rebase, by default the profile's mergeMethod. `sha`: expected head SHA, the merge fails when the PR head moved.",
 	close: "`reason`: completed (default), not_planned or duplicate. `duplicateOf`: number of the original issue, required for an issue closed as duplicate.",
 	review: "`event`: approve, request_changes or comment. `comments`: inline comments as [{ path, line, startLine, text }], `startLine` only for a range. `sha`: commit the review applies to.",
 	create_issue: "`title`: title of the new issue. `text` is its body.",

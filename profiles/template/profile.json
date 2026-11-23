@@ -16,5 +16,6 @@
 	"autofixCommands": [],
 	"autofixSetup": null,
 	"commitFormat": null,
+	"mergeMethod": "squash",
 	"escalateResult": null
 }

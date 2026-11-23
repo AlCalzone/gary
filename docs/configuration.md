@@ -50,6 +50,7 @@ Fields of `profile.json`:
 | `formatCommand` | The command a contributor runs to format, named by the automatic review when Gary cannot push |
 | `autofixCommands` | Formatter and lint autofix commands with the placeholder `{files}`, default `[]`, see below |
 | `autofixSetup` | One command that prepares a fresh worktree of the base branch, default `null`, see below |
+| `mergeMethod` | `squash`, the default, `merge` or `rebase`. How Gary merges, and whether the PR title becomes the commit message |
 | `commitFormat` | `"conventional"` when the repo uses conventional commits, or `null`, the default. Sets the format of the commit message of an API edit |
 | `requiredTools` | Tools the agents need, like an MCP server for logs |
 | `dueDateFields` | GitHub Project fields read as due dates |
