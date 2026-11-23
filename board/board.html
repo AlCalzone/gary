@@ -300,7 +300,7 @@ dialog { --surface: var(--n-surface, var(--surface-0)); --surface-2: var(--n-sur
 .callout.hold p { margin: 0; }
 .visit-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, var(--surface)); color: var(--fg); font-size: 12px; font-weight: 500; line-height: 18px; white-space: nowrap; }
 .hold-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
-/* An item in focus is his to work on in its own agent session, and Gary holds it meanwhile */
+/* An item in focus is the maintainer's to work on in its own agent session, and Gary holds it meanwhile */
 .focus-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap; }
 .focus-chip.paused { background: var(--warn-soft); color: var(--fg); }
 .focus-chip.quiet { background: var(--accent-soft); color: var(--fg); }
@@ -321,7 +321,7 @@ dialog { --surface: var(--n-surface, var(--surface-0)); --surface-2: var(--n-sur
 .auto-review .ar-lead { margin: 0; color: var(--fg); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
 .auto-review ul { margin: 0; padding-left: 1.2em; }
 .auto-review li { overflow-wrap: anywhere; }
-/* What happened since his last choice: one dot per group on a vertical line */
+/* What happened since the maintainer's last choice: one dot per group on a vertical line */
 .since { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
 .since[hidden] { display: none; }
 .since summary { cursor: pointer; width: fit-content; }
@@ -358,7 +358,7 @@ dialog { --surface: var(--n-surface, var(--surface-0)); --surface-2: var(--n-sur
 .handled-row .h-check.tone-warn { color: var(--warn); }
 .r-ref { display: block; font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .p-instance { margin-left: auto; font-size: 12px; color: var(--muted); }
-/* Paused is a state he chose, so it reads calm: muted ink, a soft pill */
+/* Paused is a state the maintainer chose, so it reads calm: muted ink, a soft pill */
 .paused-mark { font-size: 11.5px; font-weight: 600; color: var(--fg); padding: 1px 8px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: help; }
 .paused-mark[hidden] { display: none; }
 .paused-hint { font-size: 11.5px; color: var(--muted); cursor: help; }
@@ -669,7 +669,7 @@ button.card-head { cursor: pointer; }
 .dismiss-box .field { width: 100%; }
 .dismiss-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .farewell { margin: 0; padding: 12px 2px; color: var(--muted); font-size: 14px; }
-/* An FYI item's one action: he read the news */
+/* An FYI item's one action: the maintainer read the news */
 .fyi-ack { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 14px; border-radius: 10px; background: var(--cat-fyi); }
 .fyi-ack p { margin: 0; flex: 1 1 16em; font-size: 13.5px; line-height: 1.5; color: var(--fg); }
 .card-head .chev { width: 16px; height: 16px; flex: none; color: var(--muted); transition: transform 0.15s ease; }
@@ -955,7 +955,7 @@ dialog.detail::backdrop { background: var(--backdrop); }
 .sev.warn { background: var(--warn-soft); color: var(--warn); }
 .sev.faint { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--muted); }
 .fref { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
-/* His answer to a finding: a quiet link, a small box under the finding, and what he sent */
+/* The maintainer's answer to a finding: a quiet link, a small box under the finding, and what they sent */
 .f-reply { align-self: flex-start; font: 500 12px/1 var(--font-body); padding: 3px 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .f-reply:hover:not(:disabled) { color: var(--fg); }
 .f-answer { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 2px; width: 100%; }
@@ -1164,13 +1164,13 @@ textarea {
 const SERVER = "host:gary";
 const GITHUB_PREFIX = "https://github.com/";
 
-// The kind of move he makes on an item
+// The kind of move the maintainer makes on an item
 const CATEGORIES = [
   { id: "act", label: "Act" },
   { id: "unblock", label: "Unblock" },
   { id: "land", label: "Land" },
   { id: "decide", label: "Decide" },
-  // Only a contributions instance has it: news on a thread he follows, and nothing to do
+  // Only a contributions instance has it: news on a thread the maintainer follows, and nothing to do
   { id: "fyi", label: "FYI" },
 ];
 const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
@@ -1188,7 +1188,7 @@ const GROUPS = [
 // An item this quick is in "Quick & Easy" whatever its category, and so is an Act item due within this many days
 const QUICK_EFFORT_MAX = 2;
 const DUE_SOON_DAYS = 2;
-// The agent jobs he asks for. One that finished comes back first in its group
+// The agent jobs the maintainer asks for. One that finished comes back first in its group
 const ASKED_JOBS = new Set(["take_over", "revise", "address_review", "drive", "format", "start_fix"]);
 const REVEAL_STEP = 10;
 const BUDGET_HOURS = [2, 4, 6, 8];
@@ -1231,7 +1231,7 @@ const DONE_NAMES = { take_over: "Take-over done", revise: "Change done", address
 const doneName = (a) => DONE_NAMES[a.action] || "Done: " + (ACTION_NAMES[a.action] || str(a.action).replace(/_/g, " "));
 const actionName = (a) => ACTION_NAMES[a.action] || str(a.action).replace(/_/g, " ");
 
-// GraphQL node ids like PRRT_kwDO… mean nothing to him
+// GraphQL node ids like PRRT_kwDO… mean nothing to the maintainer
 const NODE_ID = /\s*\b[A-Z]{1,6}_kw[A-Za-z0-9_-]{6,}/g;
 
 // The result of a finished action: a link, the parts a worker reported, or its text without node ids
@@ -1537,7 +1537,7 @@ function seriesOf(d) {
   return s && typeof s === "object" && str(s.id) && Number.isInteger(s.position) && Number.isInteger(s.size) && s.size > 1 ? s : null;
 }
 
-// Someone outside our side waits on him
+// Someone outside our side waits on the maintainer
 function outsideWaits(d) {
   return d.waitingOn ? d.waitingOn === "us" : waitingOf(d) != null;
 }
@@ -1571,7 +1571,7 @@ function recentlyDone(a) {
   return a.status === "done" && Number.isFinite(t) && Date.now() - t < DAY_MS;
 }
 
-// Handled: the server marks an item when he used a prefill or a bot or agent route ran. It leaves the plan until the next run.
+// Handled: the server marks an item when the maintainer used a prefill or a bot or agent route ran. It leaves the plan until the next run.
 // A prefill click marks it here at once, before the server's push arrives.
 const localHandled = new Map();
 
@@ -1594,7 +1594,7 @@ function handledToday(key) {
   return Number.isFinite(t) && dayKey(t) === dayKey(Date.now());
 }
 
-// Work on items that already left the board still counts, from today's action log. A finished re-analysis is not his work.
+// Work on items that already left the board still counts, from today's action log. A finished re-analysis is not the maintainer's work.
 function handledAction(a) {
   if (!a || (a.status !== "done" && a.status !== "queued")) return false;
   if (a.action === "reanalyze" && a.status === "done") return false;
@@ -1645,7 +1645,7 @@ function askedWorkDone(id, d) {
   return !!(d.pushed && typeof d.pushed === "object" && str(d.pushed.sha) && d.pushed.sha === d.reviewedSha);
 }
 
-// Finished work he asked for, then due items by due date, then outside contributors and reporters, then the lowest effort
+// Finished work the maintainer asked for, then due items by due date, then outside contributors and reporters, then the lowest effort
 function compareItems(a, b) {
   const keys = (r) => {
     const due = dueDays(r.data);
@@ -1824,14 +1824,14 @@ const HANDLED_DONE = {
   move: "Moved", chore: "Ran a chore", open: "Opened on GitHub", format: "Asked the agent to format",
 };
 
-// What GitHub shows after his click, from the server's check
+// What GitHub shows after the maintainer's click, from the server's check
 function handledCheck(d, hd) {
   const live = d.live && typeof d.live === "object" ? str(d.live.state) : "";
   if (hd.verified === "merged" || live === "merged") return ["merged on GitHub", "ok"];
   if (hd.verified === "closed" || live === "closed") return ["closed on GitHub", "ok"];
   if (hd.verified === "commented") return ["comment seen on GitHub", "ok"];
   if (hd.verified === "labeled") return ["label seen on GitHub", "ok"];
-  // He may have copied the text and not posted it
+  // The maintainer may have copied the text and not posted it
   if (hd.verified === "unchanged" && Date.now() - parseTime(hd.at) >= 10 * 60000) return ["nothing changed on GitHub yet", "warn"];
   return null;
 }
@@ -1957,7 +1957,7 @@ async function bringBack(key) {
   render();
 }
 
-// Items he opened on GitHub from the board, per instance, as { <itemId>: ISO time of the click }.
+// Items the maintainer opened on GitHub from the board, per instance, as { <itemId>: ISO time of the click }.
 // The marks live in local storage too, so a reload keeps them. A mark counts for 2 hours.
 const GITHUB_MARK_MS = 2 * 3600000;
 const githubMarks = new Map();
@@ -2011,7 +2011,7 @@ document.addEventListener("click", onGithubLinkClick, true);
 document.addEventListener("auxclick", onGithubLinkClick, true);
 
 // Asks the server to read the item from GitHub again, with the item's mark. A refusal, like the rate limit, is no news
-// and keeps the mark. A merged or closed thread, or a queued analysis of his visit, ends the mark.
+// and keeps the mark. A merged or closed thread, or a queued analysis of the maintainer's visit, ends the mark.
 const refreshedThisFocus = new Set();
 function sendRefresh(key) {
   const send = boardApi && boardApi.refresh;
@@ -2029,7 +2029,7 @@ function sendRefresh(key) {
   }
 }
 
-// Items he handled in the last 15 minutes that GitHub does not confirm yet, once per item per focus
+// Items the maintainer handled in the last 15 minutes that GitHub does not confirm yet, once per item per focus
 function refreshHandled(keys) {
   for (const key of keys) {
     const hd = handledOf(key);
@@ -2206,11 +2206,11 @@ function buildFindings(id, d, pairs) {
 
 // ---------- answers to findings ----------
 
-// The server serves each finding with the key his answers name it by
+// The server serves each finding with the key the maintainer's answers name it by
 const findingKeyOf = (f, i) => str(f && f.key) || str(f && f.id) || "#" + i;
 const answerStep = (key) => "a:" + key;
 
-// His draft answer to one finding, or null when no box is open. An empty draft keeps the box open until a reload
+// The maintainer's draft answer to one finding, or null when no box is open. An empty draft keeps the box open until a reload
 function answerDraft(id, key) {
   const dk = draftKey(id, answerStep(key));
   if (!state.drafts.has(dk)) {
@@ -2232,7 +2232,7 @@ function setAnswerDraft(id, key, text) {
   else dropSavedDraft(id, answerStep(key));
 }
 
-// The answers he wrote and has not sent, for the item's current findings
+// The answers the maintainer wrote and has not sent, for the item's current findings
 function answerDrafts(id, d) {
   const out = [];
   (Array.isArray(d && d.findings) ? d.findings : []).forEach((f, i) => {
@@ -2252,7 +2252,7 @@ function sentAnswers(d) {
 const answeredLine = (a) => h("span", { class: "f-answered" }, h("b", { text: "You answered: " }), str(a.text),
   Number.isFinite(parseTime(a.at)) ? " · " + sinceDay(a.at) : "");
 
-// What he sent for a finding, the Reply link and the box under it
+// What the maintainer sent for a finding, the Reply link and the box under it
 function findingReply(id, d, f, i) {
   if (!f || typeof f !== "object") return [];
   const key = findingKeyOf(f, i);
@@ -2684,7 +2684,7 @@ function buildRow(id, d, dim, slot) {
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
   const type = AUTHOR_ICONS[authorTypeOf(d)];
-  // In a contributions instance the only maintainer is he himself
+  // In a contributions instance the only maintainer is the viewer themself
   if (type) icons.push(icon(type[0], authorTypeOf(d) === "maintainer" && isContributionsItem(d) ? "Opened by you" : type[2], "muted"));
   const meta = icons.length ? h("span", { class: "r-meta" }, icons) : null;
   return h("button", {
@@ -2779,7 +2779,7 @@ function findRow(id, slot) {
   return rows.find((r) => r.dataset.slot === slot) || rows[0] || null;
 }
 
-// While an item dialog is open the list stays as it is, so nothing moves behind him. It catches up when the dialog closes.
+// While an item dialog is open the list stays as it is, so nothing moves behind the maintainer. It catches up when the dialog closes.
 const listFreeze = { pending: false, layout: new Map() };
 
 function renderList() {
@@ -2796,7 +2796,7 @@ function renderList() {
   }
   if (before) {
     // Rows that changed group, or changed order among the rows that stayed in their group, are marked briefly.
-    // A row that only shifted because another one left is not a change worth his attention.
+    // A row that only shifted because another one left is not a change worth the maintainer's attention.
     const groupOf = (m, k) => (m.get(k) || "").split(":")[0];
     const changed = new Set();
     for (const k of layout.keys()) if (before.has(k) && groupOf(before, k) !== groupOf(layout, k)) changed.add(k);
@@ -2998,7 +2998,7 @@ const detail = {
   reviews: document.getElementById("d-reviews"),
   threads: document.getElementById("d-threads"),
   meNotes: new Map(),
-  // The review event he picked per route, when it differs from the agent's proposal
+  // The review event the maintainer picked per route, when it differs from the agent's proposal
   events: new Map(),
   rounds: document.getElementById("d-rounds"),
   analyze: document.getElementById("d-analyze"),
@@ -3037,7 +3037,7 @@ const isContributionsItem = (d) => instOf(d).kind === "contributions";
 // Rows and the dialog name the repo where the view spans repos
 const showsRepo = (d) => combinedView() || isContributionsItem(d);
 
-// An FYI item is open while his last Got it is older than the news it reports
+// An FYI item is open while the maintainer's last Got it is older than the news it reports
 function fyiOpen(d) {
   const news = parseTime(d.newsAt);
   const got = parseTime(d.gotIt && d.gotIt.at);
@@ -3090,7 +3090,7 @@ const sinceDay = (iso) => {
   return t.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(t.getFullYear() !== new Date().getFullYear() && { year: "numeric" }) });
 };
 
-// What happened on GitHub since his last choice, or since he last opened the dialog. The server builds the groups
+// What happened on GitHub since the maintainer's last choice, or since they last opened the dialog. The server builds the groups
 function renderSince(d) {
   const el = document.getElementById("d-since");
   const s = d.since && typeof d.since === "object" ? d.since : null;
@@ -3277,7 +3277,7 @@ function escalateRoute(r) {
   return r.type === "move" && str(paramsOf(r).to) === "issue";
 }
 
-// With `escalateAs: "me"` the server posts the command under his login after a click
+// With `escalateAs: "me"` the server posts the command under the maintainer's login after a click
 function escalatePosts(d) {
   return instOf(d).escalateAs === "me" && escalateCommand(instOf(d)) !== "";
 }
@@ -3302,7 +3302,7 @@ function apiEdits(r) {
   return (Array.isArray(edits) ? edits : []).filter((e) => e && typeof e === "object" && typeof e.path === "string" && typeof e.original === "string" && typeof e.replacement === "string");
 }
 
-// The edits of the card as diffs, so he sees exactly what the click commits
+// The edits of the card as diffs, so the maintainer sees exactly what the click commits
 function buildApiEdits(r) {
   const message = str(paramsOf(r).message);
   return [
@@ -3369,7 +3369,7 @@ function recommendedRoute(d) {
   return routes.find((r) => r.recommended === true) || routes[0] || null;
 }
 
-// "own" runs under the maintainer's GitHub login after the click, "me" is a prefill he finishes on GitHub
+// "own" runs under the maintainer's GitHub login after the click, "me" is a prefill the maintainer finishes on GitHub
 const ROUTE_ACTOR_KINDS = new Set(["me", "bot", "own", "agent"]);
 
 function actorOf(r) {
@@ -3401,7 +3401,7 @@ function moveToRepo(r) {
 
 const REVIEW_EVENT_LABELS = { request_changes: "Request changes", comment: "Comment", approve: "Approve" };
 
-// The event a review goes out with: his pick on the card, else the agent's proposal
+// The event a review goes out with: the maintainer's pick on the card, else the agent's proposal
 function reviewEvent(r) {
   return detail.events.get(r.id) || str(paramsOf(r).event);
 }
@@ -3555,7 +3555,7 @@ function repoBase(d) {
   return m ? m[0] : "https://github.com";
 }
 
-// The GitHub page a route in his name opens
+// The GitHub page a route in the maintainer's name opens
 // The thread scrolled to its comment box. The newest comment sits right above it, so its URL is the best target.
 // Pull requests and discussions also have an element with the id issue-comment-box around the form; the issue view has none,
 // and an issue without comments is short anyway. Checked against GitHub's logged-out markup only.
@@ -3588,7 +3588,7 @@ function instanceByName(name) {
 }
 
 // The instance entry an item belongs to. With one instance every item belongs to it.
-// The bot's PRs and the taken-over PRs stay watched after a push, so his next review on GitHub starts a round without a click
+// The bot's PRs and the taken-over PRs stay watched after a push, so the maintainer's next review on GitHub starts a round without a click
 function watchedAfterPush(d, r) {
   const bot = instOf(d).bot ? botLogin(instOf(d)) : "";
   return r.type === "take_over" || d.takenOver === true || (!!bot && str(d.author).toLowerCase() === bot.toLowerCase());
@@ -3634,7 +3634,7 @@ function originNotes(d, r) {
   return out;
 }
 
-// The server serves `hold` while the origin session holds back the round for his unhandled feedback
+// The server serves `hold` while the origin session holds back the round for the maintainer's unhandled feedback
 function holdOf(d) {
   const x = d && d.kind === "pr" && d.hold && typeof d.hold === "object" ? d.hold : null;
   const o = originOf(d);
@@ -3655,7 +3655,7 @@ function renderHold(d) {
     h("p", { class: "hold-sooner", text: "To act sooner, address it in that session yourself." })));
 }
 
-// The server serves `visited` when a refresh found his review or comment on GitHub after he opened the item from
+// The server serves `visited` when a refresh found the maintainer's review or comment on GitHub after they opened the item from
 // the board. It counts until an analysis newer than it arrives.
 function visitOf(d) {
   const v = d && d.visited && typeof d.visited === "object" ? d.visited : null;
@@ -3664,7 +3664,7 @@ function visitOf(d) {
   return Number.isFinite(reviewed) && reviewed >= parseTime(v.at) ? null : v;
 }
 
-// What he did on GitHub, as [sentence part, chip text]
+// What the maintainer did on GitHub, as [sentence part, chip text]
 function visitWords(v) {
   if (v.kind === "comment") return ["commented on GitHub", "Commented on GitHub"];
   if (v.state === "approved") return ["approved this on GitHub", "Approved on GitHub"];
@@ -3684,7 +3684,7 @@ function holdChip(d) {
   return x ? h("span", { class: "hold-chip", title: "Your " + x.kind + " waits for the session that opened this PR. Gary starts the round around " + holdTime(x.until) + ".", text: "Waits for session" }) : null;
 }
 
-// The server serves `focus` while he works on the item in its own session, while the master sets one up, and for a
+// The server serves `focus` while the maintainer works on the item in its own session, while the master sets one up, and for a
 // day after the master could not start one
 const FOCUS_STATES = new Set(["active", "paused", "requested", "failed"]);
 const FOCUS_LINK = /^(https:\/\/|t3-thread:\/\/|claude:\/\/)/;
@@ -4163,7 +4163,7 @@ function textEditor(id, r, key, label, value, rows) {
   const dk = draftKey(id, key);
   const storeId = key.slice(2);
   if (!state.drafts.has(dk) || draftHashes.get(dk) !== str(r.draftHash)) {
-    // A draft he typed for an older version of the text is dropped from the editor but kept to look at
+    // A draft the maintainer typed for an older version of the text is dropped from the editor but kept to look at
     const stale = state.drafts.has(dk) ? state.drafts.get(dk) : staleSavedDraft(id, storeId, str(r.draftHash));
     if (typeof stale === "string" && stale.trim() && stale !== value) detail.staleDrafts.set(dk, stale);
     state.drafts.delete(dk);
@@ -4189,7 +4189,7 @@ function textEditor(id, r, key, label, value, rows) {
 
 const commentEditKey = (r, c) => "r:" + r.id + "#c:" + c.id;
 
-// His edit of one inline comment's words, or null. It is kept like a step draft and dropped with the route's draft hash
+// The maintainer's edit of one inline comment's words, or null. It is kept like a step draft and dropped with the route's draft hash
 function commentEdit(id, r, c) {
   const key = commentEditKey(r, c);
   const dk = draftKey(id, key);
@@ -4204,7 +4204,7 @@ function commentEdit(id, r, c) {
   return state.drafts.has(dk) ? state.drafts.get(dk) : null;
 }
 
-// Stores his edit. Null, an empty text and the agent's own text all drop it. `typing` keeps an empty text while he types
+// Stores the maintainer's edit. Null, an empty text and the agent's own text all drop it. `typing` keeps an empty text while they type
 function setCommentEdit(id, r, c, text, typing) {
   const key = commentEditKey(r, c);
   const dk = draftKey(id, key);
@@ -4314,7 +4314,7 @@ function commentProse(c) {
   return typeof c.suggestion === "string" ? str(c.text).trim() : splitSuggestions(c.text).prose;
 }
 
-// `shown` replaces the comment's words: his edit as text, or the editor as a node
+// `shown` replaces the comment's words: the maintainer's edit as text, or the editor as a node
 function commentBody(c, shown) {
   const words = (prose) => (shown instanceof Node ? shown : (shown ?? prose) ? h("span", { class: "c-text" }, richText(shown ?? prose)) : null);
   // Newer docs carry the commented lines and the replacement as fields, so nothing has to be parsed
@@ -4378,7 +4378,7 @@ function takeOverThreads(d) {
   return reviewThreads(d).filter((t) => t.verdict === "valid" || t.verdict === "optional" || t.verdict === "wrong");
 }
 
-// One row per review thread: the agent's verdict, his fix or dismiss decision and an optional note
+// One row per review thread: the agent's verdict, the maintainer's fix or dismiss decision and an optional note
 function buildDecisions(rec, threads) {
   return h("ul", { class: "decisions" }, threads.map((t) => {
     const verdict = Object.hasOwn(VERDICT_LABELS, t.verdict) ? t.verdict : "unjudged";
@@ -4448,7 +4448,7 @@ function buildCardInputs(id, d, r, rec) {
     }
   }
   if (r.type === "move" && moveToRepo(r)) {
-    // The canned text only matters for "Close, ask to reopen there", so it shows once he picks that button
+    // The canned text only matters for "Close, ask to reopen there", so it shows once the maintainer picks that button
     rec.revealBox = h("div", { class: "reveal", hidden: !rec.revealed }, ...editor);
     out.push(rec.revealBox);
   } else if (apiEdit(r)) {
@@ -4489,7 +4489,7 @@ function buildCardInputs(id, d, r, rec) {
         const where = str(c.path) + (range ? ":" + range : "");
         const body = h("div", { class: "c-body" });
         const label = h("label", { for: box.id }, where ? h("code", { class: "c-where", text: where }) : "Comment");
-        // Only a review the server posts takes edits. A review he posts himself copies the summary alone
+        // Only a review the server posts takes edits. A review the maintainer posts themself copies the summary alone
         const editable = !r.done && actorOf(r) !== "me";
         const fk = "r:" + r.id + ":c:" + c.id;
         const paint = (focus) => {
@@ -4600,7 +4600,7 @@ function extraParts(d, r) {
   return out;
 }
 
-// Who runs such a step: the bot, or he himself in own mode. Null when nobody may.
+// Who runs such a step: the bot, or the maintainer themself in own mode. Null when nobody may.
 function partActor(d) {
   const inst = instOf(d);
   if (inst.bot) return "bot";
@@ -4671,7 +4671,7 @@ function routePayload(d, r, rec, b, id) {
   return { text, input };
 }
 
-// The prefill buttons he used. The server serves `opened` on the route. A click marks it here at once, before the server's push arrives.
+// The prefill buttons the maintainer used. The server serves `opened` on the route. A click marks it here at once, before the server's push arrives.
 const localOpened = new Map();
 const openedKey = (id, r) => id + "|" + r.id + "|" + str(r.draftHash);
 
@@ -4721,7 +4721,7 @@ function meButton(id, d, r, rec, b, intent, locked) {
   }, actorMark("me", instOf(d)), again ? (meCopies(b, rec) ? "Copy again" : "Open again") : b.label, icon("external", null, "ext"));
 }
 
-// What he did with a prefill card, in words. He may have copied without posting, so it never says "Done"
+// What the maintainer did with a prefill card, in words. They may have copied without posting, so it never says "Done"
 function openedLine(id, r, rec, buttons) {
   const o = openedOf(id, r);
   if (!o) return null;
@@ -4875,7 +4875,7 @@ function buildCard(id, d, r, rec) {
     // Opening the thread is all that is left when the agent could not analyze it, so there is nothing to dismiss
     rec.head = h("div", { class: "card-head" }, hintEl(str(r.title) || routeButtons(d, r)[0]?.label || r.type), rec.actions, r.type === "open" ? null : dismissX);
     rec.body = null;
-    // Formatting pushes to the contributor's branch, so the row says who commits and that he keeps the PR
+    // Formatting pushes to the contributor's branch, so the row says who commits and that the contributor keeps the PR
     const note = r.type === "format"
       ? h("p", { class: "quiet-line compact-note", text: "Commits as " + (instOf(d).bot ? botLogin(instOf(d)) : meLogin() || "you") + ". Does not take over the PR." })
       : escalateRoute(r) ? h("p", { class: "quiet-line compact-note escalate-note" }, richText(escalateNote(d, r)))
@@ -5010,9 +5010,9 @@ function renderRoutes(id, d, locked) {
       detail.cards.set(r.id, rec);
     }
     // Rebuild the card only when the route itself changed. A new draft text alone updates the editor in place,
-    // and never while he is typing in it, so focus, cursor and typed text stay.
+    // and never while the maintainer is typing in it, so focus, cursor and typed text stay.
     const { done, refused, text, draftHash, labelDone, answerDone, opened, ...core } = r;
-    // The agent rewrote a draft he had edited: rebuild, so the editor shows the new text and keeps his as "previous"
+    // The agent rewrote a draft the maintainer had edited: rebuild, so the editor shows the new text and keeps the maintainer's as "previous"
     const dkR = draftKey(id, "r:" + r.id);
     if (state.drafts.has(dkR) && draftHashes.has(dkR) && draftHashes.get(dkR) !== str(r.draftHash)) rec.core = null;
     const coreSig = JSON.stringify([core, hasText(r), d.threads, d.findings, d.findingAnswers, d.kind, d.url]);
@@ -5025,7 +5025,7 @@ function renderRoutes(id, d, locked) {
     }
     const settled = settledOf(id, d, r, rec);
     const isSettled = !!settled && !settled.pending;
-    // Collapse once, when the state arrives. A card he expands afterwards stays open
+    // Collapse once, when the state arrives. A card the maintainer expands afterwards stays open
     if (isSettled && rec.settled === false && detail.openRoute === r.id) detail.openRoute = null;
     rec.settled = isSettled;
     const open = !rec.compact && detail.openRoute === r.id;
@@ -5235,7 +5235,7 @@ function buildZoneControls(id) {
     detail.lastZone = "away";
     restoreItem(id);
   });
-  // The panel's own button sends, so he can add instructions to his answers first
+  // The panel's own button sends, so the maintainer can add instructions to their answers first
   const analyze = fbtn([icon("sparkles"), "Analyze again"], "Analyze again", "foot:analyze", () => setPanel(detail.analyze.hidden), "Ask the agent to look at this item again");
   analyze.classList.add("foot-analyze");
   analyze.setAttribute("aria-expanded", "false");
@@ -5276,7 +5276,7 @@ function updateFooter(d, locked) {
   if (!state.drafts.has(zc.inputDraft) && document.activeElement !== zc.input && zc.input.value !== "") zc.input.value = "";
 }
 
-// The Analyze again button counts his unsent answers. While an analysis runs, only a note or an answer goes out
+// The Analyze again button counts the maintainer's unsent answers. While an analysis runs, only a note or an answer goes out
 function updateAnswerCount() {
   const zc = detail.zoneCtl;
   const id = detail.id;
@@ -5296,7 +5296,7 @@ function updateAnswerCount() {
   zc.review.disabled = zc.locked || (busy && !n && !zc.input.value.trim());
 }
 
-// One reanalyze with his answers to findings and the note. The server checks the answers and keeps them on the item
+// One reanalyze with the maintainer's answers to findings and the note. The server checks the answers and keeps them on the item
 async function sendAnswers(id, text) {
   const d = state.items.get(id);
   const answers = answerDrafts(id, d);
@@ -5311,7 +5311,7 @@ async function sendAnswers(id, text) {
     for (const a of answers) setAnswerDraft(id, a.finding, null);
     state.drafts.delete(draftKey(id, "more:reanalyze"));
     state.notes.set(id, { kind: "done", text: "The agent is on it" });
-    // The boxes close now, before the item with his answers comes back
+    // The boxes close now, before the item with the maintainer's answers comes back
     detail.deps.delete("info");
     for (const rec of detail.cards.values()) rec.core = null;
   } catch (e) {
@@ -5383,7 +5383,7 @@ function renderDetail() {
   const open = detail.el.open;
   const focusKey = open ? currentFocusKey() : null;
   const scrollTop = detail.body.scrollTop;
-  // The agent rewrote the item while he reads it: say so once, with what it suggested before
+  // The agent rewrote the item while the maintainer reads it: say so once, with what it suggested before
   const reviewedAt = str(d.reviewedAt);
   if (detail.reviewedAt !== undefined && reviewedAt !== detail.reviewedAt) detail.updated = { before: detail.lastHint };
   detail.reviewedAt = reviewedAt;
@@ -5456,12 +5456,12 @@ function closeDetail() {
   finishDetail();
 }
 
-// ---------- learning from his decisions ----------
+// ---------- learning from the maintainer's decisions ----------
 
 // The board server's own helper object, kept as it came, so methods the server adds stay callable
 let boardApi = null;
 
-// Tells the server which prefill he used and with what text. It must never get in the way of the click.
+// Tells the server which prefill the maintainer used and with what text. It must never get in the way of the click.
 function postDecision(body) {
   try {
     const send = boardApi && boardApi.decision;
@@ -5970,7 +5970,7 @@ function setupLearn() {
   learn.el.addEventListener("close", forgetDecided);
 }
 
-// Added cards stay until the dialog closes, so he sees the result, then they make room
+// Added cards stay until the dialog closes, so the maintainer sees the result, then they make room
 function forgetDecided() {
   if (reloadPending && !detail.el.open) location.reload();
   for (const id of learn.added.keys()) learn.gone.add(id);
@@ -6003,7 +6003,7 @@ function requestReload() {
 window.addEventListener("board:reload", requestReload);
 for (const b of document.querySelectorAll("#reload, .bar-reload")) b.addEventListener("click", () => location.reload());
 
-// The time he opened the dialog is stored on close, so the timeline he reads keeps its anchor while it is open
+// The time the maintainer opened the dialog is stored on close, so the timeline they read keeps its anchor while it is open
 function recordSeen(id, at) {
   if (!state.db || !at || !state.items.has(id)) return;
   try {
@@ -6248,7 +6248,7 @@ function subscribe(db) {
       // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
       // A PR that waits after its automatic review stays loaded too, so the waiting line can list it
       // An item in focus stays loaded too, so its card stays in the plan while the session works on it
-      // An FYI item has news and nothing to do, so it stays loaded without routes until he says Got it
+      // An FYI item has news and nothing to do, so it stays loaded without routes until the maintainer says Got it
       if (d && typeof d === "object" && (d.category === "fyi" ? fyiOpen(d) : routesOf(d).length || fixParked(d) || autoWaiting(d) || focusHeld(d))) next.set(doc.id, d);
       // Once the server carries the mark, it decides, including clearing it after the next run
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
@@ -6264,7 +6264,7 @@ function subscribe(db) {
     for (const doc of snap.docs) {
       const a = doc.data();
       if (!a || typeof a.itemId !== "string") continue;
-      // A link_issue doc must never be the latest action because the board would count it as his time
+      // A link_issue doc must never be the latest action because the board would count it as the maintainer's time
       if (a.action === "link_issue") continue;
       const inst = a.instance || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : "");
       // An action doc may name its item by the plain id or by the full key
