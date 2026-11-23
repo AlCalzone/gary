@@ -6,7 +6,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join, matchesGlob, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
-import { allowedRepo, botLogins, instanceName, loadConfig, loadProfile, maintainerLogins, repoParts, stateDir } from "./lib/config.mjs";
+import { allowedRepo, botLogins, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerLogins, maintainerRepos, repoParts, stateDir } from "./lib/config.mjs";
+import { NODE_FIELDS, SEARCH_QUERY, contributionFacts, contributionId, contributionSearches, kindOfNode, repoCovered, scopeQualifiers } from "./lib/contributions.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
 import { aiFacts, buildTimeline, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { activityOf } from "./lib/since.mjs";
@@ -289,6 +290,7 @@ export async function main(argv = []) {
 	const out = outPath(argv);
 
 	const config = loadConfig();
+	if (isContributions(config)) return contributionsMain(config, out);
 	const cutoff = Date.now() - config.activeWindowDays * 24 * 60 * 60 * 1000;
 	const classify = authorClassifier(maintainerLogins(), botLogins());
 	const sensitive = loadProfile().sensitivePaths;
@@ -388,7 +390,9 @@ export async function main(argv = []) {
 export async function fetchItem(kind, number, repo = loadProfile().repo, { allFiles = false } = {}) {
 	if (!Object.hasOwn(ITEM_QUERIES, kind)) throw new Error(`kind must be one of ${Object.keys(ITEM_QUERIES).join(", ")}`);
 	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
+	if (typeof repo !== "string") throw new Error("--repo <owner/name> is required for this instance");
 	if (!allowedRepo(instanceName(), repo)) throw new Error(`${repo} is not a repository of instance ${instanceName()}`);
+	if (isContributions(loadConfig())) return fetchContribution(kind, number, repo);
 	const id = `${kind} #${number}`;
 	const [field, base] = ITEM_QUERIES[kind];
 	const fields = kind === "discussion" ? base : withProjects(base, (await canReadProjects()).ok);
@@ -479,6 +483,182 @@ function baselineEntry(item) {
 		...(item.closingPrs && { closingPrs: item.closingPrs }),
 		...(item.referencingPrs && { referencingPrs: item.referencingPrs }),
 	};
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const SEARCH_PAGE = 25;
+// Closed threads stay this many days, at most the active window, so their news can reach the board
+const CLOSED_DAYS = 7;
+
+/** The context of the facts timeline for a contributions instance: only the maintainer himself is "us". */
+function contributionsContext(me) {
+	return { us: [me.toLowerCase()], patterns: [], me, maintainers: [me.toLowerCase()] };
+}
+
+const contributionClassifier = (me) => (author) => {
+	const login = (author?.login ?? "ghost").toLowerCase();
+	if (login === me.toLowerCase()) return "maintainer";
+	if (COPILOT.includes(login)) return "copilot";
+	if (author?.__typename === "Bot" || login.endsWith("[bot]")) return "bot";
+	return "contributor";
+};
+
+/** The time of his last "Got it" on the stored item, or null. */
+async function gotItOf(id) {
+	const item = await readDoc(join(boardDir(), "items", id + ".json"));
+	return typeof item?.gotIt?.at === "string" ? item.gotIt.at : null;
+}
+
+/** One snapshot entry of a contributions instance, from a search or item node. */
+function contributionEntry(kind, node, id, classify) {
+	const repo = node.repository.nameWithOwner;
+	const githubState = kind === "discussion" ? (node.closed ? "closed" : "open") : node.state === "MERGED" ? "merged" : node.state === "CLOSED" ? "closed" : "open";
+	const base = {
+		id, repo, kind, number: node.number, title: node.title, url: node.url,
+		author: node.author?.login ?? "ghost", authorType: classify(node.author), authorAssociation: node.authorAssociation,
+		labels: (node.labels?.nodes ?? []).map((l) => l.name), githubState,
+		createdAt: node.createdAt, updatedAt: node.updatedAt, ...(node.closedAt && { closedAt: node.closedAt }),
+		body: trim(node.body), commentCount: node.comments?.totalCount ?? 0, comments: (node.comments?.nodes ?? []).map((c) => toComment(c, classify)),
+	};
+	if (kind === "discussion") {
+		return {
+			...base,
+			comments: (node.comments?.nodes ?? []).map((c) => ({ ...toComment(c, classify), replyCount: c.replies?.totalCount ?? 0, replies: (c.replies?.nodes ?? []).map((r) => toComment(r, classify)) })),
+			category: node.category?.name, isAnswerable: node.category?.isAnswerable ?? false, isAnswered: node.isAnswered ?? false,
+		};
+	}
+	if (kind === "issue") return { ...base, assignees: (node.assignees?.nodes ?? []).map((a) => a.login), ...(node.stateReason && { stateReason: node.stateReason.toLowerCase() }) };
+	const open = (node.reviewThreads?.nodes ?? []).filter((t) => !t.isResolved);
+	const reviews = (node.allReviews?.nodes ?? []).filter((r) => r.submittedAt).map((r) => toReview(r, classify));
+	const requested = (node.reviewRequests?.nodes ?? []).map(toRequestedReviewer).filter(Boolean);
+	return {
+		...base,
+		isDraft: node.isDraft,
+		assignees: (node.assignees?.nodes ?? []).map((a) => a.login),
+		headSha: node.headRefOid,
+		ci: CI_STATES[node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state] ?? "none",
+		reviewDecision: node.reviewDecision,
+		mergeable: node.mergeable,
+		...(reviews.length && { reviews: reviews.slice(-10) }),
+		...(requested.length && { requestedReviewers: requested }),
+		...(open.length && { openThreadCount: open.length, openThreads: open.slice(-10).map((t) => toThread(t, classify)) }),
+	};
+}
+
+/** Adds the facts to a contributions entry. */
+function withContributionFacts(kind, node, entry, { me, ctx, reasons, gotIt, now }) {
+	return { ...entry, facts: contributionFacts(kind, node, { me, ctx, reasons, gotIt, ci: entry.ci ?? "none", now }) };
+}
+
+/**
+ * Runs the searches of a contributions instance at once, newest first per search, and keeps at most `max` threads of
+ * covered repos, in the order of `searches`. Each search reads at most the pages that `max` threads need.
+ * Returns `{ hits: Map<id, { kind, node, reasons }>, cut }`. `cut` says where the cap stopped, or null.
+ */
+async function searchContributions(searches, scope, max) {
+	const read = async (s) => {
+		const q = [s.q, ...scopeQualifiers(scope, s.q)].join(" ");
+		const nodes = [];
+		let after = null;
+		let total = 0;
+		let more = false;
+		while (true) {
+			const data = await withRetry(() => graphql(SEARCH_QUERY, { q, type: s.type, first: SEARCH_PAGE, after }));
+			const page = data.search;
+			total = (s.type === "DISCUSSION" ? page?.discussionCount : page?.issueCount) ?? 0;
+			nodes.push(...(page?.nodes ?? []));
+			more = page?.pageInfo?.hasNextPage === true;
+			if (!more || nodes.length >= max) break;
+			after = page.pageInfo.endCursor;
+		}
+		return { nodes, total, more };
+	};
+	const results = await Promise.all(searches.map(read));
+	const hits = new Map();
+	for (const [index, s] of searches.entries()) {
+		const { nodes, total, more } = results[index];
+		for (const [n, node] of nodes.entries()) {
+			const kind = kindOfNode(node);
+			const repo = node?.repository?.nameWithOwner;
+			if (!kind || typeof repo !== "string" || !repoCovered(repo, scope).ok) continue;
+			const id = contributionId(repo, kind, node.number);
+			const hit = hits.get(id);
+			if (hit) hit.reasons.add(s.reason);
+			else if (hits.size < max) hits.set(id, { kind, node, reasons: new Set([s.reason]) });
+			else return { hits, cut: { max, search: s.key, matched: total, left: Math.max(0, total - n), skipped: searches.slice(index + 1).map((x) => x.key) } };
+		}
+		// The search had more pages than the cap let it read
+		if (more && hits.size >= max) return { hits, cut: { max, search: s.key, matched: total, left: Math.max(0, total - nodes.length), skipped: searches.slice(index + 1).map((x) => x.key) } };
+	}
+	return { hits, cut: null };
+}
+
+/** The sentence `gary snapshot` prints when the cap cut the snapshot. */
+export function cutMessage(cut) {
+	const later = cut.skipped.length ? ` The ${cut.skipped.length === 1 ? "search" : "searches"} after it did not count: ${cut.skipped.join(", ")}.` : "";
+	return `The snapshot stopped at maxItems ${cut.max}. The search "${cut.search}" matched ${cut.matched} threads, up to ${cut.left} of them are left out.${later} Narrow "include", add repos to "exclude" or raise "maxItems".`;
+}
+
+/** gary snapshot for a contributions instance: his own threads in every repo outside the maintainer instances. */
+async function contributionsMain(config, out) {
+	const me = config.me;
+	const now = Date.now();
+	const scope = { include: config.include, exclude: config.exclude, blocked: maintainerRepos(instanceNames().filter((n) => n !== instanceName())) };
+	const searches = contributionSearches({ cutoff: now - config.activeWindowDays * DAY_MS, closedSince: now - Math.min(CLOSED_DAYS, config.activeWindowDays) * DAY_MS });
+	const { hits, cut } = await searchContributions(searches, scope, config.maxItems);
+	const ctx = contributionsContext(me);
+	const classify = contributionClassifier(me);
+	const baseline = readJson(BASELINE())?.items ?? {};
+	const fetchedAt = new Date().toISOString();
+	const current = {};
+	const changed = [];
+	const quiet = [];
+	const unchanged = [];
+	for (const [id, { kind, node, reasons }] of hits) {
+		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now });
+		const closed = item.facts.closed;
+		// A thread he closed himself, or one that closed before he last looked, holds no news
+		if (closed && (String(closed.by ?? "").toLowerCase() === me.toLowerCase() || (item.facts.lookedAt && !(Date.parse(closed.at) > Date.parse(item.facts.lookedAt))))) continue;
+		const old = baseline[id];
+		const entry = {
+			...baselineEntry(item), repo: item.repo, githubState: item.githubState,
+			activity: activityOf(kind, node, ctx, { before: old?.activity, ci: item.ci, at: fetchedAt }),
+		};
+		current[id] = entry;
+		let reason;
+		if (!old) reason = "new";
+		else if (item.headSha && old.headSha !== item.headSha) reason = "head_changed";
+		else if (old.updatedAt !== entry.updatedAt || (old.lastReviewAt ?? null) !== entry.lastReviewAt || (old.openThreadCount ?? 0) !== entry.openThreadCount || old.githubState !== entry.githubState) reason = "updated";
+		if (!reason) unchanged.push(id);
+		else if (item.facts.quiet) quiet.push(id);
+		else changed.push({ id, reason, ...item });
+	}
+	const closed = Object.keys(baseline).filter((id) => !current[id]);
+	mkdirSync(stateDir(), { recursive: true });
+	writeFileSync(PENDING(), JSON.stringify({ fetchedAt, items: current }, null, "\t") + "\n");
+	if (cut) console.error(`gary snapshot: ${cutMessage(cut)}`);
+	const output = { changed, quiet, focus: [], unchanged, closed, stale: { issues: 0, discussions: 0 }, ...(cut && { cut: { ...cut, message: cutMessage(cut) } }) };
+	if (!out) return void process.stdout.write(JSON.stringify(output) + "\n");
+	mkdirSync(dirname(out), { recursive: true });
+	writeFileSync(out, JSON.stringify(output) + "\n");
+}
+
+/** gary item for a contributions instance: one thread with the same fields as its snapshot entry. */
+async function fetchContribution(kind, number, repo) {
+	const config = loadConfig();
+	const { owner, name } = repoParts(repo);
+	const field = ITEM_QUERIES[kind][0];
+	let data;
+	try {
+		data = await graphql(`query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { ${field}(number: $number) { ${NODE_FIELDS[kind]} } } }`, { owner, name, number });
+	} catch (e) {
+		if (/Could not resolve/i.test(e.message)) throw new Error(`${kind} #${number} not found in ${repo}`);
+		throw e;
+	}
+	const node = data.repository?.[field];
+	if (!node) throw new Error(`${kind} #${number} not found in ${repo}`);
+	const id = contributionId(repo, kind, number);
+	return withContributionFacts(kind, node, contributionEntry(kind, node, id, contributionClassifier(config.me)), { me: config.me, ctx: contributionsContext(config.me), gotIt: await gotItOf(id), now: Date.now() });
 }
 
 const SEARCH_PRS = 100;
