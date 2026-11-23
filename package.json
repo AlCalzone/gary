@@ -8,7 +8,8 @@
 	},
 	"scripts": {
 		"test": "node test/run.mjs",
-		"test:page": "node test/run.mjs --page"
+		"test:page": "node test/run.mjs --page",
+		"screenshots": "node test/page/screenshots.mjs"
 	},
 	"engines": {
 		"node": ">=24"
