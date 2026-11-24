@@ -234,6 +234,8 @@ h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
 .tab .i { width: 15px; height: 15px; color: var(--tab-ink, currentColor); }
 .tab-img { height: 16px; width: auto; max-width: 48px; object-fit: contain; }
 .tab-img[hidden] { display: none; }
+/* A project with nothing to do right now steps back */
+.tab.empty:not([aria-selected="true"]):not(:hover):not(:focus-visible) { opacity: 0.5; }
 .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--tab-ink, var(--fg)); font-weight: 600; }
 :root { --bg: var(--bg-0); --surface: var(--surface-0); --surface-2: var(--surface-2-0); --line: var(--line-0); --line-strong: var(--line-strong-0); --today: var(--today-0); --today-line: var(--today-line-0); --today-hover: var(--today-hover-0); --bar-track: var(--bar-track-0); }
 /* A project's tint sets these colors inline on the root, see paletteFor */
@@ -2872,7 +2874,22 @@ function renderSplit(byGroup) {
   }));
 }
 
+// A project has work when one of its items would show undimmed in a group of the plan, whatever the filters say
+function hasWork(id, d) {
+  if (d.hidden === true) return false;
+  if (focusHeld(d)) return true;
+  return !(handledOf(id, d) || goneOnGithub(d) || fixParked(d) || autoWaiting(d) || isHiddenItem(d) || finishedBy(id));
+}
+
+// Dims the tab of a project that has nothing for the maintainer right now
+function markEmptyTabs() {
+  const busy = new Set();
+  for (const [id, d] of state.items) if (hasWork(id, d)) busy.add(str(d.instance));
+  for (const b of document.querySelectorAll("#tabs .tab")) b.classList.toggle("empty", b.dataset.tab !== "all" && !busy.has(b.dataset.tab));
+}
+
 function renderListNow() {
+  markEmptyTabs();
   const a = document.activeElement;
   const focused = a && a.classList && a.classList.contains("row") ? [a.dataset.id, a.dataset.slot] : null;
   const sorter = state.filters.sort === "quickest" ? compareQuickest : compareItems;
@@ -3904,6 +3921,7 @@ function renderTabs() {
     onclick: () => setTab(name),
   }, style && style.iconUrl ? tabImage(style.iconUrl) : style && style.icon ? icon(style.icon) : null, label));
   bar.replaceChildren(...buttons);
+  markEmptyTabs();
 }
 
 // The colors a tab may name in the instance config, as the category inks that both themes define

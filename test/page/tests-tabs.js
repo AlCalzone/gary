@@ -10,6 +10,11 @@
   const tabBtns = () => [...tabsBar.querySelectorAll(".tab")];
   const rowsIn = (g) => [...document.querySelectorAll("#group-" + g + " .row")];
   const allRows = () => [...document.querySelectorAll("#board .row")];
+  const emptyTabs = () => tabBtns().filter((b) => b.classList.contains("empty")).map((b) => b.dataset.tab).join();
+  ok("tabs of projects with work are not dimmed", emptyTabs() === "");
+  items(T.filter(([, d]) => d.instance !== "gadgets")); await wait(10);
+  ok("a project without items has a dimmed tab, and All never has", emptyTabs() === "gadgets", emptyTabs());
+  items(T); await wait(10);
   ok("two instances: All first, then one tab per instance title, no counts", !tabsBar.hidden && tabBtns().map((b) => b.textContent).join() === "All,widgets,contoso-gadgets" && tabBtns()[0].getAttribute("aria-selected") === "true");
   ok("the header names the board, not one project", document.getElementById("board-title").textContent === "Gary");
   // A tab's icon, color and page tint come from the instance's config
