@@ -1371,7 +1371,7 @@ The maintainer's own PRs and review requests count at any age, because someone w
 
 The notifications API would also work with a `repo` token, but its threads depend on what the maintainer read on GitHub, so the searches are the source.
 
-An item id is `<owner>.<name>.<kind>-<number>` in lower case, with `disc` for a discussion, like `other.lib.pr-5`. An owner holds no dot and kind and number come last, so two threads never share an id. A name too long for the id pattern is cut and gets 8 hex digits of the SHA-256 of the repo. Every entry carries `repo`, and the staged and committed entries keep `repo` and `githubState`.
+An item id is `<owner>.<name>.<kind>-<number>` in lower case, with `disc` for a discussion, like `other.lib.pr-5`. An owner holds no dot and kind and number come last, so two threads never share an id. A name too long for the id pattern is cut and gets 8 hex digits of the SHA-256 of the repo. Every entry carries `repo`, and the staged and committed entries keep `repo` and `githubState`. The server serves a `merged` or `closed` state of the committed entry as the item's `liveState`, so the board shows the thread as merged or closed before a refresh read it.
 
 Each entry carries the fields of a maintainer entry that apply, `facts.timeline` and the speaker facts with only `me` as `us`, and `activity` in the staged snapshot for "Since your last choice". The contributions facts:
 

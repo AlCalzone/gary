@@ -874,6 +874,8 @@ export async function startBoardServer({
 	const refusals = new Map();
 	// Thread state from the latest guard read per item, so the page can show a thread that closed since the review
 	const liveStates = new Map();
+	// A contributions snapshot keeps threads that closed or merged since the maintainer last looked
+	const snapshotState = (entry) => (entry?.githubState === "merged" || entry?.githubState === "closed" ? { state: entry.githubState.toUpperCase(), reason: null } : undefined);
 	// One timer per instance that pushes the items again when the earliest hold of a watched PR ends
 	const holdTimers = new Map();
 	// `linkTimers` holds one timer per escalated discussion whose issue the server still looks for
@@ -1121,7 +1123,7 @@ export async function startBoardServer({
 			...(focuses.has(id) && { focus: focuses.get(id) }),
 			// An item written before the routine copied the category gets it from the snapshot
 			...(typeof categoryOf(id, data) === "string" && { discussionCategory: categoryOf(id, data) }),
-			liveState: liveStates.get(`${name}/${id}`),
+			liveState: liveStates.get(`${name}/${id}`) ?? snapshotState(fixSources.snapshot[id]),
 			...(autoReviewOf(id, data) && { autoReview: autoReviewOf(id, data) }),
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),

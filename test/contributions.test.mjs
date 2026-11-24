@@ -243,6 +243,7 @@ const reviewedAt = ago(1);
 write("other.lib.pr-5", { repo: "other/lib", kind: "pr", number: 5, title: "Review asked", url: "https://github.com/other/lib/pull/5", author: "alice", authorType: "contributor", category: "unblock", state: "s", reviewDepth: "quick", effortMinutes: 5, reviewedAt, hint: "Review: looks good",
 	routes: [{ id: "r1", type: "review", as: "me", title: "Review: looks good", recommended: true, text: "LGTM", params: { event: "approve" } }, { id: "r2", type: "reply", as: "bot", title: "Reply: as bot", text: "x" }, { id: "r3", type: "follow_up", as: "agent", title: "Start fix: x", text: "x" }] });
 write("other.lib.issue-4", { ...stored, gotIt: undefined, reviewedAt });
+write("other.lib.pr-8", { repo: "other/lib", kind: "pr", number: 8, title: "Merged", url: "https://github.com/other/lib/pull/8", author: ME, authorType: "maintainer", category: "fyi", newsAt: ago(1), state: "s", reviewDepth: "quick", effortMinutes: 1, reviewedAt, routes: [] });
 write("acme.widgets.issue-1", { repo: "acme/widgets", kind: "issue", number: 1, title: "sneaked", url: "https://github.com/acme/widgets/issues/1", author: "x", authorType: "contributor", category: "fyi", newsAt: ago(1), state: "s", reviewDepth: "quick", effortMinutes: 1, reviewedAt });
 const child = spawn(process.execPath, [join(ROOT, "server", "server.mjs"), "--dry-run", "--port", String(PORT)], { env: { ...env, FAKE_GH_CONTRIBUTIONS: ghData }, stdio: ["ignore", "ignore", "pipe"] });
 process.on("exit", () => child.kill("SIGTERM"));
@@ -260,6 +261,7 @@ try {
 	check("the board names the instance read-only, without one repo URL", info.kind === "contributions" && info.readOnly === true && info.repoUrl === null && info.title === "Contributions" && info.accountMode === "none", info);
 	const served = Object.fromEntries(st.items.filter((i) => i.instance === "mine").map((i) => [i.id, i]));
 	check("items carry their full ref", served["other.lib.pr-5"]?.ref === "other/lib#5");
+	check("a thread the snapshot found merged is served as merged before any refresh", served["other.lib.pr-8"]?.liveState?.state === "MERGED" && served["other.lib.pr-5"]?.liveState === undefined, [served["other.lib.pr-8"]?.liveState, served["other.lib.pr-5"]?.liveState]);
 	const hash = (id, route) => served[id].routes.find((x) => x.id === route).draftHash;
 	const clickR = (id, route) => api("/api/action", { instance: "mine", itemId: id, routeId: route, draftHash: hash(id, route) });
 	const readOnly = (res) => res.status === 200 && res.data.ok === false && res.data.readOnly === true;
