@@ -617,9 +617,12 @@ async function contributionsMain(config, out) {
 	for (const [id, { kind, node, reasons }] of hits) {
 		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now, config });
 		const closed = item.facts.closed;
-		// A thread the maintainer closed themself, or one that closed before they last looked, holds no news
-		if (closed && (String(closed.by ?? "").toLowerCase() === me.toLowerCase() || (item.facts.lookedAt && !(Date.parse(closed.at) > Date.parse(item.facts.lookedAt))))) continue;
 		const old = baseline[id];
+		// A thread the maintainer closed themself holds no news
+		if (closed && String(closed.by ?? "").toLowerCase() === me.toLowerCase()) continue;
+		// A thread that closed before the maintainer last looked holds no news either.
+		// A tracked thread must stay tracked, because its stored item keeps the maintainer's "Got it".
+		if (closed && !old && item.facts.lookedAt && !(Date.parse(closed.at) > Date.parse(item.facts.lookedAt))) continue;
 		const entry = {
 			...baselineEntry(item), repo: item.repo, githubState: item.githubState,
 			activity: activityOf(kind, node, ctx, { before: old?.activity, ci: item.ci, at: fetchedAt }),

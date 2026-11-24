@@ -167,6 +167,16 @@ r = cli(["snapshot", "--out", out]);
 snap = JSON.parse(readFileSync(out, "utf8"));
 const back = snap.changed.find((e) => e.id === "other.lib.issue-4");
 check("new relevant activity after Got it comes back as news", back?.facts.lookedVia === "got_it" && back.facts.news.length === 1 && /2\.0\.1/.test(back.facts.news[0].excerpt), back?.facts);
+// Got it on a merged PR: the thread stays tracked, so its item and the Got it survive the next runs
+cli(["snapshot", "--commit"]);
+writeFileSync(join(BOARD, "items", "other.lib.pr-8.json"), JSON.stringify({ repo: "other/lib", kind: "pr", number: 8, category: "fyi", gotIt: { at: ago(1) } }));
+r = cli(["snapshot", "--out", out]);
+snap = JSON.parse(readFileSync(out, "utf8"));
+check("after Got it, a merged PR is neither news nor closed", !ids(snap.changed).includes("other.lib.pr-8") && !snap.closed.includes("other.lib.pr-8") && [...snap.unchanged, ...snap.quiet].includes("other.lib.pr-8"), snap);
+cli(["snapshot", "--commit"]);
+r = cli(["snapshot", "--out", out]);
+snap = JSON.parse(readFileSync(out, "utf8"));
+check("and it does not come back as new in the run after", !ids(snap.changed).includes("other.lib.pr-8") && !snap.closed.includes("other.lib.pr-8"), snap);
 r = cli(["item", "issue", "4"]);
 check("gary item without --repo names the missing repo", r.status !== 0 && /--repo/.test(r.stderr), r.stderr);
 r = cli(["item", "pr", "99", "--repo", "acme/widgets"]);
