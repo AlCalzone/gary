@@ -6,6 +6,8 @@ This page is for people changing Gary itself and for the agents' skills. To use 
 
 ## How the pieces connect
 
+[how-it-runs.md](how-it-runs.md) shows the sessions and agents in one picture.
+
 1. `gary snapshot` fetches the open items and prints what changed since the last run.
 2. The routine in `skills/triage-routine/` reviews the changed items and writes them with `gary put`.
 3. The board server in `server/server.mjs` serves `board/board.html` and pushes every change in `state/board/` to open pages. A click runs the GitHub action right away.

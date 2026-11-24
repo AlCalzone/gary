@@ -68,6 +68,7 @@ Gary keeps project facts, project rules and your personal style apart:
 ## More
 
 - [docs/board.md](docs/board.md): working with the board day to day.
+- [docs/how-it-runs.md](docs/how-it-runs.md): the sessions and agents behind the board, in one picture.
 - [docs/internals.md](docs/internals.md): commands, server, state and tests, for people changing Gary.
 
 ## License

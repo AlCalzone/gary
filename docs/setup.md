@@ -68,6 +68,8 @@ One master Claude session runs everything. One scheduled task starts it every ho
 
 A worker is a child session where the harness supports it. Otherwise it is a headless `claude -p` run. Otherwise the master does the job itself.
 
+[how-it-runs.md](how-it-runs.md) shows all sessions and agents in one picture.
+
 ## More projects
 
 Ask Claude to set up Gary for the next repo. The skill creates a new instance next to the existing ones.
