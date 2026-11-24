@@ -75,10 +75,10 @@ function issue(repo, number, { author = ME, comments = [], status = [], state = 
 		comments: list(comments.slice(-5)), timelineComments: list(comments), statusEvents: { nodes: status }, closedByPullRequestsReferences: { nodes: [] },
 	};
 }
-function pr(repo, number, { author = ME, comments = [], reviews = [], status = [], state = "OPEN", requested = [], ci = "SUCCESS", commits = [], threads = [], updated = 1 } = {}) {
+function pr(repo, number, { author = ME, comments = [], reviews = [], status = [], state = "OPEN", requested = [], ci = "SUCCESS", commits = [], threads = [], updated = 1, permission = "READ" } = {}) {
 	return {
 		__typename: "PullRequest", number, title: `PR ${repo}#${number}`, url: `https://github.com/${repo}/pull/${number}`, body: "Body", createdAt: ago(300), updatedAt: ago(updated), closedAt: state === "OPEN" ? null : ago(updated), isDraft: false, state,
-		repository: { nameWithOwner: repo }, author: user(author), authorAssociation: "CONTRIBUTOR", labels: list([]), assignees: list([]),
+		repository: { nameWithOwner: repo, viewerPermission: permission }, author: user(author), authorAssociation: "CONTRIBUTOR", labels: list([]), assignees: list([]),
 		headRefOid: "a".repeat(40), reviewDecision: null, mergeable: "MERGEABLE", commits: { nodes: [{ commit: { statusCheckRollup: { state: ci } } }] },
 		recentCommits: { nodes: commits.map(([login, h]) => ({ commit: { oid: "b".repeat(40), committedDate: ago(h), author: { name: login, user: { login } } } })) },
 		comments: list(comments.slice(-5)), timelineComments: list(comments), statusEvents: { nodes: status },
@@ -96,7 +96,7 @@ const discussion = (repo, number, { comments = [] } = {}) => ({
 
 const nodes = {
 	review: pr("other/lib", 5, { author: "alice", requested: [ME], comments: [comment("alice", 30, "Could you have a look?")] }),
-	ownPr: pr("mine/tool", 7, { comments: [comment(ME, 20, "Ready"), comment("bob", 4, "> @octocat said ready\nPlease split the commit. What do you think?")], reviews: [["bob", 5, "CHANGES_REQUESTED", "Split it"]] }),
+	ownPr: pr("mine/tool", 7, { permission: "WRITE", comments: [comment(ME, 20, "Ready"), comment("bob", 4, "> @octocat said ready\nPlease split the commit. What do you think?")], reviews: [["bob", 5, "CHANGES_REQUESTED", "Split it"]] }),
 	maintainerRepo: pr("acme/widgets", 99),
 	excluded: pr("skipped/thing", 1),
 	plusOne: issue("other/lib", 3, { author: "carol", comments: [comment(ME, 10, "Same for me on 1.2"), comment("carol", 5, "+1"), comment("ci[bot]", 4, "Stale soon")] }),
@@ -134,6 +134,7 @@ check("a mention inside a quote is no mention, the question still asks the maint
 check("a review request carries the involvement and nothing the maintainer looked at", byId["other.lib.pr-5"].facts.involvement.join() === "review_requested" && byId["other.lib.pr-5"].facts.lookedAt === null && byId["other.lib.pr-5"].facts.reviewRequested === true);
 const answered = byId["other.lib.issue-4"].facts;
 check("the news drop bots and keep the maintainer's answer", answered.news.length === 1 && answered.news[0].by === "dave" && answered.involvement.join() === "commenter", answered);
+check("canMerge follows the login's permission on the repo", own.canMerge === true && byId["other.lib.pr-5"].facts.canMerge === false, [own.canMerge, byId["other.lib.pr-5"].facts.canMerge]);
 check("a merged PR of the maintainer's carries who merged it", byId["other.lib.pr-8"].facts.closed.by === "dave" && byId["other.lib.pr-8"].facts.closed.how === "merged" && byId["other.lib.pr-8"].facts.news.some((n) => n.kind === "merged"));
 check("only the instance's maintainer is us in the timeline, so a maintainer who spoke last waits on them", byId["other.lib.issue-4"].facts.timeline.find((e) => e.author === "dave").side === "them" && byId["other.lib.issue-4"].facts.waitingOn === "us");
 check("no cut without a cap", snap.cut === undefined && snap.stale.issues === 0);

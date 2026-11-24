@@ -90,7 +90,7 @@ const STATUS = "createdAt actor { login __typename }";
 
 const PR_FIELDS = `
 	__typename number title url body createdAt updatedAt closedAt isDraft state
-	repository { nameWithOwner }
+	repository { nameWithOwner viewerPermission }
 	${ACTOR} authorAssociation
 	labels(first: 20) { nodes { name } }
 	assignees(first: 10) { nodes { login } }
@@ -289,6 +289,9 @@ function closedFacts(kind, node, state) {
 }
 
 // The state of a PR that decides what the maintainer does next on their own PR or a PR they review
+// The repo permissions that let the viewer merge a PR
+const CAN_MERGE = new Set(["ADMIN", "MAINTAIN", "WRITE"]);
+
 function prFacts(node, { me, ci, requested }) {
 	const isMe = (login) => low(login) === low(me);
 	const latest = new Map();
@@ -306,6 +309,7 @@ function prFacts(node, { me, ci, requested }) {
 	return {
 		ci,
 		ciGreen: ci === "passing",
+		canMerge: CAN_MERGE.has(node.repository?.viewerPermission),
 		approvedBy: by("APPROVED"),
 		changesRequestedBy: by("CHANGES_REQUESTED"),
 		openThreadCount: open.length,
