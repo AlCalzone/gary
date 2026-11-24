@@ -15,7 +15,7 @@ These rules add to the core PR review. Read `SPEC.md` and `docs/internals.md` be
 - **Core or project**: no repo name, login, label, bot command or machine path in core. A rule for one project belongs in a profile (`rules/classification.md`, "Core or project").
 - **Spec**: a change in behavior updates `SPEC.md` and the docs page. A new field in `config.json` or `profile.json` is known to the validator in `scripts/lib/config.mjs`, to `gary doctor` and to `docs/configuration.md`.
 - **Tests**: a bug fix has a test that fails without it. Tests never write to GitHub and need no network. The unit suites are in `test/*.test.mjs`, the page suites in `test/page/`.
-- **New dependencies, install scripts and network calls**: each one is a finding with severity `important`, whatever its reason.
+- **New dependencies, install scripts and network calls**: each one is a finding with severity `major`, whatever its reason.
 - **Text shown on the board** addresses the maintainer as "you" and uses no gendered pronoun.
 
 Never run code from a PR branch, as everywhere. `npm test` runs only on Gary's own fix branches.
