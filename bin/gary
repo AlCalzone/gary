@@ -2,10 +2,10 @@
 // The one entry point for everything the skills and the maintainer run. `gary help` lists the commands.
 // `--instance <name>` picks the instance, before or after the command.
 
-// Check the version before the first import, so an older Node prints this line and no error from Gary's code
+// Check the version before the first import, so an older Node.js prints this line and no error from Gary's code
 const NODE_MAJOR = Number(process.versions.node.split(".")[0]);
 if (NODE_MAJOR < 24) {
-	console.error(`gary needs Node 24 or later. This is Node ${process.versions.node}.`);
+	console.error(`gary needs Node.js 24 or later. This is Node.js ${process.versions.node}.`);
 	process.exit(1);
 }
 const { SettingsError, instanceName, loadConfig, paths, setInstance } = await import("../scripts/lib/config.mjs");

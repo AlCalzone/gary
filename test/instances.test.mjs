@@ -240,7 +240,7 @@ try {
 	r = gary(["doctor", "--instance", "gadgets"], { cwd: plain, extra: { PATH: noClaude } });
 	t.check("doctor only warns without claude, and says the headless worker needs it", /^warn\s+claude\s+.*headless worker with `claude -p`/m.test(r.stdout) && !/^fail\s+claude/m.test(r.stdout), r.stdout);
 	r = spawnSync(process.execPath, ["--import", 'data:text/javascript,Object.defineProperty(process.versions,"node",{value:"22.11.0"})', GARY, "help"], { env, encoding: "utf8" });
-	t.check("gary refuses Node below 24 with one line", r.status === 1 && r.stderr.trim() === "gary needs Node 24 or later. This is Node 22.11.0." && r.stdout === "", r);
+	t.check("gary refuses Node below 24 with one line", r.status === 1 && r.stderr.trim() === "gary needs Node.js 24 or later. This is Node.js 22.11.0." && r.stdout === "", r);
 } finally {
 	fake.kill();
 }

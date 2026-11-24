@@ -36,8 +36,8 @@
 <rect x="476" y="154" width="440" height="90" rx="8" class="box"/>
 <rect x="476" y="154" width="4" height="90" rx="2" fill="#2563eb"/>
 <text x="492" y="177" class="t">Board server</text>
-<rect x="802" y="163" width="104" height="19" rx="9.5" class="chip"/>
-<text x="854" y="176.5" class="c" text-anchor="middle">Node, no model</text>
+<rect x="782" y="163" width="124" height="19" rx="9.5" class="chip"/>
+<text x="844" y="176.5" class="c" text-anchor="middle">Node.js, no model</text>
 <text x="492" y="197" class="p">Serves the board on 127.0.0.1. Stores your clicks, checks every rule</text>
 <text x="492" y="213" class="p">in code, and sends what you clicked to GitHub.</text>
 <path d="M470.0 248 V268 M465.0 262 L470.0 269 L475.0 262" class="a"/>

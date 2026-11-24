@@ -32,7 +32,7 @@ One board covers all the projects you maintain. It also follows your own PRs, is
 
 ## Setup
 
-You need Node 24 or newer, the `gh` CLI with a login, and Claude Code.
+You need Node.js 24 or newer, the `gh` CLI with a login, and Claude Code.
 
 ```sh
 claude plugin marketplace add AlCalzone/gary

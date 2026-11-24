@@ -71,7 +71,7 @@ Tell the maintainer this in two or three sentences. The board logs the maintaine
 
 ## 4. Check
 
-Run `gary --instance <name> doctor` and fix what it reports together with the maintainer. `gary doctor --all` checks every instance. It checks Node, `git`, `claude`, the MCP SDK, the config, the profile, `gh` access, the bot token and whether the writing account may push. It names the tools in `requiredTools` without checking them: confirm with the maintainer that those MCP servers are set up in Claude Code.
+Run `gary --instance <name> doctor` and fix what it reports together with the maintainer. `gary doctor --all` checks every instance. It checks Node.js, `git`, `claude`, the MCP SDK, the config, the profile, `gh` access, the bot token and whether the writing account may push. It names the tools in `requiredTools` without checking them: confirm with the maintainer that those MCP servers are set up in Claude Code.
 
 ## 5. Schedule
 

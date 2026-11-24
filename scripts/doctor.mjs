@@ -101,7 +101,7 @@ async function checkInstance() {
 		return ["ok", `${name}, from ${via === "directory" ? "the working directory" : via}`];
 	});
 	const major = Number(process.versions.node.split(".")[0]);
-	add("node", major >= 24 ? "ok" : "fail", `Node ${process.versions.node}${major >= 24 ? "" : ", needs 24 or later"}`);
+	add("node", major >= 24 ? "ok" : "fail", `Node.js ${process.versions.node}${major >= 24 ? "" : ", needs 24 or later"}`);
 	await attempt("gh", async () => ["ok", (await run("gh", ["--version"])).stdout.split("\n")[0]]);
 
 	let config = null;
