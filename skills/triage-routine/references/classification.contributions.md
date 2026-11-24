@@ -38,7 +38,7 @@ Check the rules top to bottom. The first match wins. The board puts every catego
 ### `land`: the maintainer's PR is approved and only needs a last step from them
 
 - The maintainer's PR is approved, CI passes, nothing is open, and `facts.canMerge` is true. The merge is their own step. `state` says so. Route: `open`.
-- The maintainer's PR is approved and `facts.canMerge` is false: they have no write access to the repo. Never offer a merge then, in no route and under no title, and never write that only the merge is left for them. `state` says who has to merge, like `Three approvals, nothing open. A maintainer of the repo has to merge.` While the approval is news, the item is `fyi`. After a few quiet days the last step is a short reply that asks a maintainer to merge. Route: `reply`.
+- The maintainer's PR is approved and `facts.canMerge` is false: they have no write access to the repo. Never offer a merge then, in no route and under no title, and never write that only the merge is left for them. `state` says who has to merge, like `Three approvals, nothing open. A maintainer of the repo has to merge.` While the approval is news, the item is `fyi`. After that there is nothing to do: write no routes, and never a reminder. Other repos merge at their own pace, and a ping after a few days is noise for their maintainers. Only when the thread has been quiet for more than 30 days (`facts.quietDays`), the PR is still approved and it has no conflicts, the item is `land` with one short reply that asks a maintainer to merge. Route: `reply`. With conflicts, the next step is the instance maintainer's own: `act` with an `open` route.
 
 ### `decide`: the maintainer decides whether to keep going, close or hand over
 

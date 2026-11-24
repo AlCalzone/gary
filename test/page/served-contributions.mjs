@@ -21,7 +21,7 @@ const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
 writeFileSync(join(MINE, "state", "snapshot.json"), JSON.stringify({ fetchedAt: ago(0), items: Object.fromEntries(["other/lib", "third/app", "acme/widgets"].map((repo, i) => [`x${i}`, { repo, updatedAt: ago(1) }])) }));
 const base = (repo, kind, number, extra) => ({ repo, kind, number, title: `Probe ${repo}#${number}`, url: `https://github.com/${repo}/${kind === "pr" ? "pull" : kind === "issue" ? "issues" : "discussions"}/${number}`, author: "carol", authorType: "contributor", reviewDepth: "quick", reviewedAt: ago(1), state: "Dave fixed it in 2.0.", ...extra });
 const put = (home, id, doc) => writeFileSync(join(home, "state", "board", "items", id + ".json"), JSON.stringify(doc));
-put(MINE, "other.lib.issue-4", base("other/lib", "issue", 4, { category: "fyi", effortMinutes: 1, newsAt: ago(2) }));
+put(MINE, "other.lib.issue-4", base("other/lib", "issue", 4, { category: "fyi", effortMinutes: 1, newsAt: ago(2), authorType: "maintainer" }));
 put(MINE, "other.lib.issue-6", base("other/lib", "issue", 6, { category: "fyi", effortMinutes: 1, newsAt: ago(5), gotIt: { at: ago(3) } }));
 put(MINE, "third.app.disc-2", base("third/app", "discussion", 2, { category: "fyi", effortMinutes: 15, newsAt: ago(2), state: "A long thread found the root cause." }));
 put(MINE, "other.lib.pr-5", base("other/lib", "pr", 5, { category: "unblock", effortMinutes: 5, priority: 1, hint: "Review: looks good", state: "Alice asked for your review.", routes: [{ id: "r1", type: "review", as: "me", title: "Review: looks good", recommended: true, text: "Looks good to me.", params: { event: "approve" } }] }));
@@ -96,6 +96,7 @@ try {
 
 	// An FYI item: one Got it, then it leaves until the routine reports news
 	await ev(`openDetail("mine/other.lib.issue-4");`);
+	ok("your own item says You, never Maintainer", await until(`/You/.test(document.getElementById("d-meta").textContent) && !/Maintainer/.test(document.getElementById("d-meta").textContent)`));
 	await until(`document.getElementById("detail").open`);
 	ok("an FYI dialog has one Got it button and no Focus", await until(`document.querySelectorAll(".fyi-ack button").length === 1 && document.querySelector(".fyi-ack button").textContent === "Got it" && document.querySelector('#d-foot [aria-label="Focus"]').hidden`));
 	await ev(`document.querySelector(".fyi-ack button").click();`);

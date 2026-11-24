@@ -1206,6 +1206,12 @@ const AUTHOR_ICONS = {
   copilot: ["sparkles", "Copilot", "Opened by Copilot's coding agent. An AI wrote the code."],
   bot: ["bot", "Bot", "Opened by a bot account. An agent or a workflow wrote it, no person."],
 };
+// The badge for who opened the item. In a contributions instance the only "maintainer" is the viewer, who maintains nothing there
+function authorBadge(d) {
+  const type = authorTypeOf(d);
+  if (type === "maintainer" && isContributionsItem(d)) return ["user", "You", "Opened by you"];
+  return AUTHOR_ICONS[type];
+}
 const SORTS = [
   { id: "board", label: "Board order" },
   { id: "quickest", label: "Quickest first" },
@@ -2528,7 +2534,7 @@ function avatarEl(login, url) {
 
 function authorEl(d, cls, withType = true) {
   const login = str(d.author);
-  const type = AUTHOR_ICONS[authorTypeOf(d)];
+  const type = authorBadge(d);
   return h("span", { class: cls, title: login + (type ? ", " + type[1].toLowerCase() : "") },
     avatarEl(login),
     login ? h("span", { class: "a-name", text: login }) : null,
@@ -2683,9 +2689,8 @@ function buildRow(id, d, dim, slot) {
   const flags = flagChips(d);
   const review = reviewStatus(d);
   const icons = stateIcons(id, d, dim, false).slice(0, MAX_ROW_ICONS).map(iconEntry);
-  const type = AUTHOR_ICONS[authorTypeOf(d)];
-  // In a contributions instance the only maintainer is the viewer themself
-  if (type) icons.push(icon(type[0], authorTypeOf(d) === "maintainer" && isContributionsItem(d) ? "Opened by you" : type[2], "muted"));
+  const type = authorBadge(d);
+  if (type) icons.push(icon(type[0], type[2], "muted"));
   const meta = icons.length ? h("span", { class: "r-meta" }, icons) : null;
   return h("button", {
     class: "row" + (dim ? " dim" : ""), type: "button", "data-id": id, "data-slot": slot, "aria-haspopup": "dialog",
@@ -3069,7 +3074,7 @@ function renderDetailHead(d, dim) {
   const labels = Array.isArray(d.labels) ? d.labels : [];
   const waiting = waitingOf(d);
   const badges = stateIcons(detail.id, d, dim, true).map(stateBadge);
-  const type = AUTHOR_ICONS[authorTypeOf(d)];
+  const type = authorBadge(d);
   const meta = [
     effortOf(d) ? h("span", { class: "tag effort", title: "Estimated time to read up and decide", text: formatEffort(effortOf(d)) }) : null,
     waiting != null ? iconEntry(["clock", waiting >= WAITING_CHIP_DAYS ? "warn" : "muted", "An outside person has waited " + waiting + " days for an answer", waiting + "d"]) : null,
