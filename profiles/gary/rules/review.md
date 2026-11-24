@@ -18,6 +18,6 @@ These rules add to the core PR review. Read `SPEC.md` and `docs/internals.md` be
 - **New dependencies, install scripts and network calls**: each one is a finding with severity `major`, whatever its reason.
 - **Text shown on the board** addresses the maintainer as "you" and uses no gendered pronoun.
 
-Never run code from a PR branch, as everywhere. `npm test` runs only on Gary's own fix branches.
+`npm test` runs only on Gary's own fix branches.
 
 PRs are squash-merged. There is no formatter, so no review asks for formatting.
