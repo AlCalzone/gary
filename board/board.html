@@ -367,10 +367,13 @@ dialog { --surface: var(--n-surface, var(--surface-0)); --surface-2: var(--n-sur
 .blocked-note { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 2px 2px 4px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
 .blocked-note .i { width: 15px; height: 15px; flex: none; margin-top: 2px; }
 .run { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.conn { margin-left: auto; display: inline-flex; padding: 4px; color: var(--faint); }
+/* The connection state is a status next to the last run, apart from the buttons on the right */
+.conn { display: inline-flex; margin-right: -4px; color: var(--faint); }
+.conn .i { width: 14px; height: 14px; }
 .conn[data-state="connected"] { color: var(--ok); }
 .conn[data-state="queued"] { color: var(--warn); }
-.controls { position: relative; }
+.controls { position: relative; margin-left: auto; }
+.reload-btn:not([hidden]) ~ .controls, .learn-btn:not([hidden]) ~ .controls { margin-left: 0; }
 .ctl-btn { margin-left: 0; color: var(--muted); }
 .ctl-btn[aria-expanded="true"] { background: var(--surface); color: var(--fg); }
 .fgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -830,13 +833,11 @@ textarea.short { min-height: 5.4em; }
 .reload-btn { margin-left: auto; font-size: 12.5px; }
 .bar-reload { margin-left: auto; font-size: 12.5px; padding: 4px 10px; }
 .bar-reload:not([hidden]) + .iconbtn { margin-left: 8px; }
-.reload-btn:not([hidden]) + .conn { margin-left: 0; }
 /* Suggestions: a quiet header entry, never part of the plan */
 .learn-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--act-think); font: 600 12.5px/1 var(--font-body); cursor: pointer; }
 .learn-btn:hover { background: color-mix(in srgb, var(--act-think) 10%, transparent); }
 .learn-btn .i { width: 16px; height: 16px; }
 .reload-btn:not([hidden]) ~ .learn-btn { margin-left: 0; }
-.learn-btn:not([hidden]) + .conn { margin-left: 0; }
 .intent-think { --int: var(--act-think); }
 .learn-intro { margin: 0; max-width: 64ch; font-family: var(--font-read); font-size: 15.5px; line-height: 1.55; color: var(--muted); }
 .learn-group { display: flex; flex-direction: column; gap: 14px; }
@@ -1067,10 +1068,10 @@ textarea {
       <h1 id="board-title">Gary</h1>
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
       <span class="paused-mark" id="paused" title="No GitHub writes. Run `gary resume` to turn them on." hidden>Paused</span>
+      <span class="conn" id="conn" data-state="checking"></span>
       <span class="run" id="run-info">Loading</span>
       <button class="btn quiet reload-btn" id="reload" type="button" hidden>Updated, reload</button>
       <button class="learn-btn" id="learn" type="button" aria-haspopup="dialog" hidden></button>
-      <span class="conn" id="conn" data-state="checking"></span>
       <div class="controls" id="filters"></div>
     </div>
     <nav class="tabs" id="tabs" role="tablist" aria-label="Projects" hidden></nav>
@@ -1715,7 +1716,7 @@ const CONNECTION = {
 function renderConnection() {
   const [name, label] = CONNECTION[state.server] || CONNECTION.checking;
   els.conn.dataset.state = state.server;
-  els.conn.replaceChildren(icon(name, label, "lg"));
+  els.conn.replaceChildren(icon(name, label));
 }
 
 function setServer(s) {
