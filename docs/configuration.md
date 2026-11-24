@@ -163,6 +163,8 @@ It is its own tab. It needs no profile, bot or checkout. Gary posts nothing to G
 
 Next to Act, Unblock, Land and Decide it has a fifth category, **FYI**: something new and relevant happened, and there is nothing to do. Examples are a maintainer's decision, a release with your fix, or your PR merged by someone else.
 
+A PR that requests your review can get a review draft: findings, inline comments you can uncheck or edit, and a short walkthrough of the PR for a reader who has not seen it. "Prepare pending review on GitHub" turns the draft into a pending review under your login, which only you see. You pick the verdict and submit it on GitHub. Drafts start only on your click ("Prepare review") unless `maxAutoReviewDraftsPerRun` is above 0. The card says why a draft did not start by itself.
+
 "Got it" hides an FYI item until there is news again. With `"clearNotifications": true` it also marks the thread's notification as done in your GitHub inbox. A new comment brings the notification back. Noise like "+1" comments, bot posts, label changes and CI reruns never shows up.
 
 Its `config.json`:
@@ -177,4 +179,7 @@ Its `config.json`:
 | `mergeReminderDays` | `14` | Quiet days before an approved PR you cannot merge gets a reminder for the repo's maintainers |
 | `mergeReminderDaysFor` | `{}` | The same per repo, like `{ "acme/*": 30 }`. An exact `owner/name` wins over `owner/*` |
 | `clearNotifications` | `false` | "Got it" also marks the thread's notification as done in your GitHub inbox |
+| `maxAutoReviewDraftsPerRun` | `0` | Review drafts Gary starts on its own per run, for PRs that request your review. `0` turns them off. A click always works |
+| `maxPendingAutoReviewDrafts` | `5` | Automatic review drafts that may wait for you at once. A draft waits until you prepared its pending review, used another card, snoozed or dismissed it, or the PR closed or stopped requesting your review |
+| `reviewDraftMaxLines` | `800` | A PR with more changed lines never gets a review draft without your click |
 | `models`, `tab` | | As above |

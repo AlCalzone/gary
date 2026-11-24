@@ -73,6 +73,12 @@ An FYI item on the contributions tab has one button, "Got it". It hides the item
 
 It can also mark the thread's notification as done in your GitHub inbox, see [configuration.md](configuration.md#your-contributions-elsewhere).
 
+## Review drafts
+
+On the contributions tab, a PR that asks for your review can carry a review draft. The dialog shows a short walkthrough of the PR: why the current code is not enough, what the PR does, and how the changed files fit, each step linked into the diff. The review card has the findings as inline comments, which you can uncheck or edit, and the verdict Gary suggests. A clean PR gets a plain approval.
+
+"Prepare pending review on GitHub" creates a pending review under your login and opens the PR's files view. Only you see it. You submit it there with the verdict the card names, or discard it. When no draft started by itself, the dialog says why and offers "Prepare review". See [safety.md](safety.md#your-pending-reviews).
+
 ## Reviewing on GitHub
 
 You can open an item on GitHub and handle it there. When you return to the board tab, Gary checks the item. A merged or closed item moves to "Handled, waiting for the next run".

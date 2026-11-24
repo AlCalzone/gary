@@ -98,6 +98,10 @@ export function contributionSearches({ cutoff, closedSince }) {
 const ACTOR = "author { login __typename }";
 const STATUS = "createdAt actor { login __typename }";
 
+// The size of a PR and the times its review was requested, which decide whether a review draft starts without a click
+const REVIEW_DRAFT_FIELDS = `additions deletions changedFiles
+	reviewRequestEvents: timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 20) { nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { __typename ... on User { login } } } } }`;
+
 const PR_FIELDS = `
 	__typename number title url body createdAt updatedAt closedAt isDraft state
 	repository { nameWithOwner viewerPermission }
@@ -115,6 +119,7 @@ const PR_FIELDS = `
 	allReviews: reviews(last: 30) { nodes { ${ACTOR} state submittedAt url body } }
 	reviewRequests(first: 10) { nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { slug } } } }
 	reviewThreads(last: 30) { nodes { isResolved isOutdated path line comments(first: 1) { nodes { ${ACTOR} createdAt url body } } allComments: comments(last: 5) { totalCount nodes { ${ACTOR} createdAt body url } } } }
+	${REVIEW_DRAFT_FIELDS}
 `;
 
 const ISSUE_FIELDS = `
@@ -326,5 +331,21 @@ function prFacts(node, { me, ci, requested }) {
 		openThreadsByOthers: open.filter((t) => !isMe(t.comments?.nodes?.[0]?.author?.login)).length,
 		...(requested && { reviewRequested: true }),
 		...(mine && { myReview: { state: low(mine.state), at: mine.submittedAt, pushedSince: commits.some((c) => Date.parse(c) > Date.parse(mine.submittedAt)) } }),
+		...reviewDraftFacts(node, { me, requested }),
 	};
+}
+
+/**
+ * The facts a review draft reads: `changedLines`, `changedFiles`, and for a PR that requests the maintainer's review
+ * `reviewRequestedAt`, the newest request of the maintainer. It is null when the request is older than the events read.
+ */
+export function reviewDraftFacts(node, { me, requested }) {
+	const out = {};
+	if (Number.isInteger(node.additions) && Number.isInteger(node.deletions)) out.changedLines = node.additions + node.deletions;
+	if (Number.isInteger(node.changedFiles)) out.changedFiles = node.changedFiles;
+	if (requested) {
+		const at = (node.reviewRequestEvents?.nodes ?? []).filter((e) => e?.createdAt && low(e.requestedReviewer?.login) === low(me)).map((e) => e.createdAt).sort().at(-1);
+		out.reviewRequestedAt = at ?? null;
+	}
+	return out;
 }

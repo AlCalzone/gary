@@ -263,6 +263,14 @@ An item without routes is not shown on the board. It keeps its `category` as cla
 
 A waiting item gets a route again only when a close is due: when our request to the reporter is older than `activeMaxWaitDays`, recommend `close` with reason `not_planned` and a short text that invites the reporter to reopen with the requested info.
 
+## `walkthrough`
+
+PRs with a full review only, and today only the review drafts of a contributions instance write it (`triage-review-pr`, `references/review-draft.md`): the PR for a reader who has not seen it, `{ "why": "…", "what": "…", "how": [{ "text": "…", "path": "src/…", "line": 42 }] }`. `why` says why the current code is not enough, `what` what the PR does, each in one or two sentences of at most 400 characters. `how` has 1 to 6 steps of at most 300 characters on how the changed pieces fit, each with a changed file in `path` and, when one hunk carries the step, a line of the diff's right side in `line`. The board links each step into the diff.
+
+## Pending review route
+
+A review draft of a contributions instance has one `review` route with `as: "me"` and `params: { "pending": true, "event": "…", "comments": […], "bodies": { "approve": "…", "comment": "…", "request_changes": "…" } }`. The server creates it on GitHub as a pending review under the maintainer's login. `event` is the suggested verdict, `bodies` the body per verdict, and `text` equals `bodies[event]`. Its comments follow the `review` rules above and always carry `diffHunk`. No text holds a slash command, a bot mention or a `bors` command. A maintainer instance never has `pending` or `bodies`.
+
 ## `links`
 
 Related URLs the maintainer will want to open: the draft fix PR, the duplicate, the PR that fixed it, the failing CI run, the docs page an answer cites. Labels are short nouns: `Draft fix`, `Duplicate`, `Failing job`.
@@ -280,6 +288,7 @@ The routine checks each doc a subagent returns. A doc that fails any check is re
 7. `threads`, for PRs, has one entry per open thread in the snapshot, each with `id`, `summary` and a `verdict` of `valid`, `optional`, `wrong` or `unjudged`. `valid` and `wrong` have a `note`.
 8. `routes` has 0 to 4 entries with ids `r1` to `r4`, each used once. With routes, exactly one has `recommended: true`, and its `title` equals `hint`. Every `title` has at most 60 characters. An item with an `unjudged` thread has no routes. An item at `reviewDepth: "pending"` has no routes, unless the route needs no analysis, like a merge of a green dependency update.
 8a. No `merge` route and no `review` route with `event: "approve"` while a `valid` thread is open.
+8b. A `walkthrough`, when present, has `why`, `what` and 1 to 6 `how` steps with `text` and a relative `path`. A pending review route appears only on a contributions item with `reviewDepth: "full"`, `reviewedSha` and a `walkthrough`, at most once, with `text` equal to `bodies[event]` and no bot command in any text.
 8b. Routes without text leave `text` out.
 9. Each route's `type` is in the SPEC.md table, valid for the item's kind, and its `as` is allowed for that type and for the account setup (`accounts.md`). No route is a hide, dismiss, snooze or analyze action. Agent routes that push appear only when the account setup allows pushes.
 10. Each route's `params` match its type:

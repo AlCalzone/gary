@@ -266,10 +266,70 @@ export async function clearNotification({ repo, kind, number, title, dryRun = fa
 	return { found: true, wasUnread: hit.unread === true, id: String(hit.id), ...(dryRun && { dryRun: true }) };
 }
 
-function run(args, input, env, { inbox = false } = {}) {
+const PENDING_REVIEW_TARGET = `query PendingReviewTarget($owner: String!, $name: String!, $number: Int!) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $number) {
+			id number state isDraft headRefOid url author { login }
+			reviewRequests(first: 50) { nodes { requestedReviewer { __typename ... on User { login } } } }
+			reviews(states: [PENDING], first: 5) { nodes { id url author { login } } } }
+	}
+}`;
+
+const PENDING_REVIEW_MUTATION = `mutation($id: ID!, $body: String, $sha: GitObjectID, $threads: [DraftPullRequestReviewThread]) {
+	addPullRequestReview(input: { pullRequestId: $id, body: $body, commitOID: $sha, threads: $threads }) { pullRequestReview { id url state } }
+}`;
+
+/** Runs one GraphQL request under the stored gh login and returns `data`. Throws on transport or GraphQL errors. */
+async function storedGraphql(query, variables, flags) {
+	let stdout;
+	try {
+		stdout = await run(GRAPHQL_ARGS, JSON.stringify({ query, variables }), storedLoginEnv(), flags);
+	} catch (e) {
+		stdout = e.stdout;
+		if (!stdout || e.timedOut) throw new Error(e.message);
+	}
+	const response = JSON.parse(stdout);
+	if (response.errors?.length) throw new Error(response.errors.map((e) => e.message).join("; "));
+	return response.data;
+}
+
+/**
+ * Creates a PENDING review on a PR under the maintainer's own stored `gh` login: the body and the inline comments,
+ * pinned to `sha`. A pending review is visible only to its author until they submit it on GitHub, and GitHub picks the
+ * verdict only on submit. Call it only for a click on the review draft's button.
+ * `check(pr, files, login)` runs on the fresh PR and its changed files (`Map<path, patch | null>`) and throws to refuse.
+ * Throws when the stored login is not `me` and when the login has a pending review on the PR already.
+ * Returns `{ login, url, comments }`, or with `dryRun` the invocation it would send.
+ */
+export async function createPendingReview({ repo, number, sha, body, comments = [], check = () => {}, dryRun = false }) {
+	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
+	if (!/^[0-9a-f]{40}$/.test(String(sha))) throw new Error("sha must be the full head the draft read");
+	const login = await verifyOwnLogin();
+	const { owner, name } = repoParts(repo);
+	const pr = (await storedGraphql(PENDING_REVIEW_TARGET, { owner, name, number }))?.repository?.pullRequest;
+	if (!pr) throw new Error(`PR #${number} was not found in ${repo}.`);
+	const mine = (pr.reviews?.nodes ?? []).find((r) => String(r?.author?.login).toLowerCase() === login.toLowerCase());
+	if (mine) throw Object.assign(new Error("You already have a pending review on this PR. Finish or discard it on GitHub first. Gary does not change it."), { url: mine.url, existing: true });
+	const pages = JSON.parse(await run(["api", `repos/${owner}/${name}/pulls/${number}/files?per_page=100`, "--paginate", "--slurp"], "", storedLoginEnv()));
+	const files = new Map(pages.flat().map((f) => [f.filename, typeof f.patch === "string" ? f.patch : null]));
+	check(pr, files, login);
+	const threads = comments.map((c) => ({ path: c.path, line: c.line, side: "RIGHT", ...(c.startLine !== undefined && { startLine: c.startLine, startSide: "RIGHT" }), body: c.text }));
+	const variables = { id: pr.id, body: body || null, sha, threads: threads.length ? threads : null };
+	if (dryRun) return { dryRun: true, login, invocation: { command: ["gh", ...GRAPHQL_ARGS], as: login, stdin: JSON.stringify({ query: PENDING_REVIEW_MUTATION, variables }) } };
+	let data;
+	try {
+		data = await storedGraphql(PENDING_REVIEW_MUTATION, variables, { pendingReview: true });
+	} catch (e) {
+		if (/one pending review/i.test(e.message)) throw Object.assign(new Error("You already have a pending review on this PR. Finish or discard it on GitHub first. Gary does not change it."), { existing: true });
+		throw e;
+	}
+	return { login, url: data?.addPullRequestReview?.pullRequestReview?.url ?? pr.url, comments: threads.length };
+}
+
+function run(args, input, env, { inbox = false, pendingReview = false } = {}) {
 	// Every write of every helper passes here, so no code path can write for a contributions instance.
-	// `inbox` is set only by `clearNotification`, for its one fixed request
-	if (isWrite(args, input) && readOnlyInstance() && !inbox) return Promise.reject(new Error(READ_ONLY_MESSAGE));
+	// `inbox` is set only by `clearNotification`, and `pendingReview` only by `createPendingReview`, each for its one fixed request
+	if (isWrite(args, input) && readOnlyInstance() && !inbox && !pendingReview) return Promise.reject(new Error(READ_ONLY_MESSAGE));
 	return new Promise((resolve, reject) => {
 		const child = execFile(
 			"gh",

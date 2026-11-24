@@ -483,6 +483,8 @@ function baselineEntry(item) {
 		...(item.autoReview && { autoReview: item.autoReview }),
 		...(item.closingPrs && { closingPrs: item.closingPrs }),
 		...(item.referencingPrs && { referencingPrs: item.referencingPrs }),
+		// The board server checks a review draft and a pending review against these
+		...(item.facts?.reviewRequested && { reviewRequested: true, reviewRequestedAt: item.facts.reviewRequestedAt ?? null }),
 	};
 }
 

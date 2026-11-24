@@ -62,7 +62,8 @@ export const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v)
  */
 export function effectiveActor(route, mode, moveMode) {
 	const as = actorOf(route);
-	if (as === "me" && route.type === "review" && Array.isArray(route.params?.comments) && route.params.comments.length) return undefined;
+	// A pending review of a review draft carries its inline comments to GitHub under the maintainer's own login
+	if (as === "me" && route.type === "review" && Array.isArray(route.params?.comments) && route.params.comments.length && route.params.pending !== true) return undefined;
 	if (as === undefined || as === "me") return as;
 	if (as === "agent") return mode === "none" && PUSHING_AGENT_TYPES.has(route.type) ? "unavailable" : "agent";
 	if (mode === "bot") return "bot";

@@ -31,6 +31,7 @@ const COMMANDS = {
 	focus: ["../scripts/focus.mjs", "main", "Focus: the maintainer handles one item in an agent session and Gary holds it: focus brief | start | fail | done | end | check | list. Exit 3 when refused"],
 	"api-edit": ["../scripts/api-edit.mjs", "main", "Check the API edit of a take_over or revise route and print what the click would commit: api-edit --pr <n> [--route <id>] | --pr <n> --sha <sha> --file <route.json>. Never commits"],
 	"auto-review": ["../scripts/auto-review.mjs", "main", "The one automatic first review on a contributor PR: auto-review check|post|accept|reply|rerequest --pr <n> … | list. Off unless config.json turns it on"],
+	"review-draft": ["../scripts/review-draft.mjs", "main", "The review drafts of a contributions instance for PRs that request your review: review-draft plan --snapshot <run>/snapshot.json | list [--json]"],
 	"push-check": ["../scripts/push-check.mjs", "main", "Say from GitHub's state now whether an agent may push to a PR from a checkout: push-check --pr <n> [--sha <head sha>] [--repo <owner/name>]. Exit 3 when refused. Read-only"],
 	claim: ["../scripts/claims-cli.mjs", "claimMain", "Claim work on an item: claim <itemId> <fix|review|push> --run <run> [--ttl <minutes>]. Exit 3 when another run holds it"],
 	release: ["../scripts/claims-cli.mjs", "releaseMain", "Release a claim: release <itemId> <fix|review|push> --run <run>"],

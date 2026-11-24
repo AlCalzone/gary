@@ -3,6 +3,7 @@ import { ID_PATTERN } from "./board-store.mjs";
 import { fixBlock } from "./fixes.mjs";
 import { apiEditProblems } from "./api-edit.mjs";
 import { FINDING_ID } from "./findings.mjs";
+import { pendingRouteProblems, walkthroughProblems } from "./review-drafts.mjs";
 import { CATEGORIES, FYI, categoriesFor, normalizeCategory } from "./categories.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
@@ -49,8 +50,20 @@ function checkContribution(item, err) {
 		else if (r.as !== "me") err("contribution-as", `${where}: every route of a contributions instance is as "me", a text the maintainer posts themself`);
 		const params = isObject(r.params) ? r.params : {};
 		if (params.alsoLabel !== undefined || params.alsoAnswer !== undefined) err("contribution-part", `${where}: alsoLabel and alsoAnswer need a bot, which a contributions instance has none of`);
-		if (r.type === "review" && Array.isArray(params.comments) && params.comments.length) err("contribution-comments", `${where}: a review the maintainer posts themself carries no inline comments. Put them into the text`);
+		if (r.type === "review" && params.pending !== true && Array.isArray(params.comments) && params.comments.length) err("contribution-comments", `${where}: a review the maintainer posts themself carries no inline comments. Put them into the text`);
 	});
+	checkReviewDraft(item, err);
+}
+
+/** A review draft holds at most one pending review route, the maintainer's own review that the server creates on GitHub on a click. */
+function checkReviewDraft(item, err) {
+	const pending = (Array.isArray(item.routes) ? item.routes : []).map((r, i) => [r, i]).filter(([r]) => isObject(r) && isObject(r.params) && (r.params.pending !== undefined || r.params.bodies !== undefined));
+	if (pending.length > 1) err("pending-count", "an item has at most one pending review route");
+	for (const [r, i] of pending) {
+		const where = `routes[${i}] (${r.type})`;
+		if (r.type !== "review" || r.params.pending !== true) err("pending-route", `${where}: params.pending is true on a review route only, and params.bodies needs it`);
+		else for (const [code, message] of pendingRouteProblems(item, r, where)) err(code, message);
+	}
 }
 
 /**
@@ -88,6 +101,10 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 	else if (!categories.includes(item.category)) err("category", `category must be one of ${categories.join(", ")}${item.category === undefined ? "" : `, not ${JSON.stringify(item.category)}`}${item.category === FYI ? ". Only a contributions instance has fyi items" : ""}`);
 	if (kind === "contributions") checkContribution(item, err);
 	else if (item.newsAt !== undefined || item.gotIt !== undefined) err("fyi-fields", "newsAt and gotIt belong to fyi items of a contributions instance");
+	if (kind !== "contributions" && (Array.isArray(item.routes) ? item.routes : []).some((r) => isObject(r?.params) && (r.params.pending !== undefined || r.params.bodies !== undefined))) {
+		err("pending-kind", "a pending review route is only for a review draft of a contributions instance");
+	}
+	for (const problem of walkthroughProblems(item)) err("walkthrough", problem);
 	if (item.needsHardware !== undefined && typeof item.needsHardware !== "boolean") err("needsHardware", "needsHardware must be true or false");
 	if (item.waitingOn !== undefined && !WAITING_ON.includes(item.waitingOn)) err("waitingOn", `waitingOn must be one of ${WAITING_ON.join(", ")}, copied from facts.waitingOn`);
 	checkDue(item, err);
@@ -463,4 +480,4 @@ function checkWants(item, profile, err) {
 }
 
 /** Item fields whose change needs a validation of the merged item. */
-export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason", "handled", "pushed", "reviewedSha"];
+export const VALIDATED_FIELDS = ["routes", "threads", "hint", "findings", "wants", "wantsReason", "handled", "pushed", "reviewedSha", "walkthrough"];

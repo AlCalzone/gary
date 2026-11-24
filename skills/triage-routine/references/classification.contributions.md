@@ -14,7 +14,7 @@ Every entry carries `repo` and an id like `acme.widgets.pr-12`. Copy both unchan
 - `facts.lookedAt` and `facts.lookedVia`: when the maintainer last looked. That is their own last comment, review or opening post (`comment`), or their last "Got it" on the board (`got_it`), whichever is newer. `null` when the maintainer never wrote in the thread.
 - `facts.news`: what others did after `lookedAt`, oldest first, at most 15, with `facts.newsCount` for all of them. Each is `{ at, by, kind, state?, excerpt?, mentionsMe?, asksMe? }`, with `kind` `comment`, `reply`, `thread_comment`, `review`, `commit`, `merged`, `closed`, `reopened` or `answer`. Code already dropped the mechanical noise: the maintainer's own events, bots, comments that only agree like "+1" or "same here", label and milestone changes, draft and ready flips, force-pushes and CI runs. `excerpt` is the comment without quoted lines, at most 300 characters. `mentionsMe` is a mention outside a quote. `asksMe` adds a last line that ends in a question mark.
 - `facts.closed`: `{ at, by, how }` for a thread that closed or merged after the maintainer last looked, with `how` `merged`, `completed`, `not_planned` or `closed`.
-- PRs: `facts.ci`, `facts.ciGreen`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.openThreadCount`, `facts.openThreadsByOthers`, `facts.reviewRequested`, `facts.canMerge`, `facts.mergeReminderDays` and `facts.myReview: { state, at, pushedSince }` for the maintainer's own last review on someone else's PR.
+- PRs: `facts.ci`, `facts.ciGreen`, `facts.approvedBy`, `facts.changesRequestedBy`, `facts.openThreadCount`, `facts.openThreadsByOthers`, `facts.reviewRequested`, `facts.reviewRequestedAt`, `facts.changedLines`, `facts.canMerge`, `facts.mergeReminderDays` and `facts.myReview: { state, at, pushedSince }` for the maintainer's own last review on someone else's PR.
 - `facts.quietDays`: days since anyone wrote in the thread.
 
 Entries the snapshot lists under `quiet` carry nothing new and give the maintainer nothing to do. They never reach a model, see the routine skill.
@@ -81,9 +81,13 @@ Nothing relevant since `lookedAt` and nothing to do: write the item without rout
 
 ## Routes
 
-Allowed route types are `reply`, `review`, `close` and `open`, each with `as: "me"`. The validator refuses every other type, every other actor, `alsoLabel`, `alsoAnswer` and inline review comments. There is no `merge` route: the board offers no merge, and `open` takes the maintainer to the PR. There are no agent routes, no labels, no fixes and no escalation.
+Allowed route types are `reply`, `review`, `close` and `open`, each with `as: "me"`. The validator refuses every other type, every other actor, `alsoLabel`, `alsoAnswer` and inline review comments. The one exception is the pending review route of a review draft, below. There is no `merge` route: the board offers no merge, and `open` takes the maintainer to the PR. There are no agent routes, no labels, no fixes and no escalation.
 
 Replies follow `voice.md`. The maintainer writes as a contributor or a user here, not as the maintainer of the repo: no "we", no promises about the repo's plans, no closing a thread they do not own. A draft names the concrete thing, like the version that fixed it or the question they answer. When the maintainer has nothing to add, write no reply route.
+
+## Review drafts
+
+A PR that requests the maintainer's review can get a review draft: a full read-only review by the `triage-review-pr` skill in its review-draft mode. Code decides when one starts without a click (`gary review-draft plan`, see the routine skill). The quick classification never writes a pending review route, findings or a walkthrough. It classifies such a PR by the `unblock` rule above, also when the draft is held. The board shows why the draft did not start next to the quick item, so `state` does not repeat it.
 
 ## Effort and priority
 
@@ -91,4 +95,4 @@ Replies follow `voice.md`. The maintainer writes as a contributor or a user here
 
 ## Tiers
 
-`fastTier` is always `off` for this kind. Only the standard tier classifies, with the model `gary models` names for `standard`. There are no full reviews, no auto-fixes and no automatic reviews: every item is `reviewDepth: "quick"` and `classifiedBy: "standard"`.
+`fastTier` is always `off` for this kind. Only the standard tier classifies, with the model `gary models` names for `standard`. There are no auto-fixes and no automatic reviews, and the only full reviews are the review drafts: every other item is `reviewDepth: "quick"` and `classifiedBy: "standard"`.

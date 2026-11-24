@@ -6,7 +6,7 @@ The rule: only what you clicked reaches GitHub. This page lists every exception 
 
 - comments and replies
 - approvals, merges and closes
-- every review, apart from the opt-in automatic first review
+- every review, apart from the opt-in automatic first review. A pending review of yours on another project's PR is created only on your click, and it is never submitted, see "Your pending reviews"
 - every push to a branch that is not Gary's own fix branch, apart from a format commit the PR's author accepted
 
 Merges and closes are always done by you on GitHub. That also holds after the agent took over a PR.
@@ -73,6 +73,18 @@ A contributions instance posts nothing to GitHub. With `"clearNotifications": tr
 - It happens only on your click, never in the hourly run.
 - Nobody else sees it. A new comment on the thread brings the notification back.
 - `gary pause` and the dry run stop it like every other write.
+
+## Your pending reviews
+
+A contributions instance can draft your review of a PR that requests it. The draft stays on the board. One button, "Prepare pending review on GitHub", creates a pending review under your own login with the body and the comments you kept checked, with your edits. A second thing that changes in your own account:
+
+- It happens only on your click, never in the hourly run.
+- A pending review is visible only to you. Nothing is submitted in your name: you pick the verdict and submit it on GitHub yourself, or discard it there.
+- The server refuses your own PRs, PRs that no longer request your review, PRs with new commits since the draft, and comments on lines outside the diff.
+- When you already have a pending review on the PR, the server refuses and leaves it as it is.
+- `gary pause` and the dry run stop it like every other write.
+
+The drafting agent reads the PR through the API only. It never checks out the PR's branch and never runs its code. Its texts hold no bot commands. Drafts that start without a click are off by default: `maxAutoReviewDraftsPerRun` limits them per run, `maxPendingAutoReviewDrafts` limits how many wait for you at once, and a PR with more changed lines than `reviewDraftMaxLines` never gets one without your click.
 
 ## Sensitive files
 

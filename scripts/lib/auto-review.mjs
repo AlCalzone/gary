@@ -23,7 +23,19 @@ const LOCK_TRIES = 200;
  * A lock file keeps two processes from writing at once, so a post for one PR never drops the record of another.
  */
 export async function updateAutoReview(itemId, change, instance = instanceName()) {
-	const file = autoReviewsFile(instance);
+	let next;
+	await updateJson(autoReviewsFile(instance), (all) => {
+		next = change(all[itemId] ?? null);
+		return { ...all, [itemId]: next };
+	});
+	return next;
+}
+
+/**
+ * Changes the JSON object in `file`: `change` gets the stored object, `{}` when there is none, and returns the new one.
+ * A lock file keeps two processes from writing at once.
+ */
+export async function updateJson(file, change) {
 	const lock = file + ".lock";
 	await mkdir(dirname(file), { recursive: true });
 	for (let i = 0; ; i++) {
@@ -40,9 +52,8 @@ export async function updateAutoReview(itemId, change, instance = instanceName()
 		}
 	}
 	try {
-		const all = await readAutoReviews(instance);
-		const next = change(all[itemId] ?? null);
-		await writeAtomic(file, { ...all, [itemId]: next });
+		const next = await change((await readJson(file)) ?? {});
+		await writeAtomic(file, next);
 		return next;
 	} finally {
 		await unlink(lock).catch(() => {});

@@ -26,7 +26,8 @@ import { endFocus, focusDir, focusHold, isHeld, readFocuses, safeLink } from "..
 import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, TAB_ICON_MAX_BYTES, tabIconFile, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { linkEscalated } from "../scripts/lib/escalation.mjs";
-import { READ_ONLY_MESSAGE, accountMode, clearNotification, postEscalateCommand } from "../scripts/lib/gh.mjs";
+import { READ_ONLY_MESSAGE, accountMode, clearNotification, createPendingReview, postEscalateCommand } from "../scripts/lib/gh.mjs";
+import { commentLineProblem, pendingRoute, pendingRouteProblems, readReviewDrafts, recordClickStart, requestOf, reviewDraftState, servedWalkthrough } from "../scripts/lib/review-drafts.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
@@ -46,6 +47,8 @@ const UNKNOWN_INSTANCE = "Unknown instance.";
 // The only actions a contributions instance takes. Every other click would write to GitHub, push or need a checkout
 const CONTRIBUTION_ACTIONS = new Set(["got_it", "reanalyze", "dismiss_route", "accept_proposal", "dismiss_proposal"]);
 const READ_ONLY = [200, { ok: false, result: READ_ONLY_MESSAGE, readOnly: true }];
+// The verdicts as GitHub names them in its "Submit review" form
+const REVIEW_EVENT_NAMES = { approve: "Approve", request_changes: "Request changes", comment: "Comment" };
 const ITEM_ID = idPattern("items");
 const MAX_TEXT = 65536;
 const MAX_NOTE = 1000;
@@ -1078,6 +1081,8 @@ export async function startBoardServer({
 			return forItem ? { fixFor: fixForOf(forItem, data.repo) } : {};
 		};
 		const autoReviews = await readAutoReviews(name);
+		const reviewDrafts = instance.kind === "contributions" ? await readReviewDrafts(name) : {};
+		const reviewDraftOf = (id, data) => (instance.kind === "contributions" ? reviewDraftState(data, reviewDrafts[id], fixSources.snapshot[id]) : null);
 		const autoReviewOf = (id, data) => (data.kind === "pr" ? autoReviewState(data, autoReviews[id], fixSources.snapshot[id]) : null);
 		const categoryOf = (id, data) => (data.kind === "discussion" && typeof data.discussionCategory !== "string" ? fixSources.snapshot[id]?.category : undefined);
 		// The snapshot is fresher than the item for these: a milestone or a project date changes without touching the thread
@@ -1125,6 +1130,8 @@ export async function startBoardServer({
 			...(typeof categoryOf(id, data) === "string" && { discussionCategory: categoryOf(id, data) }),
 			liveState: liveStates.get(`${name}/${id}`) ?? snapshotState(fixSources.snapshot[id]),
 			...(autoReviewOf(id, data) && { autoReview: autoReviewOf(id, data) }),
+			...(reviewDraftOf(id, data) && { reviewDraft: reviewDraftOf(id, data) }),
+			...(servedWalkthrough(data) && { walkthrough: servedWalkthrough(data) }),
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),
 			...(typeof data.hint === "string" && { hint: servedHint(data) }),
@@ -1413,6 +1420,8 @@ export async function startBoardServer({
 		if (body.action === "end_focus") return handleEndFocus(name, body);
 		const { error: settingsError, instance: settings } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
+		if (body.action === "prepare_review") return handlePrepareReview(name, body);
+		if (body.action === "pending_review") return handlePendingReview(name, body);
 		if (settings?.kind === "contributions" && !CONTRIBUTION_ACTIONS.has(body.action)) return READ_ONLY;
 		if (body.action === "got_it") return handleGotIt(name, body);
 		if (body.action === "focus") return handleFocus(name, body);
@@ -2256,6 +2265,117 @@ export async function startBoardServer({
 			const result = `Hidden until there is news.${inbox ? " " + inbox : ""}`;
 			await logClick(name, itemId, { action: "got_it", params: {}, text: "", status: "done", via: "board", createdAt: at, finishedAt: at, result: inbox ?? "" });
 			return [200, { ok: true, result, gotIt: { at } }];
+		});
+	}
+
+	/**
+	 * The PR item of a review draft, or a refusal: a PR of this contributions instance that requests the maintainer's review
+	 * in the snapshot and is not their own. Call it inside the item's action lock.
+	 */
+	async function reviewDraftTarget(name, itemId) {
+		const refuse = (result, extra = {}) => ({ refused: [200, { ok: false, result, ...extra }] });
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return { refused: [200, { ok: false, result: OUTDATED, outdated: true }] };
+		const { instance } = settingsOf(name);
+		if (instance?.kind !== "contributions") return refuse("Review drafts are for PRs that request your review in a contributions instance.");
+		const item = await readJson(itemFile(name, itemId));
+		if (!item) return { refused: [200, { ok: false, result: OUTDATED, outdated: true }] };
+		if (item.kind !== "pr" || !allowedRepo(name, item.repo) || !Number.isSafeInteger(item.number)) return refuse("The item names no PR of this instance.");
+		const me = String(instance.config.me ?? "").toLowerCase();
+		if (String(item.author ?? "").toLowerCase() === me) return refuse("This is your own PR. Gary prepares no review of it.");
+		const entry = (await withInstance(name, () => readSnapshotItems()))[itemId];
+		if (entry?.reviewRequested !== true) return refuse("This PR does not request your review.");
+		return { item, entry, instance };
+	}
+
+	// "Prepare review": queues the review draft of a PR that requests the maintainer's review. A click works whatever the daily budget
+	async function handlePrepareReview(name, body) {
+		const { itemId } = body;
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const target = await reviewDraftTarget(name, itemId);
+			if (target.refused) return target.refused;
+			const { item, entry } = target;
+			if (await busyWith(name, itemId, "review")) return [409, { ok: false, result: "The agent is already preparing this review.", working: true }];
+			if (focusHold(itemId, name)) return IN_FOCUS;
+			const at = new Date().toISOString();
+			await recordClickStart(itemId, { repo: item.repo, number: item.number, request: requestOf(entry), sha: entry.headSha ?? null }, name);
+			await logClick(name, itemId, { action: "full_review", params: { repo: item.repo, number: item.number, by: "review_draft" }, text: "", status: "queued", via: "queue", createdAt: at, finishedAt: null, result: "" });
+			return [200, { ok: true, result: "Queued. The agent prepares the review draft.", queued: true }];
+		});
+	}
+
+	/**
+	 * "Prepare pending review on GitHub": creates a PENDING review under the maintainer's own login with the draft's body
+	 * and the checked inline comments, with the maintainer's edits. It is the one GitHub write of a review draft, and nothing
+	 * is submitted: the maintainer picks the verdict and submits on GitHub.
+	 */
+	async function handlePendingReview(name, body) {
+		const { itemId, routeId, text, input } = body;
+		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (typeof routeId !== "string") return outdated;
+		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) return [400, { ok: false, result: `text must be a string of at most ${MAX_TEXT} characters.` }];
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const target = await reviewDraftTarget(name, itemId);
+			if (target.refused) return target.refused;
+			const { item } = target;
+			const refuse = (result, extra = {}) => [200, { ok: false, result, ...extra }];
+			const stored = pendingRoute(item);
+			const route = stored && stored.id === routeId ? routesOf(item).find((r) => r.id === routeId) : null;
+			if (!route) return outdated;
+			const hash = draftHash(route, item);
+			if (body.draftHash !== hash) return outdated;
+			const key = `${name}|${itemId}|${routeId}|${hash}`;
+			if (doneKeys.has(key) || clickedByKey(name, await readCollection(name, "actions")).has(key)) {
+				return [409, { ok: false, result: "The pending review for this draft exists already. Finish it on GitHub.", duplicate: true }];
+			}
+			const problems = pendingRouteProblems(item, route, "the draft");
+			if (problems.length) return refuse(`The review draft breaks a rule, so nothing was sent: ${problems.map(([, m]) => m).join(" ")}`);
+			if (isPaused(served.get(name).state)) return [200, { ok: false, result: PAUSED_MESSAGE, paused: true }];
+			let chosen;
+			try {
+				chosen = validateInput(route, item, input);
+			} catch (e) {
+				if (e instanceof Refusal) return refuse(e.message);
+				throw e;
+			}
+			const params = route.params;
+			const event = chosen.event ?? params.event;
+			const drafted = typeof params.bodies?.[event] === "string" ? params.bodies[event] : typeof route.text === "string" ? route.text : "";
+			const words = (typeof text === "string" ? text : drafted).trim();
+			const comments = params.comments
+				.filter((c) => chosen.commentIds.includes(c.id))
+				.map((c) => ({ path: c.path, line: c.line, ...(c.startLine !== undefined && { startLine: c.startLine }), text: chosen.commentTexts?.[c.id] === undefined ? commentBody(c) : editedCommentBody(c, chosen.commentTexts[c.id]) }));
+			if (!words && !comments.length) return refuse("The review has no body and no comment. Write a body or check a comment.");
+			const check = (pr, files, login) => {
+				if (pr.state !== "OPEN") throw new Refusal(`PR #${item.number} is ${String(pr.state).toLowerCase()}.`);
+				if (String(pr.author?.login).toLowerCase() === login.toLowerCase()) throw new Refusal("This is your own PR. Gary prepares no review of it.");
+				if (!(pr.reviewRequests?.nodes ?? []).some((r) => String(r?.requestedReviewer?.login).toLowerCase() === login.toLowerCase())) throw new Refusal("This PR does not request your review anymore.");
+				if (pr.headRefOid !== item.reviewedSha) throw new Refusal("The PR has new commits since the draft. Prepare the review again, so the comments match the new head.");
+				for (const c of comments) {
+					const problem = commentLineProblem(c, files);
+					if (problem) throw new Refusal(`${problem} Uncheck that comment, or prepare the review again.`);
+				}
+			};
+			let created;
+			try {
+				created = await withInstance(name, () => createPendingReview({ repo: item.repo, number: item.number, sha: item.reviewedSha, body: words, comments, check, dryRun }));
+			} catch (e) {
+				if (e instanceof Refusal) return refuse(e.message);
+				log(`the pending review on ${name}/${itemId} failed: ${e.message}`);
+				return refuse(e.existing ? e.message : `GitHub refused the pending review: ${e.message}`, { ...(e.existing && { existing: true }), ...(/^https:\/\/github\.com\//.test(e.url ?? "") && { url: e.url }) });
+			}
+			const filesUrl = `${String(item.url).split("#")[0]}/files`;
+			if (created.dryRun) return [200, { ok: true, result: { dryRun: true, invocations: [created.invocation] } }];
+			const at = new Date().toISOString();
+			logRouteDecisions(name, itemId, item, { ...route, text: drafted }, words, input, false);
+			await logClick(name, itemId, {
+				routeId, route: route.type, draftHash: hash, edited: words !== drafted.trim(), createdAt: at,
+				action: "pending_review", params: { event, comments: comments.length }, text: words, status: "done", via: "server", finishedAt: at, result: created.url,
+			});
+			doneKeys.add(key);
+			await setHandled(name, itemId, route, null);
+			const pick = REVIEW_EVENT_NAMES[event];
+			const n = comments.length;
+			return [200, { ok: true, result: `Pending review on GitHub, with ${n} comment${n === 1 ? "" : "s"}. Only you see it. Submit it there as "${pick}".`, url: filesUrl, event }];
 		});
 	}
 

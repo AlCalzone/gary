@@ -324,6 +324,17 @@ dialog { --surface: var(--n-surface, var(--surface-0)); --surface-2: var(--n-sur
 .auto-review .ar-lead { margin: 0; color: var(--fg); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
 .auto-review ul { margin: 0; padding-left: 1.2em; }
 .auto-review li { overflow-wrap: anywhere; }
+/* The review draft of a PR that requests your review, and the walkthrough of a reviewed PR */
+.review-draft { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
+.review-draft[hidden], .walkthrough[hidden] { display: none; }
+.review-draft .rd-lead { margin: 0; color: var(--fg); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.walkthrough { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; max-width: 64ch; }
+.walkthrough p { margin: 0; }
+.walkthrough .wt-label { font-weight: 600; margin-right: 4px; }
+.walkthrough ol { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 2px; }
+.walkthrough li { overflow-wrap: anywhere; }
+.walkthrough li a { margin-left: 4px; }
+.verdict-hint { margin: 0; font-size: 13px; color: var(--muted); }
 /* What happened since the maintainer's last choice: one dot per group on a vertical line */
 .since { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 64ch; }
 .since[hidden] { display: none; }
@@ -1106,8 +1117,10 @@ textarea {
       <div class="callout strong hold" id="d-hold" role="status" hidden></div>
       <div class="origin" id="d-origin" hidden></div>
       <div class="since" id="d-since" hidden></div>
+      <div class="review-draft" id="d-draft" role="status" hidden></div>
       <div class="auto-review" id="d-auto" hidden></div>
       <div class="story" id="d-story" hidden></div>
+      <div class="walkthrough" id="d-walk" hidden></div>
       <div class="reviews" id="d-reviews" hidden></div>
       <div class="d-sec" id="d-threads" hidden></div>
       <div class="d-sec rounds" id="d-rounds" hidden></div>
@@ -1938,6 +1951,80 @@ function renderAutoReview(d) {
     asked.length ? h("span", { text: "It asked for:" }) : null,
     asked.length ? h("ul", null, ...asked.map((t) => h("li", null, richText(t)))) : null,
     offer ? h("span", { text: offer }) : null);
+}
+
+// The review draft of a PR that requests the maintainer's review, as the server serves it
+function reviewDraftOf(d) {
+  const r = d && d.reviewDraft && typeof d.reviewDraft === "object" ? d.reviewDraft : null;
+  return r && str(r.state) ? r : null;
+}
+
+const DRAFT_LEADS = {
+  started: "Gary is preparing a review draft.",
+  stalled: "The review draft did not arrive.",
+  ready: "The PR has new commits since the review draft.",
+};
+
+// The line above the story: why no draft started by itself, or that one is on its way, with the "Prepare review" button
+function renderReviewDraft(id, d) {
+  const el = document.getElementById("d-draft");
+  const r = reviewDraftOf(d);
+  const show = !!r && (r.state !== "ready" || r.headMoved === true);
+  el.hidden = !show;
+  if (!show) return el.replaceChildren();
+  const lead = r.state === "held" ? "No review draft yet. " + str(r.message) : DRAFT_LEADS[r.state] || "";
+  const button = r.canPrepare === true ? h("button", {
+    class: "btn quiet small", type: "button", "data-focus-key": "draft:prepare", disabled: state.busy.has(id) || goneOnGithub(d),
+    text: r.state === "ready" ? "Prepare review again" : "Prepare review", title: "The agent reads the PR and drafts your review. You decide what goes to GitHub",
+    onclick: () => prepareReview(id),
+  }) : null;
+  setKids(el, h("p", { class: "rd-lead" }, h("span", { text: lead }), button));
+}
+
+async function prepareReview(key) {
+  if (state.busy.has(key)) return;
+  state.notes.delete(key);
+  state.busy.add(key);
+  render();
+  try {
+    if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
+    const res = await state.mcp.callTool(SERVER, "prepare_review", { instance: refOf(key).instance, itemId: refOf(key).id });
+    state.notes.set(key, { kind: "info", text: str(res && res.payload && res.payload.result) || "Queued." });
+  } catch (e) {
+    const p = e && e.code === "tool_error" ? refusalPayload(e) : null;
+    state.notes.set(key, refusalNote(e, key) || { kind: "failed", text: p ? resultString(p.result) || "Sending failed." : routeFailure(e, null) });
+  } finally {
+    state.busy.delete(key);
+    render();
+  }
+}
+
+// Why the current code is not enough, what the PR does, and how the changed pieces fit, each step linked into the diff
+function renderWalkthrough(d) {
+  const el = document.getElementById("d-walk");
+  const w = d && d.walkthrough && typeof d.walkthrough === "object" ? d.walkthrough : null;
+  const steps = w && Array.isArray(w.how) ? w.how.filter((s) => s && typeof s === "object" && str(s.text)) : [];
+  el.hidden = !w || !str(w.why) || !str(w.what);
+  if (el.hidden) return el.replaceChildren();
+  const ref = (s) => {
+    const where = str(s.path) + (Number.isInteger(s.line) ? ":" + s.line : "");
+    if (!where) return null;
+    return isGithubUrl(str(s.url)) ? h("a", { href: str(s.url), target: "_blank", rel: "noopener noreferrer" }, h("code", { text: where })) : h("code", { text: where });
+  };
+  setKids(el,
+    h("p", null, h("span", { class: "wt-label", text: "Why:" }), ...richText(str(w.why))),
+    h("p", null, h("span", { class: "wt-label", text: "What:" }), ...richText(str(w.what))),
+    steps.length ? h("p", null, h("span", { class: "wt-label", text: "How:" })) : null,
+    steps.length ? h("ol", null, ...steps.map((s) => h("li", null, ...richText(str(s.text)), ref(s)))) : null);
+}
+
+// A review route of a review draft: the server creates it as a pending review under the maintainer's login
+const pendingReview = (r) => r.type === "review" && paramsOf(r).pending === true;
+
+// The body the draft wrote for a verdict, or null
+function draftBody(r, event) {
+  const bodies = paramsOf(r).bodies;
+  return bodies && typeof bodies === "object" && typeof bodies[event] === "string" ? bodies[event] : null;
 }
 
 // Issues and discussions whose fix is in progress. The fix PR's own item carries the work until it is merged or closed
@@ -3149,6 +3236,8 @@ function renderDetailInfo(d) {
   detail.story.hidden = !story;
   detail.verdict.hidden = !verdict || goneOnGithub(d);
   renderAutoReview(d);
+  renderReviewDraft(detail.id, d);
+  renderWalkthrough(d);
   renderSensitive(d);
   renderOrigin(d);
   renderHold(d);
@@ -3520,7 +3609,9 @@ function routeButtons(d, r) {
     case "merge": return [me(text ? "Copy text, open GitHub to merge" : "Open GitHub to merge")];
     case "reopen": return [as === "me" ? me(text ? "Copy reply, open GitHub to reopen" : "Open GitHub to reopen")
       : run("Reopen", { confirm: text, confirmVerb: "post and reopen" })];
-    case "review": return [as === "me" ? me("Copy review, open GitHub to " + event.toLowerCase()) : run(event, { confirm: true })];
+    case "review":
+      if (pendingReview(r)) return [{ id: "main", actor: "own", label: "Prepare pending review on GitHub", tool: "pending_review" }];
+      return [as === "me" ? me("Copy review, open GitHub to " + event.toLowerCase()) : run(event, { confirm: true })];
     case "address_review": return [{ id: "main", actor: "agent", label: "Address the review" }];
     case "follow_up":
       if (as === "agent") return [{ id: "main", actor: "agent", label: "Start fix" }];
@@ -3568,6 +3659,7 @@ function confirmText(b, inst) {
 function buttonTip(b, inst) {
   if (b.actor === "agent") return "The agent does this";
   if (b.actor === "bot") return botLogin(inst) + (b.confirm ? " does this after you confirm" : " does this now");
+  if (b.tool === "pending_review") return "Creates a pending review under your GitHub login. Only you see it until you submit it on GitHub";
   if (b.actor === "own") return "Runs right away under your GitHub login" + (b.confirm ? ", after you confirm" : "");
   // A route without text has nothing to copy, and its label does not start with "Copy"
   return b.copy && /^Copy\b/.test(str(b.label)) ? "Copies the text and opens GitHub, you post it" : "Opens GitHub, you do it there";
@@ -4171,11 +4263,23 @@ async function runRoute(id, r, payload) {
   render();
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
-    const res = await state.mcp.callTool(SERVER, r.type, {
+    const res = await state.mcp.callTool(SERVER, payload.tool || r.type, {
       instance: refOf(id).instance, itemId: refOf(id).id, routeId: r.id, text: str(payload.text), draftHash: str(r.draftHash),
       force: payload.force === true, input: payload.input || {},
     });
     const result = str(res && res.payload && res.payload.result);
+    // The maintainer finishes a pending review on GitHub, in the PR's files view
+    if (payload.tool === "pending_review") {
+      const dry = !!(res && res.payload && res.payload.result && res.payload.result.dryRun === true);
+      const url = str(res && res.payload && res.payload.url);
+      if (!dry && isGithubUrl(url)) window.open(url, "_blank", "noopener,noreferrer");
+      state.notes.set(id, { kind: "done", text: dry ? "Dry run: nothing was sent to GitHub." : result || "Pending review ready on GitHub.", warning: "" });
+      state.drafts.delete(draftKey(id, key));
+      dropSavedDraft(id, r.id);
+      for (const c of reviewComments(r)) setCommentEdit(id, r, c, null);
+      detail.openRoute = r.id;
+      return;
+    }
     // The post went out, only the label failed: done, with a soft warning
     const warning = /label could not be set/i.test(result) ? result : "";
     state.notes.set(id, { kind: "done", text: actorOf(r) === "agent" ? "The agent is on it" : "Done: " + str(r.title), warning });
@@ -4503,14 +4607,25 @@ function buildCardInputs(id, d, r, rec) {
   }
   // GitHub refuses an approval or a change request on one's own PR, so the bot's own PR keeps its event
   const cleanApproval = str(p.event) === "approve" && !(Array.isArray(p.comments) && p.comments.length);
-  if (r.type === "review" && !cleanApproval && Object.hasOwn(REVIEW_EVENT_LABELS, str(p.event)) && !(instOf(d).bot && str(d.author) === botLogin(instOf(d)))) {
-    out.push(h("span", { class: "seg-row review-event" }, h("span", { class: "card-label" }, "Submit as"),
+  if (r.type === "review" && (!cleanApproval || pendingReview(r)) && Object.hasOwn(REVIEW_EVENT_LABELS, str(p.event)) && !(instOf(d).bot && str(d.author) === botLogin(instOf(d)))) {
+    const verdictHint = pendingReview(r) ? h("p", { class: "verdict-hint" }) : null;
+    const sayVerdict = () => verdictHint && verdictHint.replaceChildren("GitHub asks for the verdict when you submit the pending review. Pick \u201c" + REVIEW_EVENT_LABELS[reviewEvent(r)] + "\u201d there.");
+    out.push(h("span", { class: "seg-row review-event" }, h("span", { class: "card-label" }, pendingReview(r) ? "Verdict" : "Submit as"),
       segControl("Review event", Object.entries(REVIEW_EVENT_LABELS), reviewEvent(r), (v) => {
+        // An untouched body follows the verdict: the draft has one wording per verdict
+        const before = draftBody(r, reviewEvent(r));
+        if (pendingReview(r) && rec.ta && draftBody(r, v) !== null && (before === null || rec.ta.value === before)) {
+          rec.ta.value = draftBody(r, v);
+          rec.ta.dispatchEvent(new Event("input"));
+        }
         if (v === str(p.event)) detail.events.delete(r.id);
         else detail.events.set(r.id, v);
+        sayVerdict();
         state.confirming.delete(id);
         render();
       })));
+    sayVerdict();
+    if (verdictHint) out.push(verdictHint);
   }
   if (r.type === "review") {
     const comments = (Array.isArray(p.comments) ? p.comments : []).filter((c) => c && typeof c === "object" && typeof c.id === "string");
@@ -4525,7 +4640,7 @@ function buildCardInputs(id, d, r, rec) {
         const body = h("div", { class: "c-body" });
         const label = h("label", { for: box.id }, where ? h("code", { class: "c-where", text: where }) : "Comment");
         // Only a review the server posts takes edits. A review the maintainer posts themself copies the summary alone
-        const editable = !r.done && actorOf(r) !== "me";
+        const editable = !r.done && (actorOf(r) !== "me" || pendingReview(r));
         const fk = "r:" + r.id + ":c:" + c.id;
         const paint = (focus) => {
           const edit = commentEdit(id, r, c);
@@ -4689,7 +4804,7 @@ function partButtons(id, d, r, rec, locked) {
 function routePayload(d, r, rec, b, id) {
   const input = { ...(b && b.input ? b.input : {}) };
   if (r.type === "review") input.commentIds = [...rec.checks].filter(([, on]) => on).map(([cid]) => cid);
-  if (r.type === "review" && actorOf(r) !== "me") {
+  if (r.type === "review" && (actorOf(r) !== "me" || pendingReview(r))) {
     const texts = reviewComments(r).filter((c) => input.commentIds.includes(c.id)).map((c) => [c.id, (commentEdit(id, r, c) ?? "").trim()]).filter(([, t]) => t);
     if (texts.length) input.commentTexts = Object.fromEntries(texts);
   }
@@ -4703,7 +4818,7 @@ function routePayload(d, r, rec, b, id) {
   if (labelPart(r) && actorOf(r) !== "me") input.alsoLabel = rec.alsoLabel !== false;
   // A transfer moves the issue as it is, and the server takes the escalate command from the profile, so no draft text goes along
   const text = b && b.input && (b.input.mode === "transfer" || b.input.mode === "escalate") ? "" : rec.ta ? rec.ta.value : str(r.text);
-  return { text, input };
+  return { text, input, ...(b && b.tool && { tool: b.tool }) };
 }
 
 // The prefill buttons the maintainer used. The server serves `opened` on the route. A click marks it here at once, before the server's push arrives.
@@ -4775,7 +4890,7 @@ function buildCardActions(id, d, r, rec, locked) {
     const result = str(r.done.result);
     const as = actorOf(r);
     return [h("span", { class: "status done step-done" }, icon("doneCheck"),
-      h("span", { text: as !== "agent" ? "Done" : r.done.status === "queued" ? "Requested. The agent has it on its list." : "The agent took this on" }),
+      h("span", { text: pendingReview(r) ? "Pending review ready on GitHub. Submit it there." : as !== "agent" ? "Done" : r.done.status === "queued" ? "Requested. The agent has it on its list." : "The agent took this on" }),
       isGithubUrl(result) ? ghLink(result, "view on GitHub") : null)];
   }
   if (mine && note && note.kind === "done") {

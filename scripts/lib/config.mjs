@@ -24,7 +24,12 @@ export const DEFAULT_PORT = 7878;
 // A contributions instance follows the maintainer's own threads outside the repos of their maintainer instances.
 // It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it
 export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150, clearNotifications: false, mergeReminderDays: 14, mergeReminderDaysFor: {} };
-export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", ...Object.keys(CONTRIBUTIONS_DEFAULTS)];
+// The review drafts for PRs that request the maintainer's review that start without a click: per run, waiting at once,
+// and the PR size above which none does
+export const REVIEW_DRAFT_DEFAULTS = { maxAutoReviewDraftsPerRun: 0, maxPendingAutoReviewDrafts: 5, reviewDraftMaxLines: 800 };
+export const REVIEW_DRAFT_COUNT_MAX = 50;
+export const REVIEW_DRAFT_MAX_LINES_MAX = 100000;
+export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", ...Object.keys(CONTRIBUTIONS_DEFAULTS), ...Object.keys(REVIEW_DRAFT_DEFAULTS)];
 // How the instance's tab looks on the board: `{ icon, color, background, favorite }`. `background` also tints the page in that color, and a favorite comes before the other tabs
 export const TAB_ICONS = ["zap", "home", "star", "globe", "heart", "user", "shield", "bot", "sparkles", "wrench", "lightbulb", "plug", "eye", "pr", "issue", "discussion", "commit", "comments"];
 export const TAB_COLORS = ["orange", "blue", "green", "purple", "rose", "gray"];
@@ -506,8 +511,15 @@ function checkContributionsConfig(data) {
 		`"mergeReminderDaysFor" must map repositories like "owner/name" or "owner/*" to a whole number of days`,
 	);
 	check(errors, data.clearNotifications === undefined || typeof data.clearNotifications === "boolean", `"clearNotifications" must be true or false`);
+	checkReviewDrafts(data, errors);
 	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };
+}
+
+function checkReviewDrafts(data, errors) {
+	check(errors, data.maxAutoReviewDraftsPerRun === undefined || isInt(data.maxAutoReviewDraftsPerRun, 0, REVIEW_DRAFT_COUNT_MAX), `"maxAutoReviewDraftsPerRun" must be a whole number from 0 to ${REVIEW_DRAFT_COUNT_MAX}. 0 starts no review draft without your click`);
+	check(errors, data.maxPendingAutoReviewDrafts === undefined || isInt(data.maxPendingAutoReviewDrafts, 0, REVIEW_DRAFT_COUNT_MAX), `"maxPendingAutoReviewDrafts" must be a whole number from 0 to ${REVIEW_DRAFT_COUNT_MAX}`);
+	check(errors, data.reviewDraftMaxLines === undefined || isInt(data.reviewDraftMaxLines, 1, REVIEW_DRAFT_MAX_LINES_MAX), `"reviewDraftMaxLines" must be a whole number of changed lines from 1 to ${REVIEW_DRAFT_MAX_LINES_MAX}`);
 }
 
 /** Every problem in a config.json object, unknown fields included. An empty list means it is valid. */
@@ -687,7 +699,7 @@ function readConfig(name) {
 		const { errors, unknown } = checkConfig(data);
 		unknownFields.set(file, unknown);
 		if (errors.length) throw new SettingsError(`Config ${file} is invalid:\n- ${errors.join("\n- ")}`);
-		if (isContributions(data)) return { ...CONTRIBUTIONS_DEFAULTS, ...data, bot: null, allowOwnTokenPushes: false, fastTier: "off", escalateAs: "prefill" };
+		if (isContributions(data)) return { ...CONTRIBUTIONS_DEFAULTS, ...REVIEW_DRAFT_DEFAULTS, ...data, bot: null, allowOwnTokenPushes: false, fastTier: "off", escalateAs: "prefill" };
 		return { ...CONFIG_DEFAULTS, ...data, bot: data.bot ?? null };
 	});
 }

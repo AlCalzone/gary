@@ -22,7 +22,9 @@
 //                          contributions instance. A search answers with the nodes of the first entry whose `match`
 //                          occurs in its query, paged by `first` and `after`. ContributionsItem reads `items`.
 //                          `notifications: [{ id, unread, repo, subject }]` is the inbox, read per repo. Marking one
-//                          as done needs FAKE_GH_WRITES and appends `{ notificationDone: id }` there
+//                          as done needs FAKE_GH_WRITES and appends `{ notificationDone: id }` there. `reviewTargets:
+//                          { "owner/name#n": { …PR node, files: [{ filename, patch }] } }` answers the read before a pending
+//                          review (PendingReviewTarget) and the PR's changed files
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as gh from "../fixtures/github.mjs";
@@ -73,6 +75,12 @@ if (args[1] !== "graphql") {
 	if (inbox) {
 		const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : {};
 		out((data.notifications ?? []).filter((n) => n.repo === inbox[1]));
+	}
+	const prFiles = /^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/files\?/.exec(args[1]);
+	if (prFiles) {
+		const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : {};
+		const files = data.reviewTargets?.[`${prFiles[1]}#${prFiles[2]}`]?.files ?? [];
+		out(args.includes("--slurp") ? [files] : files);
 	}
 	const m = /^repos\/[^/]+\/[^/]+\/actions\/runs\?head_sha=([0-9a-f]{40})/.exec(args[1]);
 	if (m) out({ workflow_runs: gh.runs[m[1]] ?? [] });
@@ -129,6 +137,11 @@ const withProjects = (node) => {
 };
 const withOverride = (key, node) => withProjects(node && overrides[key] ? { ...node, ...overrides[key] } : node);
 
+if (query.includes("query PendingReviewTarget")) {
+	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : {};
+	const { files, ...node } = data.reviewTargets?.[`${v.owner}/${v.name}#${v.number}`] ?? {};
+	out({ data: { repository: { pullRequest: Object.keys(node).length ? node : null } } });
+}
 if (query.includes("query ContributionsSearch") || query.includes("query ContributionsItem")) {
 	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : { searches: [], items: {} };
 	if (query.includes("query ContributionsItem")) {
