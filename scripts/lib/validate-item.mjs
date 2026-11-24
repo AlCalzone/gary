@@ -428,9 +428,12 @@ function checkDue(item, err) {
 function checkSeries(item, err) {
 	if (item.series === undefined) return;
 	const s = item.series;
-	const ok = isObject(s) && Object.keys(s).every((k) => ["id", "title", "position", "size"].includes(k)) && typeof s.id === "string" && ID_PATTERN.test(s.id)
+	const ok = isObject(s) && Object.keys(s).every((k) => ["id", "title", "position", "size", "unready"].includes(k)) && (s.unready === undefined || (Number.isInteger(s.unready) && s.unready >= 1 && s.unready <= s.size)) && typeof s.id === "string" && ID_PATTERN.test(s.id)
 		&& typeof s.title === "string" && s.title.length <= 300 && Number.isInteger(s.size) && s.size >= 2 && Number.isInteger(s.position) && s.position >= 1 && s.position <= s.size;
-	if (!ok) err("series", "series is { id, title, position, size }, copied from facts.series: the first item's id and title, and this item's place among size items");
+	if (!ok) err("series", "series is { id, title, position, size, unready? }, copied from facts.series: the first item's id and title, this item's place among size items, and how many of its PRs cannot be merged yet");
+	else if (s.unready && Array.isArray(item.routes) && item.routes.some((r) => isObject(r) && r.type === "merge" && r.recommended === true)) {
+		err("series-merge", `${s.unready} of the ${s.size} parts of this series cannot be merged yet, so merge may be an alternative route but never the recommended one`);
+	}
 }
 
 function checkWants(item, profile, err) {

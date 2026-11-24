@@ -123,6 +123,8 @@ Some items cannot be reproduced without real hardware or an environment the agen
 
 A part whose next step is the maintainer's merge, approval or close is `land`, also on a contributor's PR, because each part moves the whole feature to done. Name the series in `state`, like `Part 2 of 3 of the driver split. Merge it after part 1.` A part that needs the maintainer's code review or a design decision follows the rules above. The board keeps the parts of a series together and ranks them by the first unfinished part.
 
+`facts.series.unready` counts the PRs of the series that cannot be merged yet: a draft, conflicts, failing CI or requested changes. A draft part counts in `size` and has no item of its own. While `unready` is set, a stack is merged as a whole later, so `merge` is never the recommended route on any of its parts. `gary put` refuses it. A review, a change, a take-over or a drive is recommended as usual, and `merge` may follow as an alternative. A part where the merge would be the only step gets no routes and `category: "decide"`, with a `state` like `Approved and clean. Parts 3 and 4 of the stack are still drafts.` The snapshot reports the part as changed when the series changes.
+
 ## AI-written PRs
 
 A PR counts as AI-written when `facts.aiAuthored` is true. The code sets it from the commits: an AI agent or a bot account as author or co-author, a `Co-Authored-By` trailer that names one, a head branch like `claude/…` or `copilot/…`, or a name from the profile's `aiAuthors`. `facts.aiSignals` lists what it found. This also holds for a PR opened under the maintainer's own account.

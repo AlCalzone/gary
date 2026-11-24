@@ -315,7 +315,8 @@ export async function main(argv = []) {
 	]);
 	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
-	const series = seriesOf(readyPrs, issues.nodes);
+	// Drafts get no item, but a draft part still counts in its series
+	const series = seriesOf(prs.nodes, issues.nodes);
 	const linked = (id, n) => ({ ...dueOf(n), ...(series.has(id) && { series: series.get(id) }) });
 	const items = [
 		...readyPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }), ...linked(`pr-${n.number}`, n) }, ctx)),

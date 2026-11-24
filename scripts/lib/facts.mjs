@@ -325,15 +325,20 @@ export function dueFacts(node, fields = PROFILE_DEFAULTS.dueDateFields) {
 	return found[0] ?? {};
 }
 
+const prUnready = (n) =>
+	n.isDraft === true || n.mergeable === "CONFLICTING" || n.reviewDecision === "CHANGES_REQUESTED"
+	|| ["FAILURE", "ERROR"].includes(n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state);
+
 /**
- * Finds series of related open items and returns a Map from item id to `{ id, title, position, size }`.
+ * Finds series of related open items and returns a Map from item id to `{ id, title, position, size, unready? }`.
+ * `unready` counts the PRs of the series that cannot be merged yet: a draft, conflicts, failing CI or requested changes.
  * Two PRs are stacked when one's base branch is the other's head branch inside the repo. An issue is in a series
  * with its parent issue. A PR that closes an issue of such a series joins it. Wording is never read.
  * `prs` and `issues` are the snapshot's raw nodes.
  */
 export function seriesOf(prs = [], issues = []) {
 	const nodes = new Map();
-	for (const n of prs) nodes.set(`pr-${n.number}`, { id: `pr-${n.number}`, number: n.number, title: n.title ?? "" });
+	for (const n of prs) nodes.set(`pr-${n.number}`, { id: `pr-${n.number}`, number: n.number, title: n.title ?? "", unready: prUnready(n) });
 	for (const n of issues) nodes.set(`issue-${n.number}`, { id: `issue-${n.number}`, number: n.number, title: n.title ?? "" });
 	// Edges point from the earlier item to the later one
 	const edges = [];
@@ -386,7 +391,8 @@ export function seriesOf(prs = [], issues = []) {
 		// A cycle leaves items out of the order. They follow by number
 		for (const id of members.sort(byNumber)) if (!order.includes(id)) order.push(id);
 		const first = nodes.get(order[0]);
-		order.forEach((id, i) => out.set(id, { id: first.id, title: first.title, position: i + 1, size: order.length }));
+		const unready = order.filter((id) => nodes.get(id).unready).length;
+		order.forEach((id, i) => out.set(id, { id: first.id, title: first.title, position: i + 1, size: order.length, ...(unready && { unready }) }));
 	}
 	return out;
 }

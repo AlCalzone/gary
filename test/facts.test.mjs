@@ -1,5 +1,6 @@
 // The facts the snapshot computes per entry: the timeline, who we wait on, and the PR, issue and discussion facts.
 // Unit checks on scripts/lib/facts.mjs, then `gary item` and `gary snapshot` against the fake gh.
+import { validateItem } from "../scripts/lib/validate-item.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -144,6 +145,11 @@ t.check("text never sets a due date", f.dueFacts({ title: "Due 2026-11-21", body
 const stackPr = (number, head, base, extra) => ({ number, title: "PR " + number, headRefName: head, baseRefName: base, isCrossRepository: false, ...extra });
 let series = f.seriesOf([stackPr(40, "part-1", "main"), stackPr(41, "part-2", "part-1")]);
 t.check("a stacked pair is a series in base order", JSON.stringify(series.get("pr-40")) === JSON.stringify({ id: "pr-40", title: "PR 40", position: 1, size: 2 }) && series.get("pr-41")?.position === 2 && series.get("pr-41").id === "pr-40", [...series]);
+series = f.seriesOf([stackPr(60, "s1", "main"), stackPr(61, "s2", "s1"), stackPr(62, "s3", "s2", { isDraft: true }), stackPr(63, "s4", "s3", { mergeable: "CONFLICTING" })]);
+t.check("a draft part counts in its series, and unready counts the PRs that cannot be merged yet", series.get("pr-61")?.size === 4 && series.get("pr-61").position === 2 && series.get("pr-61").unready === 2, series.get("pr-61"));
+const stackItem = (recommendMerge) => ({ series: { id: "pr-60", title: "PR 60", position: 2, size: 4, unready: 2 }, routes: [{ id: "r1", type: recommendMerge ? "merge" : "review", recommended: true }, { id: "r2", type: recommendMerge ? "review" : "merge" }] });
+const seriesErrors = (doc) => validateItem("pr-61", doc, { mode: "bot", profile: { repo: "acme/widgets" } }).errors.map((e) => e.code);
+t.check("a part of an unready stack never recommends merge, but may offer it second", seriesErrors(stackItem(true)).includes("series-merge") && !seriesErrors(stackItem(false)).some((c) => c === "series-merge" || c === "series"), seriesErrors(stackItem(false)));
 series = f.seriesOf([stackPr(42, "a", "main", { title: "Part 1 of 2" }), stackPr(43, "b", "main", { title: "Part 2 of 2, part of #42" })]);
 t.check("an unrelated pair is no series, whatever the titles say", series.size === 0, [...series]);
 series = f.seriesOf([stackPr(44, "x", "part-1", { isCrossRepository: true }), stackPr(45, "part-1", "main", { isCrossRepository: true })]);

@@ -293,7 +293,7 @@ A series is a group of related open items that together finish one feature. The 
 - Sub-issues: an issue follows its parent issue.
 - A PR that closes an issue of such a series joins it, after that issue.
 
-Wording like "part 2 of 3" or "part of #1234" never makes a series on its own. Each item of a series carries `series: { id, title, position, size }`: the id and title of its first item, its own place, and the number of items. The order follows the links: a base before the PR stacked on it, a parent before its sub-issues, and the number where the links leave it open. `gary item` takes the series from the last snapshot.
+Wording like "part 2 of 3" or "part of #1234" never makes a series on its own. Each item of a series carries `series: { id, title, position, size, unready? }`: the id and title of its first item, its own place, and the number of items. A draft PR gets no item but counts as a part. `unready` is the number of PRs in the series that cannot be merged yet: a draft, conflicts, failing CI or requested changes. It is absent when every PR could be merged. While it is set, no part of the series recommends `merge`, and `gary put` refuses an item that does. `merge` may be an alternative route. The order follows the links: a base before the PR stacked on it, a parent before its sub-issues, and the number where the links leave it open. `gary item` takes the series from the last snapshot.
 
 ## Who acts
 

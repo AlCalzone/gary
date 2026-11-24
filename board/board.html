@@ -2645,7 +2645,7 @@ function flagChips(d) {
   }
   if (needsHardware(d)) out.push(h("span", { class: "r-flag hw", title: "Needs real hardware: the agent's test setup cannot reproduce it", text: "hardware" }));
   const s = seriesOf(d);
-  if (s) out.push(h("span", { class: "r-flag series", title: "Part " + s.position + " of " + s.size + " of the series that starts with “" + str(s.title) + "”", text: "series " + s.position + "/" + s.size }));
+  if (s) out.push(h("span", { class: "r-flag series", title: "Part " + s.position + " of " + s.size + " of the series that starts with “" + str(s.title) + "”" + (s.unready ? ". " + s.unready + " of its PRs cannot be merged yet" : ""), text: "series " + s.position + "/" + s.size }));
   return out;
 }
 

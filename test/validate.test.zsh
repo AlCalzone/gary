@@ -74,7 +74,7 @@ bad_case "unknown category" 'category must be one of act, unblock, land, decide,
 bad_case "unknown old section" 'section \"soon\" is unknown' "{${BASE/\"category\":\"land\"/\"section\":\"soon\"},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
 bad_case "needsHardware is a flag" "needsHardware must be true or false" "{$BASE,\"needsHardware\":\"yes\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
 bad_case "a due date needs its source" "dueAt and dueSource come together" "{$BASE,\"dueAt\":\"2026-11-24\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
-bad_case "a series names its place" "series is { id, title, position, size }" "{$BASE,\"series\":{\"id\":\"pr-11\",\"title\":\"t\",\"position\":3,\"size\":2},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
+bad_case "a series names its place" "series is { id, title, position, size, unready? }" "{$BASE,\"series\":{\"id\":\"pr-11\",\"title\":\"t\",\"position\":3,\"size\":2},\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
 bad_case "waitingOn comes from the facts" "waitingOn must be one of us, them, nobody" "{$BASE,\"waitingOn\":\"me\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
 # An item in the old form, with a section, is accepted and stored with its category
 OLD="{${BASE/\"category\":\"land\"/\"section\":\"review\"},\"authorType\":\"contributor\",\"hint\":\"Reply: thanks\",\"routes\":[$R1]}"
