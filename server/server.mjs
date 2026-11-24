@@ -2443,6 +2443,14 @@ export async function startBoardServer({
 			return res.end(body);
 		}
 
+		if (url.pathname === "/favicon.svg" && req.method === "GET") {
+			// The logo's disc with its light outline and without the wordmark below it: a square around the circle at 645,555.
+			// The outline reaches a radius of 326
+			const head = (await readFile(join(ROOT, "logo-head-outlined.svg"), "utf8")).replace(/<svg [^>]*>/, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="319 229 652 652">');
+			res.writeHead(200, { "Content-Type": "image/svg+xml", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Cache-Control": "max-age=3600", "X-Content-Type-Options": "nosniff" });
+			return res.end(head);
+		}
+
 		const logo = { "/logo.svg": "logo-head.svg", "/logo-dark.svg": "logo-head-dark.svg" }[url.pathname];
 		if (logo && req.method === "GET") {
 			res.writeHead(200, { "Content-Type": "image/svg+xml", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Cache-Control": "max-age=3600", "X-Content-Type-Options": "nosniff" });
