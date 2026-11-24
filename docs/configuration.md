@@ -24,6 +24,8 @@ The limits in [safety.md](safety.md) cannot be changed by a profile or by `perso
 
 `profiles/template/` is the skeleton. The `triage-setup` skill fills it from your repo.
 
+`profiles/gary/` is the profile Gary uses for its own repository. It is a small real example.
+
 - `profile.json`: project facts, see below.
 - `rules/classification.md`: what goes into which category.
 - `rules/voice.md`: the project's texts, like canned requests and their links. How you write goes into `personal.md`.

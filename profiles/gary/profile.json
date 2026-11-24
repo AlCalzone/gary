@@ -1,0 +1,44 @@
+// The profile Gary uses for its own repository. It does nothing unless an instance names it.
+{
+	"name": "Gary",
+	"repo": "AlCalzone/gary",
+
+	"maintainers": ["AlCalzone"],
+	"botLogins": [],
+	// No review bot rounds: a fix PR goes straight to the maintainer's review
+	"reviewBots": [],
+	"relatedRepos": [],
+
+	// Everything that instructs an agent, runs on the maintainer's machine at install, or ships to every user
+	"sensitivePaths": [
+		".github/**",
+		"CLAUDE.md",
+		"AGENTS.md",
+		".claude/**",
+		".claude-plugin/**",
+		".mcp.json",
+		"skills/**",
+		"profiles/**",
+		"bin/**",
+		"package.json",
+		"package-lock.json",
+	],
+	"autoLabels": [],
+
+	"botCommands": {},
+	"escalateResult": null,
+	"automatedComments": [],
+
+	"aiAuthors": [],
+	"requiredTools": [],
+
+	// The repo has no formatter
+	"autofixCommands": [],
+	"autofixSetup": null,
+	"formatCommand": null,
+
+	"autoReviewPaths": { "config": [] },
+
+	"commitFormat": null,
+	"mergeMethod": "squash",
+}
