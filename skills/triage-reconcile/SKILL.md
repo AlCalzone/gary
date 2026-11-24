@@ -72,10 +72,18 @@ One proposal changes one block of one file:
 }
 ```
 
-- `before` is text copied exactly from the file as it is now: one contiguous block that occurs exactly once in it. Take the smallest block that is unique, usually one line, one list item or one paragraph. To delete a whole line or list item, end `before` with its newline.
+- `before` is text copied exactly from the file as it is now: one contiguous block of whole lines that occurs exactly once in it. It starts at the start of a line and ends at the end of a line, never inside a sentence, because the board shows it to the maintainer as a diff. A list item includes its `- `. Take the smallest such block that is unique, usually one line, one list item or one paragraph. `after` holds the whole new lines. To delete a whole line or list item, end `before` with its newline.
 - `after` is the new text, in the file's style. An empty `after` deletes the block. Change nothing outside the block.
 - `target` and `file` are as for rule proposals: `profile` with `rules/<topic>.md` or `templates/<name>.md`, or `personal` with `personal.md`. Only the shared `personal.md` can be a target. A finding in the instance's own `personal.md` goes into the report.
-- `title` has at most 60 characters and says what the change does. `why` is one or two sentences. The board shows both, so keep them short.
+- `title` has at most 60 characters and says what the change does.
+
+Write `title` and `why` for a reader who has never seen the rule and does not remember the file. The maintainer decides from the card alone:
+
+- `why` says in up to three short sentences what the rule is for, what the change does, and what will be different afterwards. When nothing changes in what the agents do, say that: `Nothing changes in how PRs are reviewed.`
+- Name things in full. Write `the rule that agents never run code from a contributor's PR`, never `the repeated rule` or `the PR code rule`.
+- Say where the other half lives, like `The same rule is already in Gary's core, which applies to every project.`
+- No shorthand from your own analysis, no file-internal names without a word on what they are.
+
 - `finding` is one of `duplicate`, `contradiction`, `stale`, `overruled`, `vague`. `evidence` lists at least one `{ type, gist }`, with `type` one of `text`, `name`, `log`, `core`, and any of `file`, `quote`, `at`, `itemId`, `entry` and `count`.
 - `id` is `reconcile-<YYYY-MM-DD>-<slug>` and matches `^[a-z0-9-]{1,80}$`.
 

@@ -113,7 +113,12 @@ async function editTargetProblems(p, instance) {
 		return [`${p.file} does not exist`];
 	}
 	const n = occurrences(content, p.before);
-	return n === 1 ? [] : [`before occurs ${n === 0 ? "nowhere" : "more than once"} in ${p.file}. It must be one block that occurs exactly once`];
+	if (n !== 1) return [`before occurs ${n === 0 ? "nowhere" : "more than once"} in ${p.file}. It must be one block that occurs exactly once`];
+	// The board shows before and after as a diff, so a block cut inside a line shows half a sentence
+	const start = content.indexOf(p.before);
+	const end = start + p.before.length;
+	const whole = (start === 0 || content[start - 1] === "\n") && (p.before.endsWith("\n") || end === content.length || content[end] === "\n");
+	return whole ? [] : [`before starts or ends inside a line of ${p.file}. Copy whole lines, from the start of the first to the end of the last, and write after as the whole new lines`];
 }
 
 /** Sends one board write through the board server, or applies it directly when no server answers. Returns `[status, body]`. */

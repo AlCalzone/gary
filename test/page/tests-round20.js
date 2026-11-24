@@ -30,7 +30,7 @@
     // One edit
     const one = ecards().find((c) => /category land/.test(c.querySelector(".p-title").textContent));
     ok("edit: the card names the finding", one.querySelector(".p-finding")?.textContent === "Old name");
-    ok("edit: the file sits above the diff", one.querySelector(".rd-file")?.textContent === "rules/classification.md");
+    ok("edit: the file sits above the diff", one.querySelector(".rd-file")?.textContent === "Changes the project rules of acme/widgets, in rules/classification.md");
     ok("edit: the changed line is removed and added, the heading is context", lines(one, "del").join() === "Put config PRs into `easy`." && lines(one, "add").join() === "Put config PRs into `land`." && lines(one, "ctx").join() === "## Config PRs", [lines(one, "del"), lines(one, "add"), lines(one, "ctx")]);
     ok("edit: the marks are minus and plus, hidden from screen readers", one.querySelector(".rd-del .rd-mark").textContent === "−" && one.querySelector(".rd-add .rd-mark").textContent === "+" && one.querySelector(".rd-mark").getAttribute("aria-hidden") === "true");
     ok("edit: a screen reader hears removed and added", one.querySelector(".rd-del .rd-sr").textContent === "Removed: " && one.querySelector(".rd-add .rd-sr").textContent === "Added: ");
@@ -78,13 +78,13 @@
     dlg.style.width = "";
 
     // A group: one card for both files, one Apply and one Dismiss
-    ok("group: both files on one card, in id order", [...pair.querySelectorAll(".rd-file")].map((x) => x.textContent).join() === "rules/review.md,rules/classification.md");
+    ok("group: both files on one card, in id order", [...pair.querySelectorAll(".rd-file")].map((x) => x.textContent).join("|") === "Changes the project rules of acme/widgets, in rules/review.md|Changes the project rules of acme/widgets, in rules/classification.md");
     ok("group: one Apply and one Not this", [...pair.querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Apply,Not this");
     ok("group: the shared evidence shows once", /Evidence \(2\)/.test(pair.querySelector(".evidence summary").textContent) && /4 decisions/.test(pair.querySelector(".evidence").textContent));
     let calls = __calls.length;
     btn(pair, "Apply").click(); await wait(20);
     ok("group: Apply sends one accept for the first member", __calls.length === calls + 1 && __calls.at(-1).tool === "accept_proposal" && __calls.at(-1).proposalId === "reconcile-merge-a" && __calls.at(-1).text === undefined, __calls.at(-1));
-    ok("group: the card says what changed", /Changed rules\/review\.md and rules\/classification\.md/.test(pair.textContent) && !btn(pair, "Apply"));
+    ok("group: the card says what changed", /Changed the project rules of acme\/widgets, in rules\/review\.md and rules\/classification\.md/.test(pair.textContent) && !btn(pair, "Apply"));
     ok("group: it no longer counts", lb.textContent === "2");
 
     // Dismissing a delete with a reason

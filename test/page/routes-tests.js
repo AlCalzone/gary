@@ -456,7 +456,7 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
     && document.getElementById("learn-title").textContent === "Suggestions");
   ok("the dialog lists the proposals as cards", ldlg.open && pcards().length === 2 && /closing feature requests/.test(pcards()[0].textContent) && /invited yourself/.test(pcards()[0].querySelector(".card-why").textContent));
   ok("evidence is collapsed and counted", !pcards()[0].querySelector("details").open && pcards()[0].querySelector("summary").textContent === "Based on 3 decisions" && pcards()[1].querySelector("summary").textContent === "Based on 4 decisions");
-  ok("where the rule goes", /Adds to rules\/classification\.md under “Feature requests” in the project profile/.test(pcards()[0].textContent) && /Adds to your personal rules under “Voice”/.test(pcards()[1].textContent));
+  ok("where the rule goes", /Adds to the project rules of acme\/widgets, in rules\/classification\.md under “Feature requests”/.test(pcards()[0].textContent) && /Adds to your personal rules, for all projects under “Voice”/.test(pcards()[1].textContent));
   ok("an evidence line links to an item still on the board, others stay plain", !!pcards()[0].querySelector("li .ev-link") && pcards()[0].querySelectorAll("li .ev-link").length === 1 && pcards()[0].querySelectorAll("li .ev-ref").length === 2);
   const ruleTa = pcards()[0].querySelector("textarea");
   ok("the rule text is editable and the buttons are Add rule and Not this", /Never suggest closing/.test(ruleTa.value) && [...pcards()[0].querySelectorAll(".card-actions button")].map((b) => b.textContent).join() === "Add rule,Not this"
@@ -465,9 +465,9 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
   calls = __calls.length;
   [...pcards()[0].querySelectorAll(".card-actions button")][0].click(); await wait(20);
   ok("Add rule sends accept_proposal with the edited text", __calls.length === calls + 1 && __calls.at(-1).tool === "accept_proposal" && __calls.at(-1).proposalId === "p1" && __calls.at(-1).text === "Never suggest closing a feature request a maintainer asked for.");
-  ok("the card then says where it went", /Added to rules\/classification\.md/.test(pcards()[0].textContent) && learnBtn.textContent === "1");
+  ok("the card then says where it went", /Added to the project rules of acme\/widgets, in rules\/classification\.md/.test(pcards()[0].textContent) && learnBtn.textContent === "1");
   window.__subs["proposals"](__mkSnap(P.slice(1))); await wait(10);
-  ok("the accepted card stays when the server stops serving it", pcards().length === 2 && /Added to rules\/classification\.md/.test(pcards()[0].textContent));
+  ok("the accepted card stays when the server stops serving it", pcards().length === 2 && /Added to the project rules of acme\/widgets, in rules\/classification\.md/.test(pcards()[0].textContent));
   [...pcards()[1].querySelectorAll(".card-actions button")][1].click(); await wait(5);
   const pwhy = pcards()[1].querySelector(".dismiss-box input");
   ok("Not this reveals an optional reason", !pcards()[1].querySelector(".dismiss-box").hidden && pwhy.placeholder === "Why not? (optional)");

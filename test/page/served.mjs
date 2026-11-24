@@ -384,7 +384,7 @@ try {
 	await ev(`[...${pcard("Drop the opening thanks")}.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Add rule").click();`);
 	ok("Add rule appends the edited text to the profile file", await fileUntil(() => readFileSync(join(PROFILE_COPY, "rules", "voice.md"), "utf8").includes("Start log requests with the request itself. Skip the thanks.")));
 	ok("the proposal is accepted on disk", json(join(BOARD, "proposals", "learn-2026-11-18-no-thanks.json")).status === "accepted");
-	ok("the card says where the rule went", await until(`/Added to rules\\/voice\\.md/.test(${pcard("Drop the opening thanks")}?.textContent ?? "")`));
+	ok("the card says where the rule went", await until(`/Added to the project rules of acme\\/widgets, in rules\\/voice\\.md/.test(${pcard("Drop the opening thanks")}?.textContent ?? "")`));
 	await ev(`[...${pcard("Keep feature requests")}.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Not this").click();`);
 	await ev(`const i = ${pcard("Keep feature requests")}.querySelector(".dismiss-box input"); i.value = "Too broad"; i.dispatchEvent(new Event("input"));`);
 	await ev(`[...${pcard("Keep feature requests")}.querySelectorAll(".dismiss-box button")].find((b) => b.textContent === "Dismiss suggestion").click();`);
@@ -425,7 +425,7 @@ try {
 	await ev(`[...${pcard("Keep the test rule")}.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Apply").click();`);
 	ok("Apply changes both files", await fileUntil(() => readFileSync(join(PROFILE_COPY, "rules", "review.md"), "utf8").includes("also in config PRs") && readFileSync(join(PROFILE_COPY, "rules", "issues.md"), "utf8") === "# widgets: issue rules\n\nLabel bugs.\n"));
 	ok("both edits are accepted on disk", ["a", "b"].every((x) => json(join(BOARD, "proposals", `reconcile-tests-${x}.json`)).status === "accepted"));
-	ok("the card says what changed", await until(`/Changed rules\\/review\\.md and rules\\/issues\\.md/.test(${pcard("Keep the test rule")}?.textContent ?? "")`));
+	ok("the card says what changed", await until(`/Changed the project rules of acme\\/widgets, in rules\\/review\\.md and rules\\/issues\\.md/.test(${pcard("Keep the test rule")}?.textContent ?? "")`));
 	await ev(`[...document.querySelectorAll("#learn-foot button")].find((b) => b.textContent === "Check rules").click();`);
 	ok("Check rules records the request", await fileUntil(() => !!json(join(HOME, "state", "reconcile.json"))?.requestedAt));
 	await ev(`document.getElementById("learn-close").click();`);

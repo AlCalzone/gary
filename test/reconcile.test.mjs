@@ -58,6 +58,8 @@ let r = put(edit("reconcile-twice"));
 t.check("put refuses an edit whose before occurs twice", r.status === 1 && /more than once/.test(r.stdout), r.stdout + r.stderr);
 r = put(edit("reconcile-none", { before: "No such rule." }));
 t.check("put refuses an edit whose before occurs nowhere", r.status === 1 && /nowhere/.test(r.stdout), r.stdout);
+r = put(edit("reconcile-half", { before: "Label rule", after: "Tag rule" }));
+t.check("put refuses an edit whose before ends inside a line", r.status === 1 && /inside a line/.test(r.stdout), r.stdout);
 r = put(edit("reconcile-escape", { file: "../config.json" }));
 t.check("put refuses a file outside rules and templates", r.status === 1 && /rules\/<topic>.md/.test(r.stdout), r.stdout);
 r = put(edit("reconcile-extra", { heading: "## Old sections", finding: "taste", evidence: [] }));

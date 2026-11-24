@@ -136,7 +136,7 @@
   callsT = __calls.length;
   [...gCard.querySelectorAll(".card-actions button")].find((b) => b.textContent === "Add rule").click(); await wait(20);
   ok("accepting a proposal sends its instance", __calls.at(-1).tool === "accept_proposal" && __calls.at(-1).instance === "gadgets" && __calls.at(-1).proposalId === "learn-1");
-  ok("both instances' proposals with the same id stay apart", lcards().length === 2 && /Added to rules\/review\.md/.test(gCard.textContent) && !/Added to/.test(lcards().find((c) => c !== gCard).textContent));
+  ok("both instances' proposals with the same id stay apart", lcards().length === 2 && /Added to the project rules of [\w.\/-]+, in rules\/review\.md/.test(gCard.textContent) && !/Added to/.test(lcards().find((c) => c !== gCard).textContent));
   document.getElementById("learn-close").click(); await wait(5);
   window.__subs["proposals"](__mkSnap([])); await wait(5);
   // Action docs may name the item by its key

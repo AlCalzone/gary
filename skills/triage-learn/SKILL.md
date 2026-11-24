@@ -96,7 +96,12 @@ Where it goes:
 - Project facts and project policy go to the profile: `rules/classification.md`, `rules/voice.md`, `rules/review.md`, `rules/issues.md`. A canned text the maintainer keeps rewriting goes to its template in `templates/`.
 - Personal habits and style go to the shared `personal.md` (`target: "personal"`), because they hold for all the maintainer's projects. When the evidence is clearly about this one project, the rule goes to the profile instead. A contributions instance has no profile (`profile` is null in `gary paths`): every proposal of it targets `personal.md`.
 
-`heading` names an existing heading of that file, or a new one that fits its structure. A template has no headings: leave `heading` empty, and the text is appended at its end. `text` is the exact text to append under it, written in the file's style, at most a few lines. `why` cites the evidence in one or two sentences. `evidence` lists every entry you used. `title` has at most 60 characters.
+`heading` names an existing heading of that file, or a new one that fits its structure. A template has no headings: leave `heading` empty, and the text is appended at its end. `text` is the exact text to append under it, written in the file's style, at most a few lines. `evidence` lists every entry you used. `title` has at most 60 characters.
+
+Write `title` and `why` for a reader who does not remember the items behind the rule. The maintainer decides from the card alone:
+
+- `why` says in up to three short sentences what the maintainer kept doing, with the count, and what the agents will do differently with the rule. Example: `You removed the count of inline comments from 4 of the last 6 review summaries. With this rule, a summary no longer says how many comments follow.`
+- Name things in full: the card, the kind of item, the wording. No shorthand from your own analysis.
 
 Write each proposal to `<state>/runs/learn-<timestamp>/<id>.json` and store it with `gary put proposals <id> <file>`.
 

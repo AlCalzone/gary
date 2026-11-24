@@ -75,7 +75,7 @@
     lb.click(); await wait(10);
     ok("mixed: both groups show, each with its own heading, the setting first", !document.getElementById("learn-settings").hidden && !document.getElementById("learn-rules").hidden && pcards().length === 3
       && pcards()[0].closest("#learn-settings") && pcards()[1].closest("#learn-rules") && document.getElementById("learn-rules-title").textContent === "What your decisions suggest");
-    ok("mixed: the rule cards keep their text field and buttons", !!pcards()[1].querySelector("textarea") && buttons(pcards()[1]) === "Add rule,Not this" && /Adds to rules\/classification\.md/.test(pcards()[1].textContent));
+    ok("mixed: the rule cards keep their text field and buttons", !!pcards()[1].querySelector("textarea") && buttons(pcards()[1]) === "Add rule,Not this" && /Adds to the project rules of acme\/widgets, in rules\/classification\.md/.test(pcards()[1].textContent));
     ok("switch back: title and buttons", card().querySelector(".p-title").textContent === "Go back to the standard model for all items" && buttons(card()) === "Switch back,Not now");
     ok("switch back: the reasons carry their numbers", paras(card()).length === 4 && paras(card())[0] === "The faster model sorts the obvious items at the moment. Gary checks some of its answers against the standard model."
       && paras(card())[1] === "In the last 40 checks the faster model chose the same board category as the standard model 30 times. Gary expects at least 38."

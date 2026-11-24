@@ -357,7 +357,8 @@ dialog { --surface: var(--n-surface, var(--surface-0)); --surface-2: var(--n-sur
 .handled-row .h-check.tone-ok { color: var(--ok); }
 .handled-row .h-check.tone-warn { color: var(--warn); }
 .r-ref { display: block; font-size: 12px; line-height: 16px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.p-instance { margin-left: auto; font-size: 12px; color: var(--muted); }
+.p-instance { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--tab-ink, var(--muted)); }
+.p-instance .i, .p-instance .tab-img { width: 14px; height: 14px; }
 /* Paused is a state the maintainer chose, so it reads calm: muted ink, a soft pill */
 .paused-mark { font-size: 11.5px; font-weight: 600; color: var(--fg); padding: 1px 8px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: help; }
 .paused-mark[hidden] { display: none; }
@@ -3914,6 +3915,15 @@ function tabImage(url) {
   return img;
 }
 
+// The project a card belongs to, with the icon and the color of the project's tab
+function projectTag(name) {
+  const inst = instanceByName(name) || EMPTY_INSTANCE;
+  const style = tabStyle(inst);
+  return h("span", { class: "p-instance", style: style.ink ? "--tab-ink: " + style.ink : null },
+    style.iconUrl ? tabImage(style.iconUrl) : style.icon ? icon(style.icon) : null,
+    h("span", { text: inst.title || name }));
+}
+
 function tabStyle(inst) {
   const t = inst && inst.tab && typeof inst.tab === "object" ? inst.tab : {};
   return {
@@ -5502,15 +5512,23 @@ function openProposals() {
   return [...learn.known.values()].filter((p) => !learn.gone.has(p.key) && (live.has(p.key) || learn.added.has(p.key)));
 }
 
+// Whose rules a proposal changes: the maintainer's own for all projects, or one project's profile. No proposal changes Gary's core rules
+function ruleScope(p) {
+  if (p.target === "personal") return "your personal rules, for all projects";
+  const inst = instOf(p);
+  const project = str(Array.isArray(inst.repos) && inst.repos.length === 1 ? inst.repos[0] : inst.title || inst.name);
+  return "the project rules of " + (project || "this project");
+}
+
 function proposalTarget(p) {
   // The heading arrives as markdown, like "## Stale PRs"
   const heading = str(p.heading).replace(/^#+\s*/, "").trim();
   const under = heading ? " under “" + heading + "”" : "";
-  return p.target === "personal" ? "Adds to your personal rules" + under : "Adds to " + str(p.file) + under + " in the project profile";
+  return "Adds to " + ruleScope(p) + (p.target === "personal" ? under : ", in " + str(p.file) + under);
 }
 
 function proposalAdded(p) {
-  return p.target === "personal" ? "Added to your personal rules" : "Added to " + str(p.file);
+  return "Added to " + ruleScope(p) + (p.target === "personal" ? "" : ", in " + str(p.file));
 }
 
 // The board key of an item named by instance and id, or null when it is not on the board
@@ -5670,7 +5688,7 @@ function buildSetting(p, rec) {
   const more = differences.length - MAX_SHOWN_DIFFERENCES;
   rec.card.replaceChildren(
     h("div", { class: "card-head" }, h("span", { class: "p-title", text: text.title }),
-      multiInstance() ? h("span", { class: "p-instance", text: (instanceByName(str(p.instance)) || EMPTY_INSTANCE).title || str(p.instance) }) : null),
+      multiInstance() ? projectTag(str(p.instance)) : null),
     h("div", { class: "card-body" },
       settingParagraphs(p).map((t) => h("p", { class: "card-why", text: t })),
       differences.length ? h("span", { class: "card-label", text: "Where they differed" }) : null,
@@ -5694,7 +5712,7 @@ function buildProposal(p, rec) {
       h("button", { class: "btn quiet", type: "button", text: "Cancel", onclick: () => { rec.dismissBox.hidden = true; } })));
   rec.card.replaceChildren(
     h("div", { class: "card-head" }, h("span", { class: "p-title", text: str(p.title) }),
-      multiInstance() ? h("span", { class: "p-instance", text: (instanceByName(str(p.instance)) || EMPTY_INSTANCE).title || str(p.instance) }) : null),
+      multiInstance() ? projectTag(str(p.instance)) : null),
     h("div", { class: "card-body" },
       str(p.why) ? h("p", { class: "card-why" }, richText(p.why)) : null,
       evidence.length ? h("details", { class: "evidence" },
@@ -5749,8 +5767,8 @@ function learnEntries(list) {
 }
 
 const FINDING_WORDS = { duplicate: "Duplicate", contradiction: "Conflict", stale: "Old name", overruled: "Overruled", vague: "Vague" };
-const EVIDENCE_WORDS = { text: "rule", name: "name", log: "decisions", core: "core rule" };
-const editFileName = (p) => (p.target === "personal" ? "personal rules" : str(p.file));
+const EVIDENCE_WORDS = { text: "rule", name: "name", log: "decisions", core: "Gary core rule, for all projects" };
+const editFileName = (p) => ruleScope(p) + (p.target === "personal" ? "" : ", in " + str(p.file));
 
 // Removed, kept and added lines of one block, from the longest common run of lines
 function lineDiff(before, after) {
@@ -5803,8 +5821,11 @@ function editEvidenceLine(x, p) {
 }
 
 function editApplied(e) {
-  const files = [...new Set(e.members.map(editFileName))];
-  return (e.members.every((m) => str(m.after) === "") ? "Removed from " : "Changed ") + files.join(" and ");
+  // One part per scope, so a group in one project names the project once
+  const scopes = new Map();
+  for (const m of e.members) scopes.set(ruleScope(m), [...new Set([...(scopes.get(ruleScope(m)) ?? []), ...(m.target === "personal" ? [] : [str(m.file)])])]);
+  const parts = [...scopes].map(([scope, files]) => scope + (files.length ? ", in " + files.join(" and ") : ""));
+  return (e.members.every((m) => str(m.after) === "") ? "Removed from " : "Changed ") + parts.join(", and ");
 }
 
 async function editAction(e, rec, action, text) {
@@ -5851,13 +5872,13 @@ function buildEdit(e, rec) {
   rec.card.replaceChildren(
     h("div", { class: "card-head" }, h("span", { class: "p-title", text: str(p.title) }),
       FINDING_WORDS[p.finding] ? h("span", { class: "p-finding", text: FINDING_WORDS[p.finding] }) : null,
-      multiInstance() ? h("span", { class: "p-instance", text: (instanceByName(str(p.instance)) || EMPTY_INSTANCE).title || str(p.instance) }) : null),
+      multiInstance() ? projectTag(str(p.instance)) : null),
     h("div", { class: "card-body" },
       whys.map((w) => h("p", { class: "card-why" }, richText(w))),
       evidence.length ? h("details", { class: "evidence" },
         h("summary", null, "Evidence (" + evidence.length + ")"),
         h("ul", null, evidence.map((x) => editEvidenceLine(x, p)))) : null,
-      e.members.map((m) => [h("div", { class: "rd-file", text: editFileName(m) }), ruleDiff(str(m.before), str(m.after))]),
+      e.members.map((m) => [h("div", { class: "rd-file", text: "Changes " + editFileName(m) }), ruleDiff(str(m.before), str(m.after))]),
       rec.actions,
       rec.dismissBox,
       rec.status));
