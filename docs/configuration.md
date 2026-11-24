@@ -174,5 +174,7 @@ Its `config.json`:
 | `include`, `exclude` | `[]` | Repos as `owner/name` or `owner/*` |
 | `maxItems` | `150` | Cap of one snapshot. The snapshot says when the cap cuts |
 | `activeWindowDays` | `30` | Threads without activity for longer are left out |
+| `mergeReminderDays` | `14` | Quiet days before an approved PR you cannot merge gets a reminder for the repo's maintainers |
+| `mergeReminderDaysFor` | `{}` | The same per repo, like `{ "acme/*": 30 }`. An exact `owner/name` wins over `owner/*` |
 | `clearNotifications` | `false` | "Got it" also marks the thread's notification as done in your GitHub inbox |
 | `models`, `tab` | | As above |

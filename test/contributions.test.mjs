@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GARY, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 import { ME } from "./fixtures/github.mjs";
-import { contributionId, newsOf, repoCovered, scopeQualifiers } from "../scripts/lib/contributions.mjs";
+import { contributionId, mergeReminderDaysOf, newsOf, repoCovered, scopeQualifiers } from "../scripts/lib/contributions.mjs";
 import { validateItem } from "../scripts/lib/validate-item.mjs";
 import { PROFILE_DEFAULTS, tabIconFile, validateConfig } from "../scripts/lib/config.mjs";
 
@@ -134,6 +134,10 @@ check("a mention inside a quote is no mention, the question still asks the maint
 check("a review request carries the involvement and nothing the maintainer looked at", byId["other.lib.pr-5"].facts.involvement.join() === "review_requested" && byId["other.lib.pr-5"].facts.lookedAt === null && byId["other.lib.pr-5"].facts.reviewRequested === true);
 const answered = byId["other.lib.issue-4"].facts;
 check("the news drop bots and keep the maintainer's answer", answered.news.length === 1 && answered.news[0].by === "dave" && answered.involvement.join() === "commenter", answered);
+const reminders = { mergeReminderDays: 14, mergeReminderDaysFor: { "acme/*": 30, "acme/widgets": 60 } };
+check("the merge reminder takes the exact repo, then owner/*, then the default", mergeReminderDaysOf("acme/widgets", reminders) === 60 && mergeReminderDaysOf("acme/gadgets", reminders) === 30 && mergeReminderDaysOf("other/lib", reminders) === 14 && mergeReminderDaysOf("other/lib") === 14);
+check("a PR carries the days before a merge reminder", own.mergeReminderDays === 14 && byId["other.lib.issue-4"].facts.mergeReminderDays === undefined, own.mergeReminderDays);
+check("mergeReminderDaysFor takes repos and whole days only", validateConfig({ kind: "contributions", me: ME, mergeReminderDaysFor: { "acme/*": 30 } }).length === 0 && validateConfig({ kind: "contributions", me: ME, mergeReminderDaysFor: { "acme": 30 } }).some((e) => /mergeReminderDaysFor/.test(e)) && validateConfig({ kind: "contributions", me: ME, mergeReminderDays: 0 }).some((e) => /mergeReminderDays/.test(e)));
 check("canMerge follows the login's permission on the repo", own.canMerge === true && byId["other.lib.pr-5"].facts.canMerge === false, [own.canMerge, byId["other.lib.pr-5"].facts.canMerge]);
 check("a merged PR of the maintainer's carries who merged it", byId["other.lib.pr-8"].facts.closed.by === "dave" && byId["other.lib.pr-8"].facts.closed.how === "merged" && byId["other.lib.pr-8"].facts.news.some((n) => n.kind === "merged"));
 check("only the instance's maintainer is us in the timeline, so a maintainer who spoke last waits on them", byId["other.lib.issue-4"].facts.timeline.find((e) => e.author === "dave").side === "them" && byId["other.lib.issue-4"].facts.waitingOn === "us");

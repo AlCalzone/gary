@@ -7,7 +7,7 @@ import { dirname, join, matchesGlob, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
 import { allowedRepo, botLogins, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerLogins, maintainerRepos, repoParts, stateDir } from "./lib/config.mjs";
-import { NODE_FIELDS, SEARCH_QUERY, contributionFacts, contributionId, contributionSearches, kindOfNode, repoCovered, scopeQualifiers } from "./lib/contributions.mjs";
+import { NODE_FIELDS, SEARCH_QUERY, contributionFacts, contributionId, contributionSearches, kindOfNode, mergeReminderDaysOf, repoCovered, scopeQualifiers } from "./lib/contributions.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
 import { aiFacts, buildTimeline, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { activityOf } from "./lib/since.mjs";
@@ -546,8 +546,8 @@ function contributionEntry(kind, node, id, classify) {
 }
 
 /** Adds the facts to a contributions entry. */
-function withContributionFacts(kind, node, entry, { me, ctx, reasons, gotIt, now }) {
-	return { ...entry, facts: contributionFacts(kind, node, { me, ctx, reasons, gotIt, ci: entry.ci ?? "none", now }) };
+function withContributionFacts(kind, node, entry, { me, ctx, reasons, gotIt, now, config }) {
+	return { ...entry, facts: contributionFacts(kind, node, { me, ctx, reasons, gotIt, ci: entry.ci ?? "none", now, reminderDays: mergeReminderDaysOf(entry.repo, config) }) };
 }
 
 /**
@@ -615,7 +615,7 @@ async function contributionsMain(config, out) {
 	const quiet = [];
 	const unchanged = [];
 	for (const [id, { kind, node, reasons }] of hits) {
-		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now });
+		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now, config });
 		const closed = item.facts.closed;
 		// A thread the maintainer closed themself, or one that closed before they last looked, holds no news
 		if (closed && (String(closed.by ?? "").toLowerCase() === me.toLowerCase() || (item.facts.lookedAt && !(Date.parse(closed.at) > Date.parse(item.facts.lookedAt))))) continue;
@@ -658,7 +658,7 @@ async function fetchContribution(kind, number, repo) {
 	const node = data.repository?.[field];
 	if (!node) throw new Error(`${kind} #${number} not found in ${repo}`);
 	const id = contributionId(repo, kind, number);
-	return withContributionFacts(kind, node, contributionEntry(kind, node, id, contributionClassifier(config.me)), { me: config.me, ctx: contributionsContext(config.me), gotIt: await gotItOf(id), now: Date.now() });
+	return withContributionFacts(kind, node, contributionEntry(kind, node, id, contributionClassifier(config.me)), { me: config.me, ctx: contributionsContext(config.me), gotIt: await gotItOf(id), now: Date.now(), config });
 }
 
 const SEARCH_PRS = 100;

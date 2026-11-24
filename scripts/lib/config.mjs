@@ -23,7 +23,7 @@ export const DEFAULT_PORT = 7878;
 
 // A contributions instance follows the maintainer's own threads outside the repos of their maintainer instances.
 // It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it
-export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150, clearNotifications: false };
+export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150, clearNotifications: false, mergeReminderDays: 14, mergeReminderDaysFor: {} };
 export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", ...Object.keys(CONTRIBUTIONS_DEFAULTS)];
 // How the instance's tab looks on the board: `{ icon, color, background, favorite }`. `background` also tints the page in that color, and a favorite comes before the other tabs
 export const TAB_ICONS = ["zap", "home", "star", "globe", "heart", "user", "shield", "bot", "sparkles", "wrench", "lightbulb", "plug", "eye", "pr", "issue", "discussion", "commit", "comments"];
@@ -498,6 +498,13 @@ function checkContributionsConfig(data) {
 	for (const key of ["activeWindowDays", "activeMaxWaitDays"]) check(errors, data[key] === undefined || isInt(data[key], 1, 3650), `"${key}" must be a whole number of days`);
 	const [min, max] = MAX_ITEMS_RANGE;
 	check(errors, data.maxItems === undefined || isInt(data.maxItems, min, max), `"maxItems" must be a whole number from ${min} to ${max}`);
+	check(errors, data.mergeReminderDays === undefined || isInt(data.mergeReminderDays, 1, 3650), `"mergeReminderDays" must be a whole number of days`);
+	const perRepo = data.mergeReminderDaysFor;
+	check(
+		errors,
+		perRepo === undefined || (perRepo && typeof perRepo === "object" && !Array.isArray(perRepo) && Object.keys(perRepo).length <= MAX_REPO_GLOBS && Object.entries(perRepo).every(([g, d]) => REPO_GLOB.test(g) && isInt(d, 1, 3650))),
+		`"mergeReminderDaysFor" must map repositories like "owner/name" or "owner/*" to a whole number of days`,
+	);
 	check(errors, data.clearNotifications === undefined || typeof data.clearNotifications === "boolean", `"clearNotifications" must be true or false`);
 	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };

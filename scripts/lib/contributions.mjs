@@ -34,6 +34,16 @@ export function repoCovered(repo, { include = [], exclude = [], blocked = new Se
 	return { ok: true, reason: null };
 }
 
+/**
+ * After how many quiet days an approved PR in `repo` may get a reminder to merge. An exact name in
+ * `mergeReminderDaysFor` wins over an `owner/*` entry, and both win over `mergeReminderDays`.
+ */
+export function mergeReminderDaysOf(repo, { mergeReminderDays = 14, mergeReminderDaysFor = {} } = {}) {
+	const globs = Object.keys(mergeReminderDaysFor).filter((g) => repoMatches(repo, g));
+	const hit = globs.find((g) => !g.endsWith("/*")) ?? globs[0];
+	return hit === undefined ? mergeReminderDays : mergeReminderDaysFor[hit];
+}
+
 // GitHub's search refuses queries longer than this
 export const MAX_QUERY = 256;
 
@@ -238,7 +248,7 @@ function timelineEvents(kind, node) {
  * Returns the facts: the timeline and who waits, `involvement`, `lookedAt` with `lookedVia`, `news`, and for PRs
  * the review and CI state. `quiet` is true when nothing is new for the maintainer and they have no active part in the thread.
  */
-export function contributionFacts(kind, node, { me, ctx, reasons = [], gotIt = null, ci = "none", now = Date.now() }) {
+export function contributionFacts(kind, node, { me, ctx, reasons = [], gotIt = null, ci = "none", now = Date.now(), reminderDays = 14 }) {
 	const comments = node.timelineComments;
 	let truncated = (comments?.totalCount ?? 0) > (comments?.nodes?.length ?? 0);
 	for (const c of comments?.nodes ?? []) if ((c.replies?.totalCount ?? 0) > (c.replies?.nodes?.length ?? 0)) truncated = true;
@@ -274,7 +284,7 @@ export function contributionFacts(kind, node, { me, ctx, reasons = [], gotIt = n
 	};
 	const state = kind === "discussion" ? (node.closed ? "closed" : "open") : low(node.state);
 	if (state !== "open") facts.closed = closedFacts(kind, node, state);
-	if (kind === "pr") Object.assign(facts, prFacts(node, { me, ci, requested }));
+	if (kind === "pr") Object.assign(facts, prFacts(node, { me, ci, requested }), { mergeReminderDays: reminderDays });
 	if (kind === "discussion") Object.assign(facts, { answerable: node.category?.isAnswerable === true, isAnswered: node.isAnswered === true, category: node.category?.name });
 	if (kind === "issue") facts.closingPrs = (node.closedByPullRequestsReferences?.nodes ?? []).map((p) => ({ number: p.number, url: p.url, state: low(p.state) }));
 	facts.quiet = news.length === 0 && !facts.involvement.some((r) => ACTIVE.has(r)) && !facts.closed;
