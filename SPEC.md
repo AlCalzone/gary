@@ -1342,6 +1342,7 @@ Round one is read-only. Gary writes nothing to GitHub for this kind: no bot, no 
   "activeWindowDays": 30,          // threads the maintainer took part in count with activity in this window
   "activeMaxWaitDays": 14,         // a question to the maintainer older than this is no live conversation
   "maxItems": 150,                 // the most threads one snapshot keeps, 10 to 500
+  "clearNotifications": false,     // "Got it" also marks the thread's notification as done in the maintainer's GitHub inbox
   "models": { "worker": "sonnet", "standard": "sonnet" }   // optional, as for every instance
 }
 ```
@@ -1413,6 +1414,8 @@ Every instance config, of both kinds, takes an optional `tab: { icon, color, bac
 - `color`: a hex color like `#0071bc`, or one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`. `gray` gives a palette without hue.
 
 The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg` and, for the dark theme, at `/logo-dark.svg`. With several instances the logo replaces the heading "Gary", which stays for screen readers.
+
+With `clearNotifications: true`, `got_it` also marks the thread's notification as done in the maintainer's own inbox, through `clearNotification` in `scripts/lib/gh.mjs`. It is the one request this kind sends that changes anything on GitHub. It runs under the stored `gh` login after the check that the login is `me`, only for the click, and not while the instance is paused or the server runs with `--dry-run`. It reads `repos/<repo>/notifications` and matches a PR or an issue by its number and a discussion by its title. A failure never undoes the `got_it`: the result names it.
 
 `board.instances[]` carries `kind: "contributions"`, `readOnly: true` and `repoUrl: null`. `/api/action` takes only `got_it`, `reanalyze` with answers, `dismiss_route`, `accept_proposal` and `dismiss_proposal` for this kind. Every route click, every second button, `focus`, `end_focus` and `request_reconcile` answer `{ ok: false, result: "This is a contributions instance. Gary writes nothing to GitHub for it: post the text on GitHub yourself.", readOnly: true }`. A page write of a queued agent request other than `reanalyze` answers 409. The prefill report to `/api/decision` and `/api/refresh` work as for every instance, with the repo check above. `gary action` refuses every action for this kind, and the `gh` wrapper refuses every write while such an instance is in scope, so no code path can reach GitHub.
 

@@ -65,6 +65,15 @@ Two things can run under your own login next to a bot:
 - Requesting a Copilot review, unless `fixReview.requestAs` is `bot`.
 - The escalate command that turns a discussion into an issue, with `"escalateAs": "me"`. It is posted only after your click and a confirm. No agent can post it.
 
+## Your GitHub inbox
+
+A contributions instance posts nothing to GitHub. With `"clearNotifications": true` in its `config.json`, one thing changes in your own account: "Got it" on an FYI item marks that thread's notification as done.
+
+- It is off by default.
+- It happens only on your click, never in the hourly run.
+- Nobody else sees it. A new comment on the thread brings the notification back.
+- `gary pause` and the dry run stop it like every other write.
+
 ## Sensitive files
 
 No agent works in a checkout of a PR that changes a path in the profile's `sensitivePaths`, like workflows or agent instruction files. The PR's dialog names the files.

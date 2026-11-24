@@ -242,9 +242,34 @@ export async function postEscalateCommand({ repo, number, dryRun = false }) {
 	return { login, command, url: data?.addDiscussionComment?.comment?.url ?? discussion.url };
 }
 
-function run(args, input, env) {
-	// Every write of every helper passes here, so no code path can write for a contributions instance
-	if (isWrite(args, input) && readOnlyInstance()) return Promise.reject(new Error(READ_ONLY_MESSAGE));
+/**
+ * Marks the notification of one thread as done in the maintainer's own GitHub inbox, under the stored `gh` login.
+ * It is the one request a contributions instance sends that changes anything, and nobody else sees its effect.
+ * Call it only for a click on "Got it".
+ * Throws without `clearNotifications: true` in config.json and when the stored login is not `me`.
+ * Returns `{ found, wasUnread, id }`. A discussion is matched by its title, because its notification names no number.
+ * With `dryRun` it runs the checks and the read, and sends nothing.
+ */
+export async function clearNotification({ repo, kind, number, title, dryRun = false }) {
+	if (loadConfig().clearNotifications !== true) throw new Error('Clearing a notification needs "clearNotifications": true in config.json.');
+	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
+	await verifyOwnLogin();
+	const { owner, name } = repoParts(repo);
+	const env = storedLoginEnv();
+	const threads = JSON.parse(await run(["api", `repos/${owner}/${name}/notifications?all=true&per_page=100`], "", env));
+	const type = { pr: "PullRequest", issue: "Issue", discussion: "Discussion" }[kind];
+	const path = { pr: `/pulls/${number}`, issue: `/issues/${number}` }[kind];
+	const hit = (Array.isArray(threads) ? threads : []).find((t) => t?.subject?.type === type && (path ? String(t.subject.url ?? "").endsWith(path) : t.subject.title === title));
+	if (!hit) return { found: false };
+	if (!/^\d+$/.test(String(hit.id))) throw new Error("GitHub returned a notification without a numeric id.");
+	if (!dryRun) await run(["api", `notifications/threads/${hit.id}`, "--method", "DELETE"], "", env, { inbox: true });
+	return { found: true, wasUnread: hit.unread === true, id: String(hit.id), ...(dryRun && { dryRun: true }) };
+}
+
+function run(args, input, env, { inbox = false } = {}) {
+	// Every write of every helper passes here, so no code path can write for a contributions instance.
+	// `inbox` is set only by `clearNotification`, for its one fixed request
+	if (isWrite(args, input) && readOnlyInstance() && !inbox) return Promise.reject(new Error(READ_ONLY_MESSAGE));
 	return new Promise((resolve, reject) => {
 		const child = execFile(
 			"gh",

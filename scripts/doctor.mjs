@@ -254,6 +254,7 @@ async function checkContributions(config, attempt, add) {
 		return ["ok", parts.join(". ")];
 	});
 	add("caps", "ok", `at most ${config.maxItems} threads per snapshot, with activity in the last ${config.activeWindowDays} days. Your own open PRs and review requests count at any age. The snapshot says when the cap cuts`);
+	add("notifications", "ok", config.clearNotifications ? "Got it also marks the thread's notification as done in your GitHub inbox" : "off. Got it leaves your GitHub inbox alone. \"clearNotifications\": true in config.json turns it on");
 	await attempt("models", async () => {
 		const { models } = modelsOf(config);
 		return ["ok", `worker ${models.worker}, standard ${models.standard} for the classification. master ${models.master}, not checked: the host sets the master session's model`];

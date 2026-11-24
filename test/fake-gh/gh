@@ -20,7 +20,9 @@
 //                          the PR that `gary link-escalated` reads
 //   FAKE_GH_CONTRIBUTIONS  a JSON file { searches: [{ match, nodes, total }], items: { "owner/name#n": node } } for a
 //                          contributions instance. A search answers with the nodes of the first entry whose `match`
-//                          occurs in its query, paged by `first` and `after`. ContributionsItem reads `items`
+//                          occurs in its query, paged by `first` and `after`. ContributionsItem reads `items`.
+//                          `notifications: [{ id, unread, repo, subject }]` is the inbox, read per repo. Marking one
+//                          as done needs FAKE_GH_WRITES and appends `{ notificationDone: id }` there
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as gh from "../fixtures/github.mjs";
@@ -61,7 +63,17 @@ if (args[1] === "user") {
 }
 
 if (args[1] !== "graphql") {
+	const done = /^notifications\/threads\/(\d+)$/.exec(args[1]);
+	if (done && args[args.indexOf("--method") + 1] === "DELETE" && process.env.FAKE_GH_WRITES) {
+		appendFileSync(process.env.FAKE_GH_WRITES, JSON.stringify({ notificationDone: done[1] }) + "\n");
+		process.exit(0);
+	}
 	if (args.includes("-X") || args.includes("--method")) fail("fake gh refuses every write", undefined);
+	const inbox = /^repos\/([^/]+\/[^/]+)\/notifications\?/.exec(args[1]);
+	if (inbox) {
+		const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : {};
+		out((data.notifications ?? []).filter((n) => n.repo === inbox[1]));
+	}
 	const m = /^repos\/[^/]+\/[^/]+\/actions\/runs\?head_sha=([0-9a-f]{40})/.exec(args[1]);
 	if (m) out({ workflow_runs: gh.runs[m[1]] ?? [] });
 	const repo = /^repos\/([^/]+)\/([^/?]+)$/.exec(args[1]);

@@ -26,7 +26,7 @@ import { endFocus, focusDir, focusHold, isHeld, readFocuses, safeLink } from "..
 import { ORIGIN_QUIET_MS, lastActive, readOrigins, resumeCommand, shortDir } from "../scripts/lib/origins.mjs";
 import { INSTANCE_NAME, ROOT, TAB_ICON_MAX_BYTES, tabIconFile, allowedRepo, instanceDir, instanceNames, instanceSettingsFiles, instancesDir, itemRef, loadInstance, rootConfig, rootStateDir, withInstance } from "../scripts/lib/config.mjs";
 import { linkEscalated } from "../scripts/lib/escalation.mjs";
-import { READ_ONLY_MESSAGE, accountMode, postEscalateCommand } from "../scripts/lib/gh.mjs";
+import { READ_ONLY_MESSAGE, accountMode, clearNotification, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
@@ -2215,6 +2215,24 @@ export async function startBoardServer({
 	}
 
 	/**
+	 * Marks the item's notification as done in the maintainer's GitHub inbox, when the instance turns that on.
+	 * Returns the sentence for the click's result, or null when the setting is off. A failure never undoes the "Got it".
+	 */
+	async function clearInbox(name, itemId) {
+		if (settingsOf(name).instance?.config.clearNotifications !== true) return null;
+		if (isPaused(served.get(name).state)) return "Gary is paused, so the notification stays.";
+		const item = await readJson(itemFile(name, itemId));
+		try {
+			const cleared = await withInstance(name, () => clearNotification({ repo: item.repo, kind: item.kind, number: item.number, title: item.title, dryRun }));
+			if (!cleared.found) return null;
+			return cleared.dryRun ? "Dry run: the notification stays." : "Its notification is marked as done.";
+		} catch (e) {
+			log(`clearing the notification of ${name}/${itemId} failed: ${e.message}`);
+			return `The notification could not be cleared: ${e.message}`;
+		}
+	}
+
+	/**
 	 * "Got it" on an fyi item of a contributions instance: the maintainer read the news. The item leaves the board until the routine
 	 * finds new relevant activity, and the snapshot counts this time as the maintainer's last look at the thread.
 	 */
@@ -2234,8 +2252,10 @@ export async function startBoardServer({
 				await writeAtomic(file, { ...item, gotIt: { at } });
 			});
 			if (refused) return refused;
-			await logClick(name, itemId, { action: "got_it", params: {}, text: "", status: "done", via: "board", createdAt: at, finishedAt: at, result: "" });
-			return [200, { ok: true, result: "Hidden until there is news.", gotIt: { at } }];
+			const inbox = await clearInbox(name, itemId);
+			const result = `Hidden until there is news.${inbox ? " " + inbox : ""}`;
+			await logClick(name, itemId, { action: "got_it", params: {}, text: "", status: "done", via: "board", createdAt: at, finishedAt: at, result: inbox ?? "" });
+			return [200, { ok: true, result, gotIt: { at } }];
 		});
 	}
 

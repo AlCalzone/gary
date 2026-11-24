@@ -67,6 +67,12 @@ The switch "Ask the reporter to test" is off by default. Without it, a fix PR me
 
 Gary can also start fixes for clear bugs on its own, see [safety.md](safety.md#fixes-without-a-click).
 
+## FYI items
+
+An FYI item on the contributions tab has one button, "Got it". It hides the item until there is news again.
+
+It can also mark the thread's notification as done in your GitHub inbox, see [configuration.md](configuration.md#your-contributions-elsewhere).
+
 ## Reviewing on GitHub
 
 You can open an item on GitHub and handle it there. When you return to the board tab, Gary checks the item. A merged or closed item moves to "Handled, waiting for the next run".

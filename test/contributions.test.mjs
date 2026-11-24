@@ -238,6 +238,33 @@ check("no write reached the fake gh", !readdirSync(T).includes("writes.log"));
 
 // ---------- the server ----------
 
+// Got it can mark the thread's notification as done, when the instance turns that on
+const inbox = [
+	{ id: "9001", unread: true, repo: "other/lib", subject: { type: "Issue", title: "Issue", url: "https://api.github.com/repos/other/lib/issues/4" } },
+	{ id: "9002", unread: true, repo: "other/lib", subject: { type: "PullRequest", title: "PR", url: "https://api.github.com/repos/other/lib/pulls/4" } },
+	{ id: "9003", unread: false, repo: "third/app", subject: { type: "Discussion", title: "Which version?", url: null } },
+];
+writeFileSync(ghData, JSON.stringify({ ...searches(), notifications: inbox }));
+const ghWrites = join(T, "writes.jsonl");
+writeFileSync(ghWrites, "");
+const GH_LIB = JSON.stringify(new URL("../scripts/lib/gh.mjs", import.meta.url).href);
+function clear(arg, extra = {}) {
+	const code = `import { clearNotification } from ${GH_LIB}; try { console.log(JSON.stringify(await clearNotification(${JSON.stringify(arg)}))); } catch (e) { console.log(JSON.stringify({ error: e.message })); }`;
+	const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], { env: { ...env, GARY_INSTANCE: "mine", FAKE_GH_CONTRIBUTIONS: ghData, FAKE_GH_WRITES: ghWrites, ...extra }, encoding: "utf8" });
+	return JSON.parse(r.stdout || "{}");
+}
+const doneIds = () => readFileSync(ghWrites, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l).notificationDone);
+check("without the setting, no notification is cleared", /clearNotifications/.test(clear({ repo: "other/lib", kind: "issue", number: 4 }).error ?? "") && doneIds().length === 0);
+writeConfig({ clearNotifications: true });
+const clearedIssue = clear({ repo: "other/lib", kind: "issue", number: 4 });
+check("an issue's notification is marked as done, and the PR with the same number stays", clearedIssue.found === true && clearedIssue.wasUnread === true && doneIds().join() === "9001", [clearedIssue, doneIds()]);
+const clearedDisc = clear({ repo: "third/app", kind: "discussion", number: 2, title: "Which version?" });
+check("a discussion is matched by its title", clearedDisc.found === true && clearedDisc.wasUnread === false && doneIds().join() === "9001,9003", [clearedDisc, doneIds()]);
+check("a thread without a notification clears nothing", clear({ repo: "other/lib", kind: "pr", number: 5 }).found === false && doneIds().length === 2);
+check("a dry run reads the inbox and sends nothing", clear({ repo: "other/lib", kind: "pr", number: 4, dryRun: true }).dryRun === true && doneIds().length === 2);
+check("another login clears nothing", /stored gh login/.test(clear({ repo: "other/lib", kind: "pr", number: 4 }, { FAKE_GH_LOGIN: "someone" }).error ?? "") && doneIds().length === 2);
+check("clearNotifications must be true or false", validateConfig({ kind: "contributions", me: ME, clearNotifications: "yes" }).some((e) => /clearNotifications/.test(e)));
+
 const write = (id, doc) => writeFileSync(join(BOARD, "items", id + ".json"), JSON.stringify(doc));
 const reviewedAt = ago(1);
 write("other.lib.pr-5", { repo: "other/lib", kind: "pr", number: 5, title: "Review asked", url: "https://github.com/other/lib/pull/5", author: "alice", authorType: "contributor", category: "unblock", state: "s", reviewDepth: "quick", effortMinutes: 5, reviewedAt, hint: "Review: looks good",
@@ -280,6 +307,7 @@ try {
 	const got = await api("/api/action", { instance: "mine", action: "got_it", itemId: "other.lib.issue-4" });
 	const after = JSON.parse(readFileSync(join(BOARD, "items", "other.lib.issue-4.json"), "utf8"));
 	check("Got it stores its time on the item", got.data.ok === true && after.gotIt?.at === got.data.gotIt.at, got);
+	check("Got it reports the notification, and the dry run sends nothing", got.data.result === "Hidden until there is news. Dry run: the notification stays." && doneIds().length === 2, got.data.result);
 	const logged = readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8"))).find((a) => a.action === "got_it");
 	check("Got it is logged as the maintainer's choice", logged?.status === "done" && logged.itemId === "other.lib.issue-4" && logged.params?.by === undefined);
 	check("a maintainer instance answers its own clicks as before", (await api("/api/action", { instance: "widgets", action: "got_it", itemId: "pr-404" })).data.result === "The board is out of date, reload it.");

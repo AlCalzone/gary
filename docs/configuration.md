@@ -159,11 +159,11 @@ gary setup --kind contributions --exclude "your-name/*"
 gary --instance contributions doctor
 ```
 
-It is its own tab. It needs no profile, bot or checkout. Gary writes nothing to GitHub for it. A reply card copies the text and opens the thread.
+It is its own tab. It needs no profile, bot or checkout. Gary posts nothing to GitHub for it. A reply card copies the text and opens the thread.
 
 Next to Act, Unblock, Land and Decide it has a fifth category, **FYI**: something new and relevant happened, and there is nothing to do. Examples are a maintainer's decision, a release with your fix, or your PR merged by someone else.
 
-"Got it" hides an FYI item until there is news again. Noise like "+1" comments, bot posts, label changes and CI reruns never shows up.
+"Got it" hides an FYI item until there is news again. With `"clearNotifications": true` it also marks the thread's notification as done in your GitHub inbox. A new comment brings the notification back. Noise like "+1" comments, bot posts, label changes and CI reruns never shows up.
 
 Its `config.json`:
 
@@ -174,4 +174,5 @@ Its `config.json`:
 | `include`, `exclude` | `[]` | Repos as `owner/name` or `owner/*` |
 | `maxItems` | `150` | Cap of one snapshot. The snapshot says when the cap cuts |
 | `activeWindowDays` | `30` | Threads without activity for longer are left out |
+| `clearNotifications` | `false` | "Got it" also marks the thread's notification as done in your GitHub inbox |
 | `models`, `tab` | | As above |
