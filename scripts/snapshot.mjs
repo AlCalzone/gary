@@ -9,7 +9,7 @@ import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs
 import { allowedRepo, botLogins, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerLogins, maintainerRepos, repoParts, stateDir } from "./lib/config.mjs";
 import { NODE_FIELDS, SEARCH_QUERY, contributionFacts, contributionId, contributionSearches, kindOfNode, mergeReminderDaysOf, repoCovered, scopeQualifiers } from "./lib/contributions.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
-import { aiFacts, buildTimeline, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
+import { aiFacts, buildTimeline, draftWaiting, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { activityOf } from "./lib/since.mjs";
 import { canReadProjects, graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, patchFixRecord, readFixRecords, vanishedFixPrs } from "./lib/fixes.mjs";
@@ -305,32 +305,33 @@ export async function main(argv = []) {
 		fetchAll(DISCUSSION_QUERY, "discussions", cutoff),
 	]);
 
-	// Drafts are ignored, except Gary's own fix PRs, which the board must show. A draft that becomes ready shows up as a new item
+	// A draft gets an entry only as Gary's own fix PR or while a comment on it waits on us. A draft that becomes ready shows up as a new item
 	const fixRecords = await readFixRecords();
 	await markEndedFixes(fixRecords, prs.nodes.map((n) => n.number));
 	const fixFor = fixPrNumbers(fixRecords);
-	const readyPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number));
+	for (const n of prs.nodes) markDraftWaiting(n, fixFor.has(n.number), ctx);
+	const shownPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number) || n.draftWaiting);
 	await Promise.all([
-		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
+		...shownPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
 		...discussions.nodes.map(fetchRemainingReplies),
-		attachAutoReviews(readyPrs),
+		attachAutoReviews(shownPrs),
 	]);
 	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
-	// Drafts get no item, but a draft part still counts in its series
+	// A draft without an entry still counts in its series
 	const series = seriesOf(prs.nodes, issues.nodes);
 	const linked = (id, n) => ({ ...dueOf(n), ...(series.has(id) && { series: series.get(id) }) });
 	const items = [
-		...readyPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }), ...linked(`pr-${n.number}`, n) }, ctx)),
+		...shownPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }), ...linked(`pr-${n.number}`, n) }, ctx)),
 		...issues.nodes.map((n) => withFacts("issue", n, { ...toIssue(n, classify), ...linked(`issue-${n.number}`, n) }, ctx)),
 		...discussions.nodes.map((n) => withFacts("discussion", n, { ...toDiscussion(n, classify), ...(references.has(n.number) && { referencingPrs: references.get(n.number) }) }, ctx)),
 	];
 
 	const baseline = readJson(BASELINE())?.items ?? {};
 	const fetchedAt = new Date().toISOString();
-	await notePosted([...readyPrs.map((n) => [`pr-${n.number}`, n]), ...issues.nodes.map((n) => [`issue-${n.number}`, n]), ...discussions.nodes.map((n) => [`disc-${n.number}`, n])]);
+	await notePosted([...shownPrs.map((n) => [`pr-${n.number}`, n]), ...issues.nodes.map((n) => [`issue-${n.number}`, n]), ...discussions.nodes.map((n) => [`disc-${n.number}`, n])]);
 	const nodeOf = new Map([
-		...readyPrs.map((n) => [`pr-${n.number}`, ["pr", n]]),
+		...shownPrs.map((n) => [`pr-${n.number}`, ["pr", n]]),
 		...issues.nodes.map((n) => [`issue-${n.number}`, ["issue", n]]),
 		...discussions.nodes.map((n) => [`disc-${n.number}`, ["discussion", n]]),
 	]);
@@ -344,7 +345,8 @@ export async function main(argv = []) {
 		const entry = { ...baselineEntry(item), activity: activityOf(kind, node, ctx, { before: old?.activity, ci: item.ci, at: fetchedAt }) };
 		current[item.id] = entry;
 		let reason;
-		if (!old) reason = "new";
+		// A draft that had an entry only for a waiting comment never had a review
+		if (!old || (old.isDraft && !old.garyFix && kind === "pr" && !item.isDraft)) reason = "new";
 		else if (item.headSha && old.headSha !== item.headSha) reason = "head_changed";
 		else if (
 			old.updatedAt !== entry.updatedAt ||
@@ -426,6 +428,7 @@ export async function fetchItem(kind, number, repo = loadProfile().repo, { allFi
 		if (allFiles && (node.files.totalCount ?? 0) > node.files.nodes.length) node.files = await fetchAllFiles(owner, name, number);
 		// Fix PRs are recorded by number for the instance's own repo
 		const fixItem = repo === loadProfile().repo ? fixPrNumbers(await readFixRecords()).get(number) : undefined;
+		markDraftWaiting(node, !!fixItem, ctx);
 		return withFacts("pr", node, { ...toPr(node, classify, loadProfile().sensitivePaths), ...(fixItem && { garyFix: { itemId: fixItem } }), ...linked }, ctx);
 	}
 	if (kind === "issue") return withFacts("issue", node, { ...toIssue(node, classify), ...linked }, ctx);
@@ -745,6 +748,13 @@ async function fetchDiscussionReferences(numbers) {
 	return out;
 }
 
+/** Sets `draftWaiting` on a draft PR node that is no fix PR of Gary, from the comments the node holds. */
+function markDraftWaiting(node, garyFix, ctx) {
+	if (!node.isDraft || garyFix) return;
+	const waiting = draftWaiting(node, ctx);
+	if (waiting) node.draftWaiting = waiting;
+}
+
 /** Who counts as us, and the profile's patterns for automated comments. */
 function factsContext() {
 	const profile = loadProfile();
@@ -801,6 +811,7 @@ function withFacts(kind, node, entry, ctx) {
 		else facts.sensitiveNotOurs = reason;
 	}
 	facts.maintainerCanModify = node.maintainerCanModify === true;
+	if (node.draftWaiting) facts.draftWaiting = node.draftWaiting;
 	facts.lastAuthorAt = lastEventBy(timeline, node.author?.login);
 	Object.assign(facts, feedbackFacts(timeline, node.recentCommits?.nodes, { me: ctx.me, bot: ctx.bot, writeLogin: ctx.writeLogin, reviewBots: ctx.reviewBots }));
 	const requests = reviewRequestsFor(node, ctx.writeLogin);

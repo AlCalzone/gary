@@ -4,7 +4,7 @@ import { validateItem } from "../scripts/lib/validate-item.mjs";
 import { spawnSync } from "node:child_process";
 import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BOT, ME } from "./fixtures/github.mjs";
+import { BOT, ME, prNodes } from "./fixtures/github.mjs";
 import { GARY, PROFILE, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 
 const t = runner("facts");
@@ -193,6 +193,71 @@ t.check("doctor names the project fields it reads", doctorLine({})?.status === "
 spawnSync(process.execPath, [GARY, "snapshot", "--commit"], { env, encoding: "utf8" });
 out = snapWith({});
 t.check("a new due date counts as a change", entryOf("pr-12").reason === "updated" && out.unchanged?.includes("pr-17"), { changed: out.changed?.map((e) => e.id), unchanged: out.unchanged });
+
+// A draft PR gets an entry only while a comment on it waits on our side
+const dctx = { us: [ME, BOT, "alcalzone"], patterns: AUTOMATED };
+const dc = (h, login, body, extra = {}) => ({ author: login.endsWith("[bot]") ? { login, __typename: "Bot" } : user(login), createdAt: at(h), body, url: `https://github.com/acme/widgets/pull/24#c${h}`, ...extra });
+const draft = ({ comments = [], threads = [], reviews = [] } = {}) => ({
+	isDraft: true, author: user("hubot"),
+	timelineComments: { totalCount: comments.length, nodes: comments },
+	reviewThreads: { nodes: threads.map((cs, i) => ({ id: `T${i}`, allComments: { nodes: cs } })) },
+	allReviews: { nodes: reviews.map((r) => ({ author: r.author, state: "COMMENTED", submittedAt: r.createdAt, url: r.url })) },
+	reviews: { nodes: reviews.map((r) => ({ url: r.url, body: r.body })) },
+});
+let w = f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this the right approach")] }), dctx);
+t.check("a draft comment that mentions the maintainer waits on us", w?.why === "mention" && w.by === "hubot" && w.at === at(2) && w.url.endsWith("#c2"), w);
+t.check("a mention inside a quote is no mention", f.draftWaiting(draft({ comments: [dc(2, "hubot", "> @octocat said so\nOk.")] }), dctx) === null);
+t.check("a mention of a maintainer from the profile counts", f.draftWaiting(draft({ comments: [dc(2, "hubot", "Thoughts, @AlCalzone.")] }), dctx)?.why === "mention");
+t.check("a comment older than our last comment waits on nobody", f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this right?"), dc(3, ME, "Looks fine.")] }), dctx) === null);
+t.check("our last review counts as our last word", f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this right?")], reviews: [dc(3, ME, "Fine.")] }), dctx) === null);
+t.check("a bot comment never waits on us", f.draftWaiting(draft({ comments: [dc(2, "renovate[bot]", "@octocat please review?")] }), dctx) === null);
+t.check("an automated comment never waits on us", f.draftWaiting(draft({ comments: [dc(2, "hubot", "<!-- LOGFILE_COMMENT_TAG -->\n@octocat?")] }), dctx) === null);
+t.check("a plain draft waits on nobody", f.draftWaiting(draft(), dctx) === null && f.draftWaiting(draft({ comments: [dc(2, "hubot", "Still working on it.")] }), dctx) === null);
+w = f.draftWaiting(draft({ threads: [[dc(1, ME, "Why this?"), dc(2, "someone", "Because of the spec.")]] }), dctx);
+t.check("a reply in a review thread we commented in waits on us", w?.why === "thread" && w.by === "someone", w);
+w = f.draftWaiting(draft({ comments: [dc(1, ME, "Did you try the reset pin?"), dc(2, "hubot", "Yes, no change.")] }), dctx);
+t.check("the author's answer to our question waits on us", w?.why === "answer", w);
+t.check("someone else's comment after our question is no answer", f.draftWaiting(draft({ comments: [dc(1, ME, "Did you try the reset pin?"), dc(2, "someone", "Same here.")] }), dctx) === null);
+t.check("an open question waits on us", f.draftWaiting(draft({ comments: [dc(2, "hubot", "Should the parser live in core?")] }), dctx)?.why === "question");
+t.check("a question someone else answered waits on nobody", f.draftWaiting(draft({ comments: [dc(2, "someone", "Is this needed?"), dc(3, "hubot", "Yes, for W1.")] }), dctx) === null);
+
+const draftItem = (routes, extra = {}) => ({ repo: "acme/widgets", kind: "pr", number: 24, title: "WIP", url: "https://github.com/acme/widgets/pull/24", author: "hubot", authorType: "contributor", category: "unblock", state: "A question waits.", reviewDepth: "quick", effortMinutes: 2, priority: 1, hint: "Reply", routes, ...extra });
+const draftErrors = (doc, entry) => validateItem("pr-24", doc, { mode: "bot", profile: { repo: "acme/widgets", autoLabels: [] }, entry }).errors.filter((e) => e.code === "draft").map((e) => e.message);
+const replyRoute = { id: "r1", type: "reply", as: "me", title: "Reply: yes", text: "Yes, go ahead.", recommended: true };
+t.check("a waiting draft may carry reply routes", draftErrors(draftItem([replyRoute]), { isDraft: true }).length === 0);
+t.check("a waiting draft gets no review route and no full review", draftErrors(draftItem([replyRoute, { id: "r2", type: "review", as: "bot", title: "Review", text: "x" }], { reviewDepth: "full" }), { isDraft: true }).length === 2);
+t.check("a waiting draft gets no label changes", draftErrors(draftItem([replyRoute], { wants: { labels: ["bug"] }, wantsReason: "x" }), { isDraft: true }).length === 1);
+t.check("Gary's draft fix PR keeps its routes", draftErrors(draftItem([{ id: "r2", type: "chore", as: "bot", title: "Ready", params: { action: "ready" } }], { reviewDepth: "full" }), { isDraft: true, garyFix: { itemId: "issue-23" } }).length === 0);
+
+const draftOverrides = join(T, "draft-overrides.json");
+const writeDraft = (extra) => writeFileSync(draftOverrides, JSON.stringify({ "pr-24": { ...prNodes[25], number: 24, url: "https://github.com/acme/widgets/pull/24", isDraft: true, ...extra } }));
+const snapDraft = () => {
+	const r = spawnSync(process.execPath, [GARY, "snapshot"], { env: { ...env, FAKE_GH_OVERRIDES: draftOverrides }, encoding: "utf8" });
+	try {
+		return JSON.parse(r.stdout);
+	} catch {
+		return { error: r.stdout + r.stderr };
+	}
+};
+const asked = { timelineComments: { totalCount: 1, nodes: [{ author: user("hubot"), createdAt: at(5), body: `@${ME} is this the right approach?`, url: "https://github.com/acme/widgets/pull/24#issuecomment-1" }] } };
+writeDraft(asked);
+out = snapDraft();
+let pr24 = out.changed?.find((e) => e.id === "pr-24");
+t.check("the snapshot lists a draft whose comment mentions the maintainer", pr24?.isDraft === true && pr24.facts?.draftWaiting?.why === "mention" && pr24.facts.draftWaiting.url.endsWith("#issuecomment-1") && pr24.facts.draftWaiting.by === "hubot", pr24 ?? out);
+t.check("gary item gives such a draft the same fact", spawnSync(process.execPath, [GARY, "item", "pr", "24"], { env: { ...env, FAKE_GH_OVERRIDES: draftOverrides }, encoding: "utf8" }).stdout.includes('"why": "mention"'));
+spawnSync(process.execPath, [GARY, "snapshot", "--commit"], { env, encoding: "utf8" });
+writeDraft({ ...asked, isDraft: false, updatedAt: at(6) });
+out = snapDraft();
+t.check("a waiting draft that is marked ready comes back as new", out.changed?.find((e) => e.id === "pr-24")?.reason === "new", out.changed?.find((e) => e.id === "pr-24") ?? out);
+writeDraft({ timelineComments: { totalCount: 2, nodes: [asked.timelineComments.nodes[0], { author: user(ME), createdAt: at(6), body: "Yes, go ahead.", url: "https://github.com/acme/widgets/pull/24#issuecomment-2" }] } });
+out = snapDraft();
+t.check("a draft whose only comment is older than ours stays out", !out.error && !out.changed?.some((e) => e.id === "pr-24") && !out.unchanged?.includes("pr-24"), out.error ?? out.changed?.map((e) => e.id));
+writeDraft({ timelineComments: { totalCount: 1, nodes: [{ author: { login: "renovate[bot]", __typename: "Bot" }, createdAt: at(5), body: `@${ME} please merge?` }] } });
+out = snapDraft();
+t.check("a draft with only a bot comment stays out", !out.error && !out.changed?.some((e) => e.id === "pr-24"), out.error ?? out.changed?.map((e) => e.id));
+writeDraft({});
+out = snapDraft();
+t.check("a plain draft stays out", !out.error && !out.changed?.some((e) => e.id === "pr-24"), out.error ?? out.changed?.map((e) => e.id));
 
 removeDir(T);
 t.done();

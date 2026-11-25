@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { repoMatches } from "./config.mjs";
 import { buildTimeline, speakerFacts } from "./facts.mjs";
+import { endsInQuestion, mentions, unquoted } from "./text.mjs";
 
 const ID_KINDS = { pr: "pr", issue: "issue", discussion: "disc" };
 const MAX_ID = 100;
@@ -166,17 +167,8 @@ const low = (v) => String(v ?? "").toLowerCase();
 // Comments that only agree, like "+1" or "same here", carry no news
 const AGREEMENT = /^(?:\+1|👍|me too|same here|same|same issue|same problem)[\s.!]*$/iu;
 
-/** The text of a comment without quoted lines, so a mention inside a quote is no mention. */
-export const unquoted = (body) => String(body ?? "").split("\n").filter((l) => !/^\s*>/.test(l)).join("\n").trim();
-
-/** Whether a comment names `me` outside a quote. */
-export function mentions(body, me) {
-	if (!me) return false;
-	return new RegExp(`(^|[^\\w-])@${me.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(unquoted(body));
-}
-
 // A comment asks the maintainer when it names them or its last line ends in a question mark
-const asks = (body, me) => mentions(body, me) || /\?\s*$/.test(unquoted(body).split("\n").filter((l) => l.trim()).at(-1) ?? "");
+const asks = (body, me) => mentions(body, me) || endsInQuestion(body);
 
 const isBotAuthor = (author) => author?.__typename === "Bot" || low(author?.login).endsWith("[bot]") || ["copilot", "copilot-swe-agent"].includes(low(author?.login));
 

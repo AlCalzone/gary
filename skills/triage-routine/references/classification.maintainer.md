@@ -2,7 +2,7 @@
 
 Read this file, then `<profile>/rules/classification.md`, then the `<personal>` files, shared first. Later wins.
 
-Draft PRs never reach the routine. `gary snapshot` leaves them out, so they get no review, no board item and no label changes. A draft that is marked ready appears as a new item. The one exception is Gary's own draft fix PR, which carries `fixFor: { itemId, ref }`: see "Fixes in progress".
+Most draft PRs never reach the routine. `gary snapshot` leaves a draft out unless a comment on it waits on our side. Such a draft has `isDraft: true` and `facts.draftWaiting: { at, by, url, why }`, which names the comment. `why` is `mention` when the comment names one of our logins, `thread` when it replies in a review thread we commented in, `answer` when the PR's author answers our last comment and that comment ended in a question mark, and `question` when the comment ends in a question mark and nobody answered it. The item gets a quick classification and `reply` routes only, as `me`, that answer the waiting comment. It gets no full review, no review route, no push route, no close, no `wants` and no label changes. `gary put` refuses anything else. Its `state` names the question, like `hubot asks on draft #24 whether the parser belongs in core.` When the draft is marked ready, the next snapshot lists it as `new`, and it gets a full review like any new PR. When we answered and nothing else waits, it leaves the snapshot and its item is deleted. The other exception is Gary's own draft fix PR, which carries `fixFor: { itemId, ref }` and no `draftWaiting`: see "Fixes in progress".
 
 Quick classification uses the snapshot data: author and author type, labels, draft flag, head SHA, CI rollup, review decision, changed file paths, the last 5 comments with author and association, their `replies` and `replyCount`, comment count, `updatedAt`, and `facts` (see "Facts first"). It decides the category, the effort and the routes.
 
@@ -198,6 +198,8 @@ Such an item comes back when it changes on GitHub. The one exception is a close 
 ## Full-review candidates
 
 Items that need analysis before they can show up go first, because without routes they are invisible: every item at `reviewDepth: "pending"`, and every PR with an `unjudged` thread. The routine takes them before any other candidate.
+
+A draft PR with `facts.draftWaiting` is never a candidate, also when it has open threads or is a contributor PR.
 
 A changed item is also a candidate when a full review adds information the snapshot lacks:
 
