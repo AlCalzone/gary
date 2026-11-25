@@ -2413,7 +2413,15 @@ function buildLinks(links) {
   }));
 }
 
+// "The agent is on it" must give way to the result once the agent finished the request
+function dropFinishedWait(id) {
+  const note = state.notes.get(id);
+  const a = latestOf(id);
+  if (note && note.waitingSince && a && a.status !== "queued" && parseTime(a.finishedAt) >= note.waitingSince - 5000) state.notes.delete(id);
+}
+
 function statusLine(id) {
+  dropFinishedWait(id);
   const note = state.notes.get(id);
   if (state.busy.has(id)) {
     return h("div", { class: "status running" }, icon("send"), h("span", { text: "Sending to the action server" }));
@@ -4286,7 +4294,7 @@ async function runRoute(id, r, payload) {
     }
     // The post went out, only the label failed: done, with a soft warning
     const warning = /label could not be set/i.test(result) ? result : "";
-    state.notes.set(id, { kind: "done", text: actorOf(r) === "agent" ? "The agent is on it" : "Done: " + str(r.title), warning });
+    state.notes.set(id, { kind: "done", text: actorOf(r) === "agent" ? "The agent is on it" : "Done: " + str(r.title), warning, ...(actorOf(r) === "agent" && { waitingSince: Date.now() }) });
     state.drafts.delete(draftKey(id, key));
     dropSavedDraft(id, r.id);
     for (const c of reviewComments(r)) setCommentEdit(id, r, c, null);
@@ -5466,7 +5474,7 @@ async function sendAnswers(id, text) {
     await state.mcp.callTool(SERVER, "reanalyze", { instance: refOf(id).instance, itemId: refOf(id).id, text, input: { answers } });
     for (const a of answers) setAnswerDraft(id, a.finding, null);
     state.drafts.delete(draftKey(id, "more:reanalyze"));
-    state.notes.set(id, { kind: "done", text: "The agent is on it" });
+    state.notes.set(id, { kind: "done", text: "The agent is on it", waitingSince: Date.now() });
     // The boxes close now, before the item with the maintainer's answers comes back
     detail.deps.delete("info");
     for (const rec of detail.cards.values()) rec.core = null;
@@ -5565,6 +5573,7 @@ function renderDetail() {
   if (partChanged("info", [d])) renderDetailInfo(d);
   if (partChanged("since", [d.since])) renderSince(d);
   renderZones(id, d, locked);
+  dropFinishedWait(id);
   if (partChanged("status", [latestOf(id), state.busy.has(id), state.notes.get(id), detail.lastZone])) renderZoneStatus(id);
 
   if (open) {

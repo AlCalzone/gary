@@ -64,6 +64,10 @@
     ok("answers: one click sends one reanalyze with the answers and the note", sent.length === 1 && sent[0].tool === "reanalyze" && sent[0].instance === "widgets" && sent[0].itemId === "pr-9991" && sent[0].text === "Also check the tests."
       && JSON.stringify(sent[0].input) === JSON.stringify({ answers: [{ finding: "f1", text: "Yes, 0x00 means off." }, { finding: "#1-0a1b2c3d", text: "Not needed, the prefix has it." }] }), sent);
     ok("answers: after sending the boxes close and the button reads Analyze again", lis().every((li) => box(li).hidden) && analyzeBtn().textContent === "Analyze again");
+    const footStatus = () => document.querySelector("#d-foot .foot-status").textContent;
+    ok("answers: the footer says the agent is on it", /The agent is on it/.test(footStatus()), footStatus());
+    actions([["widgets/a9991", { instance: "widgets", itemId: "pr-9991", action: "reanalyze", status: "done", via: "queue", createdAt: new Date().toISOString(), finishedAt: new Date().toISOString(), result: "Reanalyzed pr-9991." }]]); await wait(10);
+    ok("answers: once the agent finished, the footer stops saying it is on it", !/The agent is on it/.test(footStatus()), footStatus());
 
     const at = new Date().toISOString();
     items([["pr-9991", { ...pr, findingAnswers: [...pr.findingAnswers, { finding: "f1", findingText: findings[0].text, text: "Yes, 0x00 means off.", at }, { finding: "#1-0a1b2c3d", findingText: findings[1].text, text: "Not needed, the prefix has it.", at }] }]]); await wait(10);
