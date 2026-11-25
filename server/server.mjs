@@ -1125,7 +1125,7 @@ export async function startBoardServer({
 			if (f) focuses.set(id, f);
 		}
 		// What happened on GitHub since the maintainer's last choice on the item, for the timeline at the top of the dialog
-		const sinceOf = (id, data) => sinceSummary(fixSources.snapshot[id]?.activity, sinceAnchor(data, actionsOf.get(id)), { me: instance.config.me, bot: instance.config.bot?.login, actions: actionsOf.get(id) });
+		const sinceOf = (id, data) => sinceSummary(fixSources.snapshot[id]?.activity, sinceAnchor(data, actionsOf.get(id), { activity: fixSources.snapshot[id]?.activity, me: instance.config.me }), { me: instance.config.me, bot: instance.config.bot?.login, actions: actionsOf.get(id) });
 		return items.map(({ id, data: stored }) => [id, withSnapshotFields(id, normalizeCategory(stored))]).map(([id, data]) => ({
 			...data,
 			...fixForServed(data),

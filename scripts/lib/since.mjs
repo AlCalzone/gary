@@ -86,16 +86,24 @@ const choiceName = (type) => CHOICE_NAMES[type] ?? String(type ?? "").replace(/_
 // The jobs that push to a PR, named for the commits they made
 export const PUSH_JOBS = { take_over: "Take over", revise: "Change", address_review: "Address review", drive: "Drive round", format: "Format" };
 
+const OWN_REVIEWS = { approved: "Approved on GitHub", changes_requested: "Requested changes on GitHub" };
+
 /** Whether an action doc records a click of the maintainer. Code writes its jobs with `params.by`. */
 const isChoice = (a) => a && typeof a.createdAt === "string" && Number.isFinite(Date.parse(a.createdAt)) && !(a.params && typeof a.params === "object" && a.params.by !== undefined);
 
 /**
  * The anchor of the timeline for one item: `{ at, kind: "choice", label }` for the maintainer's newest choice, else
  * `{ at, kind: "opened" }` for the first time the maintainer opened the dialog, else null. `actions` are the item's action docs.
- * A choice is a click recorded as an action doc, or `item.handled` for a prefill the maintainer used.
+ * A choice is a click recorded as an action doc, `item.handled` for a prefill the maintainer used, or a review or comment
+ * that `me` wrote on GitHub, taken from the item's `activity`.
  */
-export function sinceAnchor(item, actions = []) {
+export function sinceAnchor(item, actions = [], { activity, me } = {}) {
 	const choices = [];
+	for (const e of me && Array.isArray(activity?.events) ? activity.events : []) {
+		if (!e || !Number.isFinite(Date.parse(e.at)) || String(e.by ?? "").toLowerCase() !== String(me).toLowerCase()) continue;
+		if (e.kind === "review") choices.push({ at: e.at, label: OWN_REVIEWS[e.state] ?? "Reviewed on GitHub", rank: 0 });
+		else if (["comment", "reply", "thread_reply"].includes(e.kind)) choices.push({ at: e.at, label: "Commented on GitHub", rank: 0 });
+	}
 	for (const a of actions) {
 		if (!isChoice(a)) continue;
 		const label = a.action === "dismiss_route" ? `Dismissed ${choiceName(a.route)}` : choiceName(a.route ?? a.action);

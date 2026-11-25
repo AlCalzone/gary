@@ -85,7 +85,7 @@ async function brief(itemId, out) {
 	const entry = (await readSnapshotItems())[itemId] ?? null;
 	const own = instance.kind === "contributions" ? await ownPrPlace(instance, item, entry) : null;
 	const actions = await itemActions(itemId);
-	const since = sinceSummary(entry?.activity, sinceAnchor(item, actions), { me: instance.config.me, bot: instance.config.bot?.login, actions });
+	const since = sinceSummary(entry?.activity, sinceAnchor(item, actions, { activity: entry?.activity, me: instance.config.me }), { me: instance.config.me, bot: instance.config.bot?.login, actions });
 	const p = paths();
 	const focusSession = out.session ?? OWN_ID;
 	// A job that started before the focus finishes. The session waits for it before it pushes

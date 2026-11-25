@@ -74,6 +74,14 @@ a = sinceAnchor({}, [{ itemId: "pr-1", action: "reanalyze", params: {}, text: "L
 t.check("Analyze again is a choice", a?.label === "Analyze again", a);
 a = sinceAnchor({ seenAt: at(19, 20) }, [watch]);
 t.check("without a choice the last dialog open is the anchor", a?.kind === "opened" && a.at === at(19, 20) && a.label === undefined, a);
+const own = { events: [{ at: at(19, 9), by: "Maintainer", kind: "comment" }, { at: at(19, 15), by: "maintainer", kind: "review", state: "changes_requested" }, { at: at(19, 16), by: "someone", kind: "review", state: "approved" }] };
+a = sinceAnchor({ seenAt: at(19, 20) }, [click], { activity: own, me: "maintainer" });
+t.check("the maintainer's own review on GitHub is a choice", a?.kind === "choice" && a.at === at(19, 15) && a.label === "Requested changes on GitHub", a);
+a = sinceAnchor({}, [click], { activity: { events: own.events.slice(0, 1) }, me: "maintainer" });
+t.check("an own comment older than a click leaves the click as the anchor", a?.label === "Take over", a);
+a = sinceAnchor({}, [], { activity: { events: own.events.slice(0, 1) }, me: "maintainer" });
+t.check("an own comment on GitHub is a choice", a?.at === at(19, 9) && a.label === "Commented on GitHub", a);
+t.check("a review by someone else is no choice", sinceAnchor({}, [], { activity: { events: own.events.slice(2) }, me: "maintainer" }) === null);
 t.check("without a choice or an open there is no anchor", sinceAnchor({}, [watch]) === null && sinceSummary({ events: [] }, null) === null);
 t.check("without activity there is no timeline", sinceSummary(undefined, a) === null);
 t.check("a replace by the routine keeps the open time", replaceFields({ seenAt: at(19, 20), title: "old" }, { title: "new" }).seenAt === at(19, 20));
