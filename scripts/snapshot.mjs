@@ -310,11 +310,11 @@ export async function main(argv = []) {
 	await markEndedFixes(fixRecords, prs.nodes.map((n) => n.number));
 	const fixFor = fixPrNumbers(fixRecords);
 	for (const n of prs.nodes) markDraftWaiting(n, fixFor.has(n.number), ctx);
-	const shownPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number) || n.draftWaiting);
+	const readyPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number) || n.draftWaiting);
 	await Promise.all([
-		...shownPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
+		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
 		...discussions.nodes.map(fetchRemainingReplies),
-		attachAutoReviews(shownPrs),
+		attachAutoReviews(readyPrs),
 	]);
 	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
@@ -322,16 +322,16 @@ export async function main(argv = []) {
 	const series = seriesOf(prs.nodes, issues.nodes);
 	const linked = (id, n) => ({ ...dueOf(n), ...(series.has(id) && { series: series.get(id) }) });
 	const items = [
-		...shownPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }), ...linked(`pr-${n.number}`, n) }, ctx)),
+		...readyPrs.map((n) => withFacts("pr", n, { ...toPr(n, classify, sensitive), ...(fixFor.has(n.number) && { garyFix: { itemId: fixFor.get(n.number) } }), ...linked(`pr-${n.number}`, n) }, ctx)),
 		...issues.nodes.map((n) => withFacts("issue", n, { ...toIssue(n, classify), ...linked(`issue-${n.number}`, n) }, ctx)),
 		...discussions.nodes.map((n) => withFacts("discussion", n, { ...toDiscussion(n, classify), ...(references.has(n.number) && { referencingPrs: references.get(n.number) }) }, ctx)),
 	];
 
 	const baseline = readJson(BASELINE())?.items ?? {};
 	const fetchedAt = new Date().toISOString();
-	await notePosted([...shownPrs.map((n) => [`pr-${n.number}`, n]), ...issues.nodes.map((n) => [`issue-${n.number}`, n]), ...discussions.nodes.map((n) => [`disc-${n.number}`, n])]);
+	await notePosted([...readyPrs.map((n) => [`pr-${n.number}`, n]), ...issues.nodes.map((n) => [`issue-${n.number}`, n]), ...discussions.nodes.map((n) => [`disc-${n.number}`, n])]);
 	const nodeOf = new Map([
-		...shownPrs.map((n) => [`pr-${n.number}`, ["pr", n]]),
+		...readyPrs.map((n) => [`pr-${n.number}`, ["pr", n]]),
 		...issues.nodes.map((n) => [`issue-${n.number}`, ["issue", n]]),
 		...discussions.nodes.map((n) => [`disc-${n.number}`, ["discussion", n]]),
 	]);
