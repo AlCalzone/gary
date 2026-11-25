@@ -15,6 +15,7 @@ const MAX_CONTEXT_PAGES = 10;
 const FAILED_CONCLUSIONS = new Set(["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const FAILED_STATUSES = new Set(["FAILURE", "ERROR"]);
 const PENDING_STATUSES = new Set(["PENDING", "EXPECTED"]);
+const NOT_STARTED = "9999-12-31T00:00:00Z";
 
 // `isRequired` needs the PR's number, so the bulk PR queries cannot ask for it
 const CHECKS_QUERY = `query PrChecks($owner: String!, $name: String!, $number: Int!, $after: String) {
@@ -41,7 +42,9 @@ function toCheck(c) {
 	if (c?.__typename === "CheckRun") {
 		const suite = c.checkSuite?.workflowRun?.workflow?.name ?? c.checkSuite?.app?.slug ?? "";
 		const state = c.status !== "COMPLETED" ? "pending" : FAILED_CONCLUSIONS.has(c.conclusion) ? "failing" : "passing";
-		return { key: `run:${suite}/${c.name}`, name: String(c.name ?? ""), at: c.startedAt ?? c.completedAt, state, required: c.isRequired === true };
+		// A run that has not started yet has no time and must still replace the older runs of its check
+		const at = c.startedAt ?? c.completedAt ?? (state === "pending" ? NOT_STARTED : null);
+		return { key: `run:${suite}/${c.name}`, name: String(c.name ?? ""), at, state, required: c.isRequired === true };
 	}
 	if (c?.__typename === "StatusContext") {
 		const state = FAILED_STATUSES.has(c.state) ? "failing" : PENDING_STATUSES.has(c.state) ? "pending" : "passing";

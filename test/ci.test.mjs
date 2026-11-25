@@ -34,6 +34,8 @@ t.check("an older failed run and a newer passing one are passing", e.ci === "pas
 e = item([run("Verify", "FAILURE", 10, false), run("lint", "SUCCESS", 0, true)]);
 t.check("a failing optional check with green required checks is passing", e.ci === "passing" && JSON.stringify(e.ciOptionalFailing) === '["Verify"]', e.error ?? { ci: e.ci, ciOptionalFailing: e.ciOptionalFailing });
 t.check("the facts carry the failing optional checks", JSON.stringify(e.facts?.ciOptionalFailing) === '["Verify"]' && e.facts.ciGreen === true && e.facts.isClean === true, e.facts);
+e = item([run("lint", "FAILURE", 0, true), { ...run("lint", null, 0, true), status: "QUEUED", startedAt: null, completedAt: null }]);
+t.check("a queued run without a start time replaces the older failed run", e.ci === "pending", e.error ?? e.ci);
 e = item([run("Verify", "SUCCESS", 10, false), run("lint", "FAILURE", 0, true)]);
 t.check("a failing required check is failing", e.ci === "failing" && !("ciOptionalFailing" in e), e.error ?? e.ci);
 e = item([run("Verify", "SUCCESS", 0, false), run("Verify", "FAILURE", 10, false), run("lint", "SUCCESS", 0, false)]);
