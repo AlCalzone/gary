@@ -1,6 +1,6 @@
 // A maintainer instance and a contributions instance on one server: the contributions tab names the repo in every
-// row, FYI items join the three groups with their own chip, Got it hides one until there is news, and the dialog
-// shows no control that would need a profile, a bot or a checkout.
+// row, FYI items join the three groups with their own chip, Got it hides one until there is news, the dialog shows
+// no control that would need a profile or a bot, and only the maintainer's own PR gets Drive and Focus.
 // Needs Chrome or Chromium. CHROME names the binary, default google-chrome.
 import { spawn } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,13 +18,16 @@ mkdirSync(join(MINE, "state", "board", "actions"), { recursive: true });
 writeFileSync(join(MINE, "config.json"), JSON.stringify({ kind: "contributions", me: "octocat" }));
 const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
 // The allowed repos of a contributions instance come from its snapshot
-writeFileSync(join(MINE, "state", "snapshot.json"), JSON.stringify({ fetchedAt: ago(0), items: Object.fromEntries(["other/lib", "third/app", "acme/widgets"].map((repo, i) => [`x${i}`, { repo, updatedAt: ago(1) }])) }));
+// The maintainer's own PR other/lib#7 may get Drive and Focus: their login can push to its branch, and only they committed
+const ownPr = { headRepo: "octocat/lib", headRef: "fix-sha", pushable: true, foreign: null };
+writeFileSync(join(MINE, "state", "snapshot.json"), JSON.stringify({ fetchedAt: ago(0), items: { ...Object.fromEntries(["other/lib", "third/app", "acme/widgets"].map((repo, i) => [`x${i}`, { repo, updatedAt: ago(1) }])), "other.lib.pr-7": { repo: "other/lib", author: "octocat", githubState: "open", headSha: "b".repeat(40), headRef: "fix-sha", ownPr } } }));
 const base = (repo, kind, number, extra) => ({ repo, kind, number, title: `Probe ${repo}#${number}`, url: `https://github.com/${repo}/${kind === "pr" ? "pull" : kind === "issue" ? "issues" : "discussions"}/${number}`, author: "carol", authorType: "contributor", reviewDepth: "quick", reviewedAt: ago(1), state: "Dave fixed it in 2.0.", ...extra });
 const put = (home, id, doc) => writeFileSync(join(home, "state", "board", "items", id + ".json"), JSON.stringify(doc));
 put(MINE, "other.lib.issue-4", base("other/lib", "issue", 4, { category: "fyi", effortMinutes: 1, newsAt: ago(2), authorType: "maintainer" }));
 put(MINE, "other.lib.issue-6", base("other/lib", "issue", 6, { category: "fyi", effortMinutes: 1, newsAt: ago(5), gotIt: { at: ago(3) } }));
 put(MINE, "third.app.disc-2", base("third/app", "discussion", 2, { category: "fyi", effortMinutes: 15, newsAt: ago(2), state: "A long thread found the root cause." }));
 put(MINE, "other.lib.pr-5", base("other/lib", "pr", 5, { category: "unblock", effortMinutes: 5, priority: 1, hint: "Review: looks good", state: "Alice asked for your review.", routes: [{ id: "r1", type: "review", as: "me", title: "Review: looks good", recommended: true, text: "Looks good to me.", params: { event: "approve" } }] }));
+put(MINE, "other.lib.pr-7", base("other/lib", "pr", 7, { author: "octocat", authorType: "maintainer", category: "act", effortMinutes: 5, priority: 2, hint: "Drive: verify the download against its SHA", state: "Bob asked to verify the Typst download.", routes: [{ id: "r1", type: "drive", as: "agent", title: "Drive: verify the download against its SHA", recommended: true, text: "Check the SHA-256 of the archive before unpacking it." }, { id: "r2", type: "reply", as: "me", title: "Reply: on it", text: "On it." }] }));
 put(WIDGETS_HOME, "issue-12", { kind: "issue", number: 12, repo: "acme/widgets", title: "Widgets issue", url: "https://github.com/acme/widgets/issues/12", author: "someone", authorType: "contributor", category: "unblock", priority: 0, effortMinutes: 5, reviewDepth: "full", reviewedAt: ago(1), state: "s", hint: "Reply: thanks", routes: [{ id: "r1", type: "reply", as: "me", title: "Reply: thanks", recommended: true, text: "Thanks!" }] });
 const PAGE = join(DIR, "page.html");
 cpSync(process.env.BOARD_HTML ?? join(ROOT, "board", "board.html"), PAGE);
@@ -65,7 +68,7 @@ try {
 	await cmd("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
 	ok("the contributions instance is a tab of its own, titled by its config", await until(`[...document.querySelectorAll("#tabs .tab")].map((b) => b.textContent).join() === "All,Contributions,widgets"`));
 	await ev(`[...document.querySelectorAll("#tabs .tab")].find((b) => b.textContent === "Contributions").click();`);
-	ok("contributions tab: its rows only, each with owner/name#number and no number column", await until(`[...document.querySelectorAll("#board .row")].length === 3 && [...document.querySelectorAll("#board .row")].every((r) => /^(other\\/lib|third\\/app)#\\d+$/.test(r.querySelector(".r-ref")?.textContent ?? "") && getComputedStyle(r.querySelector(".r-num")).display === "none")`));
+	ok("contributions tab: its rows only, each with owner/name#number and no number column", await until(`[...document.querySelectorAll("#board .row")].length === 4 && [...document.querySelectorAll("#board .row")].every((r) => /^(other\\/lib|third\\/app)#\\d+$/.test(r.querySelector(".r-ref")?.textContent ?? "") && getComputedStyle(r.querySelector(".r-num")).display === "none")`));
 	ok("an FYI item carries the FYI chip", await ev(`return ${rowOf("other.lib.issue-4")}?.querySelector(".r-cat .cat")?.className === "cat cat-fyi" && ${rowOf("other.lib.issue-4")}.querySelector(".r-cat .cat").textContent === "FYI";`));
 	ok("a short FYI lands in Quick & Easy, a long read in When you have time", (await ev(`return ${groupOf("other.lib.issue-4")};`)) === "group-quick" && (await ev(`return ${groupOf("third.app.disc-2")};`)) === "group-later");
 	ok("FYI has no group of its own", (await ev(`return [...document.querySelectorAll("section.group")].map((g) => g.id).join();`)) === "group-quick,group-after,group-later");
@@ -88,10 +91,19 @@ try {
 	await ev(`window.open = () => null; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => {} } }); openDetail("mine/other.lib.pr-5");`);
 	await until(`document.getElementById("detail").open`);
 	ok("the dialog's top bar shows the full ref", await until(`document.querySelector("#d-ref .ref")?.textContent === "other/lib#5"`));
-	ok("no Focus button: a focus needs a checkout", await ev(`return document.querySelector('#d-foot [aria-label="Focus"]').hidden === true;`));
+	ok("no Focus button on a PR that is not yours", await ev(`return document.querySelector('#d-foot [aria-label="Focus"]').hidden === true;`));
 	ok("the review card copies the text and opens GitHub, nothing posts as a bot", await ev(`const b = [...document.querySelectorAll("#d-routes .card.open .card-actions button")].map((x) => x.textContent); return b.some((t) => /open GitHub/.test(t)) && !b.some((t) => /^Confirm|Request changes$|^Approve$|Start fix|Take over|Merge/.test(t));`));
 	ok("no label, merge or agent control in the dialog", await ev(`return !document.querySelector("#d-routes .intent-agent, #d-routes .label-btn, #d-routes [data-focus-key*='label']") && !document.querySelector(".fyi-ack");`));
 	ok("Analyze again stays", await ev(`return document.querySelector('#d-foot [aria-label="Analyze again"]').hidden === false;`));
+	await ev(`document.getElementById("d-close").click();`);
+
+	// The maintainer's own PR: a Drive card with editable instructions, and Focus in the footer
+	await ev(`openDetail("mine/other.lib.pr-7");`);
+	await until(`document.getElementById("detail").open`);
+	ok("your own PR has a Focus button", await until(`document.querySelector('#d-foot [aria-label="Focus"]')?.hidden === false`));
+	ok("the Drive card has its instructions in an editor and the button Drive", await until(`[...document.querySelectorAll("#d-routes .card.open .card-actions button")].some((b) => b.textContent.trim().endsWith("Drive")) && document.querySelector("#d-routes .card.open textarea")?.value === "Check the SHA-256 of the archive before unpacking it."`));
+	ok("the Drive card says it pushes under your login and posts nothing, without Copilot rounds", await ev(`const t = document.querySelector("#d-routes .card.open").textContent; return /pushes it to your PR's branch under your login/.test(t) && /posts nothing/.test(t) && !/Rounds|Copilot/.test(t);`));
+	ok("no card opens GitHub for the change", await ev(`return ![...document.querySelectorAll("#d-routes .card")].some((c) => /^Change/.test(c.querySelector(".card-head")?.textContent ?? ""));`));
 	await ev(`document.getElementById("d-close").click();`);
 
 	// An FYI item: one Got it, then it leaves until the routine reports news
