@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { ROOT, TAB_ICON_MAX_BYTES, tabIconFile, autoReviewOf, escalationOf, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
+import { ROOT, TAB_ICON_MAX_BYTES, tabIconFile, autoReviewOf, escalationOf, expandHome, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { canReadProjects, readLogin, readRepoPermissions, storedScopes } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
@@ -224,12 +224,20 @@ async function checkInstance() {
 	return checks;
 }
 
+/** The check of `checkoutRoots`: where Drive and Focus look for a clone of your own PR's repo. */
+function checkoutRootsCheck(roots) {
+	if (!roots.length) return ["ok", "no checkoutRoots. Drive and Focus on your own PRs clone the repo fresh under the state directory. \"checkoutRoots\": [\"~/repositories\"] in config.json lets them use your clones"];
+	const missing = roots.filter((r) => !existsSync(expandHome(r)));
+	const text = `Drive and Focus look for clones of your PRs' repos in ${roots.join(", ")}. They add their own worktree there and never touch your working tree`;
+	return missing.length ? ["warn", `${text}. Missing: ${missing.join(", ")}`] : ["ok", text];
+}
+
 /**
  * The checks of a contributions instance: the login and its scopes, the repos it leaves out, the caps and the parts it
  * shares with every instance. It has no profile, bot or checkout to check.
  */
 async function checkContributions(config, attempt, add) {
-	add("kind", "ok", "contributions: your own threads outside the maintainer instances. Gary writes nothing to GitHub for it, every reply is text you post yourself");
+	add("kind", "ok", "contributions: your own threads outside the maintainer instances. Every reply is text you post yourself. Gary pushes only to your own PRs, after your click on Drive");
 	await attempt("unknown fields", async () => {
 		const unknown = settingsWarningsFor(instanceName());
 		return unknown.length ? ["fail", unknown.join("; ")] : ["ok", "none"];
@@ -254,6 +262,7 @@ async function checkContributions(config, attempt, add) {
 		return ["ok", parts.join(". ")];
 	});
 	add("caps", "ok", `at most ${config.maxItems} threads per snapshot, with activity in the last ${config.activeWindowDays} days. Your own open PRs and review requests count at any age. The snapshot says when the cap cuts`);
+	add("checkouts", ...checkoutRootsCheck(config.checkoutRoots ?? []));
 	add("notifications", "ok", config.clearNotifications ? "Got it also marks the thread's notification as done in your GitHub inbox" : "off. Got it leaves your GitHub inbox alone. \"clearNotifications\": true in config.json turns it on");
 	await attempt("models", async () => {
 		const { models } = modelsOf(config);
