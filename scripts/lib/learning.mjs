@@ -50,7 +50,7 @@ export function itemSummary(item) {
 let appending = Promise.resolve();
 
 /**
- * Appends one entry to an instance's decision log. Only the board server calls this.
+ * Appends one entry to an instance's decision log. The board server calls this, and the snapshot for `posted_text`.
  * Every entry carries the instance, its kind and the item's repo.
  */
 export function logDecision(instance, type, itemId, item, fields = {}) {

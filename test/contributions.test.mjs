@@ -1,7 +1,7 @@
 // A contributions instance: its settings, its snapshot through the fake gh, its items, and a server that writes
 // nothing to GitHub for it. The root also holds a maintainer instance for acme/widgets, which the contributions never cover.
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GARY, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
 import { ME } from "./fixtures/github.mjs";
@@ -167,6 +167,18 @@ r = cli(["snapshot", "--out", out]);
 snap = JSON.parse(readFileSync(out, "utf8"));
 const back = snap.changed.find((e) => e.id === "other.lib.issue-4");
 check("new relevant activity after Got it comes back as news", back?.facts.lookedVia === "got_it" && back.facts.news.length === 1 && /2\.0\.1/.test(back.facts.news[0].excerpt), back?.facts);
+// A copied reply that the maintainer posted with other words becomes one posted_text decision
+const decisions = () => (existsSync(join(STATE, "decisions.jsonl")) ? readFileSync(join(STATE, "decisions.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)) : []).filter((d) => d.type === "posted_text");
+writeFileSync(join(STATE, "opened.json"), JSON.stringify({ "other.lib.issue-4": { r1: { at: ago(2), draftHash: "x", text: "Thanks, 2.0 fixes it for me." } } }));
+nodes.answered.timelineComments = list([...nodes.answered.timelineComments.nodes, comment(ME, 1.5, "Still broken on 2.0.1, see the log.", "https://github.com/x#mine")]);
+writeFileSync(ghData, JSON.stringify(searches()));
+cli(["snapshot", "--out", out]);
+cli(["snapshot", "--out", out]);
+check("a reply posted with other words than the copied draft is logged once", decisions().length === 1 && decisions()[0].itemId === "other.lib.issue-4" && /2\.0 fixes/.test(decisions()[0].draft) && /Still broken/.test(decisions()[0].final) && decisions()[0].url === "https://github.com/x#mine", decisions());
+writeFileSync(join(STATE, "opened.json"), JSON.stringify({ "other.lib.pr-5": { r1: { at: ago(2), draftHash: "x", text: "Looks good." } }, "third.app.disc-2": { r1: { at: ago(200), draftHash: "x", text: "Old draft" } } }));
+cli(["snapshot", "--out", out]);
+check("no post, or a post long after the copy, logs nothing", decisions().length === 1, decisions());
+
 // Got it on a merged PR: the thread stays tracked, so its item and the Got it survive the next runs
 cli(["snapshot", "--commit"]);
 writeFileSync(join(BOARD, "items", "other.lib.pr-8.json"), JSON.stringify({ repo: "other/lib", kind: "pr", number: 8, category: "fyi", gotIt: { at: ago(1) } }));

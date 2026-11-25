@@ -14,6 +14,7 @@ import { activityOf } from "./lib/since.mjs";
 import { canReadProjects, graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, patchFixRecord, readFixRecords, vanishedFixPrs } from "./lib/fixes.mjs";
 import { heldItemIds } from "./lib/focus.mjs";
+import { logPostedTexts } from "./lib/posted.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
 const PENDING = () => join(stateDir(), "snapshot.pending.json");
@@ -326,6 +327,7 @@ export async function main(argv = []) {
 
 	const baseline = readJson(BASELINE())?.items ?? {};
 	const fetchedAt = new Date().toISOString();
+	await notePosted([...readyPrs.map((n) => [`pr-${n.number}`, n]), ...issues.nodes.map((n) => [`issue-${n.number}`, n]), ...discussions.nodes.map((n) => [`disc-${n.number}`, n])]);
 	const nodeOf = new Map([
 		...readyPrs.map((n) => [`pr-${n.number}`, ["pr", n]]),
 		...issues.nodes.map((n) => [`issue-${n.number}`, ["issue", n]]),
@@ -414,6 +416,7 @@ export async function fetchItem(kind, number, repo = loadProfile().repo, { allFi
 	if (!node) throw new Error(`${id} not found in ${owner}/${name}`);
 	const classify = authorClassifier(maintainerLogins(), botLogins());
 	const ctx = factsContext();
+	if (repo === loadProfile().repo) await notePosted([[`${{ pr: "pr", issue: "issue", discussion: "disc" }[kind]}-${number}`, node]]);
 	// A series needs every open item, so a single read takes it from the last snapshot
 	const staged = (readJson(PENDING()) ?? readJson(BASELINE()))?.items?.[`${{ pr: "pr", issue: "issue", discussion: "disc" }[kind]}-${number}`];
 	const linked = { ...(kind === "discussion" ? {} : dueOf(node)), ...(repo === loadProfile().repo && staged?.series && { series: staged.series }) };
@@ -505,6 +508,15 @@ const contributionClassifier = (me) => (author) => {
 	if (author?.__typename === "Bot" || login.endsWith("[bot]")) return "bot";
 	return "contributor";
 };
+
+// The decision log is a side product. A failure there never breaks a snapshot or a refresh
+async function notePosted(threads) {
+	try {
+		await logPostedTexts(threads, loadConfig().me);
+	} catch (e) {
+		console.error(`gary snapshot: comparing posted replies failed: ${e.message}`);
+	}
+}
 
 /** The time of the maintainer's last "Got it" on the stored item, or null. */
 async function gotItOf(id) {
@@ -640,6 +652,7 @@ async function contributionsMain(config, out) {
 		else changed.push({ id, reason, ...item });
 	}
 	const closed = Object.keys(baseline).filter((id) => !current[id]);
+	await notePosted([...hits].map(([id, { node }]) => [id, node]));
 	mkdirSync(stateDir(), { recursive: true });
 	writeFileSync(PENDING(), JSON.stringify({ fetchedAt, items: current }, null, "\t") + "\n");
 	if (cut) console.error(`gary snapshot: ${cutMessage(cut)}`);
@@ -664,6 +677,7 @@ async function fetchContribution(kind, number, repo) {
 	const node = data.repository?.[field];
 	if (!node) throw new Error(`${kind} #${number} not found in ${repo}`);
 	const id = contributionId(repo, kind, number);
+	await notePosted([[id, node]]);
 	return withContributionFacts(kind, node, contributionEntry(kind, node, id, contributionClassifier(config.me)), { me: config.me, ctx: contributionsContext(config.me), gotIt: await gotItOf(id), now: Date.now(), config });
 }
 

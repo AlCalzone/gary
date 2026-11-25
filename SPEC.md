@@ -1180,6 +1180,7 @@ Gary learns from where the maintainer deviates from the agent's proposals. The s
 | `dismissed_route` | `route: { type, title }`, `wasRecommended`, `reason` | `dismiss_route` ran |
 | `chose_alternative` | `recommended: { type, title }`, `chosen: { type, title }` | the used route is not the recommended one |
 | `edited_text` | `route: { type, title }`, `draft`, `final`, each cut at 8000 characters | the sent or copied text differs from the route's draft |
+| `posted_text` | `route: { type, title }`, `draft`, `final`, each cut at 8000 characters, `url` | the maintainer copied a reply from the board and posted other words in the thread within two hours. The snapshot and the refresh write it, once per copy, from `<state>/opened.json` and the maintainer's comments on GitHub. Reviews are not compared |
 | `thread_override` | `route: { type }`, `thread: { summary, verdict }`, `decision`, `note` | a fix or dismiss switch differs from the default for the agent's verdict, or carries a note |
 | `unchecked_comment` | `comment: { path, text }` | one entry per inline review comment the maintainer unchecked |
 | `edited_comment` | `route: { type, title }`, `comment: { path, line }`, `draft`, `final`, each text cut at 8000 characters | one entry per checked inline review comment whose words the maintainer rewrote. `draft` is the agent's words without the suggestion block |
