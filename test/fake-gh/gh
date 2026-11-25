@@ -24,7 +24,8 @@
 //                          `notifications: [{ id, unread, repo, subject }]` is the inbox, read per repo. Marking one
 //                          as done needs FAKE_GH_WRITES and appends `{ notificationDone: id }` there. `reviewTargets:
 //                          { "owner/name#n": { …PR node, files: [{ filename, patch }] } }` answers the read before a pending
-//                          review (PendingReviewTarget) and the PR's changed files
+//                          review (PendingReviewTarget) and the PR's changed files. `ownPrs: { "owner/name#n": node }`
+//                          answers the read of the maintainer's own PR (ContributionsOwnPr), its branch and its commits
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import * as gh from "../fixtures/github.mjs";
@@ -141,6 +142,10 @@ if (query.includes("query PendingReviewTarget")) {
 	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : {};
 	const { files, ...node } = data.reviewTargets?.[`${v.owner}/${v.name}#${v.number}`] ?? {};
 	out({ data: { repository: { pullRequest: Object.keys(node).length ? node : null } } });
+}
+if (query.includes("query ContributionsOwnPr")) {
+	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : {};
+	out({ data: { repository: { pullRequest: data.ownPrs?.[`${v.owner}/${v.name}#${v.number}`] ?? null } } });
 }
 if (query.includes("query ContributionsSearch") || query.includes("query ContributionsItem")) {
 	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : { searches: [], items: {} };

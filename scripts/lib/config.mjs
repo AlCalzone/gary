@@ -23,7 +23,7 @@ export const DEFAULT_PORT = 7878;
 
 // A contributions instance follows the maintainer's own threads outside the repos of their maintainer instances.
 // It has no profile, no bot and no checkout, and Gary writes nothing to GitHub for it
-export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150, clearNotifications: false, mergeReminderDays: 14, mergeReminderDaysFor: {} };
+export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exclude: [], activeWindowDays: 30, activeMaxWaitDays: 14, maxItems: 150, clearNotifications: false, mergeReminderDays: 14, mergeReminderDaysFor: {}, checkoutRoots: [] };
 // The review drafts for PRs that request the maintainer's review that start without a click: per run, waiting at once,
 // and the PR size above which none does
 export const REVIEW_DRAFT_DEFAULTS = { maxAutoReviewDraftsPerRun: 0, maxPendingAutoReviewDrafts: 5, reviewDraftMaxLines: 800 };
@@ -58,6 +58,8 @@ function checkTab(errors, unknown, tab) {
 	if (tab.background === true && tab.color === undefined) errors.push('"tab.background" needs "tab.color"');
 }
 export const MAX_ITEMS_RANGE = [10, 500];
+// `MAX_CHECKOUT_ROOTS` caps the directories a contributions instance searches for clones of a PR's repo
+export const MAX_CHECKOUT_ROOTS = 20;
 // `owner/name` or `owner/*`
 const REPO_GLOB = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/(?:\*|[\w.-]{1,100})$/;
 const MAX_REPO_GLOBS = 200;
@@ -511,6 +513,12 @@ function checkContributionsConfig(data) {
 		`"mergeReminderDaysFor" must map repositories like "owner/name" or "owner/*" to a whole number of days`,
 	);
 	check(errors, data.clearNotifications === undefined || typeof data.clearNotifications === "boolean", `"clearNotifications" must be true or false`);
+	const roots = data.checkoutRoots;
+	check(
+		errors,
+		roots === undefined || (Array.isArray(roots) && roots.length <= MAX_CHECKOUT_ROOTS && roots.every((r) => typeof r === "string" && (isAbsolute(r) || r === "~" || r.startsWith("~/")))),
+		`"checkoutRoots" must be a list of at most ${MAX_CHECKOUT_ROOTS} directories, each an absolute path or a path that starts with ~/`,
+	);
 	checkReviewDrafts(data, errors);
 	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };

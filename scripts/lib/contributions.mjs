@@ -108,7 +108,7 @@ const PR_FIELDS = `
 	${ACTOR} authorAssociation
 	labels(first: 20) { nodes { name } }
 	assignees(first: 10) { nodes { login } }
-	headRefOid reviewDecision mergeable
+	headRefOid headRefName reviewDecision mergeable
 	commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 	recentCommits: commits(last: 10) { nodes { commit { oid committedDate author { name user { login } } } } }
 	comments(last: 5) { totalCount nodes { id ${ACTOR} authorAssociation createdAt body url } }

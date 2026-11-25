@@ -15,6 +15,7 @@ import { canReadProjects, graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, patchFixRecord, readFixRecords, vanishedFixPrs } from "./lib/fixes.mjs";
 import { heldItemIds } from "./lib/focus.mjs";
 import { logPostedTexts } from "./lib/posted.mjs";
+import { OWN_PR_QUERY, ownPrFacts } from "./lib/own-pr.mjs";
 
 const BASELINE = () => join(stateDir(), "snapshot.json");
 const PENDING = () => join(stateDir(), "snapshot.pending.json");
@@ -488,6 +489,8 @@ function baselineEntry(item) {
 		...(item.referencingPrs && { referencingPrs: item.referencingPrs }),
 		// The board server checks a review draft and a pending review against these
 		...(item.facts?.reviewRequested && { reviewRequested: true, reviewRequestedAt: item.facts.reviewRequestedAt ?? null }),
+		// The board server and the push command decide from these whether an agent may push to the maintainer's own PR
+		...(item.facts?.ownPr && { ownPr: item.facts.ownPr }),
 	};
 }
 
@@ -551,6 +554,7 @@ function contributionEntry(kind, node, id, classify) {
 		isDraft: node.isDraft,
 		assignees: (node.assignees?.nodes ?? []).map((a) => a.login),
 		headSha: node.headRefOid,
+		...(node.headRefName && { headRef: node.headRefName }),
 		ci: CI_STATES[node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state] ?? "none",
 		reviewDecision: node.reviewDecision,
 		mergeable: node.mergeable,
@@ -560,9 +564,29 @@ function contributionEntry(kind, node, id, classify) {
 	};
 }
 
-/** Adds the facts to a contributions entry. */
-function withContributionFacts(kind, node, entry, { me, ctx, reasons, gotIt, now, config }) {
-	return { ...entry, facts: contributionFacts(kind, node, { me, ctx, reasons, gotIt, ci: entry.ci ?? "none", now, reminderDays: mergeReminderDaysOf(entry.repo, config) }) };
+/** Adds the facts to a contributions entry. `own` holds the facts of the maintainer's own open PR, or is null. */
+function withContributionFacts(kind, node, entry, { me, ctx, reasons, gotIt, now, config, own = null }) {
+	const facts = contributionFacts(kind, node, { me, ctx, reasons, gotIt, ci: entry.ci ?? "none", now, reminderDays: mergeReminderDaysOf(entry.repo, config) });
+	return { ...entry, facts: own ? { ...facts, ownPr: own } : facts };
+}
+
+/** Whether a node is the maintainer's own open PR, which an agent may push to after a click. */
+const isOwnOpenPr = (kind, node, me) => kind === "pr" && node.state === "OPEN" && String(node.author?.login ?? "").toLowerCase() === me.toLowerCase();
+
+/**
+ * The facts of the maintainer's own open PR that decide whether an agent may push to it, from one read of its branch
+ * and commits. A failed read gives `{ pushable: false, notPushable }`, so nothing may push on a guess.
+ */
+async function ownPrOf(repo, number, me) {
+	const { owner, name } = repoParts(repo);
+	try {
+		const data = await withRetry(() => graphql(OWN_PR_QUERY, { owner, name, number }));
+		const node = data.repository?.pullRequest;
+		if (!node) return { headRepo: null, headRef: null, pushable: false, notPushable: "the PR could not be read", foreign: null };
+		return ownPrFacts(node, { me, ai: { logins: [], names: loadProfile().aiAuthors ?? [] } });
+	} catch (e) {
+		return { headRepo: null, headRef: null, pushable: false, notPushable: `reading the PR's branch failed: ${e.message}`, foreign: null };
+	}
 }
 
 /**
@@ -629,8 +653,9 @@ async function contributionsMain(config, out) {
 	const changed = [];
 	const quiet = [];
 	const unchanged = [];
+	const owns = new Map(await Promise.all([...hits].filter(([, h]) => isOwnOpenPr(h.kind, h.node, me)).map(async ([id, { node }]) => [id, await ownPrOf(node.repository.nameWithOwner, node.number, me)])));
 	for (const [id, { kind, node, reasons }] of hits) {
-		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now, config });
+		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now, config, own: owns.get(id) ?? null });
 		const closed = item.facts.closed;
 		const old = baseline[id];
 		// A thread the maintainer closed themself holds no news
@@ -678,7 +703,8 @@ async function fetchContribution(kind, number, repo) {
 	if (!node) throw new Error(`${kind} #${number} not found in ${repo}`);
 	const id = contributionId(repo, kind, number);
 	await notePosted([[id, node]]);
-	return withContributionFacts(kind, node, contributionEntry(kind, node, id, contributionClassifier(config.me)), { me: config.me, ctx: contributionsContext(config.me), gotIt: await gotItOf(id), now: Date.now(), config });
+	const own = isOwnOpenPr(kind, node, config.me) ? await ownPrOf(repo, number, config.me) : null;
+	return withContributionFacts(kind, node, contributionEntry(kind, node, id, contributionClassifier(config.me)), { me: config.me, ctx: contributionsContext(config.me), gotIt: await gotItOf(id), now: Date.now(), config, own });
 }
 
 const SEARCH_PRS = 100;

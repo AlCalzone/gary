@@ -169,9 +169,19 @@ export function oursAlone(node, { me, bot = null, garyFix = false, ai } = {}) {
 	const author = node.author?.login ?? "ghost";
 	if (!isUs(author)) return no(`${author} opened it, who is neither the maintainer nor Gary's bot`);
 	if (sameLogin(author, bot) && !sameLogin(author, me) && !garyFix) return no("the bot opened it, but Gary has no record of it as its own fix PR");
+	const foreign = foreignCommit(node, isUs, ai);
+	if (foreign) return no(foreign);
+	return { ours: true, reason: null };
+}
+
+/**
+ * The first commit of a PR that someone other than `isUs` authored, committed or co-authored, as a sentence, or null when
+ * there is none. `node.allCommits` must hold the full commit list, otherwise the answer names that. An AI agent may co-author.
+ */
+export function foreignCommit(node, isUs, ai) {
 	const commits = node.allCommits?.nodes ?? [];
 	const total = node.allCommits?.totalCount;
-	if (!commits.length || !Number.isInteger(total) || total > commits.length) return no(`its commit list is incomplete: ${commits.length} of ${total ?? "an unknown number of"} commits read`);
+	if (!commits.length || !Number.isInteger(total) || total > commits.length) return `its commit list is incomplete: ${commits.length} of ${total ?? "an unknown number of"} commits read`;
 	const isAgent = agentMatcher(ai);
 	// `ourIds` holds the names and emails of our own commits on this PR, so a trailer with the maintainer's real name counts as the maintainer's
 	const ourIds = new Set();
@@ -183,15 +193,15 @@ export function oursAlone(node, { me, bot = null, garyFix = false, ai } = {}) {
 	for (const [i, { commit }] of commits.entries()) {
 		const where = `commit ${i + 1} of ${commits.length}`;
 		const by = (person) => person?.user?.login ?? person?.name ?? "an unknown account";
-		if (!isUs(commit?.author?.user?.login)) return no(`${where} was authored by ${by(commit?.author)}`);
-		if (!isUs(commit?.committer?.user?.login) && !committedByGitHub(commit)) return no(`${where} was committed by ${by(commit?.committer)}`);
+		if (!isUs(commit?.author?.user?.login)) return `${where} was authored by ${by(commit?.author)}`;
+		if (!isUs(commit?.committer?.user?.login) && !committedByGitHub(commit)) return `${where} was committed by ${by(commit?.committer)}`;
 		for (const m of (commit.message ?? "").matchAll(CO_AUTHOR)) {
 			const [name, email] = [m[1] ?? "", m[2] ?? ""];
 			const ours = isUs(name) || isUs(NOREPLY.exec(email)?.[1]) || ourIds.has(name.toLowerCase()) || ourIds.has(email.toLowerCase());
-			if (!ours && !isAgent(name) && !isAgent(email.split("@")[0])) return no(`${where} names the co-author ${name || email}`);
+			if (!ours && !isAgent(name) && !isAgent(email.split("@")[0])) return `${where} names the co-author ${name || email}`;
 		}
 	}
-	return { ours: true, reason: null };
+	return null;
 }
 
 // GitHub is the committer of what its API and its web pages create. It signs those commits with its own key,
