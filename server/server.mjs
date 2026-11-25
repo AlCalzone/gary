@@ -29,6 +29,7 @@ import { linkEscalated } from "../scripts/lib/escalation.mjs";
 import { READ_ONLY_MESSAGE, accountMode, clearNotification, createPendingReview, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { commentLineProblem, pendingRoute, pendingRouteProblems, readReviewDrafts, recordClickStart, requestOf, reviewDraftState, servedWalkthrough } from "../scripts/lib/review-drafts.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
+import { ownPrRefusal } from "../scripts/lib/own-pr.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
 import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, commentProse, driveRefusal, editedCommentBody, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
@@ -44,7 +45,8 @@ const IN_FOCUS = [409, { ok: false, result: "This item is in focus. Gary starts 
 // `FAILED_FOCUS_MS` sets how long a failed focus request shows on its item
 const FAILED_FOCUS_MS = 24 * 3600000;
 const UNKNOWN_INSTANCE = "Unknown instance.";
-// The only actions a contributions instance takes. Every other click would write to GitHub, push or need a checkout
+// The only actions a contributions instance takes besides a route click and Focus on the maintainer's own PR.
+// Every other click would write to GitHub, push or need a checkout
 const CONTRIBUTION_ACTIONS = new Set(["got_it", "reanalyze", "dismiss_route", "accept_proposal", "dismiss_proposal"]);
 const READ_ONLY = [200, { ok: false, result: READ_ONLY_MESSAGE, readOnly: true }];
 // The verdicts as GitHub names them in its "Submit review" form
@@ -1083,6 +1085,12 @@ export async function startBoardServer({
 		const autoReviews = await readAutoReviews(name);
 		const reviewDrafts = instance.kind === "contributions" ? await readReviewDrafts(name) : {};
 		const reviewDraftOf = (id, data) => (instance.kind === "contributions" ? reviewDraftState(data, reviewDrafts[id], fixSources.snapshot[id]) : null);
+		// The maintainer's own PR in a contributions instance: whether Drive and Focus may work on its branch, and why not
+		const ownPrOf = (id, data) => {
+			if (instance.kind !== "contributions" || data.kind !== "pr" || String(data.author ?? "").toLowerCase() !== String(instance.config.me).toLowerCase()) return null;
+			const refused = ownPrRefusal(data, fixSources.snapshot[id], instance.config.me);
+			return refused ? { eligible: false, reason: refused } : { eligible: true };
+		};
 		const autoReviewOf = (id, data) => (data.kind === "pr" ? autoReviewState(data, autoReviews[id], fixSources.snapshot[id]) : null);
 		const categoryOf = (id, data) => (data.kind === "discussion" && typeof data.discussionCategory !== "string" ? fixSources.snapshot[id]?.category : undefined);
 		// The snapshot is fresher than the item for these: a milestone or a project date changes without touching the thread
@@ -1131,6 +1139,7 @@ export async function startBoardServer({
 			liveState: liveStates.get(`${name}/${id}`) ?? snapshotState(fixSources.snapshot[id]),
 			...(autoReviewOf(id, data) && { autoReview: autoReviewOf(id, data) }),
 			...(reviewDraftOf(id, data) && { reviewDraft: reviewDraftOf(id, data) }),
+			...(ownPrOf(id, data) && { ownPr: ownPrOf(id, data) }),
 			...(servedWalkthrough(data) && { walkthrough: servedWalkthrough(data) }),
 			...(working.has(id) && { working: working.get(id) }),
 			...(fixOf(id, data) && { fix: fixOf(id, data) }),
@@ -1149,7 +1158,8 @@ export async function startBoardServer({
 				// Serve the mark only for the draft the maintainer used
 				const mark = opened[id]?.[route.id];
 				const used = mark?.draftHash === hash && typeof mark.at === "string" ? { opened: { at: mark.at } } : {};
-				return { ...route, ...servedActor(route, mode), draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...used, ...parts };
+				const actor = instance.kind === "contributions" && route.type === "drive" ? { actor: ownPrOf(id, data)?.eligible ? "agent" : "unavailable" } : servedActor(route, mode);
+				return { ...route, ...actor, draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...used, ...parts };
 			}),
 			instance: name,
 			id,
@@ -1415,13 +1425,15 @@ export async function startBoardServer({
 		if (!name) return [400, { ok: false, result: UNKNOWN_INSTANCE }];
 		if (body.action === "dismiss_route") return handleDismissRoute(name, body);
 		if (body.action === "accept_proposal" || body.action === "dismiss_proposal") return handleProposal(name, body);
-		if ((body.action === "request_reconcile" || body.action === "end_focus") && settingsOf(name).instance?.kind === "contributions") return READ_ONLY;
+		if (body.action === "request_reconcile" && settingsOf(name).instance?.kind === "contributions") return READ_ONLY;
 		if (body.action === "request_reconcile") return handleReconcileRequest(name);
 		if (body.action === "end_focus") return handleEndFocus(name, body);
 		const { error: settingsError, instance: settings } = settingsOf(name);
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
 		if (body.action === "prepare_review") return handlePrepareReview(name, body);
 		if (body.action === "pending_review") return handlePendingReview(name, body);
+		if (settings?.kind === "contributions" && body.action === undefined) return handleOwnDrive(name, body);
+		if (settings?.kind === "contributions" && body.action === "focus") return handleOwnFocus(name, body);
 		if (settings?.kind === "contributions" && !CONTRIBUTION_ACTIONS.has(body.action)) return READ_ONLY;
 		if (body.action === "got_it") return handleGotIt(name, body);
 		if (body.action === "focus") return handleFocus(name, body);
@@ -2220,6 +2232,72 @@ export async function startBoardServer({
 			if (queued) return [409, { ok: false, result: "The master is already setting up a focus session for this item.", focus: true }];
 			await logClick(name, itemId, { action: "focus", params: {}, text: "", status: "queued", via: "queue", createdAt: new Date().toISOString(), finishedAt: null, result: "" });
 			return [200, { ok: true, result: "Queued for the master session. It finds or starts the focus session.", queued: true }];
+		});
+	}
+
+	/**
+	 * The maintainer's own PR in a contributions instance that Drive and Focus may work on, or a refusal. The snapshot
+	 * decides: the maintainer opened the PR, their login may push to its branch, and nobody else has commits on it.
+	 */
+	async function ownPrTarget(name, itemId) {
+		const outdated = { refused: [200, { ok: false, result: OUTDATED, outdated: true }] };
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId)) return outdated;
+		const { instance } = settingsOf(name);
+		const item = await readJson(itemFile(name, itemId));
+		if (!item) return outdated;
+		if (!allowedRepo(name, item.repo)) return { refused: [200, { ok: false, result: "The item names no thread of this instance." }] };
+		const entry = (await withInstance(name, () => readSnapshotItems()))[itemId];
+		const refusal = ownPrRefusal(item, entry, instance.config.me);
+		if (refusal) return { refused: [200, { ok: false, result: refusal, readOnly: true }] };
+		return { item, entry, instance };
+	}
+
+	// "Focus" on a contributions item: only the maintainer's own PR, because the session works on its branch
+	async function handleOwnFocus(name, body) {
+		const target = await ownPrTarget(name, body.itemId);
+		if (target.refused) return target.refused;
+		return handleFocus(name, body);
+	}
+
+	/**
+	 * A route click on a contributions item. The one route that runs is "Drive" on the maintainer's own PR: it queues an
+	 * agent that implements the change and pushes it to the PR's head branch under the maintainer's own login.
+	 * Every other route is a prefill the maintainer finishes on GitHub.
+	 */
+	async function handleOwnDrive(name, body) {
+		const { itemId, routeId, text, input } = body;
+		const outdated = [200, { ok: false, result: OUTDATED, outdated: true }];
+		if (typeof itemId !== "string" || !ITEM_ID.test(itemId) || typeof routeId !== "string") return outdated;
+		if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT)) return [400, { ok: false, result: `text must be a string of at most ${MAX_TEXT} characters.` }];
+		return withLock(actionLocks, `${name}/${itemId}`, async () => {
+			const stored = await readJson(itemFile(name, itemId));
+			const route = stored && routesOf(stored).find((r) => r.id === routeId);
+			if (!route) return outdated;
+			if (route.type !== "drive") return READ_ONLY;
+			const target = await ownPrTarget(name, itemId);
+			if (target.refused) return target.refused;
+			const { item, entry } = target;
+			const hash = draftHash(route, item);
+			if (body.draftHash !== hash) return outdated;
+			const key = `${name}|${itemId}|${routeId}|${hash}`;
+			if (doneKeys.has(key) || clickedByKey(name, await readCollection(name, "actions")).has(key)) {
+				return [409, { ok: false, result: "This route already ran. The board shows its result.", duplicate: true }];
+			}
+			if (focusHold(itemId, name)) return IN_FOCUS;
+			if (await busyWith(name, itemId, "push")) return [409, { ok: false, result: "The agent is already changing this PR.", working: true }];
+			const draft = typeof text === "string" ? text : typeof route.text === "string" ? route.text : "";
+			if (!draft.trim()) return [200, { ok: false, result: "Drive needs a text that says what to change." }];
+			if (input !== undefined && input !== null && !(isObject(input) && Object.keys(input).every((k) => k === "maxRounds"))) return [200, { ok: false, result: "input of a drive on your own PR is empty." }];
+			const { headRepo, headRef } = entry.ownPr;
+			if (dryRun) return [200, { ok: true, result: { dryRun: true, invocations: [{ command: ["git", "push", `https://github.com/${headRepo}.git`, `HEAD:refs/heads/${headRef}`] }] } }];
+			logRouteDecisions(name, itemId, item, route, draft, {}, true);
+			await logClick(name, itemId, {
+				routeId, route: route.type, draftHash: hash, edited: draft !== (route.text ?? ""), createdAt: new Date().toISOString(),
+				action: "drive", params: { ownPr: true, headSha: entry.headSha ?? null, headRepo, headRef }, text: draft, status: "queued", via: "queue", finishedAt: null, result: "",
+			});
+			doneKeys.add(key);
+			await setHandled(name, itemId, route, null);
+			return [200, { ok: true, result: "Queued. An agent makes the change and pushes it to your PR's branch.", queued: true }];
 		});
 	}
 

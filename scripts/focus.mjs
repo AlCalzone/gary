@@ -1,9 +1,10 @@
 // gary focus: the maintainer handles one item 1 on 1 in an agent session, and Gary holds everything on it meanwhile.
 // The master finds or starts the session with its harness's own tools and passes what it found. Nothing here knows a harness.
-//   gary focus brief <itemId> --harness <h> [--master <id>] [--session <id>] [--json]
+//   gary focus brief <itemId> --harness <h> [--master <id>] [--session <id>] [--worktree <dir>] [--json]
 //     The first prompt for a new session, or with --session the note for a session the focus attaches to.
+//     On the maintainer's own PR in a contributions instance, --worktree names the worktree from gary own-pr workdir.
 //   gary focus start <itemId> --harness <h> --session <id> [--link <url>] [--title <text>] [--request <action id>]
-//                    [--attach --match pr|branch|focus|origin] [--transcript <file>]
+//                    [--attach --match pr|branch|focus|origin|worktree] [--transcript <file>]
 //     Records the focus and settles the focus request. Exit 3 while another session holds the item.
 //   gary focus fail <itemId> --request <action id> --reason <text>
 //     Marks the focus request failed, so the board says why no session started.
@@ -21,15 +22,16 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { boardDir, readJson } from "./lib/board-store.mjs";
 import { listClaims } from "./lib/claims.mjs";
-import { instanceName, loadInstance, modelsOf, paths } from "./lib/config.mjs";
+import { instanceName, loadInstance, modelsOf, paths, stateDir } from "./lib/config.mjs";
 import { OWN_ID, focusAttachNote, focusBriefing, parseDoneMessage } from "./lib/focus-brief.mjs";
 import { FOCUS_MATCHES, MAX_SUMMARY, checkFocus, endFocus, failFocus, readFocus, readFocuses, startFocus } from "./lib/focus.mjs";
 import { readSnapshotItems } from "./lib/fixes.mjs";
+import { locate, ownPrRefusal } from "./lib/own-pr.mjs";
 import { readOrigins } from "./lib/origins.mjs";
 import { sinceAnchor, sinceSummary } from "./lib/since.mjs";
 
-const USAGE = "Usage: gary focus brief <itemId> --harness <h> [--master <id>] [--session <id>] | start <itemId> --harness <h> --session <id> [--link <url>] [--title <text>] [--request <id>] [--attach --match pr|branch|focus|origin] [--transcript <file>] | fail <itemId> --request <id> --reason <text> | done (<itemId> --session <id> --summary-file <file> | --message-file <file>) | end <itemId> | check <itemId> [--activity <ISO>] [--archived] | list [--json]";
-const VALUES = ["--harness", "--master", "--session", "--link", "--title", "--request", "--match", "--transcript", "--reason", "--summary-file", "--message-file", "--activity"];
+const USAGE = "Usage: gary focus brief <itemId> --harness <h> [--master <id>] [--session <id>] [--worktree <dir>] | start <itemId> --harness <h> --session <id> [--link <url>] [--title <text>] [--request <id>] [--attach --match pr|branch|focus|origin|worktree] [--transcript <file>] | fail <itemId> --request <id> --reason <text> | done (<itemId> --session <id> --summary-file <file> | --message-file <file>) | end <itemId> | check <itemId> [--activity <ISO>] [--archived] | list [--json]";
+const VALUES = ["--harness", "--master", "--session", "--link", "--title", "--request", "--match", "--transcript", "--reason", "--summary-file", "--message-file", "--activity", "--worktree"];
 const FLAGS = ["--attach", "--archived", "--json"];
 
 class Refused extends Error {}
@@ -81,15 +83,17 @@ async function brief(itemId, out) {
 	const item = await readJson(join(boardDir(), "items", itemId + ".json"));
 	if (!item) throw new Error(`${itemId} has no item on the board`);
 	const entry = (await readSnapshotItems())[itemId] ?? null;
+	const own = instance.kind === "contributions" ? await ownPrPlace(instance, item, entry) : null;
 	const actions = await itemActions(itemId);
 	const since = sinceSummary(entry?.activity, sinceAnchor(item, actions), { me: instance.config.me, bot: instance.config.bot?.login, actions });
 	const p = paths();
 	const focusSession = out.session ?? OWN_ID;
 	// A job that started before the focus finishes. The session waits for it before it pushes
 	const working = [...new Set((await listClaims()).filter((c) => c.itemId === itemId && !c.expired).map((c) => c.kind))];
-	const ctx = { instance: instance.name, item: { ...item, id: itemId }, since, harness: out.harness, master: out.master ?? null, bot: instance.config.bot?.login ?? null, paths: p, focusSession, working };
-	const branch = defaultBranch(p.checkout);
-	const text = out.session ? focusAttachNote(ctx) : focusBriefing({ ...ctx, defaultBranch: branch });
+	const ctx = { instance: instance.name, item: { ...item, id: itemId }, since, harness: out.harness, master: out.master ?? null, bot: instance.config.bot?.login ?? null, paths: p, focusSession, working, contributions: !!own };
+	const checkout = own ? own.clone : p.checkout;
+	const branch = defaultBranch(checkout);
+	const text = out.session ? focusAttachNote(ctx) : focusBriefing({ ...ctx, defaultBranch: branch, worktree: out.worktree ?? null, headRef: own?.headRef ?? null });
 	const origin = (await readOrigins())[itemId];
 	return {
 		ok: true,
@@ -99,8 +103,10 @@ async function brief(itemId, out) {
 		repo: item.repo,
 		url: item.url ?? null,
 		title: item.title ?? null,
-		headRef: entry?.headRef ?? null,
-		checkout: p.checkout,
+		headRef: own?.headRef ?? entry?.headRef ?? null,
+		checkout,
+		// On the maintainer's own PR the clone may be the maintainer's own, so the session works in a worktree of Gary's
+		...(own && { headRepo: own.headRepo, fresh: own.fresh, branchWorktree: own.branchWorktree, worktree: out.worktree ?? null }),
 		defaultBranch: branch,
 		model: modelsOf(instance.config).models.review,
 		previous: await readFocus(itemId),
@@ -110,7 +116,25 @@ async function brief(itemId, out) {
 	};
 }
 
+/**
+ * Where a focus on the maintainer's own PR in a contributions instance works: the clone, whether Gary clones it fresh,
+ * and the worktree that has the PR's branch checked out. Throws a Refused for every other item of this kind.
+ */
+async function ownPrPlace(instance, item, entry) {
+	const refusal = ownPrRefusal(item, entry, instance.config.me);
+	if (refusal) throw new Refused(`A focus in a contributions instance is only for your own PR that Gary may push to. ${refusal}`);
+	const { headRepo, headRef } = entry.ownPr;
+	const { clone, branchWorktree } = await locate({ stateDir: stateDir(), roots: instance.config.checkoutRoots ?? [], baseRepo: item.repo, headRepo, headRef });
+	return { clone: clone.path, fresh: clone.fresh, branchWorktree, headRepo, headRef };
+}
+
 async function start(itemId, out) {
+	const instance = loadInstance(instanceName());
+	if (instance.kind === "contributions") {
+		const item = await readJson(join(boardDir(), "items", itemId + ".json"));
+		if (!item) throw new Error(`${itemId} has no item on the board`);
+		await ownPrPlace(instance, item, (await readSnapshotItems())[itemId]);
+	}
 	if (out.attach && !out.match) throw new Error(`--attach needs --match ${FOCUS_MATCHES.join("|")}`);
 	if (!out.attach && out.match) throw new Error("--match goes with --attach");
 	try {

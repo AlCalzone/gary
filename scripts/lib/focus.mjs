@@ -14,7 +14,7 @@ export const FOCUS_STATUSES = ["active", "paused", "ended"];
 export const FOCUS_HELD = ["active", "paused"];
 // A focus ends by the session's done message, the board's "End focus", or an archived or deleted session
 export const FOCUS_END_REASONS = ["done", "end", "archived"];
-export const FOCUS_MATCHES = ["pr", "branch", "focus", "origin"];
+export const FOCUS_MATCHES = ["pr", "branch", "focus", "origin", "worktree"];
 export const MAX_SUMMARY = 8000;
 const MAX_FIELD = 500;
 // The board opens only session links of these schemes
