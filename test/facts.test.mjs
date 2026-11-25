@@ -195,7 +195,7 @@ out = snapWith({});
 t.check("a new due date counts as a change", entryOf("pr-12").reason === "updated" && out.unchanged?.includes("pr-17"), { changed: out.changed?.map((e) => e.id), unchanged: out.unchanged });
 
 // A draft PR gets an entry only while a comment on it waits on our side
-const dctx = { us: [ME, BOT, "alcalzone"], patterns: AUTOMATED };
+const dctx = { us: [ME, BOT, "alcalzone"], maintainers: [ME, "alcalzone"], patterns: AUTOMATED };
 const dc = (h, login, body, extra = {}) => ({ author: login.endsWith("[bot]") ? { login, __typename: "Bot" } : user(login), createdAt: at(h), body, url: `https://github.com/acme/widgets/pull/24#c${h}`, ...extra });
 const draft = ({ comments = [], threads = [], reviews = [] } = {}) => ({
 	isDraft: true, author: user("hubot"),
@@ -207,6 +207,7 @@ const draft = ({ comments = [], threads = [], reviews = [] } = {}) => ({
 let w = f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this the right approach")] }), dctx);
 t.check("a draft comment that mentions the maintainer waits on us", w?.why === "mention" && w.by === "hubot" && w.at === at(2) && w.url.endsWith("#c2"), w);
 t.check("a mention inside a quote is no mention", f.draftWaiting(draft({ comments: [dc(2, "hubot", "> @octocat said so\nOk.")] }), dctx) === null);
+t.check("a mention of the bot is a bot command and waits on nobody", f.draftWaiting(draft({ comments: [dc(2, "hubot", "@" + BOT + " fix lint")] }), dctx) === null);
 t.check("a mention of a maintainer from the profile counts", f.draftWaiting(draft({ comments: [dc(2, "hubot", "Thoughts, @AlCalzone.")] }), dctx)?.why === "mention");
 t.check("a comment older than our last comment waits on nobody", f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this right?"), dc(3, ME, "Looks fine.")] }), dctx) === null);
 t.check("our last review counts as our last word", f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this right?")], reviews: [dc(3, ME, "Fine.")] }), dctx) === null);
