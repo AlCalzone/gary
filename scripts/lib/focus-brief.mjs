@@ -27,7 +27,7 @@ function itemSection(item, since) {
 	if (routes.length) out.push("Routes Gary suggests:", ...routes.map(routeLine));
 	const groups = since?.groups ?? [];
 	if (groups.length) {
-		const anchor = since.anchor?.kind === "choice" ? `the maintainer's last choice (${since.anchor.label}, ${since.anchor.at})` : `the maintainer last opened it (${since.anchor?.at})`;
+		const anchor = since.anchor?.kind === "choice" ? `the maintainer's last choice (${since.anchor.label}, ${since.anchor.at})` : `the maintainer first opened it (${since.anchor?.at})`;
 		out.push(`Since ${anchor}:`, ...groups.map((g) => `- ${g.at}: ${g.text}${g.note ? ` (${g.note})` : ""}`));
 	}
 	const links = Array.isArray(item.links) ? item.links.filter((l) => l && l.url) : [];

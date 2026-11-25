@@ -14,7 +14,7 @@
     const r16 = [
       ["pr-9971", { ...common, number: 9971, title: "Since a choice", url: base + "/pull/9971", since: { anchor: { at, kind: "choice", label: "Take over" }, groups } }],
       ["pr-9972", { ...common, number: 9972, title: "Nothing new", url: base + "/pull/9972", since: { anchor: { at, kind: "choice", label: "Take over" }, groups: [] } }],
-      ["pr-9973", { ...common, number: 9973, title: "Since an open", url: base + "/pull/9973", since: { anchor: { at, kind: "opened" }, groups: groups.slice(0, 1) } }],
+      ["pr-9973", { ...common, number: 9973, title: "Since an open", url: base + "/pull/9973", seenAt: at, since: { anchor: { at, kind: "opened" }, groups: groups.slice(0, 1) } }],
       ["pr-9974", { ...common, number: 9974, title: "No anchor", url: base + "/pull/9974" }],
     ];
     items(r16); await wait(5);
@@ -43,8 +43,10 @@
     ok("since: nothing new is one quiet line", !box().hidden && !box().querySelector("details") && box().textContent === "Nothing new since your last choice on Nov 19.", box().textContent);
     await close();
     await openItem("pr-9973");
-    ok("since: without a choice it names the last open", box().querySelector("summary")?.textContent === "Since you last opened it, Nov 19", box().textContent);
+    ok("since: without a choice it names the first open", box().querySelector("summary")?.textContent === "Since you first opened it, Nov 19", box().textContent);
+    const beforeAgain = __writes.length;
     await close();
+    ok("since: closing an item that was opened before keeps its first open", !__writes.slice(beforeAgain).some((w) => w[1] === "items/widgets/pr-9973" && "seenAt" in (w[2] ?? {})), __writes.slice(beforeAgain));
     await openItem("pr-9974");
     ok("since: no anchor shows nothing", box().hidden && box().textContent === "");
     await close();

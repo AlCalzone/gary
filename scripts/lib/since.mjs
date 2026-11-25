@@ -91,7 +91,7 @@ const isChoice = (a) => a && typeof a.createdAt === "string" && Number.isFinite(
 
 /**
  * The anchor of the timeline for one item: `{ at, kind: "choice", label }` for the maintainer's newest choice, else
- * `{ at, kind: "opened" }` for the last time the maintainer opened the dialog, else null. `actions` are the item's action docs.
+ * `{ at, kind: "opened" }` for the first time the maintainer opened the dialog, else null. `actions` are the item's action docs.
  * A choice is a click recorded as an action doc, or `item.handled` for a prefill the maintainer used.
  */
 export function sinceAnchor(item, actions = []) {

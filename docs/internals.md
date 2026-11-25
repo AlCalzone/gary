@@ -323,7 +323,7 @@ The server sets the maintainer field `handled: { at, routeId, routeType, verifie
 
 ## Since your last choice
 
-`scripts/lib/since.mjs` holds the whole timeline of SPEC.md, "Since your last choice". `activityOf` runs in `gary snapshot` and writes `activity` into the staged entry. `sinceAnchor` and `sinceSummary` run in the board server's `readItems`, from the snapshot entry, the item's action docs and the item's `handled` and `seenAt`. The page's `renderSince` only draws the served `item.since`, and `recordSeen` stores `seenAt` when the dialog closes. No agent writes any part of it.
+`scripts/lib/since.mjs` holds the whole timeline of SPEC.md, "Since your last choice". `activityOf` runs in `gary snapshot` and writes `activity` into the staged entry. `sinceAnchor` and `sinceSummary` run in the board server's `readItems`, from the snapshot entry, the item's action docs and the item's `handled` and `seenAt`. The page's `renderSince` only draws the served `item.since`, and `recordSeen` stores `seenAt` when the dialog closes and the item has none. No agent writes any part of it.
 
 ## Routes after a push
 

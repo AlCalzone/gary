@@ -3202,7 +3202,7 @@ const sinceDay = (iso) => {
   return t.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(t.getFullYear() !== new Date().getFullYear() && { year: "numeric" }) });
 };
 
-// What happened on GitHub since the maintainer's last choice, or since they last opened the dialog. The server builds the groups
+// What happened on GitHub since the maintainer's last choice, or since they first opened the dialog. The server builds the groups
 function renderSince(d) {
   const el = document.getElementById("d-since");
   const s = d.since && typeof d.since === "object" ? d.since : null;
@@ -3214,10 +3214,10 @@ function renderSince(d) {
   const choice = a.kind === "choice";
   if (!groups.length) {
     el.classList.add("quiet");
-    return el.replaceChildren(h("p", { class: "since-quiet", text: choice ? "Nothing new since your last choice on " + day + "." : "Nothing new since you last opened it on " + day + "." }));
+    return el.replaceChildren(h("p", { class: "since-quiet", text: choice ? "Nothing new since your last choice on " + day + "." : "Nothing new since you first opened it on " + day + "." }));
   }
   el.classList.remove("quiet");
-  const head = choice ? "Since your last choice, " + day + (str(a.label) ? " (" + str(a.label) + ")" : "") : "Since you last opened it, " + day;
+  const head = choice ? "Since your last choice, " + day + (str(a.label) ? " (" + str(a.label) + ")" : "") : "Since you first opened it, " + day;
   const box = h("details", { open: detail.sinceOpen !== false, ontoggle: () => { detail.sinceOpen = box.open; } },
     h("summary", { "data-focus-key": "since", text: head }),
     h("ol", null, groups.map((g) => h("li", null,
@@ -6170,9 +6170,9 @@ function requestReload() {
 window.addEventListener("board:reload", requestReload);
 for (const b of document.querySelectorAll("#reload, .bar-reload")) b.addEventListener("click", () => location.reload());
 
-// The time the maintainer opened the dialog is stored on close, so the timeline they read keeps its anchor while it is open
+// The first open of the dialog is stored on close. A later open must not move it, because only a choice of the maintainer ends the timeline
 function recordSeen(id, at) {
-  if (!state.db || !at || !state.items.has(id)) return;
+  if (!state.db || !at || !state.items.has(id) || Number.isFinite(parseTime(state.items.get(id).seenAt))) return;
   try {
     Promise.resolve(state.db.doc("items/" + refOf(id).instance + "/" + refOf(id).id).update({ seenAt: at })).catch(() => {});
   } catch {
