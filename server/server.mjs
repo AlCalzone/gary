@@ -1158,7 +1158,7 @@ export async function startBoardServer({
 				// Serve the mark only for the draft the maintainer used
 				const mark = opened[id]?.[route.id];
 				const used = mark?.draftHash === hash && typeof mark.at === "string" ? { opened: { at: mark.at } } : {};
-				const actor = instance.kind === "contributions" && route.type === "drive" ? { actor: ownPrOf(id, data)?.eligible ? "agent" : "unavailable" } : servedActor(route, mode);
+				const actor = instance.kind === "contributions" && route.type === "drive" ? { actor: ownPrOf(id, data)?.eligible ? "agent" : "unavailable", ownPr: true } : servedActor(route, mode);
 				return { ...route, ...actor, draftHash: hash, done: ran, refused: ran ? undefined : refusals.get(key), ...used, ...parts };
 			}),
 			instance: name,
@@ -1432,7 +1432,7 @@ export async function startBoardServer({
 		if (settingsError) return [200, { ok: false, result: `The settings of ${name} are invalid, so nothing was sent. ${settingsError}`, settingsError }];
 		if (body.action === "prepare_review") return handlePrepareReview(name, body);
 		if (body.action === "pending_review") return handlePendingReview(name, body);
-		if (settings?.kind === "contributions" && body.action === undefined) return handleOwnDrive(name, body);
+		if (settings?.kind === "contributions" && body.action === "drive") return handleOwnDrive(name, body);
 		if (settings?.kind === "contributions" && body.action === "focus") return handleOwnFocus(name, body);
 		if (settings?.kind === "contributions" && !CONTRIBUTION_ACTIONS.has(body.action)) return READ_ONLY;
 		if (body.action === "got_it") return handleGotIt(name, body);

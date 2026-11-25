@@ -3556,7 +3556,11 @@ function routeCompact(r, d) {
   }
 }
 
+// A drive on the maintainer's own PR in a contributions instance: one agent run that makes the change in its text and pushes it
+const ownDrive = (r) => r.type === "drive" && r.ownPr === true;
+
 function routeHasEditor(r) {
+  if (ownDrive(r)) return true;
   switch (r.type) {
     case "reply":
     case "request_logs":
@@ -3578,7 +3582,7 @@ function editorLabel(r) {
   if (r.type === "address_review") return "Note for the whole run (optional)";
   if (apiEdit(r)) return "Note for the contributor, added to the comment about the commit (optional)";
   if (r.type === "take_over" || (r.type === "follow_up" && as === "agent")) return "Instructions for the agent (optional)";
-  if (r.type === "revise") return "Instructions for the agent";
+  if (r.type === "revise" || ownDrive(r)) return "Instructions for the agent";
   if (r.type === "follow_up") return "Issue text";
   if (r.type === "review") return "Review summary";
   if (r.type === "move") return "Comment before closing";
@@ -3623,7 +3627,7 @@ function routeButtons(d, r) {
     case "revise":
       if (apiEdit(r)) return [run("Commit the text edit" + (apiEdits(r).length === 1 ? "" : "s"), { confirm: true, confirmVerb: "commit to the PR" })];
       return [{ id: "main", actor: "agent", label: "Change", needsText: true }];
-    case "drive": return [{ id: "main", actor: "agent", label: "Drive this PR" }];
+    case "drive": return [ownDrive(r) ? { id: "main", actor: "agent", label: "Drive", needsText: true } : { id: "main", actor: "agent", label: "Drive this PR" }];
     case "move": {
       if (str(p.to) === "discussion") return [me("Open GitHub to convert", { copy: null })];
       if (str(p.to) === "issue") {
@@ -4704,7 +4708,9 @@ function buildCardInputs(id, d, r, rec) {
   if (r.type === "address_review") {
     out.push(buildDecisions(rec, reviewThreads(d)), ...editor);
   }
-  if (r.type === "drive") {
+  if (ownDrive(r)) {
+    out.push(h("p", { class: "card-text", text: "An agent makes this change and pushes it to your PR's branch under your login. It posts nothing. You answer the reviewer yourself." }));
+  } else if (r.type === "drive") {
     const max = Number.isInteger(p.maxRounds) && p.maxRounds >= 1 && p.maxRounds <= 3 ? p.maxRounds : 3;
     if (!rec.rounds) rec.rounds = max;
     const line = h("p", { class: "card-text" });
@@ -4814,7 +4820,7 @@ function routePayload(d, r, rec, b, id) {
     input.decisions = [...rec.decisions].map(([threadId, st]) => ({ threadId, decision: st.decision, ...(st.note.trim() ? { note: st.note.trim() } : {}) }));
   }
   if (r.type === "follow_up" && rec.titleInput && rec.titleInput.value !== str(paramsOf(r).title)) input.title = rec.titleInput.value;
-  if (r.type === "drive") input.maxRounds = rec.rounds;
+  if (r.type === "drive" && !ownDrive(r)) input.maxRounds = rec.rounds;
   if (labelPart(r) && actorOf(r) !== "me") input.alsoLabel = rec.alsoLabel !== false;
   // A transfer moves the issue as it is, and the server takes the escalate command from the profile, so no draft text goes along
   const text = b && b.input && (b.input.mode === "transfer" || b.input.mode === "escalate") ? "" : rec.ta ? rec.ta.value : str(r.text);
@@ -5418,8 +5424,8 @@ function updateFooter(d, locked) {
   zc.dismiss.hidden = d.hidden === true;
   // While the item is in focus, the session has it: no Analyze again, and no second focus
   const f = focusOf(d);
-  // A focus session works in a checkout, which a contributions instance has none of
-  zc.focus.hidden = (!!f && f.status !== "failed") || isContributionsItem(d);
+  // A contributions item gets a focus only on the maintainer's own PR that Gary may push to, because the session works on its branch
+  zc.focus.hidden = (!!f && f.status !== "failed") || (isContributionsItem(d) && !(d.ownPr && d.ownPr.eligible === true));
   zc.analyze.hidden = focusHeld(d);
   if (zc.analyze.hidden) detail.analyze.hidden = true;
   // A sent instruction clears its draft, so the note empties as well
