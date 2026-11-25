@@ -243,11 +243,13 @@ const actionFile = join(T, "action.json");
 writeFileSync(actionFile, JSON.stringify({ repo: "other/lib", action: "comment", kind: "issue", number: 4, text: "hi" }));
 r = cli(["action", actionFile], { FAKE_GH_WRITES: join(T, "writes.log") });
 check("gary action refuses for a contributions instance", r.status !== 0 && /writes nothing to GitHub/.test(r.stdout), r.stdout + r.stderr);
-for (const args of [["pr-watch", "list", "--json"], ["link-escalated"], ["pr-origin"], ["fix-review", "start", "--pr", "1"], ["focus", "brief", "x"], ["reconcile", "due", "--json"], ["auto-review", "list"], ["push-check", "--pr", "1"]]) {
+for (const args of [["pr-watch", "list", "--json"], ["link-escalated"], ["pr-origin"], ["fix-review", "start", "--pr", "1"], ["reconcile", "due", "--json"], ["auto-review", "list"], ["push-check", "--pr", "1"]]) {
 	r = cli(args);
 	check(`gary ${args[0]} refuses with exit 3`, r.status === 3 && JSON.parse(r.stdout).kind === "contributions", r.stdout + r.stderr);
 }
 check("gary focus list still answers", cli(["focus", "list", "--json"]).status === 0);
+r = cli(["focus", "brief", "other.lib.issue-4", "--harness", "t3code"]);
+check("gary focus brief refuses an item that is not your own PR", r.status === 3 && /only for your own PR/.test(JSON.parse(r.stdout).result), r.stdout + r.stderr);
 const gh = await import("../scripts/lib/gh.mjs");
 const config = await import("../scripts/lib/config.mjs");
 process.env.GARY_HOME = root;
@@ -319,7 +321,7 @@ try {
 	const clickR = (id, route) => api("/api/action", { instance: "mine", itemId: id, routeId: route, draftHash: hash(id, route) });
 	const readOnly = (res) => res.status === 200 && res.data.ok === false && res.data.readOnly === true;
 	for (const route of ["r1", "r2", "r3"]) check(`route ${route} is refused, nothing goes to GitHub`, readOnly(await clickR("other.lib.pr-5", route)));
-	check("Focus is refused: there is no checkout", readOnly(await api("/api/action", { instance: "mine", action: "focus", itemId: "other.lib.pr-5" })));
+	check("Focus is refused on a PR that is not yours", readOnly(await api("/api/action", { instance: "mine", action: "focus", itemId: "other.lib.pr-5" })));
 	check("a reconcile request is refused", readOnly(await api("/api/action", { instance: "mine", action: "request_reconcile" })));
 	check("a label button is refused", readOnly(await api("/api/action", { instance: "mine", itemId: "other.lib.pr-5", routeId: "r1", input: { part: "label" } })));
 	const db = await api("/api/db", { instance: "mine", op: "set", path: "actions/other.lib.pr-5-1", data: { itemId: "other.lib.pr-5", action: "start_fix", status: "queued", createdAt: new Date().toISOString() } });
