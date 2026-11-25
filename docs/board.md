@@ -79,13 +79,21 @@ On the contributions tab, a PR that asks for your review can carry a review draf
 
 "Prepare pending review on GitHub" creates a pending review under your login and opens the PR's files view. Only you see it. You submit it there with the verdict the card names, or discard it. When no draft started by itself, the dialog says why and offers "Prepare review". See [safety.md](safety.md#your-pending-reviews).
 
+## Your own PRs on the contributions tab
+
+When a reviewer asks for a code change on a PR you opened, the card is "Drive", with the change as instructions you can edit. Failing CI caused by the PR and merge conflicts get one too. A click queues an agent. It makes the change in its own worktree and pushes one commit to your PR's branch under your login. It posts nothing. The item then drafts your reply to the reviewer.
+
+Such a PR also has "Focus" in the footer. The session works on the PR's branch in a worktree of Gary's, or joins the session that already has the branch checked out.
+
+Gary offers neither when someone else has commits on the branch, or your login cannot push to it. See [safety.md](safety.md#pushes-to-your-own-prs).
+
 ## Reviewing on GitHub
 
 You can open an item on GitHub and handle it there. When you return to the board tab, Gary checks the item. A merged or closed item moves to "Handled, waiting for the next run".
 
 ## Focus
 
-Focus works on one item 1 on 1 with an agent. The button sits in the footer of every item.
+Focus works on one item 1 on 1 with an agent. The button sits in the footer of every item. On the contributions tab, only your own PRs have it.
 
 1. The master session looks for a session that already works on the item, like the one with its PR branch checked out. Otherwise it starts a new one in a new worktree.
 2. The session reads Gary's analysis, posts a short summary and waits for you.

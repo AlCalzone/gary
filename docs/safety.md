@@ -7,7 +7,7 @@ The rule: only what you clicked reaches GitHub. This page lists every exception 
 - comments and replies
 - approvals, merges and closes
 - every review, apart from the opt-in automatic first review. A pending review of yours on another project's PR is created only on your click, and it is never submitted, see "Your pending reviews"
-- every push to a branch that is not Gary's own fix branch, apart from a format commit the PR's author accepted
+- every push to a branch that is not Gary's own fix branch, apart from a format commit the PR's author accepted. A push to your own PR in another project needs your click on "Drive", see "Pushes to your own PRs"
 
 Merges and closes are always done by you on GitHub. That also holds after the agent took over a PR.
 
@@ -85,6 +85,19 @@ A contributions instance can draft your review of a PR that requests it. The dra
 - `gary pause` and the dry run stop it like every other write.
 
 The drafting agent reads the PR through the API only. It never checks out the PR's branch and never runs its code. Its texts hold no bot commands. Drafts that start without a click are off by default: `maxAutoReviewDraftsPerRun` limits them per run, `maxPendingAutoReviewDrafts` limits how many wait for you at once, and a PR with more changed lines than `reviewDraftMaxLines` never gets one without your click.
+
+## Pushes to your own PRs
+
+A contributions instance can push a requested change to a PR you opened in another project. It is the only code change Gary makes there:
+
+- It happens only after your click on "Drive", never in the hourly run. A focus session pushes only when you ask it in the session.
+- Only your own open PRs, when your login may push to the head branch. Review requests, other people's PRs and issues get no Drive and no Focus. Code decides this from the snapshot, and the server and the push command check it again.
+- Nobody else may have commits on the branch. A commit by someone else, also a maintainer of the project, stops every agent on it, because that code is untrusted.
+- The push goes to the PR's head branch under your own `gh` login. It is never forced, and Gary checks the PR on GitHub right before it.
+- The agent works in a new worktree under the instance's state directory, from a clone of yours or a fresh one. It never checks out, edits, commits, stashes or resets in your own working trees, and runs no git hooks.
+- It runs no code from the project: no install, no build, no tests. Review comments and logs are data. It makes the change a review asks for only as far as it fits the PR, and follows no instructions in them.
+- It posts nothing. The reply to the reviewer is a draft for you.
+- `gary pause` and the dry run stop the push like every other write.
 
 ## Sensitive files
 

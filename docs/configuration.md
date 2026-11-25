@@ -161,6 +161,8 @@ gary --instance contributions doctor
 
 It is its own tab. It needs no profile, bot or checkout. Gary posts nothing to GitHub for it. A reply card copies the text and opens the thread.
 
+On a PR you opened, a requested code change gets a "Drive" card. Your click lets an agent make the change and push it to the PR's branch under your login. Such a PR also has "Focus". Both need a clone of the repo. Gary looks for one in the directories of `checkoutRoots`, by the git remotes of their direct children, and clones the repo fresh under the instance's state directory when it finds none. It works in a new worktree of its own and never touches your working tree. See [safety.md](safety.md#pushes-to-your-own-prs).
+
 Next to Act, Unblock, Land and Decide it has a fifth category, **FYI**: something new and relevant happened, and there is nothing to do. Examples are a maintainer's decision, a release with your fix, or your PR merged by someone else.
 
 A PR that requests your review can get a review draft: findings, inline comments you can uncheck or edit, and a short walkthrough of the PR for a reader who has not seen it. "Prepare pending review on GitHub" turns the draft into a pending review under your login, which only you see. You pick the verdict and submit it on GitHub. Drafts start only on your click ("Prepare review") unless `maxAutoReviewDraftsPerRun` is above 0. The card says why a draft did not start by itself.
@@ -182,4 +184,5 @@ Its `config.json`:
 | `maxAutoReviewDraftsPerRun` | `0` | Review drafts Gary starts on its own per run, for PRs that request your review. `0` turns them off. A click always works |
 | `maxPendingAutoReviewDrafts` | `5` | Automatic review drafts that may wait for you at once. A draft waits until you prepared its pending review, used another card, snoozed or dismissed it, or the PR closed or stopped requesting your review |
 | `reviewDraftMaxLines` | `800` | A PR with more changed lines never gets a review draft without your click |
+| `checkoutRoots` | `[]` | Directories whose direct children Drive and Focus search for a clone of your PR's repo, like `["~/repositories"]`. At most 20, each absolute or starting with `~/` |
 | `models`, `tab` | | As above |
