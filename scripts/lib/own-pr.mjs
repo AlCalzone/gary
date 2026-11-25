@@ -90,6 +90,7 @@ async function remotesOf(dir) {
 /**
  * The first clone of one of `repos` among the direct child directories of `roots`, as `{ path, repo }`, or null.
  * A clone counts when one of its git remotes points to the repo on GitHub. `repos` are in the order of preference.
+ * `path` is the clone's main directory, also when the match was one of its worktrees.
  */
 export async function findClone(roots, repos) {
 	const wanted = repos.filter(Boolean).map(low);
@@ -109,7 +110,8 @@ export async function findClone(roots, repos) {
 			} catch {
 				continue;
 			}
-			for (const repo of await remotesOf(path)) if (wanted.includes(repo)) found.push({ path, repo });
+			// A worktree of a clone shares its remotes, so the clone itself is what counts
+			for (const repo of await remotesOf(path)) if (wanted.includes(repo)) found.push({ path: await cloneOf(path).catch(() => path), repo });
 		}
 	}
 	found.sort((a, b) => wanted.indexOf(a.repo) - wanted.indexOf(b.repo));

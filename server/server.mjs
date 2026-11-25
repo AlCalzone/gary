@@ -2260,9 +2260,8 @@ export async function startBoardServer({
 	}
 
 	/**
-	 * A route click on a contributions item. The one route that runs is "Drive" on the maintainer's own PR: it queues an
-	 * agent that implements the change and pushes it to the PR's head branch under the maintainer's own login.
-	 * Every other route is a prefill the maintainer finishes on GitHub.
+	 * "Drive" on the maintainer's own PR in a contributions instance: queues an agent that makes the change of the route's
+	 * text and pushes it to the PR's head branch under the maintainer's own login. A dry run queues nothing.
 	 */
 	async function handleOwnDrive(name, body) {
 		const { itemId, routeId, text, input } = body;
