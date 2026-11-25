@@ -14,7 +14,7 @@ export const RECONCILE_RUN_MS = 2 * 3600000;
 
 // The item fields a rule can name. Keep this list by hand: a field that leaves it makes the next pass look for rules that name it
 const ITEM_FIELDS = [
-	"kind", "repo", "number", "title", "url", "author", "authorType", "category", "needsHardware", "discussionCategory", "priority",
+	"kind", "repo", "number", "title", "url", "author", "authorType", "category", "needsHardware", "discussionCategory", "ciOptionalFailing", "priority",
 	"effortMinutes", "waitingOn", "dueAt", "dueSource", "series", "reviewDepth", "classifiedBy", "analyzedBy", "state", "hint", "routes",
 	"threads", "findings", "wants", "wantsReason", "handled", "pushed", "reviewedSha", "takenOver", "blocked", "dismissedRoutes",
 	"story", "links", "solved", "waitingDays", "rounds",

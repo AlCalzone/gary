@@ -2578,6 +2578,8 @@ function stateIcons(id, d, dim, withPassing) {
   if (sensitiveOf(d)) out.push(["alert", "warn", sensitiveSummary(sensitiveOf(d)) + ". " + sensitivePush(d), null, "Sensitive files"]);
   const open = !isClosedThread(id, d);
   if (d.kind === "pr" && d.ci === "failing") out.push(["ciFail", "bad", "CI failing"]);
+  const optional = d.kind === "pr" && d.ci !== "failing" && Array.isArray(d.ciOptionalFailing) ? d.ciOptionalFailing.filter((n) => typeof n === "string" && n) : [];
+  if (optional.length) out.push(["alert", "warn", "Optional checks failing: " + optional.join(", "), null, "Optional checks failing"]);
   const openThreads = Array.isArray(d.threads) ? d.threads.filter((t) => t && typeof t === "object").length : 0;
   if (openThreads) out.push(["comments", "muted", openThreads + " open review comment" + (openThreads === 1 ? "" : "s"), String(openThreads), openThreads + " open comment" + (openThreads === 1 ? "" : "s")]);
   if (d.kind === "pr" && d.ci === "pending") out.push(["dashed", "warn", "CI pending"]);

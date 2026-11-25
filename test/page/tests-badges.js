@@ -45,6 +45,18 @@
   const wait2 = metaRow.querySelector(".wait");
   ok("second-line icons share one line and counts stay beside their icon " + tops.join(","), new Set(tops).size === 1 && wait2 && Math.abs(wait2.lastChild.parentElement.getBoundingClientRect().height - wait2.querySelector("svg").getBoundingClientRect().height) < 6 && metaRow.scrollWidth <= metaRow.clientWidth + 1);
 
+  // Failing optional checks show next to passing CI, and not next to failing CI
+  items([
+    ["pr-97", simple(97, "easy", 5, 1, { kind: "pr", ci: "passing", ciOptionalFailing: ["Verify"] })],
+    ["pr-98", simple(98, "easy", 5, 2, { kind: "pr", ci: "failing", ciOptionalFailing: ["Verify"] })],
+  ]);
+  await wait(10);
+  ok("a PR with failing optional checks shows the warning icon", !!document.querySelector('.row[data-id="pr-97"] .r-meta svg[aria-label="Optional checks failing: Verify"]'));
+  ok("failing CI hides the optional checks icon", !document.querySelector('.row[data-id="pr-98"] svg[aria-label^="Optional checks failing"]'));
+  openDetail("pr-97"); await wait(5);
+  ok("the dialog badge says optional checks are failing", [...document.querySelectorAll("#d-meta .sbadge")].some((b) => b.textContent === "Optional checks failing" && b.title === "Optional checks failing: Verify"));
+  document.getElementById("d-close").click(); await wait(5);
+
   // Controls panel hidden by default, dot when filtered
   const ctl = document.querySelector(".ctl-btn");
   ok("panel hidden by default", document.getElementById("fpanel").hidden && !document.getElementById("filter-text").offsetParent);

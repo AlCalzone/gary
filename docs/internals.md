@@ -280,7 +280,7 @@ Every snapshot entry carries `facts`, computed in code:
 
 - `timeline: [{ at, author, side, kind }]`, oldest first, the newest 200 events kept. `side` is `us`, `them`, `automated` or `bot`. `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `timelineTruncated` is set only when events are missing.
 - `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), `waitingDays`.
-- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `sensitiveFiles` (the first 5 paths that match the profile's `sensitivePaths`) with `sensitiveFileCount`, `sensitiveOurs` (true on a PR with sensitive files that is ours alone) or `sensitiveNotOurs` (the condition that failed), `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
+- PRs: `ciGreen`, `ciOptionalFailing` (the failing optional checks, when the PR has required checks), `dependencyOnly`, `touchesSensitive`, `sensitiveFiles` (the first 5 paths that match the profile's `sensitivePaths`) with `sensitiveFileCount`, `sensitiveOurs` (true on a PR with sensitive files that is ours alone) or `sensitiveNotOurs` (the condition that failed), `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
 - Issues and discussions: `hasClosingPr` (an open or merged PR), `isAnswered`, `authorIsUs`. Discussions also carry `category`, the category's name.
 
 The server reads two things for the page from the snapshot, with `sensitiveFacts` and the entry's `category`: a PR's `sensitive: { files, total, ours }` for the warning in the dialog, and the `category` of a discussion whose item has none yet. The routine copies `category` into the item like `isAnswered`.

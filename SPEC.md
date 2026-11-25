@@ -670,7 +670,8 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "authorType": "contributor",     // maintainer | bot | copilot | contributor
   "labels": ["bug"],
   "isDraft": false,
-  "ci": "passing",                 // passing | failing | pending | none   (PRs)
+  "ci": "passing",                 // passing | failing | pending | none   (PRs), see "CI state" under Snapshot
+  "ciOptionalFailing": ["Verify"], // PRs, from the snapshot: the failing optional checks, see "CI state" under Snapshot. Absent without any
   "category": "land",              // act | unblock | land | decide, see Categories. A contributions instance adds fyi
   "newsAt": "ISO",                 // contributions, fyi only: the newest relevant event its state reports
   "gotIt": { "at": "ISO" },        // contributions, the maintainer's: their last "Got it" on the board
@@ -742,7 +743,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
 
 `handled` says the maintainer acted on the item. The server sets it when the maintainer reports a prefill button (`/api/decision`), when a bot route or a second button ran, and when an agent route was queued. `verified` is `null` (not checked), `"closed"`, `"merged"`, `"commented"` (a comment by `me`, a maintainer or the bot newer than `at`), `"labeled"` (the route's labels are on the thread) or `"unchanged"`. A posted text sets `"commented"`, a label `"labeled"`, a queued agent job `null`. It is a maintainer field like `hidden`: a replace keeps it, `gary put --merge` with `{ "handled": null }` clears it.
 
-`POST /api/refresh` with `{ instance, itemId }` reads the item from GitHub, read-only, with the bot token or the own login without a bot, through the same fetch as `gary item`. It runs at most once per 20 seconds per item and 30 times a minute in total, and answers 429 with `retryAfter` in seconds beyond that. It sets `handled.verified`, `live` for a closed or merged thread, and the GitHub fields the page shows: `mergeable`, `ci` and `lastEventUrl`. It answers `{ ok, result: { state: "open" | "closed" | "merged", checkedAt, verified, visited, queued } }`. The shim offers it as `use("board").refresh({ instance, itemId })`.
+`POST /api/refresh` with `{ instance, itemId }` reads the item from GitHub, read-only, with the bot token or the own login without a bot, through the same fetch as `gary item`. It runs at most once per 20 seconds per item and 30 times a minute in total, and answers 429 with `retryAfter` in seconds beyond that. It sets `handled.verified`, `live` for a closed or merged thread, and the GitHub fields the page shows: `mergeable`, `ci`, `ciOptionalFailing` and `lastEventUrl`. It answers `{ ok, result: { state: "open" | "closed" | "merged", checkedAt, verified, visited, queued } }`. The shim offers it as `use("board").refresh({ instance, itemId })`.
 
 The body may carry `markedAt`, the time the page marked the item as opened on GitHub. The server ignores a `markedAt` that is no time, lies in the future or is older than 2 hours. With a valid one and an open thread, the server looks in the fetched timeline for the newest review, inline review comment, comment or reply by `me` that is later than both `markedAt` and the item's `reviewedAt`. It stores that as `visited: { at, kind, state }`, with `kind` `review` for a review or an inline review comment and `comment` for the others. `state` is the review's state in lower case, like `approved` or `changes_requested`, or null. An older `visited` is replaced, a newer one stays. Then it queues one `reanalyze` with `params: { by: "github_visit", visited }` and a text for the agent like "The maintainer opened this item from the board and approved the PR on GitHub at <time>, after the last analysis. Read what they wrote there and analyze the item again. Drop routes that the maintainer's review already settled." It queues nothing while focus holds the item, while a `full_review` or `reanalyze` of the item is queued or a review claim on it runs, and when a reanalyze for the same `visited.at` exists in any status. The answer then has `queued: true`. `visited` is no maintainer field: a replace drops it, and the page ignores it once `reviewedAt` is not older than `visited.at`.
 
@@ -1126,7 +1127,7 @@ While the record is `active` or `paused`, the code refuses with exit 3:
 - `gary pr-watch round`. For `--by me` it records `held: { feedbackAt, by: "me", session, focus: true, since }` like a refusal for an active origin session.
 - `gary pr-watch review` and `gary fix-review start`.
 - `gary push-check` for every session but the focus session, which names itself with `--focus-session`.
-- `gary put` of an item doc, except a merge of the facts from GitHub (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `updatedAt`, `mergeable`, `reviewDecision`, `isAnswered`, `discussionCategory`, `openThreads`, `reviews`, `lastEventUrl`, `waitingOn`, `dueAt`, `dueSource`, `series`), `priority` and the maintainer's fields.
+- `gary put` of an item doc, except a merge of the facts from GitHub (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `ciOptionalFailing`, `updatedAt`, `mergeable`, `reviewDecision`, `isAnswered`, `discussionCategory`, `openThreads`, `reviews`, `lastEventUrl`, `waitingOn`, `dueAt`, `dueSource`, `series`), `priority` and the maintainer's fields.
 - `gary action --autonomous`.
 - the body edit of `gary link-escalated` and of the server's re-check. It waits without an exit 3.
 
@@ -1487,6 +1488,12 @@ gary snapshot --commit   # after a successful run: save the staged snapshot as t
 
 Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, whether the head branch is in the repository, the first 100 commits with author, committer and signature, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too. They also keep `dueAt`, `dueSource`, `series` and `waitingOn` for the board server. A changed `dueAt` or `series` makes an item `changed` in the work list, also without a new comment.
 
+### CI state
+
+A PR's `ci` comes from GitHub's check rollup: `SUCCESS` is `passing`, `FAILURE` and `ERROR` are `failing`, `PENDING` and `EXPECTED` are `pending`, no rollup is `none`. GitHub's rollup is `FAILURE` also when only an older run of a check failed, or only an optional check. For a PR with a rollup of `FAILURE` or `ERROR`, the snapshot, `gary item` and the refresh read the head's check runs and statuses with `isRequired` in one more query, up to 1000 of them. Then only the newest run per check counts: per check suite workflow and check name by `startedAt`, and per status context by `createdAt`. Only required checks count. A PR without any required check counts all newest runs. The result is `failing` when a counted check failed, `pending` when one still runs, and `passing` otherwise. A failed read keeps the rollup's state.
+
+`ciOptionalFailing` lists the failing newest checks that are not required, at most 5 names. It is set only when the PR has required checks, and absent otherwise. The board shows it as a warning icon, unless `ci` is `failing`. The routine and the refresh copy it into the item, and remove it from the item when the entry has none. Series count a PR as unready by this `ci`. The PRs that name a discussion get the same `ci`.
+
 The PR and issue queries add `milestone { title dueOn }`, PRs `closingIssuesReferences` (first 5) and issues `parent`. When the token may read GitHub Projects they add `projectItems` (first 5) with their date field values (first 20).
 
 Every entry of the full snapshot and of `gary item` carries `facts`, computed by code:
@@ -1504,6 +1511,7 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   "series": { "id": "pr-511", "title": "…", "position": 2, "size": 3 },   // issues and PRs in a series, see Series. Absent otherwise
   // PRs
   "ciGreen": true, "dependencyOnly": false, "touchesSensitive": false, "openThreadCount": 0,
+  "ciOptionalFailing": ["Verify"], // PRs: the entry's failing optional checks, see "CI state". Absent without any
   "sensitiveFiles": [".github/workflows/ci.yml"], "sensitiveFileCount": 1,   // PRs that touch the profile's sensitivePaths: the first 5 matching paths and their full count. Absent otherwise
   "sensitiveOurs": true,           // PRs with sensitive files that only the maintainer and the bot wrote, see "PRs that are ours alone". Absent otherwise
   "sensitiveNotOurs": "commit 3 of 3 was authored by hubot",   // PRs with sensitive files that are not ours alone: the condition that failed. Absent otherwise
