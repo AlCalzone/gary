@@ -176,7 +176,19 @@ Your own thread id is `currentThreadId` in the answer of every T3 thread tool.
 
 Do not wait for the thread, and do not read it after the start.
 
-`gary focus start` exits 3 when another session holds the item. Then run `gary focus fail` with its message as the reason.
+`gary focus start` exits 3 when another session holds the item.
+
+### Focus on your own PR in a contributions instance
+
+A contributions instance (`kind: "contributions"`) takes a focus only on the maintainer's own PR that Gary may push to. `gary focus brief` exits 3 for every other item: run `gary focus fail` with its `result` as the reason. The brief of such a PR also has `headRepo`, `fresh`, `branchWorktree` and `worktree`. `checkout` is the clone the work uses. It may be a clone of the maintainer's own, and nobody may check out, edit, commit or stash in its working tree. The steps above change like this:
+
+- **Match.** Next to the kinds above, a thread counts as `worktree` when its `worktreePath` is the brief's `branchWorktree`: a worktree of the maintainer's that has the PR's branch checked out. Attach with `--match worktree`. The `focus`, `pr`, `branch` and `origin` matches hold as above. Never start a session in `branchWorktree` or in `checkout` yourself.
+- **New thread.** Without a match:
+  1. Run `gary own-pr workdir <itemId> --request <id>`. It adds a new detached worktree of the PR's head under the instance's state directory and prints its path as `worktree`. Exit 3 means a rule refused: run `gary focus fail` with its `refused` as the reason.
+  2. Run `gary focus brief <itemId> --harness t3code --master <your thread id> --worktree <worktree>` again. Its `briefing` names that worktree and the push command.
+  3. Find the T3 project whose path is the brief's `checkout`. When none holds it, create one with `t3_project_create`, `workspaceRoot` the `checkout` and `title` the repo. Never create a project for another path.
+  4. Call `t3_thread_launch` as in step 4 above, with `workspaceStrategy` `{ "type": "existing_worktree", "worktreePath": "<worktree>" }` in place of a new worktree.
+  5. Run `gary focus start` as in step 4.3. Then run `gary focus fail` with its message as the reason.
 
 ### The focus session reports done
 
