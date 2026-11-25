@@ -4,6 +4,7 @@ import { fixBlock } from "./fixes.mjs";
 import { apiEditProblems } from "./api-edit.mjs";
 import { FINDING_ID } from "./findings.mjs";
 import { pendingRouteProblems, walkthroughProblems } from "./review-drafts.mjs";
+import { ownPrRefusal } from "./own-pr.mjs";
 import { CATEGORIES, FYI, categoriesFor, normalizeCategory } from "./categories.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
@@ -36,8 +37,14 @@ const CONTRIBUTION_ROUTES = ["reply", "review", "close", "open"];
 // Fields that come from a profile, a bot, a checkout or an agent job, none of which a contributions instance has
 const MAINTAINER_FIELDS = ["wants", "wantsReason", "pushed", "takenOver", "autofix", "fixFor", "rounds", "needsHardware"];
 
-/** The rules a contributions item adds: fyi carries `newsAt`, routes are prefills, and nothing needs a profile or a bot. */
-function checkContribution(item, err) {
+// A change on the maintainer's own PR is a drive. "Open on GitHub" is no answer to a change request there
+const CHANGE_TITLE = /^\s*change\b/i;
+
+/**
+ * The rules a contributions item adds: fyi carries `newsAt`, routes are prefills, and nothing needs a profile or a bot.
+ * The one agent route is `drive` on the maintainer's own PR, and only when `refusal`, from ownPrRefusal, is null.
+ */
+function checkContribution(item, err, refusal) {
 	const fyi = item.category === FYI;
 	if (fyi && !Number.isFinite(Date.parse(item.newsAt ?? ""))) err("newsAt", "an fyi item needs newsAt, the time of the newest relevant event its state reports");
 	if (!fyi && item.newsAt !== undefined && item.newsAt !== null) err("newsAt", "newsAt belongs to fyi items only");
@@ -46,13 +53,23 @@ function checkContribution(item, err) {
 	(Array.isArray(item.routes) ? item.routes : []).forEach((r, i) => {
 		if (!isObject(r)) return;
 		const where = `routes[${i}] (${r.type})`;
-		if (!CONTRIBUTION_ROUTES.includes(r.type)) err("contribution-route", `${where}: a contributions instance offers only ${CONTRIBUTION_ROUTES.join(", ")}, because Gary writes nothing to GitHub there`);
+		if (r.type === "drive") return checkOwnDrive(r, where, err, refusal);
+		if (!CONTRIBUTION_ROUTES.includes(r.type)) err("contribution-route", `${where}: a contributions instance offers only ${CONTRIBUTION_ROUTES.join(", ")} and drive on your own PR, because Gary writes nothing else to GitHub there`);
 		else if (r.as !== "me") err("contribution-as", `${where}: every route of a contributions instance is as "me", a text the maintainer posts themself`);
 		const params = isObject(r.params) ? r.params : {};
 		if (params.alsoLabel !== undefined || params.alsoAnswer !== undefined) err("contribution-part", `${where}: alsoLabel and alsoAnswer need a bot, which a contributions instance has none of`);
 		if (r.type === "review" && params.pending !== true && Array.isArray(params.comments) && params.comments.length) err("contribution-comments", `${where}: a review the maintainer posts themself carries no inline comments. Put them into the text`);
+		if (r.type === "open" && !refusal && CHANGE_TITLE.test(r.title ?? "")) err("contribution-change", `${where}: a code change on your own PR is a drive route, with the change in its text. An open route only opens the PR`);
 	});
 	checkReviewDraft(item, err);
+}
+
+/** A drive on the maintainer's own PR: an agent implements the change in `text` and pushes it to the PR's head branch. */
+function checkOwnDrive(r, where, err, refusal) {
+	if (refusal) return err("contribution-drive", `${where}: ${refusal}`);
+	if (r.as !== "agent") err("contribution-as", `${where}: a drive runs as "agent"`);
+	if (!isString(r.text)) err("contribution-drive", `${where}: a drive on your own PR needs a text that says what to change`);
+	if (r.params !== undefined && !(isObject(r.params) && !Object.keys(r.params).length)) err("contribution-drive", `${where}: a drive on your own PR has no params`);
 }
 
 /** A review draft holds at most one pending review route, the maintainer's own review that the server creates on GitHub on a click. */
@@ -72,9 +89,10 @@ function checkReviewDraft(item, err) {
  * (default the profile's one repo), `fix` the item's fix state from fixStateOf, when known. `sensitive` says whether
  * the PR's snapshot entry lists sensitive files: true, false, or undefined without an entry. `sensitiveOurs` says
  * that the entry also marks the PR as ours alone. `kind` is the instance's kind: a contributions instance allows the
- * category `fyi` and only routes the maintainer runs on GitHub themself.
+ * category `fyi`, routes the maintainer runs on GitHub themself and a drive on their own PR. For that drive, `entry` is
+ * the item's entry in the snapshot and `me` the instance's login.
  */
-export function validateItem(id, doc, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false, kind = "maintainer" }) {
+export function validateItem(id, doc, { mode, profile, repos: repoList, fix = null, sensitive, sensitiveOurs = false, kind = "maintainer", entry, me }) {
 	const errors = [];
 	const warnings = [];
 	const err = (code, message) => errors.push({ code, message });
@@ -99,7 +117,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 	const categories = categoriesFor(kind);
 	if (item.section !== undefined) err("section", `section ${JSON.stringify(item.section)} is unknown. Items carry category: ${CATEGORIES.join(", ")}`);
 	else if (!categories.includes(item.category)) err("category", `category must be one of ${categories.join(", ")}${item.category === undefined ? "" : `, not ${JSON.stringify(item.category)}`}${item.category === FYI ? ". Only a contributions instance has fyi items" : ""}`);
-	if (kind === "contributions") checkContribution(item, err);
+	if (kind === "contributions") checkContribution(item, err, ownPrRefusal(item, entry, me));
 	else if (item.newsAt !== undefined || item.gotIt !== undefined) err("fyi-fields", "newsAt and gotIt belong to fyi items of a contributions instance");
 	if (kind !== "contributions" && (Array.isArray(item.routes) ? item.routes : []).some((r) => isObject(r?.params) && (r.params.pending !== undefined || r.params.bodies !== undefined))) {
 		err("pending-kind", "a pending review route is only for a review draft of a contributions instance");
@@ -231,7 +249,9 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 
 		// Actor under the current account mode
 		const toRepo = route.type === "move" && typeof params.to === "string" && params.to !== "discussion" && params.to !== "issue";
-		const actors = toRepo ? MOVE_MODES.map((m) => effectiveActor(route, mode, m)) : [effectiveActor(route, mode)];
+		// The drive on the maintainer's own PR pushes under their own login, so the account mode does not decide it
+		const ownDrive = kind === "contributions" && route.type === "drive";
+		const actors = ownDrive ? ["agent"] : toRepo ? MOVE_MODES.map((m) => effectiveActor(route, mode, m)) : [effectiveActor(route, mode)];
 		if (actors.includes(undefined)) err("route-actor", `${where}: "${route.as ?? "(none)"}" is not allowed for ${route.type}`);
 		else if (actors.every((a) => a === "unavailable")) {
 			err("route-unavailable", `${where}: ${route.type} needs a bot account or allowOwnTokenPushes in this setup`);
@@ -294,6 +314,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 				}
 				break;
 			case "drive": {
+				if (ownDrive) break;
 				const refusal = driveRefusal(item, params.maxRounds ?? 3);
 				if (refusal) err("drive", `${where}: ${refusal}`);
 				break;

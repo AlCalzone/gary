@@ -56,7 +56,7 @@ async function check(instance, write) {
 	}
 	const merged = write.op === "merge" ? mergeFields(cur ?? {}, write.data) : replaceFields(cur, write.data);
 	const fix = merged.kind === "issue" || merged.kind === "discussion" ? fixStateOf(id, sources) : null;
-	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos, kind: loadInstance(instance).kind, fix, sensitive: touchesSensitive(sources.snapshot[id]), sensitiveOurs: sensitiveOurs(sources.snapshot[id]) });
+	const { errors, warnings } = validateItem(id, merged, { mode: accountMode(), profile: loadProfile(), repos: loadInstance(instance).repos, kind: loadInstance(instance).kind, fix, sensitive: touchesSensitive(sources.snapshot[id]), sensitiveOurs: sensitiveOurs(sources.snapshot[id]), entry: sources.snapshot[id], me: loadInstance(instance).config.me });
 	for (const w of warnings) console.error(`warning: ${id}: ${w.message}`);
 	if (errors.length) fail(`${id} breaks ${errors.length} rule${errors.length === 1 ? "" : "s"}, nothing was written`, errors.map((e) => e.message));
 }

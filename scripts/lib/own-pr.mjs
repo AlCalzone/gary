@@ -205,6 +205,12 @@ export async function headOf(worktree) {
 	return (await git(["-C", worktree, "rev-parse", "HEAD"])).trim();
 }
 
+/** The clone a worktree belongs to: the directory that holds its common git directory. */
+export async function cloneOf(worktree) {
+	const common = (await git(["-C", worktree, "rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
+	return common.endsWith("/.git") ? common.slice(0, -5) : common;
+}
+
 /** Whether `ancestor` is an ancestor of HEAD in `worktree`, so a push of HEAD needs no force. */
 export async function descendsFrom(worktree, ancestor) {
 	try {

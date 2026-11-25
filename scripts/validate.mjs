@@ -21,7 +21,7 @@ export async function main(argv) {
 	for (const id of ids) {
 		const item = await readJson(join(dir, id + ".json"));
 		const fix = item && (item.kind === "issue" || item.kind === "discussion") ? fixStateOf(id, sources) : null;
-		const { errors, warnings } = item ? validateItem(id, item, { ...options, fix, sensitive: touchesSensitive(sources.snapshot[id]), sensitiveOurs: sensitiveOurs(sources.snapshot[id]) }) : { errors: [{ code: "unreadable", message: "missing or not a JSON object" }], warnings: [] };
+		const { errors, warnings } = item ? validateItem(id, item, { ...options, fix, sensitive: touchesSensitive(sources.snapshot[id]), sensitiveOurs: sensitiveOurs(sources.snapshot[id]), entry: sources.snapshot[id], me: loadInstance(instanceName()).config.me }) : { errors: [{ code: "unreadable", message: "missing or not a JSON object" }], warnings: [] };
 		results.push({ id, errors, warnings });
 	}
 
