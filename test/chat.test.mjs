@@ -153,7 +153,9 @@ try {
 	t.check("a new chat message prints within seconds", watched.includes(`"chatId":"${c4.id}"`), watched);
 	watcher.kill("SIGTERM");
 	await new Promise((res) => watcher.on("exit", res));
-	t.check("a heartbeat of a process that ended does not count", masterState().running === false);
+	t.check("a watcher that stopped marks its heartbeat, which then does not count", JSON.parse(readFileSync(watcherFile(), "utf8")).stopped === true && masterState().running === false);
+	writeFileSync(watcherFile(), JSON.stringify({ pid: 1, at: new Date().toISOString() }));
+	t.check("a fresh heartbeat counts whatever its pid", masterState().running === true);
 	writeFileSync(watcherFile(), JSON.stringify({ pid: process.pid, at: new Date(Date.now() - 10 * 60000).toISOString() }));
 	t.check("an old heartbeat does not count", masterState().running === false);
 	writeFileSync(watcherFile(), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));

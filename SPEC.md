@@ -1205,7 +1205,7 @@ A message of the maintainer is `queued`, `sent`, `answered` or `failed` with `re
 - `/api/chat` needs the board token like every `/api` path. `op` is `status`, `get` or `send`. `status` answers `{ ok, master }`. `get` answers `{ ok, chat, master }`, with the newest chat when the body has no `chatId`.
 - `send` refuses an empty text, a text over the limit, and an unknown `chatId` with `gone: true`. More than 6 messages per minute from all pages together get 429 and `retryAfter`.
 - While the chat's last message waits for its answer, `send` refuses with 409 and `pending: true`. A waiting message is late when it is `queued` for more than 2 minutes or `sent` without an answer for more than 10. A late one fails with a reason when the next message arrives, so the maintainer can send again. An answer that comes after that still lands.
-- `master` is `{ running, at }`. `gary watch-queue --all` writes its pid and the time to `<root>/state/watch-queue.json` every minute. `running` is true while that heartbeat is less than 3 minutes old and its process lives.
+- `master` is `{ running, at }`. `gary watch-queue --all` writes its pid and the time to `<root>/state/watch-queue.json` every minute, and `stopped: true` when it exits. `running` is true while that heartbeat is less than 3 minutes old and not stopped. The pid is no proof, because the watcher may run in a sandbox with its own process ids.
 
 ### What the chat session may do
 

@@ -6276,6 +6276,8 @@ const chat = {
   loaded: false,
   timer: 0,
   sig: "",
+  // `loads` counts the loads, sends and New chat clicks, so the answer of an older load changes nothing
+  loads: 0,
 };
 
 function chatStored(key) {
@@ -6468,15 +6470,18 @@ async function loadChat() {
     chatProblem("This page cannot reach Gary's chat. Open the board from the board server.");
     return renderChat();
   }
+  const load = ++chat.loads;
   const stored = chatStored(CHAT_KEY);
   if (stored === "new") {
     chat.data = null;
     chat.loaded = true;
     const r = await boardApi.chat({ op: "status" });
+    if (load !== chat.loads) return;
     if (r && r.ok) chat.master = r.master || null;
     return renderChat();
   }
   const r = await boardApi.chat({ op: "get", ...(stored ? { chatId: stored } : {}) });
+  if (load !== chat.loads) return;
   chat.loaded = true;
   if (!r || !r.ok) {
     chatProblem((r && r.result) || "The board server did not answer.");
@@ -6494,6 +6499,7 @@ async function sendChat() {
   if (!text || chat.send.disabled) return;
   if (!boardApi || typeof boardApi.chat !== "function") return chatProblem("This page cannot reach Gary's chat.");
   chat.busy = true;
+  chat.loads++;
   chatProblem("");
   renderChat();
   try {
@@ -6520,6 +6526,7 @@ async function sendChat() {
 }
 
 function newChat() {
+  chat.loads++;
   chat.data = null;
   chat.loaded = true;
   chatStore(CHAT_KEY, "new");

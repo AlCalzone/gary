@@ -21,7 +21,8 @@
 // once per request.
 // With --all, a queued chat message of the maintainer prints { "instance": null, "id", "itemId": null, "action": "chat",
 // "chatId", "messageId" } once, also while instances are paused, because a chat writes nothing to GitHub. --all also
-// writes a heartbeat to <root>/state/watch-queue.json every minute, so the board can tell whether a master follows the queue.
+// writes a heartbeat to <root>/state/watch-queue.json every minute, and a last one marked stopped on exit, so the board
+// can tell whether a master follows the queue.
 import { mkdirSync, watch } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -315,7 +316,7 @@ export async function main(argv) {
 	if (all) {
 		mkdirSync(chatDir(), { recursive: true });
 		writeHeartbeat();
-		setInterval(writeHeartbeat, HEARTBEAT_MS);
+		setInterval(() => writeHeartbeat(), HEARTBEAT_MS);
 		try {
 			const watcher = watch(chatDir(), () => {
 				clearTimeout(timer);
@@ -342,8 +343,12 @@ export async function main(argv) {
 	setInterval(queueAutoReviews, OFFER_POLL_MS);
 	setInterval(queueWatches, WATCH_POLL_MS);
 	setInterval(queueFocus, FOCUS_POLL_MS);
-	process.on("SIGTERM", () => process.exit(0));
-	process.on("SIGINT", () => process.exit(0));
+	const stop = () => {
+		if (all) writeHeartbeat({ stopped: true });
+		process.exit(0);
+	};
+	process.on("SIGTERM", stop);
+	process.on("SIGINT", stop);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main(process.argv.slice(2));

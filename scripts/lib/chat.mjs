@@ -209,16 +209,22 @@ export async function failMessage({ chatId, messageId, reason }) {
 	});
 }
 
-/** Writes the queue watcher's heartbeat, which tells the board that a master session follows the queue. */
-export function writeHeartbeat(now = Date.now()) {
+/**
+ * Writes the queue watcher's heartbeat, which tells the board that a master session follows the queue. `stopped` marks
+ * the watcher's exit, so the board knows at once.
+ */
+export function writeHeartbeat({ now = Date.now(), stopped = false } = {}) {
 	try {
-		writeFileSync(watcherFile(), JSON.stringify({ pid: process.pid, at: iso(now) }) + "\n");
+		writeFileSync(watcherFile(), JSON.stringify({ pid: process.pid, at: iso(now), ...(stopped && { stopped: true }) }) + "\n");
 	} catch {
 		// The board then says the master may not be running, which is the safe side
 	}
 }
 
-/** `{ running, at }`: whether a `gary watch-queue --all` wrote its heartbeat lately and still runs. */
+/**
+ * `{ running, at }`: whether a `gary watch-queue --all` wrote its heartbeat lately and did not stop. The pid is no proof,
+ * because the watcher may run in a sandbox with its own process ids.
+ */
 export function masterState(now = Date.now()) {
 	let beat = null;
 	try {
@@ -227,13 +233,6 @@ export function masterState(now = Date.now()) {
 		return { running: false, at: null };
 	}
 	const at = Date.parse(beat?.at ?? "");
-	let alive = false;
-	try {
-		if (!Number.isInteger(beat?.pid)) throw new Error("no pid");
-		process.kill(beat.pid, 0);
-		alive = true;
-	} catch (e) {
-		alive = e.code === "EPERM";
-	}
-	return { running: Number.isFinite(at) && now - at < WATCHER_FRESH_MS && alive, at: Number.isFinite(at) ? iso(at) : null };
+	if (!Number.isFinite(at)) return { running: false, at: null };
+	return { running: now - at < WATCHER_FRESH_MS && beat.stopped !== true, at: iso(at) };
 }
