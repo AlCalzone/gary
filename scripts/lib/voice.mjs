@@ -574,7 +574,7 @@ function contextOf(r) {
  */
 export function sample({ dir = dataDir(), round, split = "dev", n = 24, prs = 3, batches = 3, seed = 1 }) {
 	const used = usedIds(dir);
-	const pool = usable(readJsonl(join(dir, "replies.jsonl"))).filter((r) => r.split === split && r.prev && !r.prevIsMe && !r.contextPartial && words(r.reply).length >= 3 && words(r.reply).length <= 250 && !used.has(r.id));
+	const pool = usable(readJsonl(join(dir, "replies.jsonl"))).filter((r) => r.split === split && r.prev && !r.prevIsMe && !r.contextPartial && isEnglish(`${r.title} ${r.prev} ${r.reply}`) && words(r.reply).length >= 3 && words(r.reply).length <= 250 && !used.has(r.id));
 	const kinds = ["issue", "discussion", "pr"];
 	const share = Object.fromEntries(kinds.map((k) => [k, pool.filter((r) => r.kind === k).length]));
 	const total = Object.values(share).reduce((a, b) => a + b, 0) || 1;
@@ -584,7 +584,8 @@ export function sample({ dir = dataDir(), round, split = "dev", n = 24, prs = 3,
 		const seen = new Set();
 		for (const r of shuffled(pool.filter((x) => x.kind === k), seed)) {
 			if (items.filter((x) => x.kind === k).length >= want || items.length >= n) break;
-			if (seen.has(r.key)) continue;
+			// A comment posted in two threads would show the judge the real text in the other item's context
+			if (seen.has(r.key) || items.some((x) => x.real === r.reply || x.context.earlier.some((e) => e.body === r.reply) || r.context.some((e) => e.body === x.real))) continue;
 			seen.add(r.key);
 			items.push({ id: r.id, genre: "reply", kind: r.kind, real: r.reply, context: contextOf(r) });
 		}
