@@ -44,8 +44,10 @@
     [...card().querySelectorAll(".checklist li button")].find((b) => b.textContent === "Done").click(); await wait(5);
     const calls = __calls.length;
     window.__reply = (b) => (b.tool === "pending_review" ? { ok: true, result: "Pending review on GitHub, with 1 comment. Only you see it. Submit it there as \"Approve\".", url: base + "/pull/2401/files", event: "approve" } : { ok: true, result: { dryRun: true } });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__clip = t; } } });
     button().click(); await wait(20);
     const sent = __calls.at(-1);
+    ok("draft: the click copies the summary of the picked verdict", window.__clip === bodies.approve && /summary is in your clipboard/.test(dlg.textContent), window.__clip);
     ok("draft: the click sends pending_review with the verdict, the body and the edited comment", __calls.length === calls + 1 && sent.tool === "pending_review" && sent.routeId === "r1" && sent.draftHash === "h24" && sent.input.event === "approve"
       && sent.text === bodies.approve && JSON.stringify(sent.input.commentIds) === '["c1"]' && sent.input.commentTexts?.c1 === "Cap the size, please.", sent);
     ok("draft: the board opens the PR's files view and says which verdict to pick", window.__opened.at(-1) === base + "/pull/2401/files" && /Submit it there as "Approve"/.test(dlg.textContent));

@@ -4379,6 +4379,14 @@ async function runRoute(id, r, payload) {
   state.notes.delete(id);
   state.busy.add(id);
   render();
+  // Copy the summary during the click because the browser refuses a copy after the server answered
+  let copied = false;
+  if (payload.tool === "pending_review" && str(payload.text).trim()) {
+    try {
+      await navigator.clipboard.writeText(str(payload.text));
+      copied = true;
+    } catch {}
+  }
   try {
     if (!state.mcp) throw Object.assign(new Error("No server"), { code: "server_not_connected" });
     const res = await state.mcp.callTool(SERVER, payload.tool || r.type, {
@@ -4391,7 +4399,7 @@ async function runRoute(id, r, payload) {
       const dry = !!(res && res.payload && res.payload.result && res.payload.result.dryRun === true);
       const url = str(res && res.payload && res.payload.url);
       if (!dry && isGithubUrl(url)) window.open(url, "_blank", "noopener,noreferrer");
-      state.notes.set(id, { kind: "done", text: dry ? "Dry run: nothing was sent to GitHub." : result || "Pending review ready on GitHub.", warning: "" });
+      state.notes.set(id, { kind: "done", text: dry ? "Dry run: nothing was sent to GitHub." : (result || "Pending review ready on GitHub.") + (copied ? " The summary is in your clipboard." : ""), warning: "" });
       state.drafts.delete(draftKey(id, key));
       dropSavedDraft(id, r.id);
       for (const c of reviewComments(r)) setCommentEdit(id, r, c, null);
