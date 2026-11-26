@@ -810,7 +810,7 @@ function shim(token, info, version) {
       const r = await api("/api/refresh", scoped(body));
       return r.data ?? { ok: false, result: "The board server failed." };
     },
-    // The chat with Gary: { op: "get", chatId } or { op: "send", chatId, text }. Answers { ok, chat, master } or { ok: false, result }
+    // The chat with Gary: { op: "status" }, { op: "get", chatId } or { op: "send", chatId, text }. Answers { ok, chat, master } or { ok: false, result }
     async chat(body) {
       let r;
       try {
@@ -2640,11 +2640,12 @@ export async function startBoardServer({
 	async function handleChat(body) {
 		const { op, chatId = null } = body;
 		if (chatId !== null && (typeof chatId !== "string" || !CHAT_ID.test(chatId))) return [400, { ok: false, result: "Unknown chat." }];
+		if (op === "status") return [200, { ok: true, master: masterState() }];
 		if (op === "get") {
 			const chat = chatId ? await readChat(chatId) : ((await readChats())[0] ?? null);
 			return [200, { ok: true, chat, master: masterState() }];
 		}
-		if (op !== "send") return [400, { ok: false, result: "op must be get or send." }];
+		if (op !== "send") return [400, { ok: false, result: "op must be status, get or send." }];
 		if (typeof body.text !== "string") return [400, { ok: false, result: "text must be a string." }];
 		const now = Date.now();
 		while (chatWindow.length && chatWindow[0] <= now - 60000) chatWindow.shift();

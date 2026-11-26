@@ -201,8 +201,14 @@ a:hover { text-decoration: underline; }
 /* Header */
 header { display: flex; flex-direction: column; gap: 14px; }
 .top { display: flex; align-items: center; gap: 14px; }
-.logo { flex: none; width: 69px; height: 90px; margin: -14px 0 -14px -4px; }
+.logo { flex: none; position: relative; width: 69px; height: 90px; margin: -14px 0 -14px -4px; padding: 0; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
 .logo img { display: block; width: 100%; height: 100%; }
+/* A small speech bubble on hover and keyboard focus says that the logo opens the chat */
+.logo-talk { position: absolute; right: -6px; bottom: 16px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px var(--shadow), inset 0 0 0 1px var(--line); opacity: 0; transform: scale(0.85); transition: opacity 0.15s, transform 0.15s; pointer-events: none; }
+.logo-talk .i { width: 14px; height: 14px; }
+.logo:hover .logo-talk, .logo:focus-visible .logo-talk { opacity: 1; transform: none; }
+.logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .logo-talk { transition: none; } }
 .logo[hidden], .logo .dark-logo { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .logo .light-logo { display: none; }
@@ -986,6 +992,66 @@ dialog.detail::backdrop { background: var(--backdrop); }
 .links > * { display: inline-flex; align-items: center; gap: 6px; }
 .links .blocked { color: var(--faint); }
 
+/* Chat with Gary: the full logo on the left, the conversation on the right */
+dialog.chat { width: min(960px, calc(100vw - 32px)); height: min(720px, calc(100dvh - 32px)); }
+.chat .d-bar .d-ref { margin-right: auto; color: var(--fg); font-weight: 600; }
+.chat .d-bar .iconbtn { margin-left: 0; }
+.chat-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); }
+.chat-art { display: flex; align-items: center; justify-content: center; padding: 28px 20px; border-right: 1px solid var(--line); background: var(--surface-2); }
+.chat-art img { display: block; width: 100%; max-width: 220px; height: auto; max-height: 100%; object-fit: contain; }
+.chat-art .dark-logo { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chat-art .light-logo { display: none; }
+  :root:not([data-theme="light"]) .chat-art .dark-logo { display: block; }
+}
+:root[data-theme="dark"] .chat-art .light-logo { display: none; }
+:root[data-theme="dark"] .chat-art .dark-logo { display: block; }
+.chat-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 24px 12px; display: flex; flex-direction: column; gap: 16px; }
+.chat-log:focus { outline: none; }
+.chat-empty { margin: auto 0; display: flex; flex-direction: column; gap: 12px; max-width: 60ch; }
+.chat-empty p { margin: 0; font-family: var(--font-read); font-size: 16px; line-height: 1.55; }
+.chat-empty .chat-examples { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.chat-example { text-align: left; font-family: var(--font-read); font-size: 15px; }
+.msg { display: flex; flex-direction: column; gap: 4px; max-width: 88%; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+.msg-head { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); }
+.msg-who { font-weight: 600; color: var(--fg); }
+.msg-body { padding: 10px 14px; border-radius: 12px; font-family: var(--font-read); font-size: 15.5px; line-height: 1.55; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 0.6em; }
+.msg.user .msg-body { background: var(--accent-soft); border-bottom-right-radius: 4px; white-space: pre-wrap; }
+.msg.gary .msg-body { background: var(--surface-2); border-bottom-left-radius: 4px; }
+.msg-body p { margin: 0; white-space: pre-wrap; }
+.msg-body ul, .msg-body ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 0.25em; }
+.msg-body pre { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--code-bg); font: 12.5px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-note { margin: 0; font-size: 13px; color: var(--muted); max-width: 60ch; }
+.msg-note.bad { color: var(--bad); }
+.chat-status { padding: 0 24px; }
+.chat-status:empty { display: none; }
+.chat-thinking { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13.5px; color: var(--muted); }
+.chat-dots { display: inline-flex; gap: 3px; }
+.chat-dots span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: chat-dot 1.2s infinite ease-in-out; }
+.chat-dots span:nth-child(2) { animation-delay: 0.15s; }
+.chat-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .chat-dots span { animation: none; opacity: 0.6; } }
+.chat-late { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--warn-soft); font-size: 14px; line-height: 1.5; }
+.chat-late p { margin: 0; }
+.chat-late .btn { align-self: flex-start; }
+.chat-form { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 24px 18px; border-top: 1px solid var(--line); }
+.chat-form textarea { min-height: 3.4em; max-height: 30vh; resize: none; }
+.chat-send-row { display: flex; align-items: center; gap: 12px; }
+.chat-hint { margin-right: auto; font-size: 12.5px; color: var(--faint); }
+.chat-error { margin: 0; font-size: 13.5px; color: var(--bad); }
+.chat-error[hidden] { display: none; }
+@media (max-width: 640px) {
+  .chat-split { grid-template-columns: minmax(0, 1fr); }
+  .chat-art { display: none; }
+  .chat-log, .chat-form { padding-inline: 16px; }
+  .chat-status { padding-inline: 16px; }
+  .chat-hint { display: none; }
+  .msg { max-width: 100%; }
+}
+
 /* Steps */
 .btn {
   display: inline-flex;
@@ -1078,7 +1144,7 @@ textarea {
 <div class="wrap">
   <header>
     <div class="top">
-      <span class="logo" id="logo" hidden><img class="light-logo" src="logo.svg" alt="" width="69" height="90"><img class="dark-logo" src="logo-dark.svg" alt="" width="69" height="90"></span>
+      <button class="logo" id="logo" type="button" aria-label="Talk to Gary" title="Talk to Gary" aria-haspopup="dialog" hidden><img class="light-logo" src="logo.svg" alt="" width="69" height="90"><img class="dark-logo" src="logo-dark.svg" alt="" width="69" height="90"><span class="logo-talk" aria-hidden="true"></span></button>
       <h1 id="board-title">Gary</h1>
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
       <span class="paused-mark" id="paused" title="No GitHub writes. Run `gary resume` to turn them on." hidden>Paused</span>
@@ -1141,6 +1207,30 @@ textarea {
   </div>
   <div class="d-analyze" id="d-analyze" role="group" aria-label="Analyze again" hidden></div>
   <div class="d-foot" id="d-foot" role="group" aria-label="Put it away"></div>
+</dialog>
+
+<dialog class="detail chat" id="chat-dialog" aria-labelledby="chat-title">
+  <div class="d-bar">
+    <span class="d-ref" id="chat-title">Talk to Gary</span>
+    <button class="btn quiet bar-reload" type="button" hidden>Updated, reload</button>
+    <button class="btn quiet" type="button" id="chat-new">New chat</button>
+    <button class="iconbtn" type="button" id="chat-close" aria-label="Close" title="Close"></button>
+  </div>
+  <div class="chat-split">
+    <div class="chat-art" id="chat-art"><img class="light-logo" src="logo-full.svg" alt="" width="1228" height="1536"><img class="dark-logo" src="logo-full-dark.svg" alt="" width="1228" height="1536"></div>
+    <div class="chat-main">
+      <div class="chat-log" id="chat-log" role="log" aria-label="Your chat with Gary" tabindex="-1"></div>
+      <div class="chat-status" id="chat-status" role="status"></div>
+      <form class="chat-form" id="chat-form">
+        <textarea id="chat-input" rows="2" aria-label="Message to Gary" placeholder="Ask Gary, or tell it what to do on the board"></textarea>
+        <div class="chat-send-row">
+          <span class="chat-hint">Enter sends, Shift+Enter starts a new line</span>
+          <button class="btn primary" type="submit" id="chat-send">Send</button>
+        </div>
+        <p class="chat-error" id="chat-error" role="alert" hidden></p>
+      </form>
+    </div>
+  </div>
 </dialog>
 
 <dialog class="detail learn" id="learn-dialog" aria-labelledby="learn-title">
@@ -6150,7 +6240,7 @@ function setupLearn() {
 
 // Added cards stay until the dialog closes, so the maintainer sees the result, then they make room
 function forgetDecided() {
-  if (reloadPending && !detail.el.open) location.reload();
+  if (reloadPending && !anyDialogOpen()) location.reload();
   for (const id of learn.added.keys()) learn.gone.add(id);
   learn.recs.clear();
   learn.checks.clear();
@@ -6162,14 +6252,349 @@ function closeLearn() {
   forgetDecided();
 }
 
+// ---------- chat with Gary ----------
+
+// The server stores the messages. The master hands each one to a chat session, whose answer comes back as a chat event
+const CHAT_KEY = "gary:chat:id";
+const CHAT_DRAFT_KEY = "gary:chat:draft";
+// `CHAT_PICKUP_MS` and `CHAT_ANSWER_MS` match PICKUP_MS and ANSWER_MS in scripts/lib/chat.mjs
+const CHAT_PICKUP_MS = 2 * 60000;
+const CHAT_ANSWER_MS = 10 * 60000;
+const CHAT_POLL_MS = 15000;
+const CHAT_EXAMPLES = ["Mark all FYI items for merged PRs as Got it", "Explain my settings", "Snooze everything from dependabot for 3 days"];
+const chat = {
+  el: document.getElementById("chat-dialog"),
+  log: document.getElementById("chat-log"),
+  status: document.getElementById("chat-status"),
+  form: document.getElementById("chat-form"),
+  input: document.getElementById("chat-input"),
+  send: document.getElementById("chat-send"),
+  error: document.getElementById("chat-error"),
+  data: null,
+  master: null,
+  busy: false,
+  loaded: false,
+  timer: 0,
+  sig: "",
+};
+
+function chatStored(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function chatStore(key, value) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // The chat still works for this page, only a reload forgets it
+  }
+}
+
+// Gary's answers are Markdown-light: paragraphs, lists, fenced code, inline code, bold and links to github.com
+function githubUrl(raw) {
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" && u.hostname === "github.com" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+const INLINE = /`([^`\n]+)`|\[([^\]\n]+)\]\(([^)\s]+)\)|(https:\/\/github\.com\/[^\s<>()]*[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*/g;
+
+function chatInline(text) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(INLINE)) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    last = m.index + m[0].length;
+    if (m[1] !== undefined) out.push(h("code", { class: "ic", text: m[1] }));
+    else if (m[2] !== undefined) {
+      const href = githubUrl(m[3]);
+      out.push(href ? h("a", { href, target: "_blank", rel: "noopener noreferrer", text: m[2] }) : m[2] + " (" + m[3] + ")");
+    } else if (m[4] !== undefined) {
+      const href = githubUrl(m[4]);
+      out.push(href ? h("a", { href, target: "_blank", rel: "noopener noreferrer", text: m[4] }) : m[4]);
+    } else out.push(h("strong", { text: m[5] }));
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+const LIST_LINE = /^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/;
+
+function chatMarkdown(text) {
+  const blocks = [];
+  const lines = str(text).replace(/\r\n?/g, "\n").split("\n");
+  let para = [];
+  let list = null;
+  const flushPara = () => {
+    if (para.length) blocks.push(h("p", null, chatInline(para.join("\n"))));
+    para = [];
+  };
+  const flushList = () => {
+    if (list) blocks.push(list.el);
+    list = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flushPara(); flushList();
+      const code = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
+      blocks.push(h("pre", null, h("code", { text: code.join("\n") })));
+      continue;
+    }
+    const li = LIST_LINE.exec(line);
+    if (li) {
+      flushPara();
+      const tag = li[1] ? "ul" : "ol";
+      if (!list || list.tag !== tag) {
+        flushList();
+        list = { tag, el: h(tag) };
+      }
+      list.el.append(h("li", null, chatInline(li[3])));
+      continue;
+    }
+    if (!line.trim()) {
+      flushPara(); flushList();
+      continue;
+    }
+    // A continued list item has an indent. Anything else ends the list
+    if (list && /^\s+\S/.test(line)) {
+      list.el.lastChild.append("\n", ...chatInline(line.trim()));
+      continue;
+    }
+    flushList();
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    if (heading) {
+      flushPara();
+      blocks.push(h("p", null, h("strong", null, chatInline(heading[1]))));
+      continue;
+    }
+    para.push(line);
+  }
+  flushPara(); flushList();
+  return blocks;
+}
+
+function chatTime(iso) {
+  const t = parseTime(iso);
+  if (!Number.isFinite(t)) return "";
+  const today = new Date().toDateString() === new Date(t).toDateString();
+  return today ? hhmm(iso) : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + hhmm(iso);
+}
+
+const chatLastUser = () => (chat.data && Array.isArray(chat.data.messages) ? chat.data.messages.filter((m) => m.role === "user").at(-1) : null) || null;
+const chatPending = (m) => !!m && (m.status === "queued" || m.status === "sent");
+
+function chatLateness(m, now = Date.now()) {
+  if (!chatPending(m)) return null;
+  if (m.status === "queued") return now - parseTime(m.at) > CHAT_PICKUP_MS ? "not-picked-up" : null;
+  return now - parseTime(m.sentAt || m.at) > CHAT_ANSWER_MS ? "no-answer" : null;
+}
+
+function chatMessage(m) {
+  const user = m.role === "user";
+  const body = user ? h("div", { class: "msg-body", text: str(m.text) }) : h("div", { class: "msg-body" }, chatMarkdown(m.text));
+  const note = user && m.status === "failed" ? h("p", { class: "msg-note bad", text: "Not answered: " + (str(m.reason) || "Gary could not answer this.") }) : null;
+  return h("div", { class: "msg " + (user ? "user" : "gary"), "data-id": str(m.id) },
+    h("div", { class: "msg-head" }, h("span", { class: "msg-who", text: user ? "You" : "Gary" }), h("time", { datetime: str(m.at), text: chatTime(m.at) })),
+    body, note);
+}
+
+function chatEmpty() {
+  const examples = CHAT_EXAMPLES.map((text) => h("button", { type: "button", class: "btn chat-example", text, onclick: () => {
+    chat.input.value = text;
+    saveChatDraft();
+    chat.input.focus();
+  } }));
+  return h("div", { class: "chat-empty" },
+    h("p", { text: "Ask Gary about its settings and rules, or tell it what to do with the items on your board. Gary posts nothing on GitHub from here." }),
+    h("div", { class: "chat-examples", role: "group", "aria-label": "Examples" }, examples));
+}
+
+function chatSessionLink() {
+  const link = str(chat.data && chat.data.session && chat.data.session.link);
+  return FOCUS_LINK.test(link) ? link : "";
+}
+
+function chatStatusNodes() {
+  const m = chatLastUser();
+  if (!chatPending(m)) return [];
+  const late = chatLateness(m);
+  const box = (...texts) => h("div", { class: "chat-late" }, texts.filter(Boolean).map((t) => (t instanceof Node ? t : h("p", { text: t }))));
+  if (m.status === "queued" && chat.master && chat.master.running === false) {
+    return [box("Gary's master session is not running, so nobody reads your message yet.", "It waits in the queue. The master picks it up when it starts: with the next hourly run, or when you run the triage-master skill now.")];
+  }
+  if (late === "not-picked-up") {
+    return [box("The master session has not picked up your message for 2 minutes. It may be busy or not running.", "Your message stays in the queue. You can also send it again, or run the triage-master skill.")];
+  }
+  if (late === "no-answer") {
+    const link = chatSessionLink();
+    return [box("No answer for 10 minutes. The chat session may be stuck or waiting for something.", "You can send your message again, or look at the session.", link ? h("a", { class: "btn small", href: link, target: "_blank", rel: "noopener noreferrer", text: "Open session" }) : null)];
+  }
+  return [h("p", { class: "chat-thinking" }, h("span", { class: "chat-dots", "aria-hidden": "true" }, h("span"), h("span"), h("span")), "Gary is thinking")];
+}
+
+function renderChat() {
+  const msgs = chat.data && Array.isArray(chat.data.messages) ? chat.data.messages : [];
+  const m = chatLastUser();
+  const sig = JSON.stringify([chat.data && chat.data.id, msgs.map((x) => [x.id, x.status, x.reason]), chat.loaded]);
+  if (sig !== chat.sig) {
+    chat.sig = sig;
+    chat.log.replaceChildren(...(msgs.length ? msgs.map(chatMessage) : chat.loaded ? [chatEmpty()] : []));
+    chat.log.scrollTop = chat.log.scrollHeight;
+  }
+  chat.status.replaceChildren(...chatStatusNodes());
+  const late = chatLateness(m);
+  chat.send.disabled = chat.busy || (chatPending(m) && !late);
+  chat.send.title = chat.send.disabled && chatPending(m) ? "Gary is still answering your last message" : "";
+}
+
+function chatProblem(text) {
+  chat.error.textContent = text || "";
+  chat.error.hidden = !text;
+}
+
+function saveChatDraft() {
+  chatStore(CHAT_DRAFT_KEY, chat.input.value ? chat.input.value : null);
+}
+
+async function loadChat() {
+  if (!boardApi || typeof boardApi.chat !== "function") {
+    chat.loaded = true;
+    chatProblem("This page cannot reach Gary's chat. Open the board from the board server.");
+    return renderChat();
+  }
+  const stored = chatStored(CHAT_KEY);
+  if (stored === "new") {
+    chat.data = null;
+    chat.loaded = true;
+    const r = await boardApi.chat({ op: "status" });
+    if (r && r.ok) chat.master = r.master || null;
+    return renderChat();
+  }
+  const r = await boardApi.chat({ op: "get", ...(stored ? { chatId: stored } : {}) });
+  chat.loaded = true;
+  if (!r || !r.ok) {
+    chatProblem((r && r.result) || "The board server did not answer.");
+    return renderChat();
+  }
+  chat.master = r.master || null;
+  chat.data = r.chat || null;
+  if (chat.data) chatStore(CHAT_KEY, chat.data.id);
+  chatProblem("");
+  renderChat();
+}
+
+async function sendChat() {
+  const text = chat.input.value.trim();
+  if (!text || chat.send.disabled) return;
+  if (!boardApi || typeof boardApi.chat !== "function") return chatProblem("This page cannot reach Gary's chat.");
+  chat.busy = true;
+  chatProblem("");
+  renderChat();
+  try {
+    const r = await boardApi.chat({ op: "send", chatId: (chat.data && chat.data.id) || null, text });
+    if (r && r.ok) {
+      chat.data = r.chat;
+      chat.master = r.master || null;
+      chatStore(CHAT_KEY, chat.data.id);
+      chat.input.value = "";
+      saveChatDraft();
+    } else if (r && r.gone) {
+      chat.data = null;
+      chatStore(CHAT_KEY, "new");
+      chatProblem("That chat is gone. Send your message again to start a new one.");
+    } else {
+      chatProblem((r && r.result) || "The board server did not answer. Your message was not sent.");
+    }
+  } catch {
+    chatProblem("The board server did not answer. Your message was not sent.");
+  } finally {
+    chat.busy = false;
+    renderChat();
+  }
+}
+
+function newChat() {
+  chat.data = null;
+  chat.loaded = true;
+  chatStore(CHAT_KEY, "new");
+  chatProblem("");
+  renderChat();
+  chat.input.focus();
+}
+
+function openChat() {
+  if (chat.el.open) return;
+  chat.el.showModal();
+  chat.input.value = chatStored(CHAT_DRAFT_KEY) || chat.input.value;
+  chat.input.focus();
+  renderChat();
+  loadChat();
+  clearInterval(chat.timer);
+  // A pending answer can turn late with the clock, and a refresh also catches an event missed while disconnected
+  chat.timer = setInterval(() => {
+    if (chatPending(chatLastUser())) loadChat();
+    else renderChat();
+  }, CHAT_POLL_MS);
+}
+
+function closeChat() {
+  if (chat.el.open) chat.el.close();
+}
+
+function setupChat() {
+  const logo = document.getElementById("logo");
+  logo.querySelector(".logo-talk").append(icon("discussion"));
+  logo.addEventListener("click", openChat);
+  const close = document.getElementById("chat-close");
+  close.append(icon("x", null, "lg"));
+  close.addEventListener("click", closeChat);
+  document.getElementById("chat-new").addEventListener("click", newChat);
+  chat.form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendChat();
+  });
+  chat.input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+    e.preventDefault();
+    sendChat();
+  });
+  chat.input.addEventListener("input", saveChatDraft);
+  chat.el.addEventListener("click", (e) => {
+    if (e.target !== chat.el) return;
+    const r = chat.el.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeChat();
+  });
+  // Escape closes the dialog without our button, so the close event tidies up as well
+  chat.el.addEventListener("close", () => {
+    clearInterval(chat.timer);
+    logo.focus();
+    if (reloadPending && !anyDialogOpen()) location.reload();
+  });
+  window.addEventListener("board:chat", (e) => {
+    const d = e.detail || {};
+    if (!d.chat || !chat.data || d.chat.id !== chat.data.id) return;
+    chat.data = d.chat;
+    chat.master = d.master || chat.master;
+    if (chat.el.open) renderChat();
+  });
+}
+
 // ---------- page reload ----------
 
 let reloadPending = false;
 
 // The local server announces a new board page. Typed step texts are saved, so only an open dialog defers the reload.
 // Whether it came from the server's reload event or from a version check, a new page waits only for open dialogs
+const anyDialogOpen = () => detail.el.open || learn.el.open || chat.el.open;
+
 function requestReload() {
-  if (!detail.el.open && !learn.el.open) {
+  if (!anyDialogOpen()) {
     location.reload();
     return;
   }
@@ -6214,7 +6639,7 @@ function finishDetail() {
   const same = rows.filter((r) => r.dataset.id === id);
   const back = same.find((r) => r.dataset.slot === detail.rowSlot) || same[0] || rows[Math.min(detail.rowIndex, rows.length - 1)];
   if (back) back.focus();
-  if (reloadPending) location.reload();
+  if (reloadPending && !anyDialogOpen()) location.reload();
 }
 
 function setupDetail() {
@@ -6515,6 +6940,7 @@ async function boot() {
     render();
   });
   setupLearn();
+  setupChat();
   state.filters = loadFilters();
   buildFilters();
   setupDetail();

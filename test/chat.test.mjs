@@ -174,6 +174,8 @@ try {
 		t.check("get without a chat id answers the newest chat and the master state", a.status === 200 && a.data.ok === true && a.data.chat?.id === c4.id && a.data.master.running === true, a.data);
 		a = await api({ op: "get", chatId: c1.id });
 		t.check("get with a chat id answers that chat", a.data.chat?.id === c1.id);
+		a = await api({ op: "status" });
+		t.check("status answers only the master state", a.status === 200 && a.data.ok === true && a.data.master.running === true && a.data.chat === undefined);
 		a = await api({ op: "get", chatId: "nope" });
 		t.check("a chat id outside the pattern is refused", a.status === 400);
 		a = await api({ op: "get" }, { "X-Board-Token": "0".repeat(64) });
