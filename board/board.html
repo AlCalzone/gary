@@ -6545,6 +6545,13 @@ function openChat() {
 
 function closeChat() {
   if (chat.el.open) chat.el.close();
+  chatFocusBack();
+}
+
+// The focus goes back to the logo unless it already moved on to something outside the chat
+function chatFocusBack() {
+  const at = document.activeElement;
+  if (!at || at === document.body || chat.el.contains(at)) document.getElementById("logo").focus();
 }
 
 function setupChat() {
@@ -6573,7 +6580,7 @@ function setupChat() {
   // Escape closes the dialog without our button, so the close event tidies up as well
   chat.el.addEventListener("close", () => {
     clearInterval(chat.timer);
-    logo.focus();
+    chatFocusBack();
     if (reloadPending && !anyDialogOpen()) location.reload();
   });
   window.addEventListener("board:chat", (e) => {

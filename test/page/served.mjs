@@ -123,6 +123,36 @@ try {
 	ok("closing the dialog cleanly reloads", await until(`window.__marker === undefined && document.querySelectorAll("#board .row").length > 0`, 8000));
 	await until(`document.getElementById("conn").dataset.state === "connected"`);
 
+	// Talk to Gary: a message goes through the server, the answer comes back over the event stream, and both survive a reload
+	const chatDir = join(ROOTDIR, "state", "chat");
+	const chatFiles = () => (existsSync(chatDir) ? readdirSync(chatDir).filter((n) => n.endsWith(".json")).map((n) => json(join(chatDir, n))) : []);
+	await until(`!document.getElementById("logo").hidden`);
+	await ev(`document.getElementById("logo").click();`);
+	ok("chat: the logo opens the chat with the full logo loaded", await until(`document.getElementById("chat-dialog").open && [...document.querySelectorAll("#chat-art img")].every((i) => i.complete && i.naturalWidth > 0)`));
+	await until(`document.querySelectorAll(".chat-example").length === 3`);
+	await ev(`const i = document.getElementById("chat-input"); i.value = "Explain my settings"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));`);
+	ok("chat: Enter stores the message in the root's state", await fileUntil(() => chatFiles().some((c) => c.messages[0]?.text === "Explain my settings" && c.messages[0].status === "queued")));
+	ok("chat: the page shows it while Gary is thinking", await until(`document.querySelectorAll("#chat-log .msg.user").length === 1 && /Gary is thinking|master session is not running/.test(document.getElementById("chat-status").textContent)`));
+	const sentChat = chatFiles()[0];
+	const answerFile = join(DIR, "answer.md");
+	writeFileSync(answerFile, "You have one instance, `widgets`. See [the profile](https://github.com/acme/widgets).");
+	const garyChat = (...args) => spawnSync(process.execPath, [GARY, "chat", ...args], { env: ENV, encoding: "utf8" });
+	garyChat("start", sentChat.id, "--message", sentChat.messages[0].id, "--harness", "t3code", "--session", "thread-x");
+	garyChat("reply", sentChat.id, "--message", sentChat.messages[0].id, "--file", answerFile);
+	ok("chat: the answer arrives over the event stream", await until(`document.querySelector("#chat-log .msg.gary a")?.href === "https://github.com/acme/widgets" && document.getElementById("chat-status").textContent === ""`, 8000));
+	await ev(`document.getElementById("chat-close").click();`);
+	await cmd("Page.reload");
+	await until(`document.getElementById("conn").dataset.state === "connected" && !document.getElementById("logo").hidden`, 8000);
+	await ev(`document.getElementById("logo").click();`);
+	ok("chat: the history survives a page reload", await until(`document.querySelectorAll("#chat-log .msg").length === 2 && document.querySelector("#chat-log .msg.gary code")?.textContent === "widgets"`));
+	await ev(`window.__marker = 3;`);
+	touchPage();
+	await sleep(1500);
+	ok("chat: an open chat defers the reload and shows the control", await ev(`return window.__marker === 3 && document.getElementById("chat-dialog").open && !document.querySelector("#chat-dialog .bar-reload").hidden;`));
+	await ev(`document.getElementById("chat-close").click();`);
+	ok("chat: closing the chat reloads", await until(`window.__marker === undefined && document.querySelectorAll("#board .row").length > 0`, 8000));
+	await until(`document.getElementById("conn").dataset.state === "connected"`);
+
 	// Probe items with routes, written as files like the routine does
 	const PR = "https://github.com/acme/widgets/pull/12";
 	const ISSUE = "https://github.com/acme/widgets/issues/21";
