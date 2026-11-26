@@ -877,6 +877,8 @@ textarea.short { min-height: 5.4em; }
 /* Rule cleanup: a before and after diff that wraps, so a phone shows the whole rule */
 .p-finding { font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .rd-file { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; margin-bottom: -6px; }
+/* The core rule an override replaces, struck through like the removed side of a diff */
+.core-quote { margin: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font: 12.5px/1.5 var(--font-mono); color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--bad) 60%, transparent); }
 .rdiff { margin: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font: 12.5px/1.5 var(--font-mono); color: var(--fg); }
 .rd-line { display: flex; gap: 6px; padding: 0 10px 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rd-mark { flex: none; width: 1ch; text-align: center; user-select: none; }
@@ -5774,6 +5776,17 @@ function ruleScope(p) {
   return "the project rules of " + (project || "this project");
 }
 
+// The core rule a proposal overrides. The core file stays as it is, and the new rule wins in the given scope
+function coreOverride(p) {
+  const o = p.overrides;
+  if (!o || typeof o !== "object" || !str(o.quote)) return null;
+  const scope = p.target === "personal" ? "for all your projects" : "for this project";
+  return [
+    h("div", { class: "rd-file", text: "Replaces this core rule " + scope + ", from " + str(o.file) }),
+    h("p", { class: "core-quote", text: str(o.quote) }),
+  ];
+}
+
 function proposalTarget(p) {
   // The heading arrives as markdown, like "## Stale PRs"
   const heading = str(p.heading).replace(/^#+\s*/, "").trim();
@@ -5793,7 +5806,8 @@ function itemKeyOf(instance, itemId) {
 
 function evidenceLine(e, p) {
   const itemId = str(e.itemId);
-  const key = itemKeyOf(str(p.instance) || refOf(itemId).instance, itemId);
+  // Evidence from another instance's log names that instance
+  const key = itemKeyOf(str(e.instance) || str(p.instance) || refOf(itemId).instance, itemId);
   const d = key ? state.items.get(key) : null;
   const num = d ? (showsRepo(d) ? str(d.ref) || "#" + str(d.number) : "#" + str(d.number)) : itemId;
   const at = Date.parse(str(e.at));
@@ -5973,6 +5987,7 @@ function buildProposal(p, rec) {
         h("summary", null, "Based on " + evidence.length + (evidence.length === 1 ? " decision" : " decisions")),
         h("ul", null, evidence.map((e) => evidenceLine(e, p)))) : null,
       h("p", { class: "quiet-line", text: proposalTarget(p) }),
+      coreOverride(p),
       h("label", { class: "card-label", text: "Rule" }),
       rec.ta,
       rec.actions,
@@ -6020,7 +6035,7 @@ function learnEntries(list) {
   return entries;
 }
 
-const FINDING_WORDS = { duplicate: "Duplicate", contradiction: "Conflict", stale: "Old name", overruled: "Overruled", vague: "Vague" };
+const FINDING_WORDS = { duplicate: "Duplicate", contradiction: "Conflict", stale: "Old name", overruled: "Overruled", vague: "Vague", shared: "For all projects" };
 const EVIDENCE_WORDS = { text: "rule", name: "name", log: "decisions", core: "Gary core rule, for all projects" };
 const editFileName = (p) => ruleScope(p) + (p.target === "personal" ? "" : ", in " + str(p.file));
 
@@ -6059,7 +6074,7 @@ function editEvidenceLine(x, p) {
   const at = Date.parse(str(x.at));
   const day = Number.isFinite(at) ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   const itemId = str(x.itemId);
-  const key = itemId ? itemKeyOf(str(p.instance) || refOf(itemId).instance, itemId) : null;
+  const key = itemId ? itemKeyOf(str(x.instance) || str(p.instance) || refOf(itemId).instance, itemId) : null;
   const d = key ? state.items.get(key) : null;
   const num = d ? "#" + str(d.number) : itemId;
   const ref = !itemId ? null : key
@@ -6132,7 +6147,7 @@ function buildEdit(e, rec) {
       evidence.length ? h("details", { class: "evidence" },
         h("summary", null, "Evidence (" + evidence.length + ")"),
         h("ul", null, evidence.map((x) => editEvidenceLine(x, p)))) : null,
-      e.members.map((m) => [h("div", { class: "rd-file", text: "Changes " + editFileName(m) }), ruleDiff(str(m.before), str(m.after))]),
+      e.members.map((m) => [coreOverride(m), h("div", { class: "rd-file", text: "Changes " + editFileName(m) }), ruleDiff(str(m.before), str(m.after))]),
       rec.actions,
       rec.dismissBox,
       rec.status));

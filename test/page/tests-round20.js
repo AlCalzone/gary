@@ -113,3 +113,32 @@
     window.__subs["proposals"](__mkSnap([])); await wait(5);
     learn.gone.clear(); learn.known.clear(); learn.added.clear();
   }
+
+  // Core overrides: the card quotes the core rule a proposal replaces, with its scope
+  {
+    const lb = document.getElementById("learn");
+    const dlg = document.getElementById("learn-dialog");
+    const cardOf = (title) => [...dlg.querySelectorAll(".pcard")].find((c) => c.querySelector(".p-title")?.textContent === title);
+    const quote = "Thank the contributor in the first sentence.";
+    const core = { file: "skills/triage-routine/references/voice.md", quote };
+    learn.gone.clear(); learn.known.clear(); learn.added.clear();
+    window.__subs["proposals"](__mkSnap([
+      ["learn-skip-thanks", { title: "Skip the opening thanks", why: "You removed it from 4 replies in 2 projects.", evidence: [{ at: new Date().toISOString(), itemId: "issue-7", type: "edited_text", gist: "removed the thanks", instance: "gadgets" }], target: "personal", file: "personal.md", heading: "", text: "Do not thank the contributor in the first sentence.", overrides: core, status: "open" }],
+      ["learn-plain", { title: "Plain rule", why: "x", evidence: [], target: "profile", file: "rules/voice.md", heading: "", text: "Short replies.", status: "open" }],
+      ["reconcile-own-thanks", { kind: "edit", title: "Say the review rule replaces core", why: "x", finding: "contradiction", evidence: [{ type: "core", gist: "core asks for the thanks" }], target: "profile", file: "rules/voice.md", before: "Skip thanks.\n", after: "Skip thanks. This replaces the core rule.\n", overrides: core, status: "open" }],
+    ])); await wait(10);
+    lb.click(); await wait(10);
+    const rule = cardOf("Skip the opening thanks");
+    const q = rule?.querySelector(".core-quote");
+    ok("override: a rule card quotes the core rule it replaces", q?.textContent === quote);
+    ok("override: the quote sits above the rule text", !!q && !!(q.compareDocumentPosition(rule.querySelector("textarea")) & Node.DOCUMENT_POSITION_FOLLOWING));
+    ok("override: a personal rule replaces it for all projects, from the core file", /Replaces this core rule for all your projects, from skills\/triage-routine\/references\/voice\.md/.test(rule.textContent), rule?.textContent);
+    ok("override: the core rule is struck through", getComputedStyle(q).textDecorationLine.includes("line-through"));
+    ok("override: a rule without overrides shows no quote", !cardOf("Plain rule").querySelector(".core-quote"));
+    const ed = cardOf("Say the review rule replaces core");
+    ok("override: an edit card quotes the core rule for this project, above the diff", ed?.querySelector(".core-quote")?.textContent === quote && /Replaces this core rule for this project/.test(ed.textContent)
+      && !!(ed.querySelector(".core-quote").compareDocumentPosition(ed.querySelector(".rdiff")) & Node.DOCUMENT_POSITION_FOLLOWING));
+    document.getElementById("learn-close").click(); await wait(5);
+    window.__subs["proposals"](__mkSnap([])); await wait(5);
+    learn.gone.clear(); learn.known.clear(); learn.added.clear();
+  }

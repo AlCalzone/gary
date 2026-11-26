@@ -123,4 +123,8 @@ Gary proposes a small rule when you often dismiss the same kind of card, pick th
 
 Proposals appear behind the lightbulb in the header. You edit, accept or dismiss them. An accepted rule is appended to your profile or `personal.md`.
 
-Once a week Gary checks its rules for ones that repeat, conflict or name things that no longer exist. It proposes each change as a before and after. "Check rules" in the suggestions dialog runs that check sooner.
+Gary decides whether a rule is for one project or for all of them. It checks whether the same pattern shows up in the decisions of your other projects. A rule for one project goes to that project's profile, and a rule for all projects goes to your `personal.md`.
+
+A proposal can also replace one of Gary's core rules when your decisions keep going against it. The card shows the core rule struck through, and for which projects the new rule replaces it. The core files stay as they are. Your rule wins because Gary reads the profile and `personal.md` after core.
+
+Once a week Gary checks its rules for ones that repeat, conflict or name things that no longer exist. A rule that two project profiles both have becomes a proposal to move it into `personal.md`. It proposes each change as a before and after. "Check rules" in the suggestions dialog runs that check sooner.

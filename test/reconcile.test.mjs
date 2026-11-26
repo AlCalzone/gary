@@ -86,6 +86,27 @@ put(edit("reconcile-dismiss-a", { title: "Pair to dismiss", file: "rules/review.
 put(edit("reconcile-dismiss-b", { title: "Pair to dismiss", file: "rules/voice.md", before: "## Replies", after: "## Reply style", group: "dismiss-pair" }));
 r = put(edit("reconcile-personal", { title: "Merge the emoji rules", finding: "duplicate", target: "personal", file: "personal.md", before: "No emoji.\n\nNever use emoji.", after: "Never use emoji." }));
 t.check("put writes a personal edit", r.status === 0, r.stdout + r.stderr);
+// Core overrides: the quote must occur exactly once in a core file
+const QUOTE = "Reading order for every rule:";
+const SPEC_TEXT = readFileSync(join(ROOT, "SPEC.md"), "utf8");
+const override = (id, overrides, extra) => edit(id, { title: "Read the voice rules for all projects", finding: "shared", target: "personal", file: "personal.md", before: "# Personal rules\n", after: "# Personal rules\n\nRead the core rules last.\n", evidence: [{ type: "text", gist: "the same rule in another profile", instance: "zwave-js", file: "rules/voice.md" }], overrides, ...extra });
+r = put(override("reconcile-override", { file: "SPEC.md", quote: QUOTE }));
+t.check("put writes an edit that overrides a core rule, with evidence from another instance", r.status === 0, r.stdout + r.stderr);
+r = put(override("reconcile-override-none", { file: "SPEC.md", quote: "No such core rule." }));
+t.check("put refuses an overrides quote that occurs nowhere in the core file", r.status === 1 && /overrides.quote occurs nowhere in SPEC.md/.test(r.stdout), r.stdout);
+r = put(override("reconcile-override-twice", { file: "SPEC.md", quote: "## " }));
+t.check("put refuses an overrides quote that occurs more than once", r.status === 1 && /overrides.quote occurs more than once/.test(r.stdout), r.stdout);
+r = put(override("reconcile-override-path", { file: "../package.json", quote: "gary" }));
+t.check("put refuses an overrides file outside the core rule files", r.status === 1 && /overrides.file must be/.test(r.stdout), r.stdout);
+r = put(override("reconcile-override-missing", { file: "skills/no-such-skill/SKILL.md", quote: "x" }));
+t.check("put refuses an overrides file that does not exist", r.status === 1 && /does not exist in the core/.test(r.stdout), r.stdout);
+r = put(override("reconcile-override-extra", { file: "SPEC.md", quote: QUOTE, why: "x" }));
+t.check("put refuses an overrides object with other fields", r.status === 1 && /overrides must be \{ file, quote \}/.test(r.stdout), r.stdout);
+const rule = (id, overrides) => ({ id, createdAt: "2026-11-20T08:00:00Z", title: "Skip the thanks", why: "You removed it 3 times.", evidence: [{ at: "2026-11-19T08:00:00Z", itemId: "pr-1", type: "edited_text", gist: "removed the thanks" }], target: "profile", file: "rules/voice.md", heading: "## Replies", text: "Skip the thanks.", overrides, status: "open", decidedAt: null, reason: "" });
+r = put(rule("learn-override-none", { file: "SPEC.md", quote: "No such core rule." }));
+t.check("put refuses a rule proposal whose overrides quote occurs nowhere", r.status === 1 && /overrides.quote occurs nowhere/.test(r.stdout), r.stdout);
+r = gary("put", "--check", "proposals", "learn-override", putFile(rule("learn-override", { file: "SPEC.md", quote: QUOTE })));
+t.check("put --check accepts a rule proposal that overrides a core rule", r.status === 0, r.stdout + r.stderr);
 // Planted past the validator: a symlink out of the profile, a file outside the allowed ones, a file that changed
 plant(edit("reconcile-link", { file: "rules/linked.md", before: "Outside rule.", after: "Changed." }));
 plant(edit("reconcile-outside", { file: "../profile.json", before: "{", after: "[" }));
@@ -157,6 +178,8 @@ try {
 	t.check("a file outside rules and templates is refused", r.data.ok === false && /invalid/.test(r.data.result) && proposalDoc("reconcile-outside").status === "open", r.data);
 	r = await accept("reconcile-personal");
 	t.check("a personal edit applies to personal.md without a commit", r.data.ok && r.data.committed === false && readFileSync(join(root, "personal.md"), "utf8") === "# Personal rules\n\nNever use emoji.\n", r.data);
+	r = await accept("reconcile-override");
+	t.check("an override applies to personal.md and leaves the core file as it is", r.data.ok && readFileSync(join(root, "personal.md"), "utf8") === "# Personal rules\n\nRead the core rules last.\n\nNever use emoji.\n" && readFileSync(join(ROOT, "SPEC.md"), "utf8") === SPEC_TEXT, [r.data, readFileSync(join(root, "personal.md"), "utf8")]);
 
 	// Dismissal of a group
 	r = await api({ action: "dismiss_proposal", proposalId: "reconcile-dismiss-a", text: "I like the headings" });
