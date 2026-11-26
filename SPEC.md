@@ -586,7 +586,7 @@ Groups cover the events after the anchor, one per actor and kind, ordered by the
 
 - A review group: `2 threads still open` for the reviewer's unresolved threads started after the anchor.
 - The maintainer's own change request: `not addressed yet` while no commit, force-push or finished push job came after the maintainer's newest one.
-- A comment group: `asked you something, no answer yet` while no comment, reply or review by us came after the newest comment that asks the maintainer something. A comment by `them` asks the maintainer when it mentions `@me` or its last line ends in a question mark.
+- A comment group: `asked you something, no answer yet` while no comment, reply or review by us came after the newest comment that asks the maintainer something. A comment by `them` asks the maintainer when it mentions `@me`, or when its last line ends in a question mark and it mentions nobody else. Quoted lines and code spans do not count.
 
 ### Activity in the snapshot
 
@@ -1482,7 +1482,7 @@ Each entry carries the fields of a maintainer entry that apply, `facts.timeline`
 
 - `involvement`: `author`, `assignee`, `review_requested`, `reviewer`, `commenter`, `mentioned`, from the searches and the data. A thread with no other reason is `mentioned`.
 - `lookedAt` and `lookedVia`: the maintainer's newest comment, review or opening post (`comment`), or the `gotIt.at` of the stored item (`got_it`), whichever is newer. Null when the maintainer never wrote there.
-- `news`: what others did after `lookedAt`, at most the newest 15, and `newsCount`. Code drops the maintainer's own events, bot accounts, comments that only agree like `+1` or `same here`, label changes, draft and ready flips, force-pushes and CI. A comment carries `excerpt`, its text without quoted lines cut at 300 characters, `mentionsMe` for a mention outside a quote and `asksMe` when it also ends in a question mark.
+- `news`: what others did after `lookedAt`, at most the newest 15, and `newsCount`. Code drops the maintainer's own events, bot accounts, comments that only agree like `+1` or `same here`, label changes, draft and ready flips, force-pushes and CI. A comment carries `excerpt`, its text without quoted lines cut at 300 characters, `mentionsMe` for a mention outside a quote and `asksMe` for that mention or a last line that ends in a question mark in a comment that mentions nobody else.
 - `closed`: `{ at, by, how }` for a closed or merged thread. A thread the maintainer closed themself, or one that closed before they last looked, is left out of the snapshot.
 - PRs: `ci`, `ciGreen`, `approvedBy`, `changesRequestedBy`, `openThreadCount`, `openThreadsByOthers`, `reviewRequested`, `canMerge`, `changedLines` and `changedFiles`, `reviewRequestedAt` for a PR that requests the maintainer's review (the newest of the last 20 review request events that names them, or null), and `myReview: { state, at, pushedSince }` for the maintainer's own last review. `canMerge` is true when the login has write access to the repo or more, from the repo's `viewerPermission`. `mergeReminderDays` is the number of quiet days after which an approved PR may get a reminder to merge, from the config's `mergeReminderDays` and `mergeReminderDaysFor`.
 - `quietDays`, and `quiet: true` when `news` is empty, the thread is open and the maintainer is neither author, assignee nor requested reviewer.

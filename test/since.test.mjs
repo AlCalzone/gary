@@ -45,6 +45,10 @@ let act = activityOf("pr", node, ctx, { before: { ci: [{ at: at(17, 0), state: "
 const kinds = act.events.map((e) => e.kind).join();
 t.check("the activity lists comments, replies, reviews, thread replies, commits and status events in order", kinds === "comment,comment,comment,comment,reply,review,thread_reply,commit,commit,ready,labeled", act.events);
 t.check("a comment by someone outside that mentions the maintainer or ends in a question asks the maintainer", act.events.filter((e) => e.asks).map((e) => e.at).join() === [at(18, 1), at(18, 4)].join(), act.events);
+const { asksMe } = await import("../scripts/lib/text.mjs");
+t.check("a question to someone else does not ask the maintainer", !asksMe("Hello @hubot, nice idea.\n\nCould you set up a repo?", ME));
+t.check("a question that also names the maintainer asks them", asksMe(`@hubot and @${ME}: could you set up a repo?`, ME));
+t.check("a mention in a quote or a code span is no mention of someone else", asksMe("> @hubot said so\nDoes `@types/node` cover this?", ME));
 t.check("an automated comment keeps its side", act.events[2].side === "automated");
 t.check("a review keeps its state, a pending one is left out", act.events.filter((e) => e.kind === "review").map((e) => e.state).join() === "changes_requested");
 t.check("the first comment of a thread is left out, its replies stay", act.events.filter((e) => e.kind === "thread_reply").map((e) => e.by).join() === BOT);

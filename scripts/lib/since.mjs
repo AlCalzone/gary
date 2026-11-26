@@ -2,6 +2,7 @@
 // item dialog. The snapshot stores a compact activity list per item, the board server picks the anchor and groups
 // the events after it. See "Since your last choice" in SPEC.md.
 import { sideOf } from "./facts.mjs";
+import { asksMe } from "./text.mjs";
 
 export const MAX_ACTIVITY = 60;
 export const MAX_OPEN_THREADS = 50;
@@ -64,14 +65,6 @@ export function activityOf(kind, node, ctx, { before, ci, at } = {}) {
 	const seen = Array.isArray(before?.ci) ? before.ci.filter((c) => c?.at && c?.state) : [];
 	if ((ci === "passing" || ci === "failing") && seen.at(-1)?.state !== ci && at) seen.push({ at, state: ci });
 	return { events: events.slice(-MAX_ACTIVITY), openThreads: openThreads.slice(-MAX_OPEN_THREADS), ci: seen.slice(-MAX_CI) };
-}
-
-// A comment asks the maintainer something when it mentions the maintainer or its last line ends in a question mark
-function asksMe(body, me) {
-	const text = String(body ?? "").trim();
-	if (!text) return false;
-	if (me && new RegExp(`(^|[^\\w-])@${me.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text)) return true;
-	return /\?\s*$/.test(text.split("\n").filter((l) => l.trim()).at(-1) ?? "");
 }
 
 // How a choice is named in the heading, by route type or action

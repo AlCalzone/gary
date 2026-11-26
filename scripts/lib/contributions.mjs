@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { repoMatches } from "./config.mjs";
 import { buildTimeline, speakerFacts } from "./facts.mjs";
-import { endsInQuestion, mentions, unquoted } from "./text.mjs";
+import { asksMe, mentions, unquoted } from "./text.mjs";
 
 const ID_KINDS = { pr: "pr", issue: "issue", discussion: "disc" };
 const MAX_ID = 100;
@@ -167,9 +167,6 @@ const low = (v) => String(v ?? "").toLowerCase();
 // Comments that only agree, like "+1" or "same here", carry no news
 const AGREEMENT = /^(?:\+1|👍|me too|same here|same|same issue|same problem)[\s.!]*$/iu;
 
-// A comment asks the maintainer when it names them or its last line ends in a question mark
-const asks = (body, me) => mentions(body, me) || endsInQuestion(body);
-
 const isBotAuthor = (author) => author?.__typename === "Bot" || low(author?.login).endsWith("[bot]") || ["copilot", "copilot-swe-agent"].includes(low(author?.login));
 
 const MAX_NEWS = 15;
@@ -188,7 +185,7 @@ export function newsOf(kind, node, { me, after }) {
 		if (!c?.createdAt || !(Date.parse(c.createdAt) > after) || !keep(c.author)) return;
 		const text = unquoted(c.body);
 		if (AGREEMENT.test(text)) return;
-		out.push({ at: c.createdAt, by: c.author.login, kind: k, ...(text && { excerpt: text.slice(0, MAX_EXCERPT) }), ...(mentions(c.body, me) && { mentionsMe: true }), ...(asks(c.body, me) && { asksMe: true }) });
+		out.push({ at: c.createdAt, by: c.author.login, kind: k, ...(text && { excerpt: text.slice(0, MAX_EXCERPT) }), ...(mentions(c.body, me) && { mentionsMe: true }), ...(asksMe(c.body, me) && { asksMe: true }) });
 	};
 	for (const c of node.timelineComments?.nodes ?? []) {
 		comment(c, "comment");
