@@ -1737,7 +1737,7 @@ function spentMinutes() {
   const keyOf = new Map([...state.items].map(([k, d]) => [actionRef(refOf(k).instance, refOf(k).id), k]));
   for (const [ref, a] of state.latestAction) {
     if (keyOf.has(ref) || !handledAction(a)) continue;
-    sum += DEFAULT_EFFORT_MIN;
+    sum += (state.efforts && state.efforts.get(ref)) || DEFAULT_EFFORT_MIN;
   }
   for (const key of state.items.keys()) if (handledToday(key)) sum += planEffort(state.items.get(key));
   return sum;
@@ -6876,8 +6876,11 @@ function subscribe(db) {
 
   db.collection("items").onSnapshot((snap) => {
     const next = new Map();
+    const efforts = new Map();
     for (const doc of snap.docs) {
       const d = doc.data();
+      // An item that left the list still has its effort, for the time spent on it today
+      if (d && typeof d === "object") efforts.set(actionRef(str(d.instance) || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : ""), str(d.id) || doc.id), planEffort(d));
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
       // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
       // A PR that waits after its automatic review stays loaded too, so the waiting line can list it
@@ -6888,6 +6891,7 @@ function subscribe(db) {
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
     state.items = next;
+    state.efforts = efforts;
     for (const id of state.confirming.keys()) if (!next.has(id)) state.confirming.delete(id);
     markLoaded("items", snap.metadata);
     render();

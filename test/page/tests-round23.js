@@ -4,6 +4,15 @@
     const dlg = document.getElementById("detail");
     const at = iso(60000);
     const spentBefore = (items([]), actions([]), await wait(10), spentText());
+    // An item the maintainer handled leaves the list, and its own effort counts as spent
+    items([["pr-2390", { kind: "pr", number: 2390, title: "Merged elsewhere", url: "https://github.com/acme/widgets/pull/2390", author: "someone", category: "fyi", effortMinutes: 1, priority: 1, updatedAt: at, reviewDepth: "quick", state: "Merged.", routes: [], newsAt: iso(120000), gotIt: { at } }]]);
+    actions([["pr-2390-got", { instance: "widgets", itemId: "pr-2390", action: "got_it", params: {}, status: "done", createdAt: at, finishedAt: at, result: "" }]]);
+    await wait(10);
+    ok("spent: Got it on an item that left the list counts the item's effort, " + spentText(), spentText() === "1 min of " + spentBefore.split(" of ")[1], spentText());
+    actions([["pr-2391-got", { instance: "widgets", itemId: "pr-2391", action: "got_it", params: {}, status: "done", createdAt: at, finishedAt: at, result: "" }]]);
+    await wait(10);
+    ok("spent: an action whose item is deleted counts the default", spentText() === "15 min of " + spentBefore.split(" of ")[1], spentText());
+    items([]); actions([]); await wait(10);
     const route = [{ id: "r1", type: "merge", as: "me", actor: "me", title: "Merge", recommended: true, draftHash: "h1" }];
     items([["pr-2301", { kind: "pr", number: 2301, title: "Fix the LED", url: "https://github.com/acme/widgets/pull/2301", author: "widgets-bot", authorType: "bot", category: "land", effortMinutes: 5, priority: 1, updatedAt: at, reviewDepth: "full", state: "Ready.", routes: route,
       fixFor: { itemId: "issue-2300", ref: "acme/widgets#2300" },
