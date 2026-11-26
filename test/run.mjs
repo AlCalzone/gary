@@ -34,6 +34,7 @@ const SUITES = [
 	["node", "ours.test.mjs"],
 	["node", "origins.test.mjs"],
 	["node", "focus.test.mjs"],
+	["node", "chat.test.mjs"],
 	["node", "visit.test.mjs"],
 	["node", "contributions.test.mjs"],
 	["node", "own-pr.test.mjs"],
