@@ -25,7 +25,7 @@
 
     ok("chat: the logo is a button named Talk to Gary that opens a dialog", logo.tagName === "BUTTON" && logo.type === "button" && logo.getAttribute("aria-label") === "Talk to Gary" && logo.getAttribute("aria-haspopup") === "dialog");
     ok("chat: the logo wiggles on hover and focus", [...document.styleSheets].some((s) => { try { return [...s.cssRules].some((r) => /\.logo:hover img/.test(r.selectorText || "") && /logo-wiggle/.test(r.cssText)); } catch { return false; } }));
-    ok("chat: the logo carries a speech bubble that is always visible", Number(getComputedStyle(logo.querySelector(".logo-talk")).opacity) > 0 && !!logo.querySelector(".logo-talk svg") && logo.querySelector(".logo-talk").getAttribute("aria-hidden") === "true"
+    ok("chat: the logo carries a speech bubble that grows in on hover and keyboard focus", !!logo.querySelector(".logo-talk svg") && logo.querySelector(".logo-talk").getAttribute("aria-hidden") === "true"
       && [...document.styleSheets].some((s) => { try { return [...s.cssRules].some((r) => /\.logo:focus-visible \.logo-talk/.test(r.selectorText || "")); } catch { return false; } }));
     logo.click(); await wait(20);
     ok("chat: a click opens the dialog and asks the server for the newest chat", dlg.open && calls.length === 1 && calls[0].op === "get" && calls[0].chatId === undefined, calls);
