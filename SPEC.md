@@ -169,7 +169,7 @@ The values shown are the defaults. The `review` role covers full PR reviews, ful
 
 A long-running process, like the board server, keeps the last valid settings of an instance when its config.json or profile.json breaks. `loadInstance` then returns them with `settingsError` naming the problem, and `settingsWarnings` lists unknown fields. An instance whose settings were never valid in the process is listed by `listInstances` with `valid: false`, no repos and its `settingsError`, and serves no items.
 
-Reading order for every rule: the core reference, then the profile's file of the same topic, then the shared `<root>/personal.md`, then the instance's `personal.md` when it exists. A later file overrides an earlier one. The hard limits in the core skills cannot be overridden.
+Reading order for every rule: the core reference, then the profile's file of the same topic, then the shared `<root>/personal.md`, then the instance's `personal.md` when it exists. A later file overrides an earlier one. So a profile rule overrides a core rule for one project, and a rule in the shared `personal.md` overrides it for all projects. Proposals can write both, see "Core overrides" under "Learning". The hard limits in the core skills cannot be overridden.
 
 ## Instances
 
@@ -1216,11 +1216,20 @@ The server derives these entries itself when a bot or agent route is clicked, an
   "file": "rules/classification.md",   // relative: rules/<topic>.md or templates/<name>.md for the profile, personal.md for personal
   "heading": "## Stale PRs",       // an existing heading to append under, or null or empty for the end of the file
   "text": "The rule as markdown, editable on the board.",
+  "overrides": { "file": "skills/triage-routine/references/voice.md", "quote": "Thank the contributor in the first sentence." },   // optional, see Core overrides
   "status": "open",                // open | accepted | dismissed
   "decidedAt": null,
   "reason": ""                     // the dismissal reason
 }
 ```
+
+#### Scope
+
+The learn pass decides for every pattern whether it holds for one project or for all of the maintainer's projects. One project goes to the profile, all projects to the shared `<root>/personal.md`. It reads the decision logs and profile rules of the other instances on the machine for that, with `gary --instance <other> decisions` and `gary --instance <other> paths`. The same pattern in the logs of two or more instances, a pattern about how the maintainer works that names nothing of the project, or the same rule in another profile point to all projects. A pattern that names the project's code, paths, labels or people points to the profile, and so does thin or mixed evidence. Evidence from another instance's log carries `instance` with that instance's name, and the board links its items in that instance. The `why` names the scope and the instances the evidence came from.
+
+#### Core overrides
+
+A rule or edit proposal may carry `overrides: { file, quote }`: the core rule that the new text replaces. `file` is `SPEC.md`, `skills/<name>/SKILL.md` or `skills/<name>/references/<file>.md`, relative to the core root. `quote` holds at most 4000 characters, and `gary put proposals` refuses it unless it occurs exactly once in that file. Accept writes only the target file, never a core file. The profile and the shared `personal.md` are read after core, so the new rule wins: for one project in the profile, for all projects in `personal.md`. The hard limits and the account rules of the core skills cannot be overridden. The board shows the quoted core rule struck through above the new rule, with the scope: "for this project" or "for all your projects".
 
 ### Setting proposals
 
@@ -1273,18 +1282,19 @@ A proposal with `kind: "edit"` changes one block of one rules file or deletes it
   "kind": "edit",
   "title": "Name the category land for config PRs",  // at most 60 characters
   "why": "One or two sentences on what is wrong.",
-  "finding": "stale",              // duplicate | contradiction | stale | overruled | vague
+  "finding": "stale",              // duplicate | contradiction | stale | overruled | vague | shared
   "evidence": [ { "type": "name", "gist": "…", "file": "rules/classification.md", "quote": "into `easy`" } ],
   "target": "profile",             // profile | personal, with the same files as a rule proposal
   "file": "rules/classification.md",
   "before": "Config PRs with a passing CI go into `easy`.",   // one block, exactly once in the file
   "after": "Config PRs with a passing CI go into `land`.",    // empty deletes the block
   "group": "2026-11-20-test-rule", // optional. Edits with the same group are accepted or dismissed together
+  "overrides": { "file": "SPEC.md", "quote": "…" },   // optional, see Core overrides
   "status": "open", "decidedAt": null, "reason": ""
 }
 ```
 
-Each evidence entry is `{ type, gist }`, with `type` one of `text` (a rule's own text), `name` (a name that no longer exists), `log` (decision log entries) or `core` (a core rule), and optional `file`, `quote`, `at`, `itemId`, `entry` (a log entry type) and `count`. At least one is required. `before` and `after` hold at most 20000 characters each and must differ. Any other field is refused. `gary put proposals` also refuses an edit whose `before` occurs zero times or more than once in its file now.
+Each evidence entry is `{ type, gist }`, with `type` one of `text` (a rule's own text), `name` (a name that no longer exists), `log` (decision log entries) or `core` (a core rule), and optional `file`, `quote`, `at`, `itemId`, `entry` (a log entry type), `count` and `instance` (the instance whose log or profile it comes from, when not this one). At least one is required. `before` and `after` hold at most 20000 characters each and must differ. Any other field is refused. `gary put proposals` also refuses an edit whose `before` occurs zero times or more than once in its file now.
 
 The board shows each edit as a diff of `before` and `after`: removed lines in the page's bad color with a minus, added lines in its ok color with a plus, unchanged lines muted. A delete shows only the removed lines. The edits of one group share one card with one "Apply" and one "Not this", and the lightbulb counts the group once.
 
@@ -1296,7 +1306,7 @@ The skill writes rule proposals with `gary put proposals <id> <file>`, which val
 
 Both go through `/api/action` with `{ proposalId, text }`.
 
-- `accept_proposal` appends `text`, the edited rule, to the target file: under `heading` when the file has that heading, at the end of the file otherwise. The path must resolve inside the profile's `rules/` or `templates/` directory, or be exactly the shared `<root>/personal.md`. Symlinks that lead elsewhere are refused, and the write is atomic. When the profile directory is a git repository, the server commits that one file there with the message `Add rule: <title>` and does not push. Then it sets `status: "accepted"` and `decidedAt`.
+- `accept_proposal` appends `text`, the edited rule, to the target file: under `heading` when the file has that heading, at the end of the file otherwise. The path must resolve inside the profile's `rules/` or `templates/` directory, or be exactly the shared `<root>/personal.md`. A proposal with `overrides` writes there too. No accept writes a core file. Symlinks that lead elsewhere are refused, and the write is atomic. When the profile directory is a git repository, the server commits that one file there with the message `Add rule: <title>` and does not push. Then it sets `status: "accepted"` and `decidedAt`.
 - `accept_proposal` on a setting proposal ignores `text`. The server validates the stored proposal again, reads the instance's `config.json`, sets the one key and writes the file atomically. The other keys, their order and the indentation stay. The server answers `{ ok: true, result: <config file>, setting: { key, value }, changed: true }`, sets `status: "accepted"` and `decidedAt`, and logs an `accepted_proposal` entry. The config loader reads the file again on its next call, so the server and the next run use the new value without a restart. It refuses with `ok: false` and changes nothing when the proposal is invalid, when the config is not a JSON object, or when the config would have errors afterwards. When the config already has the value, it writes no config and no log entry, marks the proposal accepted with `note` and answers `changed: false`.
 - `accept_proposal` on an edit proposal ignores `text`. It decides the proposal together with every open edit proposal of the same `group`, sorted by id. The server validates each one again and resolves its file by the path rules above: inside the profile's `rules/` or `templates/`, or exactly the shared `personal.md`, and no symlink at the file or its directory. Then it applies the edits in that order, in memory: each `before` must occur exactly once in its file at that moment, also after the earlier edits of the same file. An empty `after` deletes the block and the blank lines it leaves. When any `before` occurs zero times or more than once, or a file is missing, it refuses with `ok: false` and `result: "The file changed since this proposal. Run reconcile again."` and changes nothing. Otherwise it writes every changed file atomically and puts the files back when a write fails. When the profile is a git repository, it commits the changed profile files in one commit with the message `Reconcile rules: <title>`, the title of the first member, and does not push. It sets `status: "accepted"` and `decidedAt` on every member and answers `{ ok: true, result, files, committed, ids }`, plus `warning` when the commit failed.
 - `dismiss_proposal` sets `status: "dismissed"`, `decidedAt` and `reason` from `text`, and logs a `dismissed_proposal` entry. On an edit proposal it does that for every open member of its group.
@@ -1310,7 +1320,7 @@ Both run in dry-run mode too, because they change only local files and never Git
 
 ### Reconcile
 
-The learn pass only adds rules. The `triage-reconcile` skill cleans them up per instance. It reads every rules file and template of the profile, the `personal.md` files, the core references they add to or override, the decision log since its last pass and the names below. It looks for duplicates, contradictions, rules that name things that no longer exist, rules the maintainer's later decisions keep going against, and rules too vague to act on. Every finding needs evidence: the texts, the stale name, or log entries. It writes at most five edit proposals per pass. It never proposes a change to a core file and reports a conflict with core in its summary.
+The learn pass only adds rules. The `triage-reconcile` skill cleans them up per instance. It reads every rules file and template of the profile, the `personal.md` files, the core references they add to or override, the decision log since its last pass and the names below. It looks for duplicates, contradictions, rules that name things that no longer exist, rules the maintainer's later decisions keep going against, and rules too vague to act on. Every finding needs evidence: the texts, the stale name, or log entries. It writes at most five edit proposals per pass. It also reads the rules of the other instances' profiles and finds `shared` rules: the same rule in this profile and another one. It proposes a group that adds the rule to the shared `personal.md` and deletes it from this profile. It never proposes a change to a core file. A conflict with core that the maintainer's decisions back gets an edit with `overrides`, which says that the rule replaces the core rule on purpose. Every other conflict with core goes into its summary.
 
 `scripts/lib/reconcile.mjs` keeps the names a rule can refer to: the categories, the flag `needsHardware`, the route types, the agent actions and a hand-kept list of item fields, plus the retired names with what replaced them, like the six old sections. `gary reconcile names --json` prints `{ current, retired, removed, hash }`.
 

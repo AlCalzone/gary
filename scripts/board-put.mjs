@@ -14,7 +14,7 @@ import { ID_PATTERN, applyWrite, docPath, mergeFields, readJson, replaceFields, 
 import { instanceName, loadInstance, loadProfile, rootConfig } from "./lib/config.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { accountMode } from "./lib/gh.mjs";
-import { isEditProposal, occurrences, proposalTarget, validateProposal, writeLearn } from "./lib/learning.mjs";
+import { isEditProposal, occurrences, overridesProblems, proposalTarget, validateProposal, writeLearn } from "./lib/learning.mjs";
 import { VALIDATED_FIELDS, validateItem } from "./lib/validate-item.mjs";
 import { fixForOf, fixPrNumbers, fixStateOf, loadFixSources } from "./lib/fixes.mjs";
 import { focusHold, focusRefusal } from "./lib/focus.mjs";
@@ -169,6 +169,7 @@ export async function main(argv) {
 	if (write.path.startsWith("proposals/")) {
 		const problems = validateProposal(write.path.slice("proposals/".length), write.data);
 		if (!problems.length && isEditProposal(write.data)) problems.push(...(await editTargetProblems(write.data, instance)));
+		if (!problems.length) problems.push(...(await overridesProblems(write.data)));
 		if (problems.length) fail("The proposal is invalid, nothing was written", problems);
 		if (checkOnly) return console.log(JSON.stringify({ ok: true, checked: true }));
 	}

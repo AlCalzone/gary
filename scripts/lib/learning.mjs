@@ -5,7 +5,7 @@ import { basename, dirname, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { ID_PATTERN, PROPOSAL_ID, writeAtomic } from "./board-store.mjs";
 import { normalizeCategory } from "./categories.mjs";
-import { CONFIG_DEFAULTS, checkConfig, instanceDir, instanceName, loadInstance, personalFile } from "./config.mjs";
+import { CONFIG_DEFAULTS, ROOT, checkConfig, instanceDir, instanceName, loadInstance, personalFile } from "./config.mjs";
 
 const run = promisify(execFile);
 const MAX_LOG_TEXT = 8000;
@@ -17,12 +17,15 @@ const PROFILE_FILE = /^(rules|templates)\/[A-Za-z0-9._-]+\.md$/;
 export const PROPOSAL_SETTINGS = { fastTier: ["on", "shadow"] };
 const SETTING_FIELDS = ["id", "createdAt", "kind", "setting", "title", "stats", "differences", "reasons", "status", "decidedAt", "reason", "note"];
 const SETTING_REASONS = ["agreement", "overrides"];
-const EDIT_FIELDS = ["id", "createdAt", "kind", "title", "why", "evidence", "finding", "target", "file", "before", "after", "group", "status", "decidedAt", "reason"];
+const EDIT_FIELDS = ["id", "createdAt", "kind", "title", "why", "evidence", "finding", "target", "file", "before", "after", "group", "overrides", "status", "decidedAt", "reason"];
+// The core files whose rules a proposal may override, relative to the core root
+const CORE_FILE = /^(SPEC\.md|skills\/[A-Za-z0-9_-]+\/(SKILL\.md|references\/[A-Za-z0-9._-]+\.md))$/;
+const MAX_QUOTE = 4000;
 // What a reconcile pass found in a rule
-export const EDIT_FINDINGS = ["duplicate", "contradiction", "stale", "overruled", "vague"];
+export const EDIT_FINDINGS = ["duplicate", "contradiction", "stale", "overruled", "vague", "shared"];
 // What an edit proposal rests on: rule text, a name that no longer exists, log entries, or a core rule
 const EDIT_EVIDENCE = ["text", "name", "log", "core"];
-const EDIT_EVIDENCE_FIELDS = ["type", "gist", "file", "quote", "at", "itemId", "entry", "count"];
+const EDIT_EVIDENCE_FIELDS = ["type", "gist", "file", "quote", "at", "itemId", "entry", "count", "instance"];
 export const STALE_EDIT = "The file changed since this proposal. Run reconcile again.";
 const MAX_DIFFERENCES = 50;
 
@@ -191,6 +194,36 @@ function targetProblems(p) {
 	return ['target must be "profile" or "personal"'];
 }
 
+function overridesShapeProblems(p) {
+	if (p.overrides === undefined) return [];
+	const o = p.overrides;
+	if (!isPlainObject(o) || Object.keys(o).some((k) => !["file", "quote"].includes(k))) return ["overrides must be { file, quote }"];
+	const errors = [];
+	if (!CORE_FILE.test(o.file ?? "")) errors.push("overrides.file must be SPEC.md, skills/<name>/SKILL.md or skills/<name>/references/<file>.md");
+	if (!isString(o.quote) || o.quote.length > MAX_QUOTE) errors.push(`overrides.quote is required, at most ${MAX_QUOTE} characters`);
+	return errors;
+}
+
+/**
+ * Returns the problems of a proposal's `overrides` against the core files: the quote must occur exactly once in its file.
+ * Call it after validateProposal found no problems.
+ */
+export async function overridesProblems(p) {
+	if (!isPlainObject(p?.overrides)) return [];
+	const { file, quote } = p.overrides;
+	const core = await realpath(ROOT);
+	let content;
+	try {
+		const path = await realpath(join(core, file));
+		if (!path.startsWith(core + sep)) return [`overrides.file ${file} leads outside the core`];
+		content = await readFile(path, "utf8");
+	} catch {
+		return [`overrides.file ${file} does not exist in the core`];
+	}
+	const n = occurrences(content, quote);
+	return n === 1 ? [] : [`overrides.quote occurs ${n === 0 ? "nowhere" : "more than once"} in ${file}. Quote the core rule exactly, long enough to occur once`];
+}
+
 function editProblems(p) {
 	const errors = [];
 	for (const key of Object.keys(p)) if (!EDIT_FIELDS.includes(key)) errors.push(`an edit proposal has no field "${key}"`);
@@ -204,12 +237,12 @@ function editProblems(p) {
 			for (const key of Object.keys(e)) if (!EDIT_EVIDENCE_FIELDS.includes(key)) errors.push(`${at} has the unknown field "${key}"`);
 			if (!EDIT_EVIDENCE.includes(e.type)) errors.push(`${at}.type must be one of ${EDIT_EVIDENCE.join(", ")}`);
 			if (!isString(e.gist)) errors.push(`${at}.gist is required`);
-			for (const key of ["file", "quote", "itemId", "entry"]) if (e[key] !== undefined && typeof e[key] !== "string") errors.push(`${at}.${key} must be a string`);
+			for (const key of ["file", "quote", "itemId", "entry", "instance"]) if (e[key] !== undefined && typeof e[key] !== "string") errors.push(`${at}.${key} must be a string`);
 			if (e.at !== undefined && !isIso(e.at)) errors.push(`${at}.at must be an ISO time`);
 			if (e.count !== undefined && !isCount(e.count)) errors.push(`${at}.count must be a whole number`);
 		});
 	}
-	errors.push(...targetProblems(p));
+	errors.push(...targetProblems(p), ...overridesShapeProblems(p));
 	if (!isString(p.before) || p.before.length > MAX_RULE) errors.push(`before is required, at most ${MAX_RULE} characters`);
 	if (typeof p.after !== "string" || p.after.length > MAX_RULE) errors.push(`after must be a string of at most ${MAX_RULE} characters, empty to delete`);
 	else if (p.after === p.before) errors.push("after must differ from before");
@@ -236,7 +269,7 @@ export function validateProposal(id, p) {
 		if (!Array.isArray(p.evidence) || !p.evidence.every((e) => e && typeof e === "object" && isString(e.itemId) && isString(e.type))) {
 			errors.push("evidence must be a list of { at, itemId, type, gist }");
 		}
-		errors.push(...targetProblems(p));
+		errors.push(...targetProblems(p), ...overridesShapeProblems(p));
 		if (p.heading !== undefined && p.heading !== null && typeof p.heading !== "string") errors.push("heading must be a string or null");
 		if (!isString(p.text) || p.text.length > MAX_RULE) errors.push(`text is required, at most ${MAX_RULE} characters`);
 	}
