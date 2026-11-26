@@ -151,6 +151,19 @@ try {
 	await until(`document.getElementById("conn").dataset.state === "connected" && !document.getElementById("logo").hidden`, 8000);
 	await ev(`document.getElementById("logo").click();`);
 	ok("chat: the history survives a page reload", await until(`document.querySelectorAll("#chat-log .msg").length === 2 && document.querySelector("#chat-log .msg.gary code")?.textContent === "widgets"`));
+	// A tall answer starts at its top, when it arrives and when the chat opens again
+	await ev(`const i = document.getElementById("chat-input"); i.value = "A long one"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));`);
+	await fileUntil(() => chatFiles()[0]?.messages.at(-1)?.text === "A long one");
+	const longOne = chatFiles()[0].messages.at(-1).id;
+	const longFile = join(DIR, "long.md");
+	writeFileSync(longFile, Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} of a long answer.`).join("\n\n"));
+	garyChat("start", sentChat.id, "--message", longOne, "--harness", "t3code", "--session", "thread-x");
+	garyChat("reply", sentChat.id, "--message", longOne, "--file", longFile);
+	const topVisible = `(() => { const l = document.getElementById("chat-log"); const g = [...l.querySelectorAll(".msg.gary")].at(-1); if (!g || !/Paragraph 60/.test(g.textContent)) return false; const d = g.getBoundingClientRect().top - l.getBoundingClientRect().top; return d >= 0 && d < 40; })()`;
+	ok("chat: a tall answer shows from its top when it arrives", await until(topVisible, 8000));
+	await ev(`document.getElementById("chat-close").click();`);
+	await ev(`document.getElementById("logo").click();`);
+	ok("chat: a tall answer shows from its top when the chat opens again", await until(topVisible));
 	await ev(`window.__marker = 3;`);
 	touchPage();
 	await sleep(1500);

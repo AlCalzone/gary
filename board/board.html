@@ -6469,7 +6469,14 @@ function renderChat() {
   chatLogoState();
 }
 
+// An answer of Gary that is taller than the view starts at its top, so the maintainer reads it from the beginning
 function chatToEnd() {
+  const last = chat.log.lastElementChild;
+  if (last && last.classList.contains("gary") && last.offsetHeight > chat.log.clientHeight - 24) {
+    chat.log.scrollTop += last.getBoundingClientRect().top - chat.log.getBoundingClientRect().top - 12;
+    chat.atEnd = false;
+    return;
+  }
   chat.log.scrollTop = chat.log.scrollHeight;
   chat.atEnd = true;
 }
@@ -6574,6 +6581,7 @@ function openChat() {
   chat.input.value = chatStored(CHAT_DRAFT_KEY) || chat.input.value;
   chat.input.focus();
   renderChat();
+  chatToEnd();
   loadChat();
   clearInterval(chat.timer);
   // A pending answer can turn late with the clock, and a refresh also catches an event missed while disconnected

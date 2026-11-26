@@ -128,6 +128,8 @@
 
     // With the dialog closed, the logo says that Gary is answering, and then that the answer is there
     const pendingDoc = { id: "c-test000002", messages: [queued("unsent", { at: iso(1000) })] };
+    // The virtual clock may have run past the pickup time, so the waiting message comes fresh
+    window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: pendingDoc, master: { running: true } } })); await wait(5);
     ok("chat: the logo shows the bubble and tilts while Gary answers behind a closed dialog", logo.classList.contains("waiting") && !logo.classList.contains("unread") && /Gary is answering/.test(logo.getAttribute("aria-label")) && getComputedStyle(logo.querySelector("img")).animationName === "logo-waiting", logo.className);
     window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: { ...pendingDoc, messages: [{ ...pendingDoc.messages[0], status: "answered" }, { id: "m-aaaaaa9", role: "gary", text: "Done.", at: iso(0), replyTo: "m-aaaaaa1" }] }, master: { running: true } } })); await wait(5);
     ok("chat: an answer that came while the dialog was closed marks the logo", !logo.classList.contains("waiting") && logo.classList.contains("unread") && /Gary answered/.test(logo.getAttribute("aria-label")), logo.className);
