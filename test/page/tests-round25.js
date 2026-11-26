@@ -126,16 +126,18 @@
     dlg.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await shut();
 
-    // With the dialog closed, the logo says that Gary is answering, and then that the answer is there
+    // With the dialog closed, the logo marks an answer the maintainer has not seen
     const pendingDoc = { id: "c-test000002", messages: [queued("unsent", { at: iso(1000) })] };
-    // The virtual clock may have run past the pickup time, so the waiting message comes fresh
     window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: pendingDoc, master: { running: true } } })); await wait(5);
-    ok("chat: the logo shows the bubble and tilts while Gary answers behind a closed dialog", logo.classList.contains("waiting") && !logo.classList.contains("unread") && /Gary is answering/.test(logo.getAttribute("aria-label")) && getComputedStyle(logo.querySelector("img")).animationName === "logo-waiting", logo.className);
+    ok("chat: the logo stays as it is while Gary answers behind a closed dialog", !logo.classList.contains("unread") && logo.getAttribute("aria-label") === "Talk to Gary" && getComputedStyle(logo.querySelector("img")).animationName !== "logo-unread", logo.className);
     window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: { ...pendingDoc, messages: [{ ...pendingDoc.messages[0], status: "answered" }, { id: "m-aaaaaa9", role: "gary", text: "Done.", at: iso(0), replyTo: "m-aaaaaa1" }] }, master: { running: true } } })); await wait(5);
-    ok("chat: an answer that came while the dialog was closed marks the logo", !logo.classList.contains("waiting") && logo.classList.contains("unread") && /Gary answered/.test(logo.getAttribute("aria-label")), logo.className);
-    answer = () => ({ ok: true, chat: null, master: { running: true } });
+    ok("chat: an answer that came while the dialog was closed shows the bubble and tilts the logo", logo.classList.contains("unread") && /Gary answered/.test(logo.getAttribute("aria-label")) && getComputedStyle(logo.querySelector("img")).animationName === "logo-unread", logo.className);
+    answer = () => ({ ok: true, chat: { ...pendingDoc, messages: [{ ...pendingDoc.messages[0], status: "answered" }, { id: "m-aaaaaa9", role: "gary", text: "Done.", at: iso(0), replyTo: "m-aaaaaa1" }] }, master: { running: true } });
     logo.click(); await wait(20);
-    ok("chat: opening the chat clears the mark", !logo.classList.contains("unread") && !logo.classList.contains("waiting") && logo.getAttribute("aria-label") === "Talk to Gary");
+    ok("chat: opening the chat clears the mark", !logo.classList.contains("unread") && logo.getAttribute("aria-label") === "Talk to Gary");
+    await shut();
+    ok("chat: a seen answer stays seen after the dialog closes", !logo.classList.contains("unread"));
+    try { localStorage.removeItem("gary:chat:seen"); } catch {}
     await shut();
     try { localStorage.removeItem("gary:chat:id"); localStorage.removeItem("gary:chat:draft"); } catch {}
     delete window.__board.chat;

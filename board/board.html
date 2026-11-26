@@ -206,17 +206,17 @@ header { display: flex; flex-direction: column; gap: 14px; }
 /* A small speech bubble on hover and keyboard focus says that the logo opens the chat */
 .logo-talk { position: absolute; right: -6px; bottom: 16px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px var(--shadow), inset 0 0 0 1px var(--line); transform: scale(0); transition: transform 0.18s cubic-bezier(0.3, 1.4, 0.6, 1); pointer-events: none; }
 .logo-talk .i { width: 14px; height: 14px; }
-.logo:hover .logo-talk, .logo:focus-visible .logo-talk, .logo.waiting .logo-talk, .logo.unread .logo-talk { transform: scale(1); }
-/* While Gary answers with the dialog closed, the logo tilts every 4 seconds. An unread answer fills the bubble */
-.logo.waiting:not(:hover) img { animation: logo-waiting 4s ease-in-out infinite; }
-@keyframes logo-waiting { 0%, 12%, 100% { transform: none; } 4% { transform: rotate(-3deg); } 8% { transform: rotate(2deg); } }
+.logo:hover .logo-talk, .logo:focus-visible .logo-talk, .logo.unread .logo-talk { transform: scale(1); }
+/* An answer the maintainer has not seen fills the bubble, and the logo tilts every 4 seconds */
+.logo.unread:not(:hover) img { animation: logo-unread 4s ease-in-out infinite; }
+@keyframes logo-unread { 0%, 12%, 100% { transform: none; } 4% { transform: rotate(-3deg); } 8% { transform: rotate(2deg); } }
 .logo.unread .logo-talk { background: var(--accent); color: var(--surface); }
 /* The logo wiggles a little on hover, so it looks like something to click */
 .logo img { transform-origin: 50% 85%; }
 .logo:hover img, .logo:focus-visible img { animation: logo-wiggle 0.4s ease-in-out; }
 @keyframes logo-wiggle { 0%, 100% { transform: none; } 30% { transform: rotate(-3deg); } 70% { transform: rotate(2deg); } }
 .logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .logo-talk { transition: none; } .logo:hover img, .logo:focus-visible img, .logo.waiting:not(:hover) img { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .logo-talk { transition: none; } .logo:hover img, .logo:focus-visible img, .logo.unread:not(:hover) img { animation: none; } }
 .logo[hidden], .logo .dark-logo { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .logo .light-logo { display: none; }
@@ -6267,6 +6267,7 @@ function closeLearn() {
 // ---------- chat with Gary ----------
 
 // The server stores the messages. The master hands each one to a chat session, whose answer comes back as a chat event
+const CHAT_SEEN_KEY = "gary:chat:seen";
 const CHAT_DRAFT_KEY = "gary:chat:draft";
 // `CHAT_PICKUP_MS` and `CHAT_ANSWER_MS` match PICKUP_MS and ANSWER_MS in scripts/lib/chat.mjs
 const CHAT_PICKUP_MS = 2 * 60000;
@@ -6558,24 +6559,19 @@ async function newChat() {
   renderChat();
 }
 
-// With the dialog closed, the logo says that Gary is answering or has answered
+// With the dialog closed, the logo says that Gary has an answer the maintainer has not seen
 function chatLogoState() {
   const logo = document.getElementById("logo");
-  const m = chatLastUser();
-  const closed = !chat.el.open;
-  const waiting = closed && chatPending(m) && !chatLateness(m);
-  const unread = closed && !waiting && chat.unread === true;
-  logo.classList.toggle("waiting", waiting);
+  const msgs = chat.data && Array.isArray(chat.data.messages) ? chat.data.messages : [];
+  const last = msgs.filter((m) => m.role === "gary").at(-1);
+  if (chat.el.open && last) chatStore(CHAT_SEEN_KEY, str(last.id));
+  const unread = !chat.el.open && !!last && chatStored(CHAT_SEEN_KEY) !== str(last.id);
   logo.classList.toggle("unread", unread);
-  logo.setAttribute("aria-label", waiting ? "Talk to Gary. Gary is answering." : unread ? "Talk to Gary. Gary answered." : "Talk to Gary");
-  clearTimeout(chat.logoTimer);
-  // A waiting message turns late without any event
-  if (waiting) chat.logoTimer = setTimeout(chatLogoState, 30000);
+  logo.setAttribute("aria-label", unread ? "Talk to Gary. Gary answered." : "Talk to Gary");
 }
 
 function openChat() {
   if (chat.el.open) return;
-  chat.unread = false;
   chat.el.showModal();
   chatLogoState();
   chat.input.value = chatStored(CHAT_DRAFT_KEY) || chat.input.value;
@@ -6641,14 +6637,12 @@ function setupChat() {
     const d = e.detail || {};
     // A send or a New chat click of this page is under way, and its answer brings the chat
     if (!("chat" in d) || chat.busy) return;
-    const answers = (c) => (c && Array.isArray(c.messages) ? c.messages.filter((m) => m.role === "gary").length : 0);
-    if (!chat.el.open && d.chat && chat.data && d.chat.id === chat.data.id && answers(d.chat) > answers(chat.data)) chat.unread = true;
     chat.data = d.chat || null;
     chat.master = d.master || chat.master;
     if (chat.el.open) renderChat();
     else chatLogoState();
   });
-  // The logo must show a waiting answer after a reload too
+  // The logo must show an unseen answer after a reload too
   if (boardApi && typeof boardApi.chat === "function") loadChat();
 }
 
