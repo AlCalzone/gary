@@ -14,7 +14,7 @@ const overrides = join(T, "overrides.json");
 const at = (m) => new Date(Date.UTC(2026, 10, 20, 12, m)).toISOString();
 const run = (name, conclusion, m, isRequired, workflow = "CI") => ({
 	__typename: "CheckRun", name, status: "COMPLETED", conclusion, startedAt: at(m), completedAt: at(m + 1), isRequired,
-	checkSuite: { app: { slug: "github-actions" }, workflowRun: { workflow: { name: workflow } } },
+	checkSuite: { app: { slug: "github-actions" }, workflowRun: { event: "pull_request", workflow: { name: workflow } } },
 });
 const status = (context, state, m, isRequired) => ({ __typename: "StatusContext", context, state, createdAt: at(m), isRequired });
 const failingRollup = { commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] } };
@@ -65,6 +65,27 @@ let pr18 = snapshot([run("Verify", "FAILURE", 10, false), run("lint", "SUCCESS",
 t.check("the snapshot entry counts only the required checks", pr18.ci === "passing" && JSON.stringify(pr18.ciOptionalFailing) === '["Verify"]' && pr18.series?.size === 2 && !pr18.series.unready, pr18.error ?? { ci: pr18.ci, series: pr18.series });
 pr18 = snapshot([run("Verify", "SUCCESS", 10, false), run("lint", "FAILURE", 0, true)]);
 t.check("a failing required check makes the PR unready in its series", pr18.ci === "failing" && pr18.series?.unready === 1, pr18.error ?? { ci: pr18.ci, series: pr18.series });
+
+const { attachChecks, ciFromContexts } = await import("../scripts/lib/ci.mjs");
+const onPush = { ...run("test", "FAILURE", 0, true), checkSuite: { app: { slug: "github-actions" }, workflowRun: { event: "push", workflow: { name: "CI" } } } };
+t.check("a failed push run and a newer passing PR run of one workflow are two checks", ciFromContexts([onPush, run("test", "SUCCESS", 10, true)]).ci === "failing");
+const prNode = (number, state) => ({ number, ...(state && { state }), ...failingRollup });
+const nodes = [prNode(1, "OPEN"), prNode(2, "MERGED"), prNode(3, "CLOSED"), ...Array.from({ length: 12 }, (_, i) => prNode(10 + i))];
+let running = 0;
+let most = 0;
+const readNumbers = [];
+await attachChecks(nodes, {
+	repoOf: () => "acme/widgets",
+	read: async (query, v) => {
+		readNumbers.push(v.number);
+		most = Math.max(most, ++running);
+		await new Promise((r) => setTimeout(r, 5));
+		running--;
+		return { repository: { pullRequest: { commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { pageInfo: { hasNextPage: false }, nodes: [run("lint", "SUCCESS", 0, true)] } } } }] } } } };
+	},
+});
+t.check("closed and merged PRs get no check read", !readNumbers.includes(2) && !readNumbers.includes(3) && readNumbers.length === 13 && !nodes[1].ciChecks && nodes[0].ciChecks?.ci === "passing", readNumbers);
+t.check("at most 5 PRs are read at a time", most === 5, most);
 
 const { validateItem } = await import("../scripts/lib/validate-item.mjs");
 const doc = {

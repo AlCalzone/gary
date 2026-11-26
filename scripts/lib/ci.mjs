@@ -12,6 +12,7 @@ export const CI_STATES = {
 const MAX_OPTIONAL_FAILING = 5;
 const CONTEXT_PAGE = 100;
 const MAX_CONTEXT_PAGES = 10;
+const MAX_PARALLEL_READS = 5;
 const FAILED_CONCLUSIONS = new Set(["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const FAILED_STATUSES = new Set(["FAILURE", "ERROR"]);
 const PENDING_STATUSES = new Set(["PENDING", "EXPECTED"]);
@@ -26,7 +27,7 @@ const CHECKS_QUERY = `query PrChecks($owner: String!, $name: String!, $number: I
 					pageInfo { hasNextPage endCursor }
 					nodes {
 						__typename
-						... on CheckRun { name status conclusion startedAt completedAt isRequired(pullRequestNumber: $number) checkSuite { app { slug } workflowRun { workflow { name } } } }
+						... on CheckRun { name status conclusion startedAt completedAt isRequired(pullRequestNumber: $number) checkSuite { app { slug } workflowRun { event workflow { name } } } }
 						... on StatusContext { context state createdAt isRequired(pullRequestNumber: $number) }
 					}
 				}
@@ -44,7 +45,9 @@ function toCheck(c) {
 		const state = c.status !== "COMPLETED" ? "pending" : FAILED_CONCLUSIONS.has(c.conclusion) ? "failing" : "passing";
 		// A run that has not started yet has no time and must still replace the older runs of its check
 		const at = c.startedAt ?? c.completedAt ?? (state === "pending" ? NOT_STARTED : null);
-		return { key: `run:${suite}/${c.name}`, name: String(c.name ?? ""), at, state, required: c.isRequired === true };
+		// One workflow can run for a push and for the PR on the same head, and each of the two runs counts
+		const event = c.checkSuite?.workflowRun?.event ?? "";
+		return { key: `run:${suite}/${event}/${c.name}`, name: String(c.name ?? ""), at, state, required: c.isRequired === true };
 	}
 	if (c?.__typename === "StatusContext") {
 		const state = FAILED_STATUSES.has(c.state) ? "failing" : PENDING_STATUSES.has(c.state) ? "pending" : "passing";
@@ -89,17 +92,23 @@ async function readContexts(repo, number, read) {
 }
 
 /**
- * Reads the checks of each PR node whose rollup is FAILURE or ERROR and stores the result as `node.ciChecks`.
+ * Reads the checks of each open PR node whose rollup is FAILURE or ERROR and stores the result as `node.ciChecks`.
+ * At most 5 PRs are read at a time.
  * `repoOf(node)` names the node's repo. `read(query, variables)` runs one GraphQL read.
  * A failed read only warns, and the node keeps the rollup's state.
  */
 export async function attachChecks(nodes, { repoOf, read }) {
-	await Promise.all(nodes.filter((n) => ["FAILURE", "ERROR"].includes(rollupOf(n))).map(async (node) => {
-		try {
-			const checks = ciFromContexts(await readContexts(repoOf(node), node.number, read));
-			if (checks) node.ciChecks = checks;
-		} catch (e) {
-			console.error(`gary snapshot: could not read the checks of PR #${node.number}: ${e.message}`);
+	// A node without `state` comes from a query for open PRs
+	const failing = nodes.filter((n) => (n.state ?? "OPEN") === "OPEN" && ["FAILURE", "ERROR"].includes(rollupOf(n)));
+	const next = failing[Symbol.iterator]();
+	await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_READS, failing.length) }, async () => {
+		for (const node of next) {
+			try {
+				const checks = ciFromContexts(await readContexts(repoOf(node), node.number, read));
+				if (checks) node.ciChecks = checks;
+			} catch (e) {
+				console.error(`gary snapshot: could not read the checks of PR #${node.number}: ${e.message}`);
+			}
 		}
 	}));
 }
