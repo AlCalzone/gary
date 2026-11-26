@@ -1,6 +1,6 @@
 // The first prompt of a chat session, and the note the master sends it for each further message of the chat.
-// The message text comes from the maintainer's own board dialog. Both texts say so, and they fence it, so the master
-// passes it on without reading it as an instruction to itself.
+// The message text comes from the maintainer's own board dialog. Both texts say so and fence it. The master passes them on
+// as data.
 
 // `HISTORY_MESSAGES` caps how much of an older chat a new session gets, and `HISTORY_CHARS` how much of each message
 const HISTORY_MESSAGES = 20;

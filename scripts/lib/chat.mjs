@@ -41,7 +41,7 @@ function checkChatId(chatId) {
 	if (!CHAT_ID.test(chatId ?? "")) throw new Error(`The chat id must match ${CHAT_ID}`);
 }
 
-/** Whether a user message still waits for its answer. */
+/** Whether a message of the maintainer still waits for its answer. */
 export const isPending = (m) => m?.role === "user" && PENDING.has(m.status);
 
 /**
@@ -72,7 +72,7 @@ async function withChatLock(chatId, fn) {
 		try {
 			unlinkSync(lock);
 		} catch {
-			// Removed as stale by another process
+			// Another process removed it as stale
 		}
 	}
 }
@@ -96,7 +96,7 @@ export async function readChats() {
 	return chats.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
-/** The queued user messages of every chat, oldest first: `[{ chatId, messageId, at }]`. */
+/** The queued messages of the maintainer in every chat, oldest first: `[{ chatId, messageId, at }]`. */
 export async function queuedMessages() {
 	const out = [];
 	for (const chat of await readChats()) {
@@ -105,7 +105,7 @@ export async function queuedMessages() {
 	return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
 }
 
-/** Whether the last user message is late: queued past `PICKUP_MS` or sent past `ANSWER_MS`. */
+/** Whether a message of the maintainer is late: queued past `PICKUP_MS` or sent past `ANSWER_MS`. */
 export function lateness(m, now = Date.now()) {
 	if (!isPending(m)) return null;
 	if (m.status === "queued") return now - Date.parse(m.at) > PICKUP_MS ? "not-picked-up" : null;
@@ -217,7 +217,7 @@ export function writeHeartbeat({ now = Date.now(), stopped = false } = {}) {
 	try {
 		writeFileSync(watcherFile(), JSON.stringify({ pid: process.pid, at: iso(now), ...(stopped && { stopped: true }) }) + "\n");
 	} catch {
-		// The board then says the master may not be running, which is the safe side
+		// The board then shows the master as not running
 	}
 }
 

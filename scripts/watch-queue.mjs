@@ -21,8 +21,8 @@
 // once per request.
 // With --all, a queued chat message of the maintainer prints { "instance": null, "id", "itemId": null, "action": "chat",
 // "chatId", "messageId" } once, also while instances are paused, because a chat writes nothing to GitHub. --all also
-// writes a heartbeat to <root>/state/watch-queue.json every minute, and a last one marked stopped on exit, so the board
-// can tell whether a master follows the queue.
+// writes a heartbeat to <root>/state/watch-queue.json every minute and a last one marked stopped on exit. The board reads
+// it to tell whether a master follows the queue.
 import { mkdirSync, watch } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
