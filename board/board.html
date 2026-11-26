@@ -1043,8 +1043,12 @@ dialog.chat { width: min(960px, calc(100vw - 32px)); height: min(720px, calc(100
 .chat-late .btn { align-self: flex-start; }
 .chat-form { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 24px 18px; border-top: 1px solid var(--line); }
 .chat-form textarea { min-height: 3.4em; max-height: 30vh; resize: none; }
-.chat-send-row { display: flex; align-items: center; gap: 12px; }
-.chat-hint { margin-right: auto; font-size: 12.5px; color: var(--faint); }
+.chat-box { position: relative; display: flex; }
+.chat-box textarea { flex: 1; padding-right: 52px; }
+.chat-send { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--surface); cursor: pointer; }
+.chat-send .i { width: 16px; height: 16px; }
+.chat-send:disabled { opacity: 0.4; cursor: default; }
+.chat-send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chat-error { margin: 0; font-size: 13.5px; color: var(--bad); }
 .chat-error[hidden] { display: none; }
 @media (max-width: 640px) {
@@ -1052,7 +1056,6 @@ dialog.chat { width: min(960px, calc(100vw - 32px)); height: min(720px, calc(100
   .chat-art { display: none; }
   .chat-log, .chat-form { padding-inline: 16px; }
   .chat-status { padding-inline: 16px; }
-  .chat-hint { display: none; }
   .msg { max-width: 100%; }
 }
 
@@ -1226,10 +1229,9 @@ textarea {
       <div class="chat-log" id="chat-log" role="log" aria-label="Your chat with Gary" tabindex="-1"></div>
       <div class="chat-status" id="chat-status" role="status"></div>
       <form class="chat-form" id="chat-form">
-        <textarea id="chat-input" rows="2" aria-label="Message to Gary" placeholder="Ask Gary, or tell it what to do on the board"></textarea>
-        <div class="chat-send-row">
-          <span class="chat-hint">Enter sends, Shift+Enter starts a new line</span>
-          <button class="btn primary" type="submit" id="chat-send">Send</button>
+        <div class="chat-box">
+          <textarea id="chat-input" rows="2" aria-label="Message to Gary" placeholder="Ask Gary or tell it what to do. Enter sends, Shift+Enter starts a new line."></textarea>
+          <button class="chat-send" type="submit" id="chat-send" aria-label="Send"></button>
         </div>
         <p class="chat-error" id="chat-error" role="alert" hidden></p>
       </form>
@@ -1452,6 +1454,7 @@ const ICONS = {
   eye: [p("M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"), c(12, 12, 3)],
   clock: [c(12, 12, 9), p("M12 7v5l3 2")],
   send: [p("m22 2-7 20-4-9-9-4Z"), p("M22 2 11 13")],
+  arrowUp: [p("M12 19V5"), p("m5 12 7-7 7 7")],
   hourglass: [p("M5 22h14"), p("M5 2h14"), p("M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"), p("M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2")],
   check: [p("M20 6 9 17l-5-5")],
   alert: [p("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), p("M12 9v4"), p("M12 17h.01")],
@@ -6456,7 +6459,7 @@ function renderChat() {
   chat.status.replaceChildren(...chatStatusNodes());
   const late = chatLateness(m);
   chat.send.disabled = chat.busy || (chatPending(m) && !late);
-  chat.send.title = chat.send.disabled && chatPending(m) ? "Gary is still answering your last message" : "";
+  chat.send.title = chat.send.disabled && chatPending(m) ? "Gary is still answering your last message" : "Send";
 }
 
 function chatProblem(text) {
@@ -6568,6 +6571,7 @@ function chatFocusBack() {
 function setupChat() {
   const logo = document.getElementById("logo");
   logo.querySelector(".logo-talk").append(icon("discussion"));
+  chat.send.append(icon("arrowUp"));
   logo.addEventListener("click", openChat);
   const close = document.getElementById("chat-close");
   close.append(icon("x", null, "lg"));

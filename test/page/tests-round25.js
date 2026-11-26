@@ -40,6 +40,7 @@
 
     // Send with Enter
     input.value = "First line"; enter(true); await wait(10);
+    ok("chat: Send is a round arrow button inside the text box, and the placeholder explains Enter", send.closest(".chat-box") === input.parentElement && getComputedStyle(send).position === "absolute" && !!send.querySelector("svg") && send.getAttribute("aria-label") === "Send" && /Enter sends, Shift\+Enter starts a new line/.test(input.placeholder) && !document.querySelector(".chat-hint"));
     ok("chat: Shift+Enter sends nothing", calls.length === 1);
     input.value = "Snooze everything from dependabot for 3 days";
     let chatDoc = { id: "c-test000001", title: "Snooze", session: null, messages: [queued("Snooze everything from dependabot for 3 days")] };
