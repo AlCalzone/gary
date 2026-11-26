@@ -42,6 +42,7 @@ const COMMANDS = {
 	shadow: ["../scripts/shadow.mjs", "main", "Compare the fast and the standard tier: shadow record <file> | report [--since <ISO>] [--json] | propose [--dry-run] | convert <proposal id> [--dry-run]"],
 	pause: ["../scripts/lib/control.mjs", "pauseMain", "Stop every GitHub write and every queued agent start until resume. --all"],
 	resume: ["../scripts/lib/control.mjs", "resumeMain", "End a pause. --all"],
+	voice: ["../scripts/voice.mjs", "main", "The data steps of the triage-voice skill: voice collect | batches | classify merge | stats | phrases | examples | sample | pairs | score | swap | apply | paths. Reads GitHub only"],
 	models: ["../scripts/models.mjs", "main", "Print the model of every role: master, worker, review, standard, fast, and the fallback after a safety-filter stop. --json, --all"],
 	instances: ["../scripts/instances.mjs", "main", "List the instances and mark the one this directory resolves to. --json"],
 	serve: ["../scripts/serve.mjs", "main", "Start the one board server for every instance. --watch, --dry-run"],

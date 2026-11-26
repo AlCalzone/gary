@@ -124,6 +124,26 @@ if (/^\s*mutation\b/.test(query)) {
 	appendFileSync(process.env.FAKE_GH_WRITES, JSON.stringify({ mutation: name, variables: v, as: process.env.GH_TOKEN ? (process.env.GH_TOKEN === gh.BOT_TOKEN ? gh.BOT : "someone-else") : (process.env.FAKE_GH_LOGIN ?? gh.ME) }) + "\n");
 	out({ data: accepted[1] });
 }
+// FAKE_GH_VOICE: a JSON file { login, issueComments, discussionComments, pullRequests, reviews, threads: { "<key>": node } }
+// that answers the queries of `gary voice collect`, each list in one page
+if (query.includes("query Voice")) {
+	const data = process.env.FAKE_GH_VOICE ? JSON.parse(readFileSync(process.env.FAKE_GH_VOICE, "utf8")) : {};
+	const page = (nodes) => ({ pageInfo: { hasNextPage: false, endCursor: null }, nodes: nodes ?? [] });
+	if (query.includes("query VoiceViewer")) out({ data: { viewer: { login: data.login ?? gh.ME } } });
+	if (query.includes("query VoiceIssueComments")) out({ data: { viewer: { issueComments: page(data.issueComments) } } });
+	if (query.includes("query VoiceDiscussionComments")) out({ data: { viewer: { repositoryDiscussionComments: page(data.discussionComments) } } });
+	if (query.includes("query VoicePullRequests")) out({ data: { viewer: { pullRequests: page(data.pullRequests) } } });
+	if (query.includes("query VoiceReviews")) out({ data: { viewer: { contributionsCollection: { pullRequestReviewContributions: page((data.reviews ?? []).filter((r) => r.pullRequestReview.createdAt >= v.from && r.pullRequestReview.createdAt <= v.to)) } } } });
+	if (query.includes("query VoiceThreads")) {
+		const result = {};
+		for (const m of query.matchAll(/t(\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\) \{ (issueOrPullRequest|discussion)\(number: (\d+)\)/g)) {
+			const key = `${m[4] === "discussion" ? "discussion" : "issue"}:${m[2]}/${m[3]}#${m[5]}`;
+			const node = data.threads?.[key] ?? null;
+			result[`t${m[1]}`] = { [m[4]]: node };
+		}
+		out({ data: result });
+	}
+}
 const repository = (data) => out({ data: { repository: data } });
 const overrides = (() => {
 	try {

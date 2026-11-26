@@ -38,6 +38,7 @@ const SUITES = [
 	["node", "visit.test.mjs"],
 	["node", "contributions.test.mjs"],
 	["node", "own-pr.test.mjs"],
+	["node", "voice.test.mjs"],
 	["node", "review-drafts.test.mjs"],
 	["zsh", "sharing.test.zsh"],
 	["zsh", "validate.test.zsh"],

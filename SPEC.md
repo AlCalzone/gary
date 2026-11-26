@@ -43,6 +43,7 @@ Gary has three layers, one place for each kind of change.
     serve.mjs            gary serve
     doctor.mjs           gary doctor
     models.mjs           gary models
+    voice.mjs            gary voice
     chat.mjs             gary chat
     board-cli.mjs        gary board
     lib/                 paths and settings, gh wrapper, actions, freshness guard, board store
@@ -50,15 +51,16 @@ Gary has three layers, one place for each kind of change.
   server/server.mjs      board server: serves the page, runs clicked routes, watches the board store
   board/board.html       the board page
   skills/                triage-master, triage-routine, triage-review-pr, triage-issue, triage-setup, triage-learn,
-                         triage-reconcile, triage-chat
+                         triage-reconcile, triage-chat, triage-voice
   profiles/template/     the skeleton `gary setup` copies for a new project
 
 <root>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
   config.json            the machine-wide settings: { "port": 7878, "models": { … }, "sessionsDir": "…" }, see "Models"
                          and "PR origins"
   personal.md            the maintainer's own rules for every instance
+  style/                 examples/<situation>.md, calibration-report.md and backups/ of the voice skill, see "Voice"
   state/                 server-wide files: server-token, server.log, the chats in chat/<chatId>.json and the queue
-                         watcher's heartbeat watch-queue.json, see "Chat"
+                         watcher's heartbeat watch-queue.json, see "Chat", and voice/, the data of the voice skill
   instances/<name>/      one instance per repository. The name matches ^[a-z0-9][a-z0-9-]{0,39}$
 <home>/                  one instance directory, <root>/instances/<name>/
   config.json            the instance's settings
@@ -1414,6 +1416,22 @@ A pass is due, by `gary reconcile due --json`, which prints `{ due, reasons, run
 `gary reconcile start` sets `startedAt` and exits 3 while another pass started in the last 2 hours and did not finish. Such a pass makes `due` false and `running` true. `gary reconcile done [--until <ISO>]` sets `lastReconcileAt` to `startedAt`, so a request during the pass stays due, stores today's `names` and `namesHash`, sets `reviewedUntil` and removes `startedAt`.
 
 The `triage-routine` worker checks `gary reconcile due` after the learn check of every hourly run and starts the pass on the `review` model when it is due, or notes `Reconcile due.` for the master. `gary watch-queue` prints `{ instance, id: "reconcile", itemId: null, action: "reconcile", at }` once per request while it is due, and the master starts the pass on that line. Both skip a paused instance.
+
+## Voice
+
+The `triage-voice` skill writes the section "How I write on GitHub" of the shared `personal.md` from the maintainer's own GitHub text, so every instance drafts posted text in their voice. It runs in an interactive session, because it asks the maintainer.
+
+`gary voice` does the data steps. It needs no instance. It reads GitHub only with GraphQL queries under the stored `gh` login, never with a bot token, and refuses any other request. It writes only under `<root>/state/voice/` and `<root>/style/`, and `gary voice apply` writes the shared `personal.md`.
+
+- `collect --from <date> --to <date> [--include <glob>]... [--exclude <glob>]...` reads the viewer's issue, PR and discussion comments, PRs and reviews created in [from, to), in repos that match `include` (all when empty) and no `exclude`, and the thread of each comment. It writes `replies.jsonl`, `prs.jsonl`, `reviews.jsonl`, `others.jsonl` and `meta.json`. A reply holds its thread key, the title, the opening post, up to six earlier comments without bots, the previous comment, the reply with quotes and HTML comments removed, `cmd` when it is only commands to bots, and its split. Bots are the `Bot` type, `[bot]` logins, the bot logins of the instances and a few known names.
+- The split goes by thread key: 70% `train`, 15% `dev`, 15% `test`, from a hash, so it is the same on every run.
+- `batches` and `classify merge` hand the train replies to classifier agents and gather their labels in `situations.json`. A label outside the fixed list counts as `other`.
+- `stats` writes `stats.json`, `phrases <phrase>...` prints the share of train replies with each phrase, and `examples [--keep <logins>]` writes `<root>/style/examples/<situation>.md` with up to eight real replies each. Handles become `@user` but for the kept logins.
+- `sample --round <name> [--split dev|test]` picks items no earlier round used, one per thread, and writes `rounds/<name>/items.json` with the real texts and `gen_<k>.json` without them. `pairs` writes the judge file with each real text and its draft in random order, and `key.json`. `score` writes `score.json`: the judge's accuracy, the features where drafts leave the maintainer's p10 to p90 range or differ by more than 15 points, and the tells.
+- `swap --file <variants.json>` puts the real text in place of one variant in two random items of the preference check and writes `preference/questions.json` and `key.json`.
+- `apply --file <section.md> [--check]` replaces the text between `<!-- gary-voice:start -->` and `<!-- gary-voice:end -->` in the shared `personal.md`, or appends the section with both markers when the file has none. It refuses a file with one marker or with the end before the start. It copies the old file to `<root>/style/backups/` and writes atomically. With `--check` it prints the new file and writes nothing.
+
+This is the one way `personal.md` changes outside an accepted proposal. The skill runs it only after the maintainer approved the diff in the session. Learn and reconcile proposals may later edit the marked section like any other part of the file.
 
 ## MCP server
 

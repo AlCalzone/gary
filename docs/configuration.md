@@ -10,6 +10,7 @@ Gary has three layers. Each kind of change has one place.
 ~/.config/gary/
   config.json                 the board's port, default models
   personal.md                 your rules and writing style, for all projects
+  style/                      examples of your replies and the report of the triage-voice skill
   instances/<name>/
     config.json               this project on this machine
     personal.md               optional, your rules for this project
@@ -19,6 +20,12 @@ Gary has three layers. Each kind of change has one place.
 The agents read a rule in this order: core, the profile file of the same topic, the shared `personal.md`, the instance's `personal.md`. A later file wins.
 
 The limits in [safety.md](safety.md) cannot be changed by a profile or by `personal.md`.
+
+## Your writing style
+
+Ask Gary to learn how you write, and the `triage-voice` skill builds the section "How I write on GitHub" of the shared `personal.md`. It reads your own replies, PR bodies and review comments across your repos for a date range you pick, measures them, and tests the result with blind drafts and a blind judge. Before it writes anything, it asks you to pick between variants of 8 replies. It writes the section between two markers, keeps a backup in `style/backups/`, and leaves the rest of the file alone. It reads GitHub only and posts nothing.
+
+Pick a range from before you used AI for your GitHub writing, so Gary learns your style and not its own.
 
 ## The profile
 

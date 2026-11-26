@@ -69,6 +69,10 @@ Then draft a section "How I reply" from the maintainer's recent replies that you
 
 Tell the maintainer this in two or three sentences. The board logs the maintainer's decisions locally: dismissed cards, alternatives picked over the recommendation, rewritten drafts, flipped thread verdicts, notes to the agent. Once a day, the `triage-learn` skill looks for recurring patterns and proposes up to three small rules for the profile or `personal.md`. Once a week, the `triage-reconcile` skill proposes changes to rules that repeat, conflict or name things that no longer exist. The maintainer accepts or dismisses each proposal on the board, and no rule changes without that.
 
+## Writing style
+
+Tell the maintainer in one sentence that the `triage-voice` skill can teach Gary how they write, from their own GitHub replies, so drafts sound like them. It takes about half an hour and asks them 8 questions near the end. Offer to run it after the first board run, never before the board works.
+
 ## 4. Check
 
 Run `gary --instance <name> doctor` and fix what it reports together with the maintainer. `gary doctor --all` checks every instance. It checks Node.js, `git`, `claude`, the MCP SDK, the config, the profile, `gh` access, the bot token and whether the writing account may push. It names the tools in `requiredTools` without checking them: confirm with the maintainer that those MCP servers are set up in Claude Code.
