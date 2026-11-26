@@ -133,6 +133,10 @@ try {
 	await ev(`const i = document.getElementById("chat-input"); i.value = "Explain my settings"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));`);
 	ok("chat: Enter stores the message in the root's state", await fileUntil(() => chatFiles().some((c) => c.messages[0]?.text === "Explain my settings" && c.messages[0].status === "queued")));
 	ok("chat: the page shows it while Gary is thinking", await until(`document.querySelectorAll("#chat-log .msg.user").length === 1 && /Gary is thinking|master session is not running/.test(document.getElementById("chat-status").textContent)`));
+	await ev(`const l = document.getElementById("chat-log"); const f = document.createElement("div"); f.id = "chat-filler"; f.style.height = "3000px"; l.prepend(f); l.scrollTop = l.scrollHeight;`);
+	await ev(`document.getElementById("chat-input").style.height = "20vh";`);
+	ok("chat: the log stays at its end when the text box grows", await until(`(() => { const l = document.getElementById("chat-log"); return l.scrollHeight - l.scrollTop - l.clientHeight < 2; })()`));
+	await ev(`document.getElementById("chat-input").style.height = ""; document.getElementById("chat-filler").remove();`);
 	const sentChat = chatFiles()[0];
 	const answerFile = join(DIR, "answer.md");
 	writeFileSync(answerFile, "You have one instance, `widgets`. See [the profile](https://github.com/acme/widgets).");

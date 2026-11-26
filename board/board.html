@@ -1012,6 +1012,7 @@ dialog.chat { width: min(960px, calc(100vw - 32px)); height: min(720px, calc(100
 :root[data-theme="dark"] .chat-art .dark-logo { display: block; }
 .chat-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 24px 12px; display: flex; flex-direction: column; gap: 16px; }
+.chat-log > * { flex: none; }
 .chat-log:focus { outline: none; }
 .chat-empty { margin: auto 0; display: flex; flex-direction: column; gap: 12px; max-width: 60ch; }
 .chat-empty p { margin: 0; font-family: var(--font-read); font-size: 16px; line-height: 1.55; }
@@ -6451,15 +6452,22 @@ function renderChat() {
   const msgs = chat.data && Array.isArray(chat.data.messages) ? chat.data.messages : [];
   const m = chatLastUser();
   const sig = JSON.stringify([chat.data && chat.data.id, msgs.map((x) => [x.id, x.status, x.reason]), chat.loaded]);
-  if (sig !== chat.sig) {
+  const changed = sig !== chat.sig;
+  if (changed) {
     chat.sig = sig;
     chat.log.replaceChildren(...(msgs.length ? msgs.map(chatMessage) : chat.loaded ? [chatEmpty()] : []));
-    chat.log.scrollTop = chat.log.scrollHeight;
   }
   chat.status.replaceChildren(...chatStatusNodes());
+  // The status line takes room from the log, so the scroll comes after it
+  if (changed || chat.atEnd) chatToEnd();
   const late = chatLateness(m);
   chat.send.disabled = chat.busy || (chatPending(m) && !late);
   chat.send.title = chat.send.disabled && chatPending(m) ? "Gary is still answering your last message" : "Send";
+}
+
+function chatToEnd() {
+  chat.log.scrollTop = chat.log.scrollHeight;
+  chat.atEnd = true;
 }
 
 function chatProblem(text) {
@@ -6572,6 +6580,10 @@ function setupChat() {
   const logo = document.getElementById("logo");
   logo.querySelector(".logo-talk").append(icon("discussion"));
   chat.send.append(icon("arrowUp"));
+  chat.atEnd = true;
+  chat.log.addEventListener("scroll", () => { chat.atEnd = chat.log.scrollHeight - chat.log.scrollTop - chat.log.clientHeight < 24; });
+  // The log shrinks when the text box grows, the status line shows or the window resizes
+  if (typeof ResizeObserver === "function") new ResizeObserver(() => { if (chat.atEnd) chat.log.scrollTop = chat.log.scrollHeight; }).observe(chat.log);
   logo.addEventListener("click", openChat);
   const close = document.getElementById("chat-close");
   close.append(icon("x", null, "lg"));
