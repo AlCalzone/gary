@@ -201,8 +201,18 @@ a:hover { text-decoration: underline; }
 /* Header */
 header { display: flex; flex-direction: column; gap: 14px; }
 .top { display: flex; align-items: center; gap: 14px; }
-.logo { flex: none; width: 69px; height: 90px; margin: -14px 0 -14px -4px; }
+.logo { flex: none; position: relative; width: 69px; height: 90px; margin: -14px 0 -14px -4px; padding: 0; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
 .logo img { display: block; width: 100%; height: 100%; }
+/* A small speech bubble on hover and keyboard focus says that the logo opens the chat */
+.logo-talk { position: absolute; right: -6px; bottom: 16px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px var(--shadow), inset 0 0 0 1px var(--line); transform: scale(0); transition: transform 0.18s cubic-bezier(0.3, 1.4, 0.6, 1); pointer-events: none; }
+.logo-talk .i { width: 14px; height: 14px; }
+.logo:hover .logo-talk, .logo:focus-visible .logo-talk { transform: scale(1); }
+/* The logo wiggles a little on hover, so it looks like something to click */
+.logo img { transform-origin: 50% 85%; }
+.logo:hover img, .logo:focus-visible img { animation: logo-wiggle 0.4s ease-in-out; }
+@keyframes logo-wiggle { 0%, 100% { transform: none; } 30% { transform: rotate(-3deg); } 70% { transform: rotate(2deg); } }
+.logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .logo-talk { transition: none; } .logo:hover img, .logo:focus-visible img { animation: none; } }
 .logo[hidden], .logo .dark-logo { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .logo .light-logo { display: none; }
@@ -988,6 +998,70 @@ dialog.detail::backdrop { background: var(--backdrop); }
 .links > * { display: inline-flex; align-items: center; gap: 6px; }
 .links .blocked { color: var(--faint); }
 
+/* Chat with Gary: the full logo on the left, the conversation on the right */
+dialog.chat { width: min(960px, calc(100vw - 32px)); height: min(720px, calc(100dvh - 32px)); }
+.chat .d-bar .d-ref { margin-right: auto; color: var(--fg); font-weight: 600; }
+.chat .d-bar .iconbtn { margin-left: 0; }
+.chat-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); }
+.chat-art { display: flex; align-items: center; justify-content: center; padding: 28px 20px; border-right: 1px solid var(--line); background: var(--surface-2); }
+.chat-art img { display: block; width: 100%; max-width: 220px; height: auto; max-height: 100%; object-fit: contain; }
+.chat-art .dark-logo { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chat-art .light-logo { display: none; }
+  :root:not([data-theme="light"]) .chat-art .dark-logo { display: block; }
+}
+:root[data-theme="dark"] .chat-art .light-logo { display: none; }
+:root[data-theme="dark"] .chat-art .dark-logo { display: block; }
+.chat-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 24px 12px; display: flex; flex-direction: column; gap: 16px; }
+.chat-log > * { flex: none; }
+.chat-log:focus { outline: none; }
+.chat-empty { margin: auto 0; display: flex; flex-direction: column; gap: 12px; max-width: 60ch; }
+.chat-empty p { margin: 0; font-family: var(--font-read); font-size: 16px; line-height: 1.55; }
+.chat-empty .chat-examples { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.chat-example { text-align: left; font-family: var(--font-read); font-size: 15px; }
+.msg { display: flex; flex-direction: column; gap: 4px; max-width: 88%; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+.msg-head { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--muted); }
+.msg-who { font-weight: 600; color: var(--fg); }
+.msg-body { padding: 10px 14px; border-radius: 12px; font-family: var(--font-read); font-size: 15.5px; line-height: 1.55; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 0.6em; }
+.msg.user .msg-body { background: var(--accent-soft); border-bottom-right-radius: 4px; white-space: pre-wrap; }
+.msg.gary .msg-body { background: var(--surface-2); border-bottom-left-radius: 4px; }
+.msg-body p { margin: 0; white-space: pre-wrap; }
+.msg-body ul, .msg-body ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 0.25em; }
+.msg-body pre { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--code-bg); font: 12.5px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-note { margin: 0; font-size: 13px; color: var(--muted); max-width: 60ch; }
+.msg-note.bad { color: var(--bad); }
+.chat-status { padding: 0 24px; }
+.chat-status:empty { display: none; }
+.chat-thinking { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13.5px; color: var(--muted); }
+.chat-dots { display: inline-flex; gap: 3px; }
+.chat-dots span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: chat-dot 1.2s infinite ease-in-out; }
+.chat-dots span:nth-child(2) { animation-delay: 0.15s; }
+.chat-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .chat-dots span { animation: none; opacity: 0.6; } }
+.chat-late { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--warn-soft); font-size: 14px; line-height: 1.5; }
+.chat-late p { margin: 0; }
+.chat-late .btn { align-self: flex-start; }
+.chat-form { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 24px 18px; border-top: 1px solid var(--line); }
+.chat-form textarea { min-height: 3.4em; max-height: 30vh; resize: none; }
+.chat-box { position: relative; display: flex; }
+.chat-box textarea { flex: 1; padding-right: 52px; }
+.chat-send { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--surface); cursor: pointer; }
+.chat-send .i { width: 16px; height: 16px; }
+.chat-send:disabled { opacity: 0.4; cursor: default; }
+.chat-send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-error { margin: 0; font-size: 13.5px; color: var(--bad); }
+.chat-error[hidden] { display: none; }
+@media (max-width: 640px) {
+  .chat-split { grid-template-columns: minmax(0, 1fr); }
+  .chat-art { display: none; }
+  .chat-log, .chat-form { padding-inline: 16px; }
+  .chat-status { padding-inline: 16px; }
+  .msg { max-width: 100%; }
+}
+
 /* Steps */
 .btn {
   display: inline-flex;
@@ -1080,7 +1154,7 @@ textarea {
 <div class="wrap">
   <header>
     <div class="top">
-      <span class="logo" id="logo" hidden><img class="light-logo" src="logo.svg" alt="" width="69" height="90"><img class="dark-logo" src="logo-dark.svg" alt="" width="69" height="90"></span>
+      <button class="logo" id="logo" type="button" aria-label="Talk to Gary" title="Talk to Gary" aria-haspopup="dialog" hidden><img class="light-logo" src="logo.svg" alt="" width="69" height="90"><img class="dark-logo" src="logo-dark.svg" alt="" width="69" height="90"><span class="logo-talk" aria-hidden="true"></span></button>
       <h1 id="board-title">Gary</h1>
       <span class="dry" id="dry-run" title="The server does not write to GitHub" hidden>dry run</span>
       <span class="paused-mark" id="paused" title="No GitHub writes. Run `gary resume` to turn them on." hidden>Paused</span>
@@ -1143,6 +1217,29 @@ textarea {
   </div>
   <div class="d-analyze" id="d-analyze" role="group" aria-label="Analyze again" hidden></div>
   <div class="d-foot" id="d-foot" role="group" aria-label="Put it away"></div>
+</dialog>
+
+<dialog class="detail chat" id="chat-dialog" aria-labelledby="chat-title">
+  <div class="d-bar">
+    <span class="d-ref" id="chat-title">Talk to Gary</span>
+    <button class="btn quiet bar-reload" type="button" hidden>Updated, reload</button>
+    <button class="btn quiet" type="button" id="chat-new">New chat</button>
+    <button class="iconbtn" type="button" id="chat-close" aria-label="Close" title="Close"></button>
+  </div>
+  <div class="chat-split">
+    <div class="chat-art" id="chat-art"><img class="light-logo" src="logo-full.svg" alt="" width="1228" height="1536"><img class="dark-logo" src="logo-full-dark.svg" alt="" width="1228" height="1536"></div>
+    <div class="chat-main">
+      <div class="chat-log" id="chat-log" role="log" aria-label="Your chat with Gary" tabindex="-1"></div>
+      <div class="chat-status" id="chat-status" role="status"></div>
+      <form class="chat-form" id="chat-form">
+        <div class="chat-box">
+          <textarea id="chat-input" rows="2" aria-label="Message to Gary" placeholder="Ask Gary or tell it what to do. Enter sends, Shift+Enter starts a new line."></textarea>
+          <button class="chat-send" type="submit" id="chat-send" aria-label="Send"></button>
+        </div>
+        <p class="chat-error" id="chat-error" role="alert" hidden></p>
+      </form>
+    </div>
+  </div>
 </dialog>
 
 <dialog class="detail learn" id="learn-dialog" aria-labelledby="learn-title">
@@ -1360,6 +1457,7 @@ const ICONS = {
   eye: [p("M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"), c(12, 12, 3)],
   clock: [c(12, 12, 9), p("M12 7v5l3 2")],
   send: [p("m22 2-7 20-4-9-9-4Z"), p("M22 2 11 13")],
+  arrowUp: [p("M12 19V5"), p("m5 12 7-7 7 7")],
   hourglass: [p("M5 22h14"), p("M5 2h14"), p("M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"), p("M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2")],
   check: [p("M20 6 9 17l-5-5")],
   alert: [p("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"), p("M12 9v4"), p("M12 17h.01")],
@@ -1641,7 +1739,7 @@ function spentMinutes() {
   const keyOf = new Map([...state.items].map(([k, d]) => [actionRef(refOf(k).instance, refOf(k).id), k]));
   for (const [ref, a] of state.latestAction) {
     if (keyOf.has(ref) || !handledAction(a)) continue;
-    sum += DEFAULT_EFFORT_MIN;
+    sum += (state.efforts && state.efforts.get(ref)) || DEFAULT_EFFORT_MIN;
   }
   for (const key of state.items.keys()) if (handledToday(key)) sum += planEffort(state.items.get(key));
   return sum;
@@ -2588,6 +2686,8 @@ function stateIcons(id, d, dim, withPassing) {
   if (sensitiveOf(d)) out.push(["alert", "warn", sensitiveSummary(sensitiveOf(d)) + ". " + sensitivePush(d), null, "Sensitive files"]);
   const open = !isClosedThread(id, d);
   if (d.kind === "pr" && d.ci === "failing") out.push(["ciFail", "bad", "CI failing"]);
+  const optional = d.kind === "pr" && d.ci !== "failing" && Array.isArray(d.ciOptionalFailing) ? d.ciOptionalFailing.filter((n) => typeof n === "string" && n) : [];
+  if (optional.length) out.push(["alert", "warn", "Optional checks failing: " + optional.join(", "), null, "Optional checks failing"]);
   const openThreads = Array.isArray(d.threads) ? d.threads.filter((t) => t && typeof t === "object").length : 0;
   if (openThreads) out.push(["comments", "muted", openThreads + " open review comment" + (openThreads === 1 ? "" : "s"), String(openThreads), openThreads + " open comment" + (openThreads === 1 ? "" : "s")]);
   if (d.kind === "pr" && d.ci === "pending") out.push(["dashed", "warn", "CI pending"]);
@@ -6163,7 +6263,7 @@ function setupLearn() {
 
 // Added cards stay until the dialog closes, so the maintainer sees the result, then they make room
 function forgetDecided() {
-  if (reloadPending && !detail.el.open) location.reload();
+  if (reloadPending && !anyDialogOpen()) location.reload();
   for (const id of learn.added.keys()) learn.gone.add(id);
   learn.recs.clear();
   learn.checks.clear();
@@ -6175,14 +6275,372 @@ function closeLearn() {
   forgetDecided();
 }
 
+// ---------- chat with Gary ----------
+
+// The server stores the messages. The master hands each one to a chat session, whose answer comes back as a chat event
+const CHAT_DRAFT_KEY = "gary:chat:draft";
+// `CHAT_PICKUP_MS` and `CHAT_ANSWER_MS` match PICKUP_MS and ANSWER_MS in scripts/lib/chat.mjs
+const CHAT_PICKUP_MS = 2 * 60000;
+const CHAT_ANSWER_MS = 10 * 60000;
+const CHAT_POLL_MS = 15000;
+const CHAT_EXAMPLES = ["Mark all FYI items for merged PRs as Got it", "Explain my settings", "Snooze everything from dependabot for 3 days"];
+const chat = {
+  el: document.getElementById("chat-dialog"),
+  log: document.getElementById("chat-log"),
+  status: document.getElementById("chat-status"),
+  form: document.getElementById("chat-form"),
+  input: document.getElementById("chat-input"),
+  send: document.getElementById("chat-send"),
+  error: document.getElementById("chat-error"),
+  data: null,
+  master: null,
+  busy: false,
+  loaded: false,
+  timer: 0,
+  sig: "",
+  // `loads` counts the loads, sends and New chat clicks, so the answer of an older load changes nothing
+  loads: 0,
+};
+
+function chatStored(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function chatStore(key, value) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // The chat still works for this page, only a reload forgets it
+  }
+}
+
+// Gary's answers are Markdown-light: paragraphs, lists, fenced code, inline code, bold and links to github.com
+function githubUrl(raw) {
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" && u.hostname === "github.com" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+const INLINE = /`([^`\n]+)`|\[([^\]\n]+)\]\(([^)\s]+)\)|(https:\/\/github\.com\/[^\s<>()]*[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*/g;
+
+function chatInline(text) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(INLINE)) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    last = m.index + m[0].length;
+    if (m[1] !== undefined) out.push(h("code", { class: "ic", text: m[1] }));
+    else if (m[2] !== undefined) {
+      const href = githubUrl(m[3]);
+      out.push(href ? h("a", { href, target: "_blank", rel: "noopener noreferrer", text: m[2] }) : m[2] + " (" + m[3] + ")");
+    } else if (m[4] !== undefined) {
+      const href = githubUrl(m[4]);
+      out.push(href ? h("a", { href, target: "_blank", rel: "noopener noreferrer", text: m[4] }) : m[4]);
+    } else out.push(h("strong", { text: m[5] }));
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+const LIST_LINE = /^\s*(?:([-*•])|(\d+)[.)])\s+(.*)$/;
+
+function chatMarkdown(text) {
+  const blocks = [];
+  const lines = str(text).replace(/\r\n?/g, "\n").split("\n");
+  let para = [];
+  let list = null;
+  const flushPara = () => {
+    if (para.length) blocks.push(h("p", null, chatInline(para.join("\n"))));
+    para = [];
+  };
+  const flushList = () => {
+    if (list) blocks.push(list.el);
+    list = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flushPara(); flushList();
+      const code = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i]);
+      blocks.push(h("pre", null, h("code", { text: code.join("\n") })));
+      continue;
+    }
+    const li = LIST_LINE.exec(line);
+    if (li) {
+      flushPara();
+      const tag = li[1] ? "ul" : "ol";
+      if (!list || list.tag !== tag) {
+        flushList();
+        list = { tag, el: h(tag) };
+      }
+      list.el.append(h("li", null, chatInline(li[3])));
+      continue;
+    }
+    if (!line.trim()) {
+      flushPara(); flushList();
+      continue;
+    }
+    // A continued list item has an indent. Anything else ends the list
+    if (list && /^\s+\S/.test(line)) {
+      list.el.lastChild.append("\n", ...chatInline(line.trim()));
+      continue;
+    }
+    flushList();
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    if (heading) {
+      flushPara();
+      blocks.push(h("p", null, h("strong", null, chatInline(heading[1]))));
+      continue;
+    }
+    para.push(line);
+  }
+  flushPara(); flushList();
+  return blocks;
+}
+
+function chatTime(iso) {
+  const t = parseTime(iso);
+  if (!Number.isFinite(t)) return "";
+  const today = new Date().toDateString() === new Date(t).toDateString();
+  return today ? hhmm(iso) : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + hhmm(iso);
+}
+
+const chatLastUser = () => (chat.data && Array.isArray(chat.data.messages) ? chat.data.messages.filter((m) => m.role === "user").at(-1) : null) || null;
+const chatPending = (m) => !!m && (m.status === "queued" || m.status === "sent");
+
+function chatLateness(m, now = Date.now()) {
+  if (!chatPending(m)) return null;
+  if (m.status === "queued") return now - parseTime(m.at) > CHAT_PICKUP_MS ? "not-picked-up" : null;
+  return now - parseTime(m.sentAt || m.at) > CHAT_ANSWER_MS ? "no-answer" : null;
+}
+
+function chatMessage(m) {
+  const user = m.role === "user";
+  const body = user ? h("div", { class: "msg-body", text: str(m.text) }) : h("div", { class: "msg-body" }, chatMarkdown(m.text));
+  const note = user && m.status === "failed" ? h("p", { class: "msg-note bad", text: "Not answered: " + (str(m.reason) || "Gary could not answer this.") }) : null;
+  return h("div", { class: "msg " + (user ? "user" : "gary"), "data-id": str(m.id) },
+    h("div", { class: "msg-head" }, h("span", { class: "msg-who", text: user ? "You" : "Gary" }), h("time", { datetime: str(m.at), text: chatTime(m.at) })),
+    body, note);
+}
+
+function chatEmpty() {
+  const examples = CHAT_EXAMPLES.map((text) => h("button", { type: "button", class: "btn chat-example", text, onclick: () => {
+    chat.input.value = text;
+    saveChatDraft();
+    chat.input.focus();
+  } }));
+  return h("div", { class: "chat-empty" },
+    h("p", { text: "Ask Gary about its settings and rules, or tell it what to do with the items on your board. Gary posts nothing on GitHub from here." }),
+    h("div", { class: "chat-examples", role: "group", "aria-label": "Examples" }, examples));
+}
+
+function chatSessionLink() {
+  const link = str(chat.data && chat.data.session && chat.data.session.link);
+  return FOCUS_LINK.test(link) ? link : "";
+}
+
+function chatStatusNodes() {
+  const m = chatLastUser();
+  if (!chatPending(m)) return [];
+  const late = chatLateness(m);
+  const box = (...texts) => h("div", { class: "chat-late" }, texts.filter(Boolean).map((t) => (t instanceof Node ? t : h("p", { text: t }))));
+  if (m.status === "queued" && chat.master && chat.master.running === false) {
+    return [box("Gary's master session is not running, so nobody reads your message yet.", "It waits in the queue. The master picks it up when it starts: with the next hourly run, or when you run the triage-master skill now.")];
+  }
+  if (late === "not-picked-up") {
+    return [box("The master session has not picked up your message for 2 minutes. It may be busy or not running.", "Your message stays in the queue. You can also send it again, or run the triage-master skill.")];
+  }
+  if (late === "no-answer") {
+    const link = chatSessionLink();
+    return [box("No answer for 10 minutes. The chat session may be stuck or waiting for something.", "You can send your message again, or look at the session.", link ? h("a", { class: "btn small", href: link, target: "_blank", rel: "noopener noreferrer", text: "Open session" }) : null)];
+  }
+  return [h("p", { class: "chat-thinking" }, h("span", { class: "chat-dots", "aria-hidden": "true" }, h("span"), h("span"), h("span")), "Gary is thinking")];
+}
+
+function renderChat() {
+  const msgs = chat.data && Array.isArray(chat.data.messages) ? chat.data.messages : [];
+  const m = chatLastUser();
+  const sig = JSON.stringify([chat.data && chat.data.id, msgs.map((x) => [x.id, x.status, x.reason]), chat.loaded]);
+  const changed = sig !== chat.sig;
+  if (changed) {
+    chat.sig = sig;
+    chat.log.replaceChildren(...(msgs.length ? msgs.map(chatMessage) : chat.loaded ? [chatEmpty()] : []));
+  }
+  chat.status.replaceChildren(...chatStatusNodes());
+  // The status line takes room from the log, so the scroll comes after it
+  if (changed || chat.atEnd) chatToEnd();
+  const late = chatLateness(m);
+  chat.send.disabled = chat.busy || (chatPending(m) && !late);
+  chat.send.title = chat.send.disabled && chatPending(m) ? "Gary is still answering your last message" : "Send";
+}
+
+function chatToEnd() {
+  chat.log.scrollTop = chat.log.scrollHeight;
+  chat.atEnd = true;
+}
+
+function chatProblem(text) {
+  chat.error.textContent = text || "";
+  chat.error.hidden = !text;
+}
+
+function saveChatDraft() {
+  chatStore(CHAT_DRAFT_KEY, chat.input.value ? chat.input.value : null);
+}
+
+async function loadChat() {
+  if (!boardApi || typeof boardApi.chat !== "function") {
+    chat.loaded = true;
+    chatProblem("This page cannot reach Gary's chat. Open the board from the board server.");
+    return renderChat();
+  }
+  const load = ++chat.loads;
+  const r = await boardApi.chat({ op: "get" });
+  if (load !== chat.loads) return;
+  chat.loaded = true;
+  if (!r || !r.ok) {
+    chatProblem((r && r.result) || "The board server did not answer.");
+    return renderChat();
+  }
+  chat.master = r.master || null;
+  chat.data = r.chat || null;
+  chatProblem("");
+  renderChat();
+}
+
+async function sendChat() {
+  const text = chat.input.value.trim();
+  if (!text || chat.send.disabled) return;
+  if (!boardApi || typeof boardApi.chat !== "function") return chatProblem("This page cannot reach Gary's chat.");
+  chat.busy = true;
+  chat.loads++;
+  chatProblem("");
+  renderChat();
+  try {
+    const r = await boardApi.chat({ op: "send", chatId: (chat.data && chat.data.id) || null, text });
+    if (r && r.ok) {
+      chat.data = r.chat;
+      chat.master = r.master || null;
+      chat.input.value = "";
+      saveChatDraft();
+    } else if (r && r.gone) {
+      chat.data = null;
+      chatProblem("That chat is archived. Send your message again to start a new one.");
+    } else {
+      chatProblem((r && r.result) || "The board server did not answer. Your message was not sent.");
+    }
+  } catch {
+    chatProblem("The board server did not answer. Your message was not sent.");
+  } finally {
+    chat.busy = false;
+    renderChat();
+  }
+}
+
+// The server archives the active chat, so every open board starts over with this one
+async function newChat() {
+  if (!boardApi || typeof boardApi.chat !== "function") return chatProblem("This page cannot reach Gary's chat.");
+  const load = ++chat.loads;
+  chatProblem("");
+  chat.input.focus();
+  try {
+    const r = await boardApi.chat({ op: "new" });
+    if (load !== chat.loads) return;
+    if (!r || !r.ok) return chatProblem((r && r.result) || "The board server did not answer. The chat stays as it is.");
+    chat.data = null;
+    chat.loaded = true;
+    chat.master = r.master || chat.master;
+  } catch {
+    chatProblem("The board server did not answer. The chat stays as it is.");
+  }
+  renderChat();
+}
+
+function openChat() {
+  if (chat.el.open) return;
+  chat.el.showModal();
+  chat.input.value = chatStored(CHAT_DRAFT_KEY) || chat.input.value;
+  chat.input.focus();
+  renderChat();
+  loadChat();
+  clearInterval(chat.timer);
+  // A pending answer can turn late with the clock, and a refresh also catches an event missed while disconnected
+  chat.timer = setInterval(() => {
+    if (chatPending(chatLastUser())) loadChat();
+    else renderChat();
+  }, CHAT_POLL_MS);
+}
+
+function closeChat() {
+  if (chat.el.open) chat.el.close();
+  chatFocusBack();
+}
+
+// The focus goes back to the logo unless it already moved on to something outside the chat
+function chatFocusBack() {
+  const at = document.activeElement;
+  if (!at || at === document.body || chat.el.contains(at)) document.getElementById("logo").focus();
+}
+
+function setupChat() {
+  const logo = document.getElementById("logo");
+  logo.querySelector(".logo-talk").append(icon("discussion"));
+  chat.send.append(icon("arrowUp"));
+  chat.atEnd = true;
+  chat.log.addEventListener("scroll", () => { chat.atEnd = chat.log.scrollHeight - chat.log.scrollTop - chat.log.clientHeight < 24; });
+  // The log shrinks when the text box grows, the status line shows or the window resizes
+  if (typeof ResizeObserver === "function") new ResizeObserver(() => { if (chat.atEnd) chat.log.scrollTop = chat.log.scrollHeight; }).observe(chat.log);
+  logo.addEventListener("click", openChat);
+  const close = document.getElementById("chat-close");
+  close.append(icon("x", null, "lg"));
+  close.addEventListener("click", closeChat);
+  document.getElementById("chat-new").addEventListener("click", newChat);
+  chat.form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendChat();
+  });
+  chat.input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+    e.preventDefault();
+    sendChat();
+  });
+  chat.input.addEventListener("input", saveChatDraft);
+  chat.el.addEventListener("click", (e) => {
+    if (e.target !== chat.el) return;
+    const r = chat.el.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeChat();
+  });
+  // Escape closes the dialog without our button, so the close event tidies up as well
+  chat.el.addEventListener("close", () => {
+    clearInterval(chat.timer);
+    chatFocusBack();
+    if (reloadPending && !anyDialogOpen()) location.reload();
+  });
+  window.addEventListener("board:chat", (e) => {
+    const d = e.detail || {};
+    // A send or a New chat click of this page is under way, and its answer brings the chat
+    if (!("chat" in d) || chat.busy) return;
+    chat.data = d.chat || null;
+    chat.master = d.master || chat.master;
+    if (chat.el.open) renderChat();
+  });
+}
+
 // ---------- page reload ----------
 
 let reloadPending = false;
 
 // The local server announces a new board page. Typed step texts are saved, so only an open dialog defers the reload.
 // Whether it came from the server's reload event or from a version check, a new page waits only for open dialogs
+const anyDialogOpen = () => detail.el.open || learn.el.open || chat.el.open;
+
 function requestReload() {
-  if (!detail.el.open && !learn.el.open) {
+  if (!anyDialogOpen()) {
     location.reload();
     return;
   }
@@ -6227,7 +6685,7 @@ function finishDetail() {
   const same = rows.filter((r) => r.dataset.id === id);
   const back = same.find((r) => r.dataset.slot === detail.rowSlot) || same[0] || rows[Math.min(detail.rowIndex, rows.length - 1)];
   if (back) back.focus();
-  if (reloadPending) location.reload();
+  if (reloadPending && !anyDialogOpen()) location.reload();
 }
 
 function setupDetail() {
@@ -6433,8 +6891,11 @@ function subscribe(db) {
 
   db.collection("items").onSnapshot((snap) => {
     const next = new Map();
+    const efforts = new Map();
     for (const doc of snap.docs) {
       const d = doc.data();
+      // An item that left the list still has its effort, for the time spent on it today
+      if (d && typeof d === "object") efforts.set(actionRef(str(d.instance) || (boardInfo.instances.length === 1 ? boardInfo.instances[0].name : ""), str(d.id) || doc.id), planEffort(d));
       // Nothing to do means not on the list: the routine analyzes such items itself or waits for GitHub
       // An item parked by its fix stays loaded without routes, so the fix PR's dialog can open it
       // A PR that waits after its automatic review stays loaded too, so the waiting line can list it
@@ -6445,6 +6906,7 @@ function subscribe(db) {
       if (d && d.handled && localHandled.has(doc.id)) localHandled.delete(doc.id);
     }
     state.items = next;
+    state.efforts = efforts;
     for (const id of state.confirming.keys()) if (!next.has(id)) state.confirming.delete(id);
     markLoaded("items", snap.metadata);
     render();
@@ -6528,6 +6990,7 @@ async function boot() {
     render();
   });
   setupLearn();
+  setupChat();
   state.filters = loadFilters();
   buildFilters();
   setupDetail();

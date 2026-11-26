@@ -29,6 +29,7 @@ import { linkEscalated } from "../scripts/lib/escalation.mjs";
 import { READ_ONLY_MESSAGE, accountMode, clearNotification, createPendingReview, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { commentLineProblem, pendingRoute, pendingRouteProblems, readReviewDrafts, recordClickStart, requestOf, reviewDraftState, servedWalkthrough } from "../scripts/lib/review-drafts.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
+import { CHAT_ID, activeChat, addUserMessage, archiveActive, chatDir, masterState, readChat } from "../scripts/lib/chat.mjs";
 import { ownPrRefusal } from "../scripts/lib/own-pr.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
@@ -63,6 +64,8 @@ const MAX_KEPT_ANSWERS = 100;
 // A refresh reads GitHub, so it is limited per item and in total
 const REFRESH_ITEM_MS = 20000;
 const REFRESH_PER_MINUTE = 30;
+// `CHAT_PER_MINUTE` limits the chat messages the server takes from all pages together
+const CHAT_PER_MINUTE = 6;
 // `ESCALATE_RECHECK_MS` holds the waits between the looks for the issue after an escalate click.
 // The workflow posts its comment after about 10 seconds. The hourly run covers what comes later than 2 minutes
 const ESCALATE_RECHECK_MS = [10000, 15000, 20000, 15000, 60000];
@@ -688,6 +691,11 @@ function shim(token, info, version) {
       try { msg = JSON.parse(e.data); } catch { return; }
       if (msg && msg.board) applyBoard(msg.board);
     });
+    source.addEventListener("chat", (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg && msg.chat) window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: msg.chat, master: msg.master } }));
+    });
     source.addEventListener("open", () => {
       delay = MIN_RETRY_MS;
       setConnected(true);
@@ -801,6 +809,16 @@ function shim(token, info, version) {
     async refresh(body) {
       const r = await api("/api/refresh", scoped(body));
       return r.data ?? { ok: false, result: "The board server failed." };
+    },
+    // The chat with Gary: { op: "status" }, { op: "get", chatId } or { op: "send", chatId, text }. Answers { ok, chat, master } or { ok: false, result }
+    async chat(body) {
+      let r;
+      try {
+        r = await api("/api/chat", body);
+      } catch {
+        return { ok: false, result: "The board server is not reachable.", unreachable: true };
+      }
+      return r.data && typeof r.data.ok === "boolean" ? r.data : { ok: false, result: "The board server failed (" + r.status + ")." };
     },
   };
 
@@ -1368,6 +1386,10 @@ export async function startBoardServer({
 		addWatch(pageWatchers, dirname(pageFile), (_type, name) => {
 			if (name === basename(pageFile)) schedulePush(null, "reload");
 		});
+		mkdirSync(chatDir(), { recursive: true });
+		addWatch(pageWatchers, chatDir(), (_type, name) => {
+			if (typeof name === "string" && name.endsWith(".json") && CHAT_ID.test(name.slice(0, -5))) pushChat(name.slice(0, -5));
+		});
 	}
 
 	function stopWatching() {
@@ -1850,6 +1872,8 @@ export async function startBoardServer({
 			}
 			if (entry.mergeable !== undefined) next.mergeable = MERGEABLE_STATES[entry.mergeable] ?? "unknown";
 			if (entry.ci !== undefined) next.ci = entry.ci;
+			if (entry.ciOptionalFailing?.length) next.ciOptionalFailing = entry.ciOptionalFailing;
+			else delete next.ciOptionalFailing;
 			if (entry.facts?.lastEventUrl) next.lastEventUrl = entry.facts.lastEventUrl;
 			if (cur.kind === "discussion" && typeof entry.category === "string") next.discussionCategory = entry.category;
 			if (isObject(cur.handled)) next.handled = { ...cur.handled, verified: verify(cur, cur.handled, entry, state) };
@@ -2592,6 +2616,58 @@ export async function startBoardServer({
 		});
 	}
 
+	// The chat with Gary. The server only stores the maintainer's messages. The master hands them on, see `gary chat`
+	const chatWindow = [];
+	const chatTimers = new Map();
+	function pushChat(chatId) {
+		clearTimeout(chatTimers.get(chatId));
+		const t = setTimeout(async () => {
+			chatTimers.delete(chatId);
+			if (!clients.size) return;
+			try {
+				// Every page shows the one active chat, so that is what a change sends
+				const data = { instance: null, chat: await activeChat(), master: masterState() };
+				for (const res of clients) send(res, "chat", data);
+			} catch (e) {
+				log(`Reading chat ${chatId} failed:`, e.message);
+			}
+		}, DEBOUNCE_MS);
+		t.unref();
+		chatTimers.set(chatId, t);
+	}
+
+	async function handleChat(body) {
+		const { op, chatId = null } = body;
+		if (chatId !== null && (typeof chatId !== "string" || !CHAT_ID.test(chatId))) return [400, { ok: false, result: "Unknown chat." }];
+		if (op === "status") return [200, { ok: true, master: masterState() }];
+		if (op === "get") {
+			const chat = chatId ? await readChat(chatId) : await activeChat();
+			return [200, { ok: true, chat, master: masterState() }];
+		}
+		if (op === "new") {
+			const archived = await archiveActive();
+			for (const c of archived) pushChat(c.id);
+			return [200, { ok: true, chat: null, archived: archived.map((c) => c.id), master: masterState() }];
+		}
+		if (op !== "send") return [400, { ok: false, result: "op must be status, get, new or send." }];
+		if (typeof body.text !== "string") return [400, { ok: false, result: "text must be a string." }];
+		const now = Date.now();
+		while (chatWindow.length && chatWindow[0] <= now - 60000) chatWindow.shift();
+		if (chatWindow.length >= CHAT_PER_MINUTE) {
+			const retryAfter = Math.ceil((chatWindow[0] + 60000 - now) / 1000);
+			return [429, { ok: false, result: `That is a lot of messages in one minute. Try again in ${retryAfter} s.`, retryAfter }];
+		}
+		try {
+			const { chat } = await addUserMessage({ chatId, text: body.text, now });
+			chatWindow.push(now);
+			pushChat(chat.id);
+			return [200, { ok: true, chat, master: masterState() }];
+		} catch (e) {
+			if (!e.refused) throw e;
+			return [e.pending ? 409 : 200, { ok: false, result: e.message, ...(e.pending && { pending: true }), ...(e.gone && { gone: true }) }];
+		}
+	}
+
 	function tokenOk(given) {
 		if (typeof given !== "string" || given.length !== TOKEN.length) return false;
 		return timingSafeEqual(Buffer.from(given), Buffer.from(TOKEN));
@@ -2648,7 +2724,7 @@ export async function startBoardServer({
 			return res.end(head);
 		}
 
-		const logo = { "/logo.svg": "logo-head.svg", "/logo-dark.svg": "logo-head-dark.svg" }[url.pathname];
+		const logo = { "/logo.svg": "logo-head.svg", "/logo-dark.svg": "logo-head-dark.svg", "/logo-full.svg": "logo.svg", "/logo-full-dark.svg": "logo-outlined.svg" }[url.pathname];
 		if (logo && req.method === "GET") {
 			res.writeHead(200, { "Content-Type": "image/svg+xml", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Cache-Control": "max-age=3600", "X-Content-Type-Options": "nosniff" });
 			return res.end(await readFile(join(ROOT, logo)));
@@ -2704,12 +2780,12 @@ export async function startBoardServer({
 		if (req.method === "GET" && url.pathname === "/api/tools") {
 			return json(res, 200, { tools: Object.keys(ACTIONS), dryRun });
 		}
-		if (req.method === "POST" && ["/api/db", "/api/action", "/api/decision", "/api/refresh"].includes(url.pathname)) {
+		if (req.method === "POST" && ["/api/db", "/api/action", "/api/decision", "/api/refresh", "/api/chat"].includes(url.pathname)) {
 			if (!/^application\/json\b/.test(req.headers["content-type"] ?? "")) {
 				return json(res, 415, { error: "Send JSON." });
 			}
 			const body = await readBody(req);
-			const handler = { "/api/db": handleDb, "/api/action": handleAction, "/api/decision": handleDecision, "/api/refresh": handleRefresh }[url.pathname];
+			const handler = { "/api/db": handleDb, "/api/action": handleAction, "/api/decision": handleDecision, "/api/refresh": handleRefresh, "/api/chat": handleChat }[url.pathname];
 			const [status, data] = await handler(body);
 			return json(res, status, data);
 		}
@@ -2751,6 +2827,7 @@ export async function startBoardServer({
 			clearInterval(heartbeat);
 			for (const t of pending.values()) clearTimeout(t);
 			for (const t of linkTimers.values()) clearTimeout(t);
+			for (const t of chatTimers.values()) clearTimeout(t);
 			stopWatching();
 			for (const res of clients) res.end();
 			clients.clear();

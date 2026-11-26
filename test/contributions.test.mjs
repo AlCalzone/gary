@@ -339,6 +339,18 @@ try {
 	const logged = readdirSync(join(BOARD, "actions")).map((n) => JSON.parse(readFileSync(join(BOARD, "actions", n), "utf8"))).find((a) => a.action === "got_it");
 	check("Got it is logged as the maintainer's choice", logged?.status === "done" && logged.itemId === "other.lib.issue-4" && logged.params?.by === undefined);
 	check("a maintainer instance answers its own clicks as before", (await api("/api/action", { instance: "widgets", action: "got_it", itemId: "pr-404" })).data.result === "The board is out of date, reload it.");
+
+	// The chat session's path to the same button
+	const board = (...args) => {
+		const r = spawnSync(process.execPath, [GARY, "board", ...args], { env: { ...env, FAKE_GH_CONTRIBUTIONS: ghData }, encoding: "utf8" });
+		return { status: r.status, out: JSON.parse(r.stdout || "{}") };
+	};
+	const fyi = board("list", "--category", "fyi", "--json");
+	check("gary board list filters by category across instances", fyi.status === 0 && fyi.out.items.some((i) => i.key === "mine/other.lib.pr-8") && fyi.out.items.every((i) => i.category === "fyi"), fyi.out);
+	const viaChat = board("got-it", "mine/other.lib.issue-4", "mine/other.lib.pr-5", "mine/other.lib.pr-8");
+	const pr8 = JSON.parse(readFileSync(join(BOARD, "items", "other.lib.pr-8.json"), "utf8"));
+	check("gary board got-it runs the server's Got it with its notification rule, and reports each item", viaChat.status === 1 && viaChat.out.done === 2 && viaChat.out.refused === 1
+		&& viaChat.out.results[0].result === "Hidden until there is news. Dry run: the notification stays." && /Only an FYI item/.test(viaChat.out.results[1].result) && typeof pr8.gotIt?.at === "string" && doneIds().length === 2, viaChat.out);
 } finally {
 	child.kill("SIGTERM");
 	removeDir(T);

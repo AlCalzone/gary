@@ -122,6 +122,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 	if (kind !== "contributions" && (Array.isArray(item.routes) ? item.routes : []).some((r) => isObject(r?.params) && (r.params.pending !== undefined || r.params.bodies !== undefined))) {
 		err("pending-kind", "a pending review route is only for a review draft of a contributions instance");
 	}
+	if (kind !== "contributions") for (const problem of waitingDraftProblems(item, entry)) err("draft", problem);
 	for (const problem of walkthroughProblems(item)) err("walkthrough", problem);
 	if (item.needsHardware !== undefined && typeof item.needsHardware !== "boolean") err("needsHardware", "needsHardware must be true or false");
 	if (item.waitingOn !== undefined && !WAITING_ON.includes(item.waitingOn)) err("waitingOn", `waitingOn must be one of ${WAITING_ON.join(", ")}, copied from facts.waitingOn`);
@@ -134,6 +135,9 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 	else if (!EFFORTS.includes(item.effortMinutes)) err("effortMinutes", `effortMinutes must be one of ${EFFORTS.join(", ")}, not ${JSON.stringify(item.effortMinutes)}`);
 	if (!DEPTHS.includes(item.reviewDepth)) err("reviewDepth", `reviewDepth must be one of ${DEPTHS.join(", ")}`);
 	if (item.kind === "pr" && item.ci !== undefined && !CI.includes(item.ci)) err("ci", `ci must be one of ${CI.join(", ")}`);
+	if (item.ciOptionalFailing !== undefined && !(item.kind === "pr" && Array.isArray(item.ciOptionalFailing) && item.ciOptionalFailing.every(isString))) {
+		err("ciOptionalFailing", "ciOptionalFailing lists the names of a PR's failing optional checks, from the snapshot");
+	}
 	if (item.mergeable !== undefined && !MERGEABLE.includes(item.mergeable)) err("mergeable", `mergeable must be one of ${MERGEABLE.join(", ")}`);
 	if (item.reviewDecision !== undefined && !DECISIONS.includes(item.reviewDecision)) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);
@@ -389,6 +393,21 @@ function checkApiEdit(item, route, profile, { sensitive, sensitiveOurs }, where,
 }
 
 const SUGGESTION_FENCE = /```suggestion\b/;
+
+/**
+ * The problems of an item for a draft PR that is on the board only for a waiting comment. Such an item gets reply
+ * routes only, no full review and no label or assignee changes. `entry` is the PR's snapshot entry.
+ */
+function waitingDraftProblems(item, entry) {
+	if (item.kind !== "pr" || entry?.isDraft !== true || entry.garyFix) return [];
+	const problems = [];
+	for (const r of Array.isArray(item.routes) ? item.routes : []) {
+		if (isObject(r) && r.type !== "reply") problems.push(`route ${r.id ?? "?"} is a ${r.type}, but a draft PR gets reply routes only`);
+	}
+	if (item.reviewDepth === "full") problems.push("a draft PR gets no full review, only a quick classification");
+	if (item.wants != null) problems.push("a draft PR gets no label or assignee changes, so it has no wants");
+	return problems;
+}
 
 /**
  * A comment that proposes a change carries the exact lines it replaces in `original` and the new text in `suggestion`,

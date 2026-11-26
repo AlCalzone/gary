@@ -6,6 +6,7 @@
 
 - **Every hour**, one scheduled task starts the master session.
 - **Your click** on an agent card puts a request into the queue. A worker starts within seconds.
+- **Your chat message** from the board's "Talk to Gary" dialog goes into the same queue. The master hands it to a chat session.
 - **News on a watched PR** starts a round: a bot review arrived, you commented, or a PR's author answered a format offer.
 
 ## Who does what
@@ -14,7 +15,7 @@
 
 **The board server** is plain Node.js without a model. It serves the board, stores your clicks and checks every rule in code. It is the one place that sends what you clicked to GitHub.
 
-**A triage worker** runs once per hour for each project. It snapshots the open PRs, issues and discussions, and sorts out what changed. Subagents do the reading:
+**A triage worker** runs once per hour for each project. It snapshots the open PRs, issues and discussions, and sorts out what changed. Draft PRs stay out, unless someone asked you something there that nobody answered yet. Such a draft gets a reply card and no review until it is marked ready. Subagents do the reading:
 
 - Classification, 25 items per subagent.
 - A full review per PR that needs one, up to `maxFullReviewsPerRun`.
@@ -26,6 +27,8 @@
 **Drive rounds** run on Gary's own fix PRs. Gary requests a bot review, pushes fixes for its comments and marks the PR ready.
 
 **A focus session** is you and one agent on one item. Gary holds the item meanwhile.
+
+**A chat session** answers your messages from the board's chat. It explains and changes settings and uses the board's own buttons. It never writes to GitHub.
 
 **Learn and reconcile** run once a day and once a week. They propose rule changes from your decisions.
 

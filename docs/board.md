@@ -105,6 +105,14 @@ Gary holds the item meanwhile. No worker, review round or push touches it. The i
 
 A session that has been quiet for 30 minutes shows as "Focus paused", with "Resume" and "End focus". Gary still touches nothing until you click one of them or archive the session.
 
+## Talk to Gary
+
+Click the Gary logo in the header to chat with Gary. Ask how a setting works, have Gary change one, or tell it what to do with items, like "Mark all FYI items for merged PRs as Got it" or "Snooze everything from dependabot for 3 days". For a request about many items, Gary lists what matches before it reports what it did.
+
+Gary uses the board's own buttons for that: Got it, snooze, hide, show again, dismiss a card, Analyze again and a full review. It never posts on GitHub. For a reply or a review it points you to the item's card.
+
+The master session hands your message to a chat session, so the answer takes a moment. When the master is not running, the dialog says so. Your message then waits for the next hourly run. There is one chat at a time, and every open board shows it. It stays when you close the dialog or reload the page. "New chat" archives it and starts over, and Gary closes the old chat's session.
+
 ## Items Gary could not analyze
 
 Such an item shows one card that opens the thread on GitHub. That happens when the model's safety filter stopped the agent, or the analysis failed three times. "Analyze again" retries.

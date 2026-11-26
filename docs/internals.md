@@ -12,6 +12,7 @@ This page is for people changing Gary itself and for the agents' skills. To use 
 2. The routine in `skills/triage-routine/` reviews the changed items and writes them with `gary put`.
 3. The board server in `server/server.mjs` serves `board/board.html` and pushes every change in `state/board/` to open pages. A click runs the GitHub action right away.
 4. Agent requests from the board are queued in `state/board/actions/`. `gary watch-queue` wakes the master session for them.
+5. A chat message from the board's "Talk to Gary" dialog is stored in `<root>/state/chat/`. `gary watch-queue --all` wakes the master, which hands it to a chat session. The session answers with `gary chat reply`.
 
 The board server, the MCP server and `gary action` share one implementation in `scripts/lib/actions.mjs`. It accepts only the actions in the spec table and always targets the repo from the profile.
 
@@ -91,6 +92,8 @@ The first command never touches the baseline in `state/snapshot.json`. `--commit
 
 `closed` also lists issues and discussions that are still open but had no activity within `activeWindowDays`. Text fields are cut at 1500 characters and PRs list at most 50 changed files. A PR whose files match the profile's `sensitivePaths` carries them in `sensitiveFiles`. The staged and the committed snapshot keep that list per PR, with `sensitiveOurs: true` when the PR is ours alone. Authors count as `maintainer` when they are in the profile's `maintainers` or are `me`, and as `bot` when they are in `botLogins`, are the configured bot or are a GitHub App.
 
+A draft PR gets an entry only as Gary's fix PR or while a comment on it waits on our side. `draftWaiting` in `scripts/lib/facts.mjs` decides that from the PR's GraphQL node, with the body as the author's first comment, and names the comment in `facts.draftWaiting`. The mention and question checks live in `scripts/lib/text.mjs`, which the contributions facts share. The validator gives such a draft `reply` routes only, no full review and no `wants` (`waitingDraftProblems` in `scripts/lib/validate-item.mjs`). A waiting draft that is marked ready is `new` in the next work list.
+
 Due dates and series come from GitHub only (`dueFacts` and `seriesOf` in `scripts/lib/facts.mjs`). A milestone's `dueOn` and the project date fields the profile's `dueDateFields` names give `dueAt` and `dueSource`, the earliest one winning. The project fields are queried only after `canReadProjects` in `scripts/lib/gh.mjs` found that the token may read GitHub Projects, with one small query per process. Without the `read:project` scope the snapshot skips them, and `gary doctor` warns on its "due dates" line. A series links stacked PRs by base and head branch, sub-issues to their parent, and a PR to the series of an issue it closes. The staged and committed snapshot keep `dueAt`, `dueSource`, `series` and `waitingOn`, and the board server serves them on the items, so a new milestone date reaches the page without a triage. A changed `dueAt` or `series` makes an item `changed`.
 
 ### gary item
@@ -149,6 +152,7 @@ It also prints lines for things it polls:
 - **Watched PRs**: for the bot's open PRs and the taken-over PRs, it reads the PR every 3 minutes and once at its start. It prints `"event": "maintainer-feedback"` when the maintainer reviewed or commented after our last push and no round handled it yet.
 - **Busy origin sessions**: a bot PR whose origin session was active in the last 30 minutes gets no line. Feedback that `gary pr-watch round` refused for that session is recorded as `held` in the drive file. It prints once more after the session has been quiet for 30 minutes.
 - **Reconcile**: a pass the maintainer asked for prints `{"instance":"widgets","id":"reconcile","itemId":null,"action":"reconcile","at":"…"}` once per request, until a pass ran.
+- **Chat**: with `--all`, each queued chat message prints `{"instance":null,"id":"<messageId>","itemId":null,"action":"chat","chatId":"…","messageId":"…"}` once, also while instances are paused. `--all` also writes its pid and the time to `<root>/state/watch-queue.json` every minute, and `stopped: true` on exit. The server reads that heartbeat to tell the chat dialog whether a master follows the queue.
 - **Focus**: while a focus holds an item, nothing of it prints except focus requests. Everything held back prints once the focus ended. Each focus record is read once a minute. After 30 quiet minutes, and every 30 minutes while it is paused, it prints a line with `"action":"focus","event":"check"`, the `harness`, the `session` and the `status`. The master then looks at the session and runs `gary focus check`.
 
 ### gary api-edit
@@ -162,6 +166,14 @@ It also prints lines for things it polls:
 ### gary focus
 
 `gary focus` keeps the focus record of an item in `<state>/focus/<itemId>.json`, see "Focus" in SPEC.md. The master runs `brief` to get the first prompt or the note for an attached session, `start` or `fail` to settle the focus request, `check` with what its harness shows about the session, and `done --message-file` with the session's done message. The board's "End focus" ends it through the server. Every end queues a `reanalyze` with the closing summary. The hold lives in `scripts/lib/focus.mjs`, and the places that start work read it there: `takeClaim`, `pr-watch round` and `review`, `fix-review start`, `push-check`, `gary put`, `gary action --autonomous`, `gary snapshot`, `gary watch-queue` and the server's click handlers.
+
+### gary chat
+
+`gary chat` keeps the chats of the board's "Talk to Gary" dialog in `<root>/state/chat/<chatId>.json`, see "Chat" in SPEC.md. The master runs `brief` to get the first prompt of a chat session or the note for its session, `start` once it handed the message on, and `fail` when it could not. The chat session runs `reply` with its answer. At most one chat is active: "New chat" archives it (`archiveActive`), the watcher prints its session once, and the master runs `closed` after it archived that session. `show` and `list` read. The store lives in `scripts/lib/chat.mjs`, and the briefing text in `scripts/lib/chat-brief.mjs`. The server and the command both change chat files, so every change takes the lock file `<chatId>.json.lock` first. A lock older than 10 seconds counts as left behind.
+
+### gary board
+
+`gary board` (`scripts/board-cli.mjs`) gives an agent the board's own buttons: `got-it`, `snooze`, `hide`, `restore`, `dismiss-route`, `analyze` and `review`, plus `list` from `/api/state`. It sends the same requests as the page to the running server with the token from `<root>/state/server-token`, so the server applies its checks. It never writes a file itself, unlike `gary put`. The chat session uses it.
 
 ### gary validate
 
@@ -233,9 +245,11 @@ The server can write to GitHub, so it locks itself down:
 
 - On the first start it writes a random token to `<root>/state/server-token` with mode 600. The page gets the token inline. Every `/api` request must send it, except `GET /api/health`.
 - It rejects any `Origin` other than its own and any `Host` other than `127.0.0.1:<port>`, `localhost:<port>` or `gary.localhost:<port>`.
-- It accepts only JSON bodies up to 256 KB and sends no CORS headers. It serves nothing besides the board page.
+- It accepts only JSON bodies up to 256 KB and sends no CORS headers. It serves nothing besides the board page, its logos and the tab icons.
 - The page runs under a strict Content-Security-Policy. Images may come only from the server itself and from GitHub, for the avatars.
 - GitHub actions run one at a time per item, so a double click cannot run twice. Writes run one at a time per file.
+
+`POST /api/chat` (`handleChat`) stores a chat message of the maintainer with the limits of `scripts/lib/chat.mjs`, at most 6 per minute from all pages, and one waiting message per chat. It runs no agent. The server watches `<root>/state/chat/` and sends the active chat, or null without one, as a `chat` event on each change. `op: "new"` archives the active chat. Every chat answer also carries `master: { running, at }` from the queue watcher's heartbeat. `/logo-full.svg` and `/logo-full-dark.svg` serve `logo.svg` and `logo-outlined.svg` for the chat dialog.
 
 ## What a click can run
 
@@ -280,7 +294,7 @@ Every snapshot entry carries `facts`, computed in code:
 
 - `timeline: [{ at, author, side, kind }]`, oldest first, the newest 200 events kept. `side` is `us`, `them`, `automated` or `bot`. `kind` is `opened`, `comment`, `reply`, `review` or `thread_comment`. `timelineTruncated` is set only when events are missing.
 - `lastSpeaker`, `lastUsAt`, `lastThemAt`, `waitingOn` (`us`, `them` or `nobody`, decided only by `us` and `them` events), `waitingDays`.
-- PRs: `ciGreen`, `dependencyOnly`, `touchesSensitive`, `sensitiveFiles` (the first 5 paths that match the profile's `sensitivePaths`) with `sensitiveFileCount`, `sensitiveOurs` (true on a PR with sensitive files that is ours alone) or `sensitiveNotOurs` (the condition that failed), `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
+- PRs: `ciGreen`, `ciOptionalFailing` (the failing optional checks, when the PR has required checks), `dependencyOnly`, `touchesSensitive`, `sensitiveFiles` (the first 5 paths that match the profile's `sensitivePaths`) with `sensitiveFileCount`, `sensitiveOurs` (true on a PR with sensitive files that is ours alone) or `sensitiveNotOurs` (the condition that failed), `openThreadCount`, `approvedBy`, `changesRequestedBy`, `isClean`.
 - Issues and discussions: `hasClosingPr` (an open or merged PR), `isAnswered`, `authorIsUs`. Discussions also carry `category`, the category's name.
 
 The server reads two things for the page from the snapshot, with `sensitiveFacts` and the entry's `category`: a PR's `sensitive: { files, total, ours }` for the warning in the dialog, and the `category` of a discussion whose item has none yet. The routine copies `category` into the item like `isAnswered`.
@@ -347,6 +361,8 @@ A bot PR outside `fixes.json` can come from an interactive Claude Code session. 
 
 ## State layout
 
+The root's `state/` holds `server-token`, `server.log`, the chats in `chat/<chatId>.json` and the queue watcher's heartbeat `watch-queue.json`.
+
 Everything under the instance's `state/` (`<home>/state/`):
 
 ```
@@ -383,7 +399,7 @@ Accepting an edit runs `applyEdits` (`scripts/lib/learning.mjs`) for the proposa
 ## Tests
 
 ```sh
-npm test            # actions, server, accounts, learning, reconcile, sharing, validate, api-edit, ours. Needs node and zsh
+npm test            # actions, server, accounts, learning, reconcile, chat, sharing, validate, api-edit, ours. Needs node and zsh
 npm run test:page   # the board page, mocked and served. Needs Chrome or Chromium
 ```
 

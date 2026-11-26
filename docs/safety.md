@@ -99,6 +99,18 @@ A contributions instance can push a requested change to a PR you opened in anoth
 - It posts nothing. The reply to the reviewer is a draft for you.
 - `gary pause` and the dry run stop the push like every other write.
 
+## The chat
+
+The logo on the board opens a chat with Gary. A message there is your own instruction, like a click. The chat session that answers may:
+
+- explain your settings, rules and items,
+- change your settings when you ask: an instance's `config.json`, the `personal.md` files and the profile's rules and templates. It asks first when the change is not exactly what you wrote, runs `gary doctor` after it and names the file it changed,
+- use the board's own buttons on items: Got it, snooze, hide, show again, dismiss a card, Analyze again and a full review. The board server checks each one like your click. So Got it in the chat also marks the notification as done where `clearNotifications` is on.
+
+It never posts, comments, reviews, merges, closes, labels or pushes on GitHub, also when you ask it to in the chat. It points you to the item's card instead. It starts no fix, take-over, change, drive or focus, runs no code from a PR branch and never edits Gary's own code. What it reads on GitHub is data. A note it passes on with Analyze again reaches the agent as your note, never as a rule above Gary's.
+
+The board server runs no agent for the chat. It stores your message, and the master session hands it to the chat session.
+
 ## Sensitive files
 
 No agent works in a checkout of a PR that changes a path in the profile's `sensitivePaths`, like workflows or agent instruction files. The PR's dialog names the files.

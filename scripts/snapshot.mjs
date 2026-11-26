@@ -9,8 +9,9 @@ import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs
 import { allowedRepo, botLogins, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerLogins, maintainerRepos, repoParts, stateDir } from "./lib/config.mjs";
 import { NODE_FIELDS, SEARCH_QUERY, contributionFacts, contributionId, contributionSearches, kindOfNode, mergeReminderDaysOf, repoCovered, scopeQualifiers } from "./lib/contributions.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
-import { aiFacts, buildTimeline, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
+import { aiFacts, buildTimeline, draftWaiting, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
 import { activityOf } from "./lib/since.mjs";
+import { attachChecks, ciOf, optionalFailingOf } from "./lib/ci.mjs";
 import { canReadProjects, graphql, writeLogin } from "./lib/gh.mjs";
 import { fixPrNumbers, patchFixRecord, readFixRecords, vanishedFixPrs } from "./lib/fixes.mjs";
 import { heldItemIds } from "./lib/focus.mjs";
@@ -305,19 +306,21 @@ export async function main(argv = []) {
 		fetchAll(DISCUSSION_QUERY, "discussions", cutoff),
 	]);
 
-	// Drafts are ignored, except Gary's own fix PRs, which the board must show. A draft that becomes ready shows up as a new item
+	// A draft gets an entry only as Gary's own fix PR or while a comment on it waits on us. A draft that becomes ready shows up as a new item
 	const fixRecords = await readFixRecords();
 	await markEndedFixes(fixRecords, prs.nodes.map((n) => n.number));
 	const fixFor = fixPrNumbers(fixRecords);
-	const readyPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number));
+	for (const n of prs.nodes) markDraftWaiting(n, fixFor.has(n.number), ctx);
+	const readyPrs = prs.nodes.filter((n) => !n.isDraft || fixFor.has(n.number) || n.draftWaiting);
 	await Promise.all([
 		...readyPrs.flatMap((pr) => [fetchRemainingThreads(pr), fetchRemainingReviews(pr)]),
 		...discussions.nodes.map(fetchRemainingReplies),
 		attachAutoReviews(readyPrs),
+		attachChecks(readyPrs, { repoOf: () => loadProfile().repo, read: retried }),
 	]);
 	const references = discussions.nodes.length ? await fetchDiscussionReferences(discussions.nodes.map((d) => d.number)) : new Map();
 
-	// Drafts get no item, but a draft part still counts in its series
+	// A draft without an entry still counts in its series
 	const series = seriesOf(prs.nodes, issues.nodes);
 	const linked = (id, n) => ({ ...dueOf(n), ...(series.has(id) && { series: series.get(id) }) });
 	const items = [
@@ -344,7 +347,8 @@ export async function main(argv = []) {
 		const entry = { ...baselineEntry(item), activity: activityOf(kind, node, ctx, { before: old?.activity, ci: item.ci, at: fetchedAt }) };
 		current[item.id] = entry;
 		let reason;
-		if (!old) reason = "new";
+		// A draft that had an entry only for a waiting comment never had a review
+		if (!old || (old.isDraft && !old.garyFix && kind === "pr" && !item.isDraft)) reason = "new";
 		else if (item.headSha && old.headSha !== item.headSha) reason = "head_changed";
 		else if (
 			old.updatedAt !== entry.updatedAt ||
@@ -422,10 +426,11 @@ export async function fetchItem(kind, number, repo = loadProfile().repo, { allFi
 	const staged = (readJson(PENDING()) ?? readJson(BASELINE()))?.items?.[`${{ pr: "pr", issue: "issue", discussion: "disc" }[kind]}-${number}`];
 	const linked = { ...(kind === "discussion" ? {} : dueOf(node)), ...(repo === loadProfile().repo && staged?.series && { series: staged.series }) };
 	if (kind === "pr") {
-		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node), attachAutoReviews([node])]);
+		await Promise.all([fetchRemainingThreads(node), fetchRemainingReviews(node), attachAutoReviews([node]), attachChecks([node], { repoOf: () => repo, read: retried })]);
 		if (allFiles && (node.files.totalCount ?? 0) > node.files.nodes.length) node.files = await fetchAllFiles(owner, name, number);
 		// Fix PRs are recorded by number for the instance's own repo
 		const fixItem = repo === loadProfile().repo ? fixPrNumbers(await readFixRecords()).get(number) : undefined;
+		markDraftWaiting(node, !!fixItem, ctx);
 		return withFacts("pr", node, { ...toPr(node, classify, loadProfile().sensitivePaths), ...(fixItem && { garyFix: { itemId: fixItem } }), ...linked }, ctx);
 	}
 	if (kind === "issue") return withFacts("issue", node, { ...toIssue(node, classify), ...linked }, ctx);
@@ -555,7 +560,8 @@ function contributionEntry(kind, node, id, classify) {
 		assignees: (node.assignees?.nodes ?? []).map((a) => a.login),
 		headSha: node.headRefOid,
 		...(node.headRefName && { headRef: node.headRefName }),
-		ci: CI_STATES[node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state] ?? "none",
+		ci: ciOf(node),
+		...optionalFailingOf(node),
 		reviewDecision: node.reviewDecision,
 		mergeable: node.mergeable,
 		...(reviews.length && { reviews: reviews.slice(-10) }),
@@ -653,6 +659,7 @@ async function contributionsMain(config, out) {
 	const changed = [];
 	const quiet = [];
 	const unchanged = [];
+	await attachChecks([...hits.values()].filter((h) => h.kind === "pr").map((h) => h.node), { repoOf: (n) => n.repository.nameWithOwner, read: retried });
 	const owns = new Map(await Promise.all([...hits].filter(([, h]) => isOwnOpenPr(h.kind, h.node, me)).map(async ([id, { node }]) => [id, await ownPrOf(node.repository.nameWithOwner, node.number, me)])));
 	for (const [id, { kind, node, reasons }] of hits) {
 		const item = withContributionFacts(kind, node, contributionEntry(kind, node, id, classify), { me, ctx, reasons: [...reasons], gotIt: await gotItOf(id), now, config, own: owns.get(id) ?? null });
@@ -702,6 +709,7 @@ async function fetchContribution(kind, number, repo) {
 	const node = data.repository?.[field];
 	if (!node) throw new Error(`${kind} #${number} not found in ${repo}`);
 	const id = contributionId(repo, kind, number);
+	if (kind === "pr") await attachChecks([node], { repoOf: () => repo, read: retried });
 	await notePosted([[id, node]]);
 	const own = isOwnOpenPr(kind, node, config.me) ? await ownPrOf(repo, number, config.me) : null;
 	return withContributionFacts(kind, node, contributionEntry(kind, node, id, contributionClassifier(config.me)), { me: config.me, ctx: contributionsContext(config.me), gotIt: await gotItOf(id), now: Date.now(), config, own });
@@ -726,23 +734,33 @@ async function fetchDiscussionReferences(numbers) {
 			{ q: `repo:${owner}/${name} is:pr sort:updated-desc` },
 		),
 	);
-	const out = new Map();
 	const urlRef = new RegExp(`github\\.com/${owner}/${name}/discussions/(\\d+)`, "gi");
+	const hits = [];
 	for (const pr of data.search?.nodes ?? []) {
 		if (!pr?.number) continue;
 		const text = `${pr.title ?? ""}\n${pr.body ?? ""}`;
 		const refs = new Set([...text.matchAll(urlRef)].map((m) => Number(m[1])));
 		for (const m of text.matchAll(/(?:^|[^\w/&])#(\d+)\b/g)) refs.add(Number(m[1]));
-		for (const n of refs) {
-			if (!wanted.has(n)) continue;
-			const ref = {
-				number: pr.number, url: pr.url, title: pr.title, author: pr.author?.login ?? "ghost", isDraft: pr.isDraft,
-				state: pr.state.toLowerCase(), ci: CI_STATES[pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state] ?? "none",
-			};
-			out.set(n, [...(out.get(n) ?? []), ref]);
-		}
+		const named = [...refs].filter((n) => wanted.has(n));
+		if (named.length) hits.push([pr, named]);
+	}
+	await attachChecks(hits.map(([pr]) => pr), { repoOf: () => `${owner}/${name}`, read: retried });
+	const out = new Map();
+	for (const [pr, named] of hits) {
+		const ref = {
+			number: pr.number, url: pr.url, title: pr.title, author: pr.author?.login ?? "ghost", isDraft: pr.isDraft,
+			state: pr.state.toLowerCase(), ci: ciOf(pr),
+		};
+		for (const n of named) out.set(n, [...(out.get(n) ?? []), ref]);
 	}
 	return out;
+}
+
+/** Sets `draftWaiting` on a draft PR node that is no fix PR of Gary, from the comments the node holds. */
+function markDraftWaiting(node, garyFix, ctx) {
+	if (!node.isDraft || garyFix) return;
+	const waiting = draftWaiting(node, ctx);
+	if (waiting) node.draftWaiting = waiting;
 }
 
 /** Who counts as us, and the profile's patterns for automated comments. */
@@ -801,6 +819,7 @@ function withFacts(kind, node, entry, ctx) {
 		else facts.sensitiveNotOurs = reason;
 	}
 	facts.maintainerCanModify = node.maintainerCanModify === true;
+	if (node.draftWaiting) facts.draftWaiting = node.draftWaiting;
 	facts.lastAuthorAt = lastEventBy(timeline, node.author?.login);
 	Object.assign(facts, feedbackFacts(timeline, node.recentCommits?.nodes, { me: ctx.me, bot: ctx.bot, writeLogin: ctx.writeLogin, reviewBots: ctx.reviewBots }));
 	const requests = reviewRequestsFor(node, ctx.writeLogin);
@@ -925,6 +944,8 @@ async function fetchRemainingReviews(pr) {
 		pr.allReviews.nodes.push(...page.nodes);
 	}
 }
+
+const retried = (query, variables) => withRetry(() => graphql(query, variables));
 
 // GitHub answers large GraphQL pages with an occasional 502 or timeout
 async function withRetry(fn, attempts = 3) {
@@ -1056,16 +1077,7 @@ function common(kind, id, n, classify) {
 	};
 }
 
-const CI_STATES = {
-	SUCCESS: "passing",
-	FAILURE: "failing",
-	ERROR: "failing",
-	PENDING: "pending",
-	EXPECTED: "pending",
-};
-
 function toPr(n, classify, sensitivePaths) {
-	const rollup = n.commits.nodes[0]?.commit.statusCheckRollup?.state;
 	// GraphQL lists reviews and threads oldest first
 	const reviews = n.reviews.nodes
 		.filter((r) => r.submittedAt)
@@ -1081,7 +1093,8 @@ function toPr(n, classify, sensitivePaths) {
 		headSha: n.headRefOid,
 		headRef: n.headRefName,
 		baseRef: n.baseRefName,
-		ci: CI_STATES[rollup] ?? "none",
+		ci: ciOf(n),
+		...optionalFailingOf(n),
 		reviewDecision: n.reviewDecision,
 		mergeable: n.mergeable,
 		additions: n.additions,

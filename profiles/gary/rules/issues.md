@@ -28,6 +28,8 @@ Leave the Accept out when the work needs a design decision the maintainer has no
 
 Keep the briefing short. `state` is one sentence with the verdict. `story` is at most four sentences: what is asked, what you found in the code, core or project, and what the change would touch.
 
+A feature that needs more GitHub access than Gary asks for today is no finding and no reason to leave out the Accept. Setting up permissions is the maintainer's job. The Accept text names the access the feature needs and how Gary learns which account to use for it.
+
 ## An accepted issue
 
 The fix agent follows the core fix rules and these:

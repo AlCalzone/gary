@@ -94,6 +94,7 @@ r = gary("snapshot");
 const out = json(r);
 const pr19 = out.changed?.find((e) => e.id === "pr-19");
 t.check("a recorded draft fix PR stays in the snapshot with garyFix", pr19?.isDraft === true && JSON.stringify(pr19.garyFix) === '{"itemId":"issue-23"}', pr19 ?? out);
+t.check("a draft fix PR gets no draftWaiting fact", pr19?.facts && !("draftWaiting" in pr19.facts), pr19?.facts);
 t.check("other drafts stay out", !out.changed?.some((e) => e.id === "pr-24"));
 const disc35 = out.changed?.find((e) => e.id === "disc-35");
 t.check("a discussion gets the PRs that reference it by URL", disc35?.referencingPrs?.length === 1 && disc35.referencingPrs[0].number === 21 && disc35.referencingPrs[0].ci === "passing", disc35?.referencingPrs);

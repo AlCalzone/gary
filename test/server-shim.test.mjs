@@ -114,6 +114,7 @@ target.addEventListener("board:reload", () => reloads++);
 const ctx = {
 	EventSource: FakeEventSource,
 	Event,
+	CustomEvent,
 	fetch: async (path, opts) => {
 		const res = await fetch(base + path, opts);
 		fetches.push({ path, status: res.status });
@@ -135,6 +136,16 @@ let ids = [];
 db.collection("items").onSnapshot((snap) => (ids = snap.docs.map((d) => d.id)));
 t.check("the first snapshot holds the stored item", await waitFor(() => ids.includes("widgets/issue-21")), ids);
 t.check("one connection and no reload at first", sources.length === 1 && reloads === 0, { sources: sources.length, reloads });
+
+// The chat goes through board.chat, and a changed chat arrives as the window event board:chat
+const board = await ctx.claude.use("board");
+const chats = [];
+target.addEventListener("board:chat", (e) => chats.push(e.detail));
+const sent = await board.chat({ op: "send", text: "Explain my settings" });
+t.check("board.chat sends a message and answers the stored chat", sent.ok === true && sent.chat.messages[0].text === "Explain my settings" && typeof sent.master?.running === "boolean", sent);
+t.check("the changed chat arrives as board:chat with the master state", await waitFor(() => chats.some((d) => d.chat.id === sent.chat.id && d.master)), chats);
+const again = await board.chat({ op: "send", chatId: sent.chat.id, text: "Hello?" });
+t.check("board.chat passes a refusal on with its reason", again.ok === false && again.pending === true && /still answering/.test(again.result), again);
 
 // A restart on the same page and token: reconnect and refetch, no reload
 await stop();

@@ -8,7 +8,7 @@ The examples below use the project `acme/widgets`, the maintainer `octocat` and 
 
 - **Runtime**: one master Claude session per machine. An hourly scheduled task posts ``Run the triage-master skill. Models come from `gary models`.`` into it. The master owns the one board server and the one queue watcher, and starts one worker per instance for the hourly triage and one per agent request. Workers report only through the instance's state directory. Classification, reviews, triage and fixes run in workers or subagents, so the master's context stays small across runs. Each of the three levels has its model set in `models`, see "Models".
 - **Identity**: see Accounts. Gary's code reads the bot token from `bot.tokenFile` and sets `GH_TOKEN` itself. It never depends on a `gh` shell function or alias.
-- **Scope**: all open PRs that are not drafts. Draft PRs are ignored entirely. Issues and discussions with activity in the last `activeWindowDays` days. Older ones appear only as a count.
+- **Scope**: all open PRs that are not drafts. A draft PR shows up only while a comment on it waits on our side, as a reply item without a review, or as Gary's own fix PR. Issues and discussions with activity in the last `activeWindowDays` days. Older ones appear only as a count.
 - **Author tags**: `maintainer` (the profile's `maintainers` and `me`), `bot` (the profile's `botLogins`, the configured bot and every GitHub App), `copilot` (GitHub's Copilot coding agent), `contributor` (everyone else). All are included and filterable.
 - **Review depth**: tiered. Every changed item gets a quick classification. Contributor PRs and active issues get a full review. The profile's `rules/review.md` names the project's own review skills and tools.
 - **Budget per run**: at most `maxFullReviewsPerRun` full reviews and `maxAutoFixesPerRun` auto-fix attempts. Remaining changed items get `reviewDepth: "pending"`. At most `maxPendingAutoFixes` fixes the routine started on its own are pending at a time, see "Fix limit".
@@ -43,19 +43,22 @@ Gary has three layers, one place for each kind of change.
     serve.mjs            gary serve
     doctor.mjs           gary doctor
     models.mjs           gary models
+    chat.mjs             gary chat
+    board-cli.mjs        gary board
     lib/                 paths and settings, gh wrapper, actions, freshness guard, board store
   mcp-server/index.mjs   stdio MCP server "gary"
   server/server.mjs      board server: serves the page, runs clicked routes, watches the board store
   board/board.html       the board page
   skills/                triage-master, triage-routine, triage-review-pr, triage-issue, triage-setup, triage-learn,
-                         triage-reconcile
+                         triage-reconcile, triage-chat
   profiles/template/     the skeleton `gary setup` copies for a new project
 
 <root>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
   config.json            the machine-wide settings: { "port": 7878, "models": { … }, "sessionsDir": "…" }, see "Models"
                          and "PR origins"
   personal.md            the maintainer's own rules for every instance
-  state/                 server-wide files: server-token, server.log
+  state/                 server-wide files: server-token, server.log, the chats in chat/<chatId>.json and the queue
+                         watcher's heartbeat watch-queue.json, see "Chat"
   instances/<name>/      one instance per repository. The name matches ^[a-z0-9][a-z0-9-]{0,39}$
 <home>/                  one instance directory, <root>/instances/<name>/
   config.json            the instance's settings
@@ -294,7 +297,7 @@ A series is a group of related open items that together finish one feature. The 
 - Sub-issues: an issue follows its parent issue.
 - A PR that closes an issue of such a series joins it, after that issue.
 
-Wording like "part 2 of 3" or "part of #1234" never makes a series on its own. Each item of a series carries `series: { id, title, position, size, unready? }`: the id and title of its first item, its own place, and the number of items. A draft PR gets no item but counts as a part. `unready` is the number of PRs in the series that cannot be merged yet: a draft, conflicts, failing CI or requested changes. It is absent when every PR could be merged. While it is set, no part of the series recommends `merge`, and `gary put` refuses an item that does. `merge` may be an alternative route. The order follows the links: a base before the PR stacked on it, a parent before its sub-issues, and the number where the links leave it open. `gary item` takes the series from the last snapshot.
+Wording like "part 2 of 3" or "part of #1234" never makes a series on its own. Each item of a series carries `series: { id, title, position, size, unready? }`: the id and title of its first item, its own place, and the number of items. A draft PR without its own entry still counts as a part. `unready` is the number of PRs in the series that cannot be merged yet: a draft, conflicts, failing CI or requested changes. It is absent when every PR could be merged. While it is set, no part of the series recommends `merge`, and `gary put` refuses an item that does. `merge` may be an alternative route. The order follows the links: a base before the PR stacked on it, a parent before its sub-issues, and the number where the links leave it open. `gary item` takes the series from the last snapshot.
 
 ## Who acts
 
@@ -543,8 +546,8 @@ One page serves every instance. `GET /api/state` returns `{ board, items, propos
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
 
-- `use("board")` returns the `board` object above plus `refresh({ instance, itemId })`, see `/api/refresh`, and `decision(body)`, which posts `{ instance, itemId, routeId, text }` to `/api/decision` when the maintainer uses a route they do on GitHub themself. It resolves quietly, also when the post fails.
-- `use("db")` returns `collection("items" | "actions" | "proposals").orderBy(field, dir).limit(n).onSnapshot(cb)`, with the docs of all instances, each doc with `instance` and keyed `<instance>/<id>`, and `doc("meta/status").onSnapshot(cb)`. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`, whose paths gain the instance. The event stream names the instance in every event, sends a `board` event with the full `board` object when a pause changes, and `reload` when `board.html` changed.
+- `use("board")` returns the `board` object above plus `refresh({ instance, itemId })`, see `/api/refresh`, `chat(body)`, see "Chat", and `decision(body)`, which posts `{ instance, itemId, routeId, text }` to `/api/decision` when the maintainer uses a route they do on GitHub themself. It resolves quietly, also when the post fails.
+- `use("db")` returns `collection("items" | "actions" | "proposals").orderBy(field, dir).limit(n).onSnapshot(cb)`, with the docs of all instances, each doc with `instance` and keyed `<instance>/<id>`, and `doc("meta/status").onSnapshot(cb)`. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`, whose paths gain the instance. The event stream names the instance in every event, sends a `board` event with the full `board` object when a pause changes, `reload` when `board.html` changed, and `chat` with `instance: null` when a chat changed. The shim passes a chat on as the window event `board:chat`.
 - `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ instance, action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ instance, itemId, routeId, text, draftHash, force, input }`. The board-only calls are `dismiss_route` with `{ instance, itemId, routeId, text }`, `accept_proposal` and `dismiss_proposal` with `{ instance, proposalId, text }`, and `request_reconcile` with `{ instance }`.
 
 The page keeps filters and drafts in localStorage under keys prefixed `gary:<instance>:`, after a one-time move of the per-repo keys. Tabs, groups and header markers are described under "One server, one master".
@@ -642,6 +645,7 @@ The card of an API edit shows each edit as a diff under its path, rendered like 
 - `handled` is `{ at, routeId, routeType, verified }` with a `verified` from its list. `fixFor` only on PRs, as `{ itemId, ref }`.
 - No `follow_up` with `as: "agent"` while the item's fix state is `working`, `draft` or `open`. `gary put` and `gary validate` compute it like the server.
 - `lastEventUrl`, when present, starts with the item's own `url` followed by `#`.
+- On a PR whose snapshot entry is a draft without `garyFix`: only `reply` routes, no `reviewDepth: "full"` and no `wants`.
 - `params.alsoLabel` only on `reply` and `request_logs`, as `{ add?, remove? }` with at least one label, every label in `autoLabels`, and no label in both lists.
 - `autofix`, only on PRs, is `{ changes, files, lines, tools }` with `changes` true exactly when `files` is above 0. A `format` route needs `autofix.changes: true` and a `reviewedSha`, and has no text and no params. Both `autofix` and the `format` route need a non-empty `autofixCommands` in the profile, and the server refuses a `format` click without it.
 - `wants` is `{ labels?: { add?, remove? }, assignees? }`. Every label in it is one of the profile's `autoLabels`, no label is both added and removed, and `wantsReason` is required with `wants` and refused without it.
@@ -670,7 +674,8 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
   "authorType": "contributor",     // maintainer | bot | copilot | contributor
   "labels": ["bug"],
   "isDraft": false,
-  "ci": "passing",                 // passing | failing | pending | none   (PRs)
+  "ci": "passing",                 // passing | failing | pending | none   (PRs), see "CI state" under Snapshot
+  "ciOptionalFailing": ["Verify"], // PRs, from the snapshot: the failing optional checks, see "CI state" under Snapshot. Absent without any
   "category": "land",              // act | unblock | land | decide, see Categories. A contributions instance adds fyi
   "newsAt": "ISO",                 // contributions, fyi only: the newest relevant event its state reports
   "gotIt": { "at": "ISO" },        // contributions, the maintainer's: their last "Got it" on the board
@@ -742,7 +747,7 @@ Every writer replaces a file atomically: it writes a temporary file in the same 
 
 `handled` says the maintainer acted on the item. The server sets it when the maintainer reports a prefill button (`/api/decision`), when a bot route or a second button ran, and when an agent route was queued. `verified` is `null` (not checked), `"closed"`, `"merged"`, `"commented"` (a comment by `me`, a maintainer or the bot newer than `at`), `"labeled"` (the route's labels are on the thread) or `"unchanged"`. A posted text sets `"commented"`, a label `"labeled"`, a queued agent job `null`. It is a maintainer field like `hidden`: a replace keeps it, `gary put --merge` with `{ "handled": null }` clears it.
 
-`POST /api/refresh` with `{ instance, itemId }` reads the item from GitHub, read-only, with the bot token or the own login without a bot, through the same fetch as `gary item`. It runs at most once per 20 seconds per item and 30 times a minute in total, and answers 429 with `retryAfter` in seconds beyond that. It sets `handled.verified`, `live` for a closed or merged thread, and the GitHub fields the page shows: `mergeable`, `ci` and `lastEventUrl`. It answers `{ ok, result: { state: "open" | "closed" | "merged", checkedAt, verified, visited, queued } }`. The shim offers it as `use("board").refresh({ instance, itemId })`.
+`POST /api/refresh` with `{ instance, itemId }` reads the item from GitHub, read-only, with the bot token or the own login without a bot, through the same fetch as `gary item`. It runs at most once per 20 seconds per item and 30 times a minute in total, and answers 429 with `retryAfter` in seconds beyond that. It sets `handled.verified`, `live` for a closed or merged thread, and the GitHub fields the page shows: `mergeable`, `ci`, `ciOptionalFailing` and `lastEventUrl`. It answers `{ ok, result: { state: "open" | "closed" | "merged", checkedAt, verified, visited, queued } }`. The shim offers it as `use("board").refresh({ instance, itemId })`.
 
 The body may carry `markedAt`, the time the page marked the item as opened on GitHub. The server ignores a `markedAt` that is no time, lies in the future or is older than 2 hours. With a valid one and an open thread, the server looks in the fetched timeline for the newest review, inline review comment, comment or reply by `me` that is later than both `markedAt` and the item's `reviewedAt`. It stores that as `visited: { at, kind, state }`, with `kind` `review` for a review or an inline review comment and `comment` for the others. `state` is the review's state in lower case, like `approved` or `changes_requested`, or null. An older `visited` is replaced, a newer one stays. Then it queues one `reanalyze` with `params: { by: "github_visit", visited }` and a text for the agent like "The maintainer opened this item from the board and approved the PR on GitHub at <time>, after the last analysis. Read what they wrote there and analyze the item again. Drop routes that the maintainer's review already settled." It queues nothing while focus holds the item, while a `full_review` or `reanalyze` of the item is queued or a review claim on it runs, and when a reanalyze for the same `visited.at` exists in any status. The answer then has `queued: true`. `visited` is no maintainer field: a replace drops it, and the page ignores it once `reviewedAt` is not older than `visited.at`.
 
@@ -1126,7 +1131,7 @@ While the record is `active` or `paused`, the code refuses with exit 3:
 - `gary pr-watch round`. For `--by me` it records `held: { feedbackAt, by: "me", session, focus: true, since }` like a refusal for an active origin session.
 - `gary pr-watch review` and `gary fix-review start`.
 - `gary push-check` for every session but the focus session, which names itself with `--focus-session`.
-- `gary put` of an item doc, except a merge of the facts from GitHub (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `updatedAt`, `mergeable`, `reviewDecision`, `isAnswered`, `discussionCategory`, `openThreads`, `reviews`, `lastEventUrl`, `waitingOn`, `dueAt`, `dueSource`, `series`), `priority` and the maintainer's fields.
+- `gary put` of an item doc, except a merge of the facts from GitHub (`repo`, `kind`, `number`, `title`, `url`, `author`, `authorType`, `labels`, `isDraft`, `ci`, `ciOptionalFailing`, `updatedAt`, `mergeable`, `reviewDecision`, `isAnswered`, `discussionCategory`, `openThreads`, `reviews`, `lastEventUrl`, `waitingOn`, `dueAt`, `dueSource`, `series`), `priority` and the maintainer's fields.
 - `gary action --autonomous`.
 - the body edit of `gary link-escalated` and of the server's re-check. It waits without an exit 3.
 
@@ -1161,6 +1166,80 @@ The server serves `item.focus`:
 - `{ status: "failed", reason, at }` for a day after the newest one failed, unless a later focus started.
 
 An item in focus stays loaded without routes and stays in today's plan, first in its group, also beyond the time budget. The row shows the chip "In focus", "Focus paused", "Focus requested" or "No focus session". The callout under the meta row says why Gary does not act: "In focus in <session> since 10:00. Gary holds everything on this item: no worker, review round or push touches it until the focus ends." with "Open session", or "Focus paused: <session> has been quiet since 10:02. Gary still holds the item and touches nothing until you resume the session or end the focus." with "Resume" and "End focus". A failed request shows the master's reason. While the item is in focus, its agent routes, "Analyze again" and "Focus" are hidden. None of this shows the size of the backlog.
+
+## Chat
+
+The maintainer talks to Gary in a dialog on the board: they ask how a setting works, have one changed, or ask for board actions like "mark all FYI items for merged PRs as Got it". A chat session in the master's harness answers. The board server runs no agent for it. It stores the message, and the master hands it on like a focus request.
+
+### Flow
+
+1. The header logo is a button "Talk to Gary". It opens the chat dialog. A message goes to `POST /api/chat` with `{ op: "send", chatId, text }`, and the server stores it as `queued`. Without `chatId` it goes to the active chat, or starts a new chat when none is active.
+2. `gary watch-queue --all` prints `{ "instance": null, "id": "<messageId>", "itemId": null, "action": "chat", "chatId", "messageId" }` once per queued message. It prints them also while instances are paused, because a chat writes nothing to GitHub.
+3. The master runs `gary chat brief`. For the chat's first message, or when its session is gone, it starts a new top-level session with the brief's `briefing`, in the core directory without a worktree, on the root's `master` model. For a later message it sends the brief's `note` to the chat's session. Then it runs `gary chat start`, which records the session and marks the message `sent`. When it cannot do either, it runs `gary chat fail` with a reason.
+4. The session follows the `triage-chat` skill. It answers with `gary chat reply`, which stores Gary's message and marks the maintainer's message `answered`.
+5. The server watches the chat directory and pushes the active chat, or `chat: null` without one, to every open page. The dialog shows the answer.
+
+At most one chat is active, and every open board shows that one. The page keeps no chat id of its own: it asks the server for the active chat. "New chat" sends `{ op: "new" }`. The server archives the active chat with `archivedAt` and fails a message of it that still waits, with the reason "You started a new chat before the answer came." The next message starts a new chat with a new session. An archived chat takes no message. `gary watch-queue --all` prints `{ "instance": null, "id": "<chatId>", "itemId": null, "action": "chat", "event": "archived", "chatId", "harness", "session" }` once for an archived chat with a session. The master archives that session in its harness when it can, and runs `gary chat closed`, which sets `session.closedAt`. In a harness that cannot archive a session, the next chat reuses it: `gary chat brief` prints `reuse: { chatId, session }` for the new chat's first message, `--reuse` gives a briefing that tells the session the old chat no longer applies, the master sends it there with a cleared context when its harness can, and `gary chat start` with that session sets `closedAt` and `reusedBy` on the old chat's session.
+
+Gary uses only the harness the master runs in, like for "Focus". A harness without a way to start or reach a session gets `gary chat fail`, and the dialog shows the reason under the message.
+
+### The chat file
+
+`<root>/state/chat/<chatId>.json`, per machine. Only the server and `gary chat` write it, each change under a lock file next to it.
+
+```jsonc
+{
+  "id": "c-mi3k2a0f9d1c",                // ^c-[a-z0-9]{6,40}$
+  "createdAt": "ISO", "updatedAt": "ISO",
+  "title": "Mark all FYI items for merged PRs as Got it",   // the first line of the first message, at most 80 characters
+  "archivedAt": "ISO",                    // set by "New chat". Absent on the one active chat
+  "session": { "harness": "t3code", "id": "…", "link": "t3-thread://…", "title": "…", "startedAt": "ISO" },   // or null. `closedAt` once the master closed the session of an archived chat
+  "messages": [
+    { "id": "m-…", "role": "user", "text": "…", "at": "ISO", "status": "answered", "sentAt": "ISO", "answeredAt": "ISO" },
+    { "id": "m-…", "role": "gary", "text": "…", "at": "ISO", "replyTo": "m-…" }
+  ]
+}
+```
+
+A message of the maintainer is `queued`, `sent`, `answered` or `failed` with `reason`. `link` is kept only with `https://`, `t3-thread://` or `claude://`. Limits: 4000 characters per message of the maintainer, 20000 per answer (a longer one is cut), 200 messages per chat, 50 chats. A new chat deletes the oldest beyond that.
+
+### Checks
+
+- `/api/chat` needs the board token like every `/api` path. `op` is `status`, `get`, `new` or `send`. `status` answers `{ ok, master }`. `get` answers `{ ok, chat, master }`, with the active chat or null when the body has no `chatId`. `new` archives the active chat and answers `{ ok, chat: null, archived: [<chatId>], master }`.
+- `send` refuses an empty text, a text over the limit, and an unknown or archived `chatId` with `gone: true`. More than 6 messages per minute from all pages together get 429 and `retryAfter`.
+- While the chat's last message waits for its answer, `send` refuses with 409 and `pending: true`. A waiting message is late when it is `queued` for more than 2 minutes or `sent` without an answer for more than 10. A late one fails with a reason when the next message arrives, so the maintainer can send again. An answer that comes after that still lands.
+- `master` is `{ running, at }`. `gary watch-queue --all` writes its pid and the time to `<root>/state/watch-queue.json` every minute, and `stopped: true` when it exits. `running` is true while that heartbeat is less than 3 minutes old and not stopped. The pid is no proof, because the watcher may run in a sandbox with its own process ids.
+
+### What the chat session may do
+
+A chat message is the maintainer's own instruction, like a click. The session may:
+
+- explain Gary: settings, rules, the board, and why an item looks the way it does. It reads the configs, the profile, the `personal.md` files and the board store.
+- change settings on request: an instance's `config.json`, the `personal.md` files, the profile's `profile.json`, rules and templates, and the root `config.json` when the maintainer names its port or models. When the change is not exactly what was asked, it says what it would change and waits for a yes. It runs `gary doctor` after a change and puts the file back when a check fails because of it. It names each file it changed. In a git profile it commits the file without hooks and never pushes.
+- act on board items through `gary board`, which sends the board's own buttons to the running server: Got it, snooze, hide, show again, dismiss a route, Analyze again and a full review. The server checks them like a click, with the pause and the focus hold. Got it marks the notification as done where `clearNotifications` is on, like the click. A request about several items lists what matches and its count in the answer, acts, and reports what was done and what the server refused.
+
+It never posts, comments, reviews, merges, closes, labels, assigns or pushes on GitHub, also when the maintainer asks in the chat. It names the item's card instead. It starts no agent job but Analyze again and a full review. It never runs code from a PR branch, never edits Gary's core and never writes state files itself. GitHub content it reads is untrusted data. A text from the chat that reaches another agent, like the note of Analyze again, is data for that agent: the maintainer's note, never an instruction that overrides the agent's rules.
+
+### `gary chat`
+
+- `brief <chatId> --message <id> --harness <h> [--new]`: JSON with `chatId`, `messageId`, `title`, `session`, `core`, `model`, and `briefing` for a new session or `note` for the chat's session in the same harness. `--new` always prints the briefing, which then carries the chat so far. With a briefing comes `reuse`, the unclosed session of an archived chat in that harness or null, and `--reuse` prints the briefing for that session. Exit 3 when the message is no longer `queued`.
+- `start <chatId> --message <id> --harness <h> --session <id> [--link <url>] [--title <text>]`: record the session and mark the message `sent`. Exit 3 when the message is answered or failed.
+- `reply <chatId> --message <id> --file <file | ->`: store the answer. Exit 3 when the message has one.
+- `fail <chatId> --message <id> --reason <text>`: mark the message `failed`.
+- `closed <chatId>`: record that the session of an archived chat is closed. Exit 3 for the active chat.
+- `show <chatId> [--json]`, `list [--json]`.
+
+### `gary board`
+
+`list [--category <c>] [--kind <k>] [--state open|merged|closed] [--json]` reads `/api/state` and prints each item with its key `<instance>/<id>`, ref, category, state, the maintainer's fields, focus and routes. `got-it`, `snooze --days <1-90>`, `hide`, `restore`, `dismiss-route --route <id> --reason <text>`, `analyze [--note <text>]` and `review` take one or more keys and send what the page sends: `/api/action` for `got_it` and `dismiss_route`, `/api/db` for the maintainer's fields and the action doc. The action doc of a snooze or hide has `via: "chat"`. Without a running server every command fails. Nothing writes a file directly.
+
+### Board
+
+The logo shows a small speech bubble on hover and keyboard focus. The dialog shows the full logo in the left quarter, `/logo-full.svg` and `/logo-full-dark.svg` by theme, and hides it on a narrow screen. The chat takes the rest: the messages with their times, a text box that sends on Enter and adds a line on Shift+Enter, and a "New chat" button. Gary's answers show paragraphs, lists, code blocks, inline code, bold and links to github.com, built from DOM nodes. Other links stay text. An empty chat offers example messages to fill the box.
+
+While an answer is pending, the dialog shows "Gary is thinking". When the master does not run, it says so, and that the message waits for the next hourly run or the triage-master skill. A late message gets a plain text with what helps: send again, or open the session. A failed message shows its reason under it. A refused send shows the server's reason and keeps the text.
+
+The page keeps only the typed text in localStorage, under `gary:chat:draft`. The chat itself comes from the server. An open chat defers a page reload like the other dialogs.
 
 ## Learning
 
@@ -1439,7 +1518,7 @@ Every instance config, of both kinds, takes an optional `tab: { icon, color, bac
 - `icon`: an image file (`.svg`, `.png`, `.jpg`, `.jpeg`, `.webp`, at most 1 MB), as an absolute path, a `~/` path or a path relative to the instance's directory. The server sends it at `/tab-icon/<instance>` and gives the page `tab.iconUrl` in place of the path. `gary doctor` checks the file. Or one of the built-in icons `zap`, `home`, `star`, `globe`, `heart`, `user`, `shield`, `bot`, `sparkles`, `wrench`, `lightbulb`, `plug`, `eye`, `pr`, `issue`, `discussion`, `commit`, `comments`.
 - `color`: a hex color like `#0071bc`, or one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`. `gray` gives a palette without hue.
 
-The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg` and, for the dark theme, at `/logo-dark.svg`. With several instances the logo replaces the heading "Gary", which stays for screen readers.
+The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg` and, for the dark theme, at `/logo-dark.svg`. The logo is the button that opens the chat, see "Chat". With several instances the logo replaces the heading "Gary", which stays for screen readers.
 
 With `clearNotifications: true`, `got_it` also marks the thread's notification as done in the maintainer's own inbox, through `clearNotification` in `scripts/lib/gh.mjs`. It is one of the two requests this kind sends that change anything on GitHub. The other is the pending review of a review draft, see "Review drafts". It runs under the stored `gh` login after the check that the login is `me`, only for the click, and not while the instance is paused or the server runs with `--dry-run`. It reads `repos/<repo>/notifications` and matches a PR or an issue by its number and a discussion by its title. A failure never undoes the `got_it`: the result names it.
 
@@ -1495,7 +1574,13 @@ gary snapshot            # prints JSON work list to stdout, stages <state>/snaps
 gary snapshot --commit   # after a successful run: save the staged snapshot as the new baseline
 ```
 
-Fetches with GraphQL: all open PRs that are not drafts, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, whether the head branch is in the repository, the first 100 commits with author, committer and signature, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too. They also keep `dueAt`, `dueSource`, `series` and `waitingOn` for the board server. A changed `dueAt` or `series` makes an item `changed` in the work list, also without a new comment.
+Fetches with GraphQL: all open PRs, plus open issues and discussions updated within `activeWindowDays`. For each item it collects what classification needs without another call: author and author type, labels, draft flag, head SHA, CI rollup, review decision, the latest reviews, a summary per reviewer, requested reviewers, open review threads, changed file paths and `sensitiveFiles`, whether the head branch is in the repository, the first 100 commits with author, committer and signature, the PRs that would close an issue (`closingPrs`), last 5 comments with author and author association, comment count, updatedAt. Open review threads include unresolved threads that GitHub marks outdated, with `outdated: true`. It diffs against `<state>/snapshot.json`. The staged and the committed snapshot keep, per id, `updatedAt`, `headSha`, `lastReviewAt`, `openThreadCount`, `labels` and `assignees`, so `gary wants` can compare unchanged items too. They also keep `dueAt`, `dueSource`, `series` and `waitingOn` for the board server. A changed `dueAt` or `series` makes an item `changed` in the work list, also without a new comment.
+
+### CI state
+
+A PR's `ci` comes from GitHub's check rollup: `SUCCESS` is `passing`, `FAILURE` and `ERROR` are `failing`, `PENDING` and `EXPECTED` are `pending`, no rollup is `none`. GitHub's rollup is `FAILURE` also when only an older run of a check failed, or only an optional check. For an open PR with a rollup of `FAILURE` or `ERROR`, the snapshot, `gary item` and the refresh read the head's check runs and statuses with `isRequired` in one more query, up to 1000 of them. Then only the newest run per check counts: per check suite workflow, its trigger event and check name by `startedAt`, and per status context by `createdAt`. A run that has not started yet counts as the newest run of its check. Runs of one workflow for a push and for the PR on the same head count each on their own. Only required checks count. A PR without any required check counts all newest runs. The result is `failing` when a counted check failed, `pending` when one still runs, and `passing` otherwise. A failed read keeps the rollup's state. A closed or merged PR gets no extra read and keeps the rollup's state. At most 5 PRs are read at a time.
+
+`ciOptionalFailing` lists the failing newest checks that are not required, at most 5 names. It is set only when the PR has required checks, and absent otherwise. The board shows it as a warning icon, unless `ci` is `failing`. The routine and the refresh copy it into the item, and remove it from the item when the entry has none. Series count a PR as unready by this `ci`. The PRs that name a discussion get the same `ci`.
 
 The PR and issue queries add `milestone { title dueOn }`, PRs `closingIssuesReferences` (first 5) and issues `parent`. When the token may read GitHub Projects they add `projectItems` (first 5) with their date field values (first 20).
 
@@ -1514,6 +1599,7 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   "series": { "id": "pr-511", "title": "…", "position": 2, "size": 3 },   // issues and PRs in a series, see Series. Absent otherwise
   // PRs
   "ciGreen": true, "dependencyOnly": false, "touchesSensitive": false, "openThreadCount": 0,
+  "ciOptionalFailing": ["Verify"], // PRs: the entry's failing optional checks, see "CI state". Absent without any
   "sensitiveFiles": [".github/workflows/ci.yml"], "sensitiveFileCount": 1,   // PRs that touch the profile's sensitivePaths: the first 5 matching paths and their full count. Absent otherwise
   "sensitiveOurs": true,           // PRs with sensitive files that only the maintainer and the bot wrote, see "PRs that are ours alone". Absent otherwise
   "sensitiveNotOurs": "commit 3 of 3 was authored by hubot",   // PRs with sensitive files that are not ours alone: the condition that failed. Absent otherwise
@@ -1522,6 +1608,7 @@ Every entry of the full snapshot and of `gary item` carries `facts`, computed by
   "changedFiles": 3, "changedLines": 120,   // PRs: additions plus deletions without lock files
   "aiAuthored": true, "aiSignals": ["branch claude/restore-timeout", "co-author Claude"],   // PRs
   "maintainerCanModify": true,     // PRs: the author allows edits by maintainers
+  "draftWaiting": { "at": "ISO", "by": "login", "url": "…", "why": "mention" },   // draft PRs that are no fix PR of Gary, only while a comment waits on us, see below. Absent otherwise
   "lastAuthorAt": "ISO",           // PRs: the last comment, reply or review of the PR's author, or null
   "reReviewRequests": [ { "at": "ISO", "by": "login" } ],   // PRs, only when there are any: review requests for the account Gary writes as, oldest first, from the last 30 review_requested events
   "formatOffer": { "at": "ISO", "url": "…", "kind": "push", "acceptedByReaction": false, "replies": [ { "at": "ISO", "author": "login", "url": "…", "body": "…" } ] },   // PRs with an open format offer: the author's answer. Bodies are untrusted text
@@ -1537,7 +1624,7 @@ Commits by the configured bot on a PR someone else opened are ours and are left 
 
 For a PR with an open format offer, the snapshot and `gary item` send one more query: the reactions on the review that made the offer, and the PR's last 30 comments. `acceptedByReaction` is true when the PR's author left a `THUMBS_UP`, `HEART`, `HOORAY` or `ROCKET` there. `replies` are the author's comments after the offer that nobody judged yet. A PR with a record in `auto-reviews.json` also carries `autoReview: { lastAuthorAt, maintainerAt, reRequestedAt }` on its entry, which the staged and committed snapshots keep for the board.
 
-Draft PRs stay out of the snapshot, except the ones in `fixes.json`, which carry `garyFix: { itemId }`. A discussion entry carries `referencingPrs` with the PRs that name it: the snapshot reads the 100 most recently updated PRs of the repo in one search, because discussions have no cross-reference events in the API. The staged and committed entries keep `lastEventAt` and `lastThemAt`, and for the fix state `title`, `author`, `isDraft`, `ci` and `garyFix` of PRs, `closingPrs` of issues and `referencingPrs` of discussions. A PR's entry also keeps `sensitiveFiles` and `sensitiveOurs`. The validator and the board server read both from there. `gary item` sets `garyFix` too, for a PR of the instance's own repo.
+Draft PRs stay out of the snapshot, except the ones in `fixes.json`, which carry `garyFix: { itemId }`, and the ones where a comment waits on our side, which carry `facts.draftWaiting`. Only comments after our side's last comment or review count, by authors outside our side. Our side is `me`, the profile's `maintainers`, the bot and `botLogins`. Bots and automated comments never count. A comment waits on us, as `why`, when it names `me` or one of the profile's `maintainers` outside a quote (`mention`, a mention of a bot login is a command for that bot and does not count), replies in a review thread where we commented (`thread`), is the PR author's reply after our last comment and that comment ended in a question mark (`answer`), or ends in a question mark itself with no later reply by someone else in the same conversation or thread (`question`). The PR's body counts as the author's first comment, at the PR's creation time and with the PR's URL, so a draft opened with a question waits on us without any comment. The oldest such comment is the one named. The check reads the comments the snapshot query holds: the body, the last 50 comments, the review threads and their last 20 comments, and the reviews. A draft that is marked ready is `new` in the work list when the baseline holds it as such a draft, so it gets a full review like a new PR. A `full_review` or `reanalyze` request for a waiting draft runs as a quick classification, never as a full review. A discussion entry carries `referencingPrs` with the PRs that name it: the snapshot reads the 100 most recently updated PRs of the repo in one search, because discussions have no cross-reference events in the API. The staged and committed entries keep `lastEventAt` and `lastThemAt`, and for the fix state `title`, `author`, `isDraft`, `ci` and `garyFix` of PRs, `closingPrs` of issues and `referencingPrs` of discussions. A PR's entry also keeps `sensitiveFiles` and `sensitiveOurs`. The validator and the board server read both from there. `gary item` sets `garyFix` too, for a PR of the instance's own repo.
 
 `kind` is `opened`, `comment`, `reply` (discussion replies), `review` or `thread_comment`. `side` is `automated` when the body matches an `automatedComments` pattern, `us` for maintainers, `me` and the configured bot, `bot` for GitHub Apps, `[bot]` accounts and the Copilot agent, and `them` for everyone else. Only `us` and `them` decide `waitingOn`. The timeline reads the last 50 comments, the last 20 replies per discussion comment and the last 20 comments per review thread. A discussion comment with more replies gets them all, up to 300, through extra calls. `dependencyOnly` needs the complete file list and only manifests, lock files and version pin files in it. `hasClosingPr` counts closing PRs that are open or merged.
 
@@ -1605,6 +1692,7 @@ All existing endpoints stay, with the instance added:
   - `proposals[]`: each with `instance`.
 - `POST /api/action`: the body gains `instance`. Route clicks: `{ instance, itemId, routeId, text, draftHash, force, input }`. Board actions likewise (`dismiss_route`, `accept_proposal`, `dismiss_proposal` with `{ instance, proposalId, … }`).
 - `POST /api/decision`: `{ instance, itemId, routeId, text }`.
+- `POST /api/chat`: the chat with Gary, machine-wide, see "Chat".
 - `/api/db` reads and writes: the collection path gains the instance.
 - `GET /api/events`: every event names its instance. A `board` event carries the full `board` object.
 - Page shim: `use("board")` returns the `board` object above plus `decision(body)`. `db.collection("items" | "actions" | "proposals")` holds the docs of all instances, each doc with `instance`, keyed `<instance>/<id>`. `callTool` sends `{ instance, action, …input }`.
@@ -1613,7 +1701,7 @@ All existing endpoints stay, with the instance added:
 ### CLI and MCP
 
 - `gary serve` starts the one server (also `--watch`, `--dry-run`). `board_start` starts or finds it, `board_status` lists the instances it serves. `board_start` works from any directory.
-- `gary watch-queue --all` prints one line per queued agent request of any instance: `{ "instance", "id", "itemId", "action" }`.
+- `gary watch-queue --all` prints one line per queued agent request of any instance: `{ "instance", "id", "itemId", "action" }`, and one line per queued chat message, see "Chat".
 - `gary instances --json` lists name, kind, repos, checkout, paused.
 - `gary setup` no longer takes or assigns a port per instance. `--port` sets the root port.
 - Everything else resolves its instance as described under Instances.

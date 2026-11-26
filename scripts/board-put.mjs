@@ -21,7 +21,7 @@ import { focusHold, focusRefusal } from "./lib/focus.mjs";
 
 // `FOCUS_FACT_FIELDS` names what a write may change on an item in focus: the facts from GitHub, the rank and the maintainer's fields
 export const FOCUS_FACT_FIELDS = [
-	"repo", "kind", "number", "title", "url", "author", "authorType", "labels", "isDraft", "ci", "updatedAt", "mergeable", "reviewDecision", "isAnswered",
+	"repo", "kind", "number", "title", "url", "author", "authorType", "labels", "isDraft", "ci", "ciOptionalFailing", "updatedAt", "mergeable", "reviewDecision", "isAnswered",
 	"discussionCategory", "openThreads", "reviews", "lastEventUrl", "waitingOn", "dueAt", "dueSource", "series", "priority", "hidden", "snoozedUntil", "handled",
 ];
 

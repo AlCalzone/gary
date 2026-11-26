@@ -19,6 +19,11 @@
 // every 30 minutes while it is paused, so the master looks at the session. The watcher reads the records once a minute.
 // A reconcile pass the maintainer asked for prints { "instance", "id": "reconcile", "itemId": null, "action": "reconcile", "at" },
 // once per request.
+// With --all, a queued chat message of the maintainer prints { "instance": null, "id", "itemId": null, "action": "chat",
+// "chatId", "messageId" } once, also while instances are paused, because a chat writes nothing to GitHub. An archived chat
+// whose session the master has not closed yet prints the same line with "event": "archived", "harness" and "session". --all also
+// writes a heartbeat to <root>/state/watch-queue.json every minute and a last one marked stopped on exit. The board reads
+// it to tell whether a master follows the queue.
 import { mkdirSync, watch } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -26,6 +31,7 @@ import { pathToFileURL } from "node:url";
 import { readAutoReviews, watchEvents, watchedRecords } from "./lib/auto-review.mjs";
 import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
 import { autoReviewOf, instanceName, instanceNames, instancesDir, loadInstance, withInstance } from "./lib/config.mjs";
+import { archivedSessions, chatDir, queuedMessages, writeHeartbeat } from "./lib/chat.mjs";
 import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
 import { checkDue, heldItemIds, isHeld, readFocuses } from "./lib/focus.mjs";
@@ -47,6 +53,7 @@ const WATCH_POLL_MS = Number(process.env.GARY_WATCH_POLL_MS) || 180000;
 const MAX_WATCHED = 20;
 // GARY_FOCUS_POLL_MS shortens the poll of the focus records in tests
 const FOCUS_POLL_MS = Number(process.env.GARY_FOCUS_POLL_MS) || 60000;
+const HEARTBEAT_MS = 60000;
 
 /**
  * What a waiting drive waits for: "review-arrived" when its review bot reviewed or commented after the request,
@@ -269,6 +276,34 @@ export async function main(argv) {
 		process.stdout.write(JSON.stringify({ instance, id: "reconcile", itemId: null, action: "reconcile", at: state.requestedAt }) + "\n");
 	}
 
+	async function scanChats() {
+		let queued = [];
+		try {
+			queued = await queuedMessages();
+		} catch (e) {
+			console.error(`Reading the chats failed: ${e.message}`);
+		}
+		for (const { chatId, messageId } of queued) {
+			const key = `chat/${chatId}/${messageId}`;
+			if (printed.has(key)) continue;
+			printed.add(key);
+			process.stdout.write(JSON.stringify({ instance: null, id: messageId, itemId: null, action: "chat", chatId, messageId }) + "\n");
+		}
+		// The session of an archived chat has nothing left to do, and the master closes it
+		let closing = [];
+		try {
+			closing = await archivedSessions();
+		} catch (e) {
+			console.error(`Reading the chats failed: ${e.message}`);
+		}
+		for (const { chatId, harness, session } of closing) {
+			const key = `chat/${chatId}/archived`;
+			if (printed.has(key)) continue;
+			printed.add(key);
+			process.stdout.write(JSON.stringify({ instance: null, id: chatId, itemId: null, action: "chat", event: "archived", chatId, harness, session }) + "\n");
+		}
+	}
+
 	async function scan() {
 		const found = (await Promise.all(instances().map(scanOne))).flat();
 		found.sort((a, b) => String(a.doc.createdAt ?? "").localeCompare(String(b.doc.createdAt ?? "")) || a.key.localeCompare(b.key));
@@ -277,6 +312,7 @@ export async function main(argv) {
 			process.stdout.write(JSON.stringify({ instance, id, itemId: doc.itemId, action: doc.action }) + "\n");
 		}
 		for (const instance of instances()) await scanReconcile(instance);
+		if (all) await scanChats();
 	}
 
 	// Serialize scans so a burst of events never prints a doc twice
@@ -291,6 +327,20 @@ export async function main(argv) {
 	if (once) process.exit(0);
 
 	let timer = null;
+	if (all) {
+		mkdirSync(chatDir(), { recursive: true });
+		writeHeartbeat();
+		setInterval(() => writeHeartbeat(), HEARTBEAT_MS);
+		try {
+			const watcher = watch(chatDir(), () => {
+				clearTimeout(timer);
+				timer = setTimeout(queueScan, DEBOUNCE_MS);
+			});
+			watcher.on("error", (e) => console.error(`Watching ${chatDir()} failed: ${e.message}`));
+		} catch (e) {
+			console.error(`Watching ${chatDir()} failed: ${e.message}`);
+		}
+	}
 	const watchDir = all ? instancesDir() : join(boardDir(fixed), "actions");
 	try {
 		const watcher = watch(watchDir, { recursive: all }, () => {
@@ -307,8 +357,12 @@ export async function main(argv) {
 	setInterval(queueAutoReviews, OFFER_POLL_MS);
 	setInterval(queueWatches, WATCH_POLL_MS);
 	setInterval(queueFocus, FOCUS_POLL_MS);
-	process.on("SIGTERM", () => process.exit(0));
-	process.on("SIGINT", () => process.exit(0));
+	const stop = () => {
+		if (all) writeHeartbeat({ stopped: true });
+		process.exit(0);
+	};
+	process.on("SIGTERM", stop);
+	process.on("SIGINT", stop);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main(process.argv.slice(2));
