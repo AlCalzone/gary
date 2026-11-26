@@ -77,7 +77,8 @@ export function speakerFacts(timeline, now = Date.now()) {
 }
 
 /**
- * The comment on a draft PR that waits on our side, as `{ at, by, url, why }`, or null. Only comments after our side's
+ * The comment on a draft PR that waits on our side, as `{ at, by, url, why }`, or null. The PR's body counts as the
+ * author's first comment. Only comments after our side's
  * last comment or review count, by people outside our side. Bots and automated comments never count. `why` says how
  * the comment waits: `mention` names one of `maintainers`, because a mention of a bot login is a command for that bot, `thread` replies in a review thread we commented in, `answer`
  * is the PR author's reply to our last comment when it ended in a question mark, and `question` ends in a question
@@ -86,7 +87,8 @@ export function speakerFacts(timeline, now = Date.now()) {
 export function draftWaiting(node, { us, maintainers = us, patterns = [] }) {
 	const low = (v) => String(v ?? "").toLowerCase();
 	const reviewBodies = new Map((node.reviews?.nodes ?? []).map((r) => [r.url, r.body]));
-	const events = [];
+	// The PR's body opens the conversation
+	const events = node.createdAt ? [{ createdAt: node.createdAt, author: node.author, body: node.body, url: node.url, where: "conversation" }] : [];
 	for (const c of node.timelineComments?.nodes ?? []) events.push({ ...c, where: "conversation" });
 	for (const t of node.reviewThreads?.nodes ?? []) for (const c of (t.allComments ?? t.comments)?.nodes ?? []) events.push({ ...c, where: `thread:${t.id}` });
 	for (const r of node.allReviews?.nodes ?? []) {

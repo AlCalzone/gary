@@ -207,6 +207,9 @@ const draft = ({ comments = [], threads = [], reviews = [] } = {}) => ({
 let w = f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this the right approach")] }), dctx);
 t.check("a draft comment that mentions the maintainer waits on us", w?.why === "mention" && w.by === "hubot" && w.at === at(2) && w.url.endsWith("#c2"), w);
 t.check("a mention inside a quote is no mention", f.draftWaiting(draft({ comments: [dc(2, "hubot", "> @octocat said so\nOk.")] }), dctx) === null);
+w = f.draftWaiting({ ...draft(), createdAt: at(1), body: "@octocat is this the right approach?", url: "https://github.com/acme/widgets/pull/24" }, dctx);
+t.check("a question in the draft's body waits on us", w?.why === "mention" && w.at === at(1) && w.url === "https://github.com/acme/widgets/pull/24" && w.by === "hubot", w);
+t.check("a body we already answered waits on nobody", f.draftWaiting({ ...draft({ comments: [dc(3, ME, "Yes.")] }), createdAt: at(1), body: "Is this the right approach?" }, dctx) === null);
 t.check("a mention of the bot is a bot command and waits on nobody", f.draftWaiting(draft({ comments: [dc(2, "hubot", "@" + BOT + " fix lint")] }), dctx) === null);
 t.check("a mention of a maintainer from the profile counts", f.draftWaiting(draft({ comments: [dc(2, "hubot", "Thoughts, @AlCalzone.")] }), dctx)?.why === "mention");
 t.check("a comment older than our last comment waits on nobody", f.draftWaiting(draft({ comments: [dc(2, "hubot", "@octocat is this right?"), dc(3, ME, "Looks fine.")] }), dctx) === null);
@@ -256,6 +259,10 @@ t.check("a draft whose only comment is older than ours stays out", !out.error &&
 writeDraft({ timelineComments: { totalCount: 1, nodes: [{ author: { login: "renovate[bot]", __typename: "Bot" }, createdAt: at(5), body: `@${ME} please merge?` }] } });
 out = snapDraft();
 t.check("a draft with only a bot comment stays out", !out.error && !out.changed?.some((e) => e.id === "pr-24"), out.error ?? out.changed?.map((e) => e.id));
+writeDraft({ body: "Should the parser live in core?", updatedAt: at(7), timelineComments: { totalCount: 0, nodes: [] } });
+out = snapDraft();
+pr24 = out.changed?.find((e) => e.id === "pr-24");
+t.check("the snapshot lists a draft whose only question is in its body", pr24?.facts?.draftWaiting?.why === "question" && pr24.facts.draftWaiting.url === "https://github.com/acme/widgets/pull/24", pr24 ?? out.error ?? out.changed?.map((e) => e.id));
 writeDraft({});
 out = snapDraft();
 t.check("a plain draft stays out", !out.error && !out.changed?.some((e) => e.id === "pr-24"), out.error ?? out.changed?.map((e) => e.id));
