@@ -29,6 +29,9 @@ const counts = { train: 0, dev: 0, test: 0 };
 for (let i = 0; i < 2000; i++) counts[voice.splitOf(`issue:a/b#${i}`)]++;
 t.check("the split is about 70/15/15", counts.train > 1300 && counts.train < 1500 && counts.dev > 220 && counts.test > 220, counts);
 
+t.check("isEnglish tells English from German", voice.isEnglish("I think this is caused by the stick, please make a log of it") && !voice.isEnglish("Puhh, ich hab ehrlich gesagt von dem VM-Kram keine Ahnung. Ich frag mal rum"));
+t.check("usable drops the few German replies of a mostly English maintainer", voice.usable([...Array(9)].map(() => ({ reply: "I think this is caused by the stick, please make a log of it" })).concat([{ reply: "Puhh, ich hab ehrlich gesagt von dem VM-Kram keine Ahnung. Ich frag mal rum" }])).length === 9);
+
 // Features
 const f = voice.features("Ok it looks like the stick (a 700 series) is at fault.\nPlease update it. See https://example.com/x!");
 t.check("features count words outside code", voice.features("one two ```three four``` five").words === 3);
@@ -55,7 +58,12 @@ issueComments.push({ createdAt: "2023-02-01T00:00:00Z", url: "other", body: "els
 writeFileSync(fixture, JSON.stringify({
 	login: ME, issueComments, discussionComments: [],
 	pullRequests: [{ number: 99, url: `https://github.com/${repo}/pull/99`, title: "fix: the thing", body: "We now do it right.\n\nfixes: #1", createdAt: "2023-03-01T00:00:00Z", merged: true, additions: 10, deletions: 2, repository: { nameWithOwner: repo } }],
-	reviews: [{ pullRequestReview: { url: "r1", body: "Thanks, two minor things.", createdAt: "2023-04-01T00:00:00Z", pullRequest: { number: 98, author: { login: "hubot" }, repository: { nameWithOwner: repo } }, comments: { nodes: [{ url: "rc1", body: "Nit: Title Case", path: "a.json", diffHunk: "@@", createdAt: "2023-04-01T00:00:00Z", replyTo: null }] } } }],
+	reviewedPrs: [[repo, 98]],
+	prReviews: { [`${repo}#98`]: { author: { login: "hubot" }, reviews: { nodes: [
+		{ url: "r1", body: "Thanks, two minor things.", createdAt: "2023-04-01T00:00:00Z", comments: { nodes: [{ url: "rc1", body: "Nit: Title Case", path: "a.json", diffHunk: "@@", createdAt: "2023-04-01T00:00:00Z", replyTo: null }] } },
+		{ url: "r2", body: "", createdAt: "2023-04-02T00:00:00Z", comments: { nodes: [{ url: "rc2", body: "description seems unnecessary", path: "a.json", diffHunk: "@@", createdAt: "2023-04-02T00:00:00Z", replyTo: null }] } },
+		{ url: "r3", body: "LGTM", createdAt: "2026-04-02T00:00:00Z", comments: { nodes: [] } },
+	] } } },
 	threads,
 }));
 const dir = voice.dataDir();
@@ -65,7 +73,15 @@ t.check("collect keeps comments in range from wanted repos", meta.counts.replies
 t.check("collect marks bot commands", meta.counts.commandOnly === 6, meta.counts);
 t.check("collect sets the previous non-bot comment", replies[0].prevAuthor === "hubot" && replies[0].prev === "Any news?", replies[0]);
 t.check("collect keeps earlier comments as context, without bots", replies[0].context.length === 1 && replies[0].context[0].body === "Any news?", replies[0].context);
-t.check("collect writes PRs, reviews and others' text", meta.counts.prs === 1 && meta.counts.reviewComments === 1 && voice.readJsonl(join(dir, "others.jsonl")).length > 0, meta.counts);
+t.check("collect writes PRs, reviews and others' text", meta.counts.prs === 1 && meta.counts.reviews === 2 && meta.counts.reviewComments === 2 && voice.readJsonl(join(dir, "others.jsonl")).length > 0, meta.counts);
+t.check("reviewsQuery refuses a bad login", (() => {
+	try {
+		voice.reviewsQuery(["issue:a/b#1"], 'x") { y }');
+		return false;
+	} catch {
+		return true;
+	}
+})());
 t.check("threadsQuery refuses a bad repository name", (() => {
 	try {
 		voice.threadsQuery(['issue:a"){x}/b#1']);

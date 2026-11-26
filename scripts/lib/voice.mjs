@@ -128,11 +128,25 @@ const DISCUSSION_COMMENTS = `query VoiceDiscussionComments($after: String) { vie
 const PULL_REQUESTS = `query VoicePullRequests($after: String) { viewer { pullRequests(first: 100, after: $after, orderBy: { field: CREATED_AT, direction: DESC }) {
 	pageInfo { hasNextPage endCursor }
 	nodes { number url title body createdAt merged additions deletions repository { nameWithOwner } } } } }`;
-const REVIEWS = `query VoiceReviews($from: DateTime!, $to: DateTime!, $after: String) { viewer { contributionsCollection(from: $from, to: $to) {
-	pullRequestReviewContributions(first: 50, after: $after) {
+const REVIEWED_PRS = `query VoiceReviews($from: DateTime!, $to: DateTime!, $after: String) { viewer { contributionsCollection(from: $from, to: $to) {
+	pullRequestReviewContributions(first: 100, after: $after) {
 		pageInfo { hasNextPage endCursor }
-		nodes { pullRequestReview { url body createdAt pullRequest { number author { login } repository { nameWithOwner } }
-			comments(first: 50) { nodes { url body path diffHunk createdAt replyTo { id } } } } } } } } }`;
+		nodes { pullRequest { number repository { nameWithOwner } } } } } } }`;
+const LOGIN = /^[A-Za-z0-9-]+$/;
+
+/** The GraphQL query that reads the maintainer's reviews on up to ten PRs. contributionsCollection lists only one review per PR. */
+export function reviewsQuery(keys, me) {
+	if (!LOGIN.test(me)) throw new Error(`Bad login: ${me}`);
+	const parts = keys.map((key, i) => {
+		const [, repo, number] = key.match(/^issue:(.+)#(\d+)$/);
+		if (!REPO_NAME.test(repo)) throw new Error(`Bad repository name: ${repo}`);
+		const [owner, name] = repo.split("/");
+		return `r${i}: repository(owner: "${owner}", name: "${name}") { pullRequest(number: ${number}) { author { login }
+			reviews(first: 30, author: "${me}") { nodes { url body createdAt comments(first: 100) { nodes { url body path diffHunk createdAt replyTo { id } } } } } } }`;
+	});
+	return `query VoicePrReviews { ${parts.join("\n")} }`;
+}
+
 const AUTHOR = "author { __typename login }";
 const ISSUE_THREAD = `title body createdAt ${AUTHOR} comments(first: 100) { nodes { url body createdAt ${AUTHOR} } }`;
 const DISCUSSION_THREAD = `title body createdAt ${AUTHOR} comments(first: 60) { nodes { url body createdAt ${AUTHOR} replies(first: 30) { nodes { url body createdAt ${AUTHOR} } } } }`;
@@ -201,15 +215,25 @@ export async function collect({ from, to, include = [], exclude = [], dir = data
 		.map((p) => ({ ...p, split: splitOf(p.key) }));
 	log(`${prs.length} PRs`);
 
-	const reviews = [];
+	const reviewed = new Set();
 	for (const [wFrom, wTo] of yearWindows(from, to)) {
-		const nodes = await paginate(REVIEWS, (d) => d.viewer.contributionsCollection.pullRequestReviewContributions, { from: wFrom, to: wTo });
-		for (const { pullRequestReview: r } of nodes) {
-			if (!r || !wanted(r.pullRequest.repository.nameWithOwner, filter)) continue;
-			const key = `issue:${r.pullRequest.repository.nameWithOwner}#${r.pullRequest.number}`;
-			reviews.push({ key, split: splitOf(key), url: r.url, summary: clean(r.body), prAuthor: r.pullRequest.author?.login ?? null, createdAt: r.createdAt,
-				comments: r.comments.nodes.map((c) => ({ url: c.url, body: clean(c.body), path: c.path, diffHunk: String(c.diffHunk ?? "").slice(-1500), isReply: !!c.replyTo })) });
+		for (const { pullRequest: pr } of await paginate(REVIEWED_PRS, (d) => d.viewer.contributionsCollection.pullRequestReviewContributions, { from: wFrom, to: wTo })) {
+			if (pr && wanted(pr.repository.nameWithOwner, filter)) reviewed.add(`issue:${pr.repository.nameWithOwner}#${pr.number}`);
 		}
+	}
+	const reviews = [];
+	const prKeys = [...reviewed];
+	for (let i = 0; i < prKeys.length; i += 10) {
+		const batch = prKeys.slice(i, i + 10);
+		const data = await query(reviewsQuery(batch, me)).catch(() => ({}));
+		batch.forEach((key, j) => {
+			const pr = data[`r${j}`]?.pullRequest;
+			for (const r of pr?.reviews?.nodes ?? []) {
+				if (!inRange(r.createdAt, from, to)) continue;
+				reviews.push({ key, split: splitOf(key), url: r.url, summary: clean(r.body), prAuthor: pr.author?.login ?? null, createdAt: r.createdAt,
+					comments: r.comments.nodes.map((c) => ({ url: c.url, body: clean(c.body), path: c.path, diffHunk: String(c.diffHunk ?? "").slice(-1500), isReply: !!c.replyTo })) });
+			}
+		});
 	}
 	log(`${reviews.length} reviews`);
 
@@ -400,8 +424,24 @@ function topCounts(values, top) {
 	return [...c].sort((a, b) => b[1] - a[1]).slice(0, top);
 }
 
-/** The replies the stats and the calibration use: no commands to bots. */
-export const usable = (replies) => replies.filter((r) => !r.cmd);
+const ENGLISH = new Set(["the", "is", "to", "and", "a", "of", "you", "it", "that", "this", "in", "for", "not", "be", "with", "on", "if", "are", "can", "should"]);
+
+/** Whether a text reads as English: at least 8% of its words are common English words. Texts under 8 words count as English. */
+export function isEnglish(text) {
+	const w = norm(text);
+	if (w.length < 8) return true;
+	return w.filter((x) => ENGLISH.has(x)).length / w.length >= 0.08;
+}
+
+/**
+ * The replies the stats and the calibration use: no commands to bots, and, when most replies are English, only English ones.
+ * A maintainer who writes in two languages would otherwise get a profile that mixes both.
+ */
+export function usable(replies) {
+	const list = replies.filter((r) => !r.cmd);
+	const english = list.filter((r) => isEnglish(r.reply));
+	return english.length >= 0.8 * list.length ? english : list;
+}
 
 /** Everything the profile is written from, as one object. Reads the files that `collect` and `merge` wrote. */
 export function stats(dir = dataDir()) {
