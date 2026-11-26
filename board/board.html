@@ -204,15 +204,15 @@ header { display: flex; flex-direction: column; gap: 14px; }
 .logo { flex: none; position: relative; width: 69px; height: 90px; margin: -14px 0 -14px -4px; padding: 0; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
 .logo img { display: block; width: 100%; height: 100%; }
 /* A small speech bubble on hover and keyboard focus says that the logo opens the chat */
-.logo-talk { position: absolute; right: -6px; bottom: 16px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px var(--shadow), inset 0 0 0 1px var(--line); transition: transform 0.15s, background 0.15s, color 0.15s; pointer-events: none; }
+.logo-talk { position: absolute; right: -6px; bottom: 16px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px var(--shadow), inset 0 0 0 1px var(--line); opacity: 0.55; transition: opacity 0.15s; pointer-events: none; }
 .logo-talk .i { width: 14px; height: 14px; }
-.logo:hover .logo-talk, .logo:focus-visible .logo-talk { transform: scale(1.15); background: var(--accent); color: var(--surface); }
-/* The logo wiggles once when the page opens and on every hover, so it looks like something to click */
+.logo:hover .logo-talk, .logo:focus-visible .logo-talk { opacity: 1; }
+/* The logo wiggles a little on hover, so it looks like something to click */
 .logo img { transform-origin: 50% 85%; }
-.logo.hello img, .logo:hover img, .logo:focus-visible img { animation: logo-wiggle 0.7s ease-in-out; }
-@keyframes logo-wiggle { 0%, 100% { transform: none; } 20% { transform: rotate(-7deg); } 45% { transform: rotate(6deg); } 70% { transform: rotate(-3deg); } 85% { transform: rotate(2deg); } }
+.logo:hover img, .logo:focus-visible img { animation: logo-wiggle 0.4s ease-in-out; }
+@keyframes logo-wiggle { 0%, 100% { transform: none; } 30% { transform: rotate(-3deg); } 70% { transform: rotate(2deg); } }
 .logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .logo-talk { transition: none; } .logo.hello img, .logo:hover img, .logo:focus-visible img { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .logo-talk { transition: none; } .logo:hover img, .logo:focus-visible img { animation: none; } }
 .logo[hidden], .logo .dark-logo { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .logo .light-logo { display: none; }
@@ -4287,14 +4287,8 @@ function showLogo() {
   box.hidden = !loaded;
   const h1 = document.getElementById("board-title");
   h1.classList.toggle("by-logo", loaded && h1.textContent === "Gary");
-  if (loaded && !box.dataset.greeted) {
-    box.dataset.greeted = "1";
-    setTimeout(() => box.classList.add("hello"), 800);
-  }
 }
 for (const img of document.querySelectorAll("#logo img")) img.addEventListener("load", showLogo);
-// The class must go after the wiggle, because a hover starts the same animation again
-document.getElementById("logo").addEventListener("animationend", (e) => { if (e.animationName === "logo-wiggle") e.currentTarget.classList.remove("hello"); });
 // GitHub's mark is a filled shape, unlike the stroke icons
 {
   const svg = document.createElementNS(SVG_NS, "svg");
