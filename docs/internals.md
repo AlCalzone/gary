@@ -169,7 +169,7 @@ It also prints lines for things it polls:
 
 ### gary chat
 
-`gary chat` keeps the chats of the board's "Talk to Gary" dialog in `<root>/state/chat/<chatId>.json`, see "Chat" in SPEC.md. The master runs `brief` to get the first prompt of a chat session or the note for its session, `start` once it handed the message on, and `fail` when it could not. The chat session runs `reply` with its answer. `show` and `list` read. The store lives in `scripts/lib/chat.mjs`, and the briefing text in `scripts/lib/chat-brief.mjs`. The server and the command both change chat files, so every change takes the lock file `<chatId>.json.lock` first. A lock older than 10 seconds counts as left behind.
+`gary chat` keeps the chats of the board's "Talk to Gary" dialog in `<root>/state/chat/<chatId>.json`, see "Chat" in SPEC.md. The master runs `brief` to get the first prompt of a chat session or the note for its session, `start` once it handed the message on, and `fail` when it could not. The chat session runs `reply` with its answer. At most one chat is active: "New chat" archives it (`archiveActive`), the watcher prints its session once, and the master runs `closed` after it archived that session. `show` and `list` read. The store lives in `scripts/lib/chat.mjs`, and the briefing text in `scripts/lib/chat-brief.mjs`. The server and the command both change chat files, so every change takes the lock file `<chatId>.json.lock` first. A lock older than 10 seconds counts as left behind.
 
 ### gary board
 
@@ -249,7 +249,7 @@ The server can write to GitHub, so it locks itself down:
 - The page runs under a strict Content-Security-Policy. Images may come only from the server itself and from GitHub, for the avatars.
 - GitHub actions run one at a time per item, so a double click cannot run twice. Writes run one at a time per file.
 
-`POST /api/chat` (`handleChat`) stores a chat message of the maintainer with the limits of `scripts/lib/chat.mjs`, at most 6 per minute from all pages, and one waiting message per chat. It runs no agent. The server watches `<root>/state/chat/` and sends each changed chat as a `chat` event. Every chat answer also carries `master: { running, at }` from the queue watcher's heartbeat. `/logo-full.svg` and `/logo-full-dark.svg` serve `logo.svg` and `logo-outlined.svg` for the chat dialog.
+`POST /api/chat` (`handleChat`) stores a chat message of the maintainer with the limits of `scripts/lib/chat.mjs`, at most 6 per minute from all pages, and one waiting message per chat. It runs no agent. The server watches `<root>/state/chat/` and sends the active chat, or null without one, as a `chat` event on each change. `op: "new"` archives the active chat. Every chat answer also carries `master: { running, at }` from the queue watcher's heartbeat. `/logo-full.svg` and `/logo-full-dark.svg` serve `logo.svg` and `logo-outlined.svg` for the chat dialog.
 
 ## What a click can run
 

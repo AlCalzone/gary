@@ -12,7 +12,7 @@ const port = await freePort();
 const { home, root, env } = makeHome(T, { port });
 process.env.GARY_HOME = root;
 const chatLib = await import("../scripts/lib/chat.mjs");
-const { ANSWER_MS, MAX_MESSAGE, PICKUP_MS, addReply, addUserMessage, chatDir, failMessage, lateness, markSent, masterState, queuedMessages, readChat, readChats, watcherFile } = chatLib;
+const { ANSWER_MS, MAX_MESSAGE, PICKUP_MS, activeChat, addReply, addUserMessage, archiveActive, archivedSessions, chatDir, failMessage, lateness, markSent, markSessionClosed, masterState, queuedMessages, readChat, readChats, watcherFile } = chatLib;
 
 const gary = (args, input) => spawnSync(process.execPath, [GARY, ...args], { env, encoding: "utf8", input });
 const json = (r) => {
@@ -91,8 +91,43 @@ try {
 	utimesSync(join(chatDir(), c1.id + ".json.lock"), new Date(Date.now() - 60000), new Date(Date.now() - 60000));
 	t.check("a stale lock is taken over", (await addUserMessage({ chatId: c1.id, text: "After the lock" })).message.status === "queued");
 
+	// ---------- one active chat ----------
+	t.check("the chat is the active one", (await activeChat())?.id === c1.id);
+	e = await refused(() => addUserMessage({ text: "Into the active chat" }));
+	t.check("a message without a chat id goes to the active chat", e?.pending === true);
+	e = await refused(() => markSessionClosed(c1.id));
+	t.check("the session of an active chat cannot be closed", e?.refused === true);
+	const archived = await archiveActive();
+	const c1old = await readChat(c1.id);
+	t.check("New chat archives the active chat and fails its waiting message", archived.length === 1 && archived[0].id === c1.id && typeof c1old.archivedAt === "string" && c1old.messages.at(-1).status === "failed" && /started a new chat/.test(c1old.messages.at(-1).reason), c1old.messages.at(-1));
+	t.check("no chat is active after that, and nothing is queued", (await activeChat()) === null && (await queuedMessages()).length === 0 && (await archiveActive()).length === 0);
+	e = await refused(() => addUserMessage({ chatId: c1.id, text: "Still there?" }));
+	t.check("an archived chat takes no message", e?.gone === true && /archived/.test(e.message));
+	t.check("the archived chat's session waits to be closed", JSON.stringify(await archivedSessions()) === JSON.stringify([{ chatId: c1.id, harness: "t3code", session: "thread-9" }]));
+	// A harness that cannot archive a session: the next chat reuses it
+	const cR = (await addUserMessage({ text: "A chat in a harness without archive" })).chat;
+	let rr = json(gary(["chat", "brief", cR.id, "--message", cR.messages[0].id, "--harness", "t3code"]));
+	t.check("the brief of a new chat names the unclosed session of the archived chat", rr.reuse?.chatId === c1.id && rr.reuse.session.id === "thread-9" && typeof rr.briefing === "string" && !/started a new chat on the board/.test(rr.briefing), rr);
+	t.check("a session of another harness is not offered", json(gary(["chat", "brief", cR.id, "--message", cR.messages[0].id, "--harness", "claude-desktop"])).reuse === null);
+	rr = json(gary(["chat", "brief", cR.id, "--message", cR.messages[0].id, "--harness", "t3code", "--reuse"]));
+	t.check("--reuse tells the session that the old chat no longer applies", /^The maintainer started a new chat on the board\. The chat you answered before is archived\./.test(rr.briefing) && rr.briefing.includes("A chat in a harness without archive"), rr.briefing?.slice(0, 200));
+	gary(["chat", "start", cR.id, "--message", cR.messages[0].id, "--harness", "t3code", "--session", "thread-9"]);
+	const c1reused = await readChat(c1.id);
+	t.check("starting the new chat in that session closes the old chat's session", typeof c1reused.session.closedAt === "string" && c1reused.session.reusedBy === cR.id && (await archivedSessions()).length === 0 && (await readChat(cR.id)).session.id === "thread-9", c1reused.session);
+	delete c1reused.session.closedAt;
+	delete c1reused.session.reusedBy;
+	writeFileSync(join(chatDir(), c1.id + ".json"), JSON.stringify(c1reused));
+	await archiveActive();
+	gary(["chat", "closed", cR.id]);
+
+	let rc = gary(["chat", "closed", c1.id]);
+	t.check("gary chat closed records the closed session", rc.status === 0 && typeof (await readChat(c1.id)).session.closedAt === "string" && (await archivedSessions()).length === 0, rc.stdout + rc.stderr);
+	rc = gary(["chat", "list"]);
+	t.check("the list names the archived chat", new RegExp(`^${c1.id} \\S+ archived `, "m").test(rc.stdout), rc.stdout);
+
 	// ---------- gary chat ----------
 	const c2 = (await addUserMessage({ text: "Mark all FYI items for merged PRs as Got it" })).chat;
+	t.check("the next message starts a new chat, which is the active one", c2.id !== c1.id && (await activeChat())?.id === c2.id);
 	const m2 = c2.messages[0].id;
 	let r = gary(["chat", "brief", c2.id, "--message", m2, "--harness", "t3code"]);
 	let b = json(r);
@@ -126,20 +161,23 @@ try {
 	r = gary(["chat", "show", c2.id]);
 	t.check("show prints the chat as text", r.status === 0 && /Maintainer \(answered\):\nMark all FYI/.test(r.stdout) && /Gary:\nThese 2 match/.test(r.stdout) && /\[Gary runs in a terminal/.test(r.stdout), r.stdout);
 	r = gary(["chat", "list", "--json"]);
-	t.check("list prints every chat, newest first, without the messages", r.status === 0 && json(r).chats.length === 2 && json(r).chats[0].id === c2.id && typeof json(r).chats[0].messages === "number", json(r));
+	t.check("list prints every chat, newest first, without the messages", r.status === 0 && json(r).chats.length === 3 && json(r).chats[0].id === c2.id && typeof json(r).chats[0].messages === "number", json(r));
 	r = gary(["help"]);
 	t.check("the help lists gary chat and gary board", /^\s+chat\s/m.test(r.stdout) && /^\s+board\s/m.test(r.stdout));
 
 	// ---------- the queue ----------
+	await archiveActive();
 	const c3 = (await addUserMessage({ text: "Explain the Quick & Easy group" })).chat;
 	r = gary(["watch-queue", "--all", "--once"]);
-	let q = lines(r).filter((l) => l.action === "chat");
-	t.check("watch-queue --all prints each queued chat message once, oldest first", q.length === 2 && q.every((l) => l.instance === null && l.itemId === null && l.id === l.messageId) && q.at(-1).chatId === c3.id && q.at(-1).messageId === c3.messages[0].id, q);
+	const closing = lines(r).filter((l) => l.action === "chat" && l.event === "archived");
+	t.check("watch-queue --all prints the session of an archived chat for the master to close", closing.length === 1 && closing[0].chatId === c2.id && closing[0].id === c2.id && closing[0].harness === "t3code" && closing[0].session === "thread-2" && closing[0].instance === null, closing);
+	let q = lines(r).filter((l) => l.action === "chat" && !l.event);
+	t.check("watch-queue --all prints the queued message of the active chat", q.length === 1 && q.every((l) => l.instance === null && l.itemId === null && l.id === l.messageId) && q.at(-1).chatId === c3.id && q.at(-1).messageId === c3.messages[0].id, q);
 	r = gary(["watch-queue", "--once"]);
 	t.check("watch-queue for one instance prints no chat line", !lines(r).some((l) => l.action === "chat"));
 	gary(["pause"]);
 	r = gary(["watch-queue", "--all", "--once"]);
-	t.check("a chat message prints while the instances are paused", lines(r).filter((l) => l.action === "chat").length === 2);
+	t.check("a chat message prints while the instances are paused", lines(r).filter((l) => l.action === "chat" && !l.event).length === 1);
 	gary(["resume"]);
 	t.check("--once writes no heartbeat", !existsSync(watcherFile()));
 	t.check("without a heartbeat the master counts as not running", masterState().running === false);
@@ -148,6 +186,7 @@ try {
 	watcher.stdout.on("data", (d) => (watched += d));
 	for (let i = 0; i < 50 && !existsSync(watcherFile()); i++) await sleep(100);
 	t.check("watch-queue --all writes a heartbeat that counts as a running master", masterState().running === true);
+	await archiveActive();
 	const c4 = (await addUserMessage({ text: "Hi Gary" })).chat;
 	for (let i = 0; i < 50 && !watched.includes(c4.id); i++) await sleep(100);
 	t.check("a new chat message prints within seconds", watched.includes(`"chatId":"${c4.id}"`), watched);
@@ -173,7 +212,7 @@ try {
 			return { status: res.status, data: await res.json() };
 		};
 		let a = await api({ op: "get" });
-		t.check("get without a chat id answers the newest chat and the master state", a.status === 200 && a.data.ok === true && a.data.chat?.id === c4.id && a.data.master.running === true, a.data);
+		t.check("get without a chat id answers the active chat and the master state", a.status === 200 && a.data.ok === true && a.data.chat?.id === c4.id && a.data.master.running === true, a.data);
 		a = await api({ op: "get", chatId: c1.id });
 		t.check("get with a chat id answers that chat", a.data.chat?.id === c1.id);
 		a = await api({ op: "status" });
@@ -198,6 +237,16 @@ try {
 			}
 		})();
 		await sleep(300);
+		a = await api({ op: "send", text: "Into the active chat" });
+		t.check("send without a chat id goes to the active chat", a.status === 409 && a.data.pending === true, a.data);
+		a = await api({ op: "new" });
+		t.check("new archives the active chat", a.status === 200 && a.data.ok === true && a.data.chat === null && JSON.stringify(a.data.archived) === JSON.stringify([c4.id]) && typeof (await readChat(c4.id)).archivedAt === "string", a.data);
+		a = await api({ op: "get" });
+		t.check("get answers no chat after that", a.data.ok === true && a.data.chat === null);
+		for (let i = 0; i < 50 && !/"chat":null/.test(events.split("event: chat").at(-1)); i++) await sleep(100);
+		t.check("the event stream tells every page that no chat is active", /"chat":null/.test(events.split("event: chat").at(-1)), events.slice(-300));
+		a = await api({ op: "send", chatId: c4.id, text: "Still there?" });
+		t.check("send to the archived chat is refused as gone", a.data.ok === false && a.data.gone === true, a.data);
 		a = await api({ op: "send", text: "Snooze everything from dependabot for 3 days" });
 		const c5 = a.data.chat;
 		t.check("send starts a chat and answers it with the queued message", a.status === 200 && a.data.ok === true && c5.messages.length === 1 && c5.messages[0].status === "queued" && c5.messages[0].text === "Snooze everything from dependabot for 3 days", a.data);
@@ -213,13 +262,16 @@ try {
 		gary(["chat", "start", c5.id, "--message", m5, "--harness", "t3code", "--session", "thread-5"]);
 		gary(["chat", "reply", c5.id, "--message", m5, "--file", file("r5.md", "I snoozed 3 items.")]);
 		for (let i = 0; i < 50 && !events.includes("I snoozed 3 items."); i++) await sleep(100);
-		const chatEvent = events.split("\n\n").filter((b) => b.startsWith("event: chat")).map((b) => JSON.parse(b.split("\ndata: ")[1])).findLast((d) => d.chat.id === c5.id);
+		const chatEvent = events.split("\n\n").filter((b) => b.startsWith("event: chat")).map((b) => JSON.parse(b.split("\ndata: ")[1])).findLast((d) => d.chat?.id === c5.id);
 		t.check("the event stream pushes the chat with the answer and the master state", chatEvent?.instance === null && chatEvent.chat.messages.at(-1).text === "I snoozed 3 items." && chatEvent.master?.running === true, events.slice(-600));
 		ctrl.abort();
 
 		// Six messages per minute from all pages together
 		let last;
-		for (let i = 0; i < 6; i++) last = await api({ op: "send", text: "spam " + i });
+		for (let i = 0; i < 6; i++) {
+			await api({ op: "new" });
+			last = await api({ op: "send", text: "spam " + i });
+		}
 		t.check("send is limited per minute", last.status === 429 && typeof last.data.retryAfter === "number" && /Try again/.test(last.data.result), last);
 
 		// The full logo for the dialog, in both themes

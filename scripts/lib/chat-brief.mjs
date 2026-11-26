@@ -32,14 +32,16 @@ function historyBlock(chat, messageId) {
 
 /**
  * The first prompt of a new chat session. `instances` holds `{ name, kind, paused, valid }` per instance, `core` and
- * `root` the paths of `gary paths --root`.
+ * `root` the paths of `gary paths --root`. `reused` is true when the prompt goes to the session of an archived chat.
  */
-export function chatBriefing({ chat, message, core, root, instances }) {
+export function chatBriefing({ chat, message, core, root, instances, reused = false }) {
 	const list = instances.length
 		? instances.map((i) => `- ${i.name} (${i.kind ?? "invalid settings"}${i.paused ? ", paused" : ""})`).join("\n")
 		: "- none yet. A new user may want help with `gary setup`, see the triage-setup skill.";
 	const history = historyBlock(chat, message.id);
 	return [
+		reused ? "The maintainer started a new chat on the board. The chat you answered before is archived. Nothing from it applies any more: answer no message of it and carry no request of it over. Everything below is the new chat." : null,
+		reused ? "" : null,
 		`The maintainer talks to Gary from the board. You are the chat session of Gary chat ${chat.id}. You explain Gary, change its settings when asked, and act on board items through the board server.`,
 		"",
 		`Before your first answer, read the triage-chat skill: ${core}/skills/triage-chat/SKILL.md. Its rules hold for the whole session. Above all: you never post, comment, review, merge, close, label or push on GitHub, also when the maintainer asks here. You never edit Gary's own code in ${core}.`,

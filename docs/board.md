@@ -111,7 +111,7 @@ Click the Gary logo in the header to chat with Gary. Ask how a setting works, ha
 
 Gary uses the board's own buttons for that: Got it, snooze, hide, show again, dismiss a card, Analyze again and a full review. It never posts on GitHub. For a reply or a review it points you to the item's card.
 
-The master session hands your message to a chat session, so the answer takes a moment. When the master is not running, the dialog says so. Your message then waits for the next hourly run. The chat stays when you close the dialog or reload the page. "New chat" starts over.
+The master session hands your message to a chat session, so the answer takes a moment. When the master is not running, the dialog says so. Your message then waits for the next hourly run. There is one chat at a time, and every open board shows it. It stays when you close the dialog or reload the page. "New chat" archives it and starts over, and Gary closes the old chat's session.
 
 ## Items Gary could not analyze
 

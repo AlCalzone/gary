@@ -29,7 +29,7 @@ import { linkEscalated } from "../scripts/lib/escalation.mjs";
 import { READ_ONLY_MESSAGE, accountMode, clearNotification, createPendingReview, postEscalateCommand } from "../scripts/lib/gh.mjs";
 import { commentLineProblem, pendingRoute, pendingRouteProblems, readReviewDrafts, recordClickStart, requestOf, reviewDraftState, servedWalkthrough } from "../scripts/lib/review-drafts.mjs";
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
-import { CHAT_ID, addUserMessage, chatDir, masterState, readChat, readChats } from "../scripts/lib/chat.mjs";
+import { CHAT_ID, activeChat, addUserMessage, archiveActive, chatDir, masterState, readChat } from "../scripts/lib/chat.mjs";
 import { ownPrRefusal } from "../scripts/lib/own-pr.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
@@ -2625,9 +2625,8 @@ export async function startBoardServer({
 			chatTimers.delete(chatId);
 			if (!clients.size) return;
 			try {
-				const chat = await readChat(chatId);
-				if (!chat) return;
-				const data = { instance: null, chat, master: masterState() };
+				// Every page shows the one active chat, so that is what a change sends
+				const data = { instance: null, chat: await activeChat(), master: masterState() };
 				for (const res of clients) send(res, "chat", data);
 			} catch (e) {
 				log(`Reading chat ${chatId} failed:`, e.message);
@@ -2642,10 +2641,15 @@ export async function startBoardServer({
 		if (chatId !== null && (typeof chatId !== "string" || !CHAT_ID.test(chatId))) return [400, { ok: false, result: "Unknown chat." }];
 		if (op === "status") return [200, { ok: true, master: masterState() }];
 		if (op === "get") {
-			const chat = chatId ? await readChat(chatId) : ((await readChats())[0] ?? null);
+			const chat = chatId ? await readChat(chatId) : await activeChat();
 			return [200, { ok: true, chat, master: masterState() }];
 		}
-		if (op !== "send") return [400, { ok: false, result: "op must be status, get or send." }];
+		if (op === "new") {
+			const archived = await archiveActive();
+			for (const c of archived) pushChat(c.id);
+			return [200, { ok: true, chat: null, archived: archived.map((c) => c.id), master: masterState() }];
+		}
+		if (op !== "send") return [400, { ok: false, result: "op must be status, get, new or send." }];
 		if (typeof body.text !== "string") return [400, { ok: false, result: "text must be a string." }];
 		const now = Date.now();
 		while (chatWindow.length && chatWindow[0] <= now - 60000) chatWindow.shift();

@@ -1173,11 +1173,13 @@ The maintainer talks to Gary in a dialog on the board: they ask how a setting wo
 
 ### Flow
 
-1. The header logo is a button "Talk to Gary". It opens the chat dialog. A message goes to `POST /api/chat` with `{ op: "send", chatId, text }`, and the server stores it as `queued`. Without `chatId` it starts a new chat.
+1. The header logo is a button "Talk to Gary". It opens the chat dialog. A message goes to `POST /api/chat` with `{ op: "send", chatId, text }`, and the server stores it as `queued`. Without `chatId` it goes to the active chat, or starts a new chat when none is active.
 2. `gary watch-queue --all` prints `{ "instance": null, "id": "<messageId>", "itemId": null, "action": "chat", "chatId", "messageId" }` once per queued message. It prints them also while instances are paused, because a chat writes nothing to GitHub.
 3. The master runs `gary chat brief`. For the chat's first message, or when its session is gone, it starts a new top-level session with the brief's `briefing`, in the core directory without a worktree, on the root's `master` model. For a later message it sends the brief's `note` to the chat's session. Then it runs `gary chat start`, which records the session and marks the message `sent`. When it cannot do either, it runs `gary chat fail` with a reason.
 4. The session follows the `triage-chat` skill. It answers with `gary chat reply`, which stores Gary's message and marks the maintainer's message `answered`.
-5. The server watches the chat directory and pushes the changed chat to every open page. The dialog shows the answer.
+5. The server watches the chat directory and pushes the active chat, or `chat: null` without one, to every open page. The dialog shows the answer.
+
+At most one chat is active, and every open board shows that one. The page keeps no chat id of its own: it asks the server for the active chat. "New chat" sends `{ op: "new" }`. The server archives the active chat with `archivedAt` and fails a message of it that still waits, with the reason "You started a new chat before the answer came." The next message starts a new chat with a new session. An archived chat takes no message. `gary watch-queue --all` prints `{ "instance": null, "id": "<chatId>", "itemId": null, "action": "chat", "event": "archived", "chatId", "harness", "session" }` once for an archived chat with a session. The master archives that session in its harness when it can, and runs `gary chat closed`, which sets `session.closedAt`. In a harness that cannot archive a session, the next chat reuses it: `gary chat brief` prints `reuse: { chatId, session }` for the new chat's first message, `--reuse` gives a briefing that tells the session the old chat no longer applies, the master sends it there with a cleared context when its harness can, and `gary chat start` with that session sets `closedAt` and `reusedBy` on the old chat's session.
 
 Gary uses only the harness the master runs in, like for "Focus". A harness without a way to start or reach a session gets `gary chat fail`, and the dialog shows the reason under the message.
 
@@ -1190,7 +1192,8 @@ Gary uses only the harness the master runs in, like for "Focus". A harness witho
   "id": "c-mi3k2a0f9d1c",                // ^c-[a-z0-9]{6,40}$
   "createdAt": "ISO", "updatedAt": "ISO",
   "title": "Mark all FYI items for merged PRs as Got it",   // the first line of the first message, at most 80 characters
-  "session": { "harness": "t3code", "id": "…", "link": "t3-thread://…", "title": "…", "startedAt": "ISO" },   // or null
+  "archivedAt": "ISO",                    // set by "New chat". Absent on the one active chat
+  "session": { "harness": "t3code", "id": "…", "link": "t3-thread://…", "title": "…", "startedAt": "ISO" },   // or null. `closedAt` once the master closed the session of an archived chat
   "messages": [
     { "id": "m-…", "role": "user", "text": "…", "at": "ISO", "status": "answered", "sentAt": "ISO", "answeredAt": "ISO" },
     { "id": "m-…", "role": "gary", "text": "…", "at": "ISO", "replyTo": "m-…" }
@@ -1202,8 +1205,8 @@ A message of the maintainer is `queued`, `sent`, `answered` or `failed` with `re
 
 ### Checks
 
-- `/api/chat` needs the board token like every `/api` path. `op` is `status`, `get` or `send`. `status` answers `{ ok, master }`. `get` answers `{ ok, chat, master }`, with the newest chat when the body has no `chatId`.
-- `send` refuses an empty text, a text over the limit, and an unknown `chatId` with `gone: true`. More than 6 messages per minute from all pages together get 429 and `retryAfter`.
+- `/api/chat` needs the board token like every `/api` path. `op` is `status`, `get`, `new` or `send`. `status` answers `{ ok, master }`. `get` answers `{ ok, chat, master }`, with the active chat or null when the body has no `chatId`. `new` archives the active chat and answers `{ ok, chat: null, archived: [<chatId>], master }`.
+- `send` refuses an empty text, a text over the limit, and an unknown or archived `chatId` with `gone: true`. More than 6 messages per minute from all pages together get 429 and `retryAfter`.
 - While the chat's last message waits for its answer, `send` refuses with 409 and `pending: true`. A waiting message is late when it is `queued` for more than 2 minutes or `sent` without an answer for more than 10. A late one fails with a reason when the next message arrives, so the maintainer can send again. An answer that comes after that still lands.
 - `master` is `{ running, at }`. `gary watch-queue --all` writes its pid and the time to `<root>/state/watch-queue.json` every minute, and `stopped: true` when it exits. `running` is true while that heartbeat is less than 3 minutes old and not stopped. The pid is no proof, because the watcher may run in a sandbox with its own process ids.
 
@@ -1219,10 +1222,11 @@ It never posts, comments, reviews, merges, closes, labels, assigns or pushes on 
 
 ### `gary chat`
 
-- `brief <chatId> --message <id> --harness <h> [--new]`: JSON with `chatId`, `messageId`, `title`, `session`, `core`, `model`, and `briefing` for a new session or `note` for the chat's session in the same harness. `--new` always prints the briefing, which then carries the chat so far. Exit 3 when the message is no longer `queued`.
+- `brief <chatId> --message <id> --harness <h> [--new]`: JSON with `chatId`, `messageId`, `title`, `session`, `core`, `model`, and `briefing` for a new session or `note` for the chat's session in the same harness. `--new` always prints the briefing, which then carries the chat so far. With a briefing comes `reuse`, the unclosed session of an archived chat in that harness or null, and `--reuse` prints the briefing for that session. Exit 3 when the message is no longer `queued`.
 - `start <chatId> --message <id> --harness <h> --session <id> [--link <url>] [--title <text>]`: record the session and mark the message `sent`. Exit 3 when the message is answered or failed.
 - `reply <chatId> --message <id> --file <file | ->`: store the answer. Exit 3 when the message has one.
 - `fail <chatId> --message <id> --reason <text>`: mark the message `failed`.
+- `closed <chatId>`: record that the session of an archived chat is closed. Exit 3 for the active chat.
 - `show <chatId> [--json]`, `list [--json]`.
 
 ### `gary board`
@@ -1235,7 +1239,7 @@ The logo shows a small speech bubble on hover and keyboard focus. The dialog sho
 
 While an answer is pending, the dialog shows "Gary is thinking". When the master does not run, it says so, and that the message waits for the next hourly run or the triage-master skill. A late message gets a plain text with what helps: send again, or open the session. A failed message shows its reason under it. A refused send shows the server's reason and keeps the text.
 
-The page keeps the chat id in localStorage under `gary:chat:id`, `new` after "New chat", and the typed text under `gary:chat:draft`. An open chat defers a page reload like the other dialogs.
+The page keeps only the typed text in localStorage, under `gary:chat:draft`. The chat itself comes from the server. An open chat defers a page reload like the other dialogs.
 
 ## Learning
 

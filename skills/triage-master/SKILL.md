@@ -93,7 +93,7 @@ On expiry, arm it again with the same call. Arm only one, also across hourly run
 
 A line with `"action": "focus"` is no worker job. Handle it yourself as step 7 describes. The Monitor prints nothing else of an item in focus: its requests, drive events, feedback lines and automatic review answers wait until the focus ends.
 
-A line with `"action": "chat"` is no worker job either. It is `{ "instance": null, "id", "itemId": null, "action": "chat", "chatId", "messageId" }`. Handle it yourself as step 8 describes. Chat lines print also while instances are paused, because a chat writes nothing to GitHub.
+A line with `"action": "chat"` is no worker job either. It is `{ "instance": null, "id", "itemId": null, "action": "chat", "chatId", "messageId" }`. A line that also has `"event": "archived"` names the session of a chat the maintainer replaced with a new one. Handle both as step 8 describes. Chat lines print also while instances are paused, because a chat writes nothing to GitHub.
 
 A line with `"action": "reconcile"` has no action doc and no item: the maintainer asked for a reconcile pass, with `gary reconcile` or the "Check rules" button on the board. Start a worker with the job `Run the triage-reconcile skill for Gary instance <instance>.`, on the instance's `review` model. The skill refuses to run twice at once, so a pass the hourly worker already started is safe.
 
@@ -234,7 +234,24 @@ You have `t3_thread_launch`, `t3_thread_read` and `t3_thread_send`. Your own thr
 
 Do not wait for the session, and do not read it after the hand-over.
 
+### The maintainer started a new chat
+
+At most one chat is active. "New chat" on the board archives the active one, and the next message starts a new chat with a new session. The Monitor then prints `{ "instance": null, "id", "itemId": null, "action": "chat", "event": "archived", "chatId", "harness", "session" }` once for the archived chat. Its session has nothing left to do:
+
+1. When `harness` is yours and you can archive a session, archive it. In T3 Code that is `t3_thread_organize` with `action: "archive"` and `threadId` the line's `session`. Then run `gary chat closed <chatId>`. A session that is gone already counts as archived.
+2. When you cannot archive a session in your harness, do nothing. The session stays recorded, and the next chat takes it over.
+
+Send nothing to the session now.
+
+A session you could not archive is reused. `gary chat brief` for the first message of the next chat then prints `reuse: { chatId, session }` next to `briefing`. In that case start no new session:
+
+1. Run `gary chat brief <chatId> --message <messageId> --harness <yours> --reuse`. Its `briefing` starts by telling the session that a new chat began and the old one no longer applies.
+2. Send that `briefing` unchanged to `reuse.session.id`. Clear the session's context with the send when your harness can, like `freshContext: true` of `t3_thread_send` or a `/clear` before the message.
+3. Run `gary chat start <chatId> --message <messageId> --harness <yours> --session <reuse.session.id>`. It also records the old chat's session as closed.
+
+When the reused session turns out to be gone, start a new one as usual.
+
 ### Chat in other harnesses
 
-- **Claude Desktop**, when its tools can start a top-level session in a directory and send a message to a session: follow the T3 Code steps with those tools and `--harness claude-desktop`. The session works in the `core` directory and needs no worktree.
+- **Claude Desktop**, when its tools can start a top-level session in a directory and send a message to a session: follow the T3 Code steps with those tools and `--harness claude-desktop`. The session works in the `core` directory and needs no worktree. Without a tool that archives a session, a new chat reuses the old chat's session as "The maintainer started a new chat" describes.
 - **Without such tools**: run `gary chat fail <chatId> --message <messageId> --reason "Gary runs in <harness>, which cannot start or reach an agent session. Ask Claude in a session of your own and name the triage-chat skill."` with your harness's name. The board shows the reason, and Gary goes on as before.

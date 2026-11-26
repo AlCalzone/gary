@@ -1,23 +1,26 @@
 // gary chat: the maintainer's chat with Gary from the board. The master hands each message to the chat session in its
 // harness, and the session answers here. Nothing here knows a harness or starts an agent.
-//   gary chat brief <chatId> --message <id> --harness <h> [--new]
+//   gary chat brief <chatId> --message <id> --harness <h> [--new] [--reuse]
 //     The first prompt for a new chat session, or the note for the chat's session when it has one. --new always prints
-//     the first prompt, for a session that replaces an archived one.
+//     the first prompt, for a session that replaces an archived one. --reuse prints the first prompt for the session of
+//     an archived chat, which the brief names as `reuse` when the master could not close it.
 //   gary chat start <chatId> --message <id> --harness <h> --session <id> [--link <url>] [--title <text>]
 //     Records the session the master handed the message to, and marks the message sent.
 //   gary chat reply <chatId> --message <id> --file <answer.md | ->
 //     Stores Gary's answer. The board shows it at once.
 //   gary chat fail <chatId> --message <id> --reason <text>
 //     Marks the message failed, so the dialog says why no answer comes.
+//   gary chat closed <chatId>
+//     Records that the master closed the session of an archived chat.
 //   gary chat show <chatId> [--json] | list [--json]
 import { readFileSync } from "node:fs";
 import { chatBriefing, chatNote } from "./lib/chat-brief.mjs";
-import { MAX_ANSWER, addReply, failMessage, markSent, readChat, readChats } from "./lib/chat.mjs";
+import { MAX_ANSWER, addReply, failMessage, markSent, markSessionClosed, readChat, readChats, reusableSession } from "./lib/chat.mjs";
 import { ROOT, listInstances, modelsOf, rootDir } from "./lib/config.mjs";
 
-const USAGE = "Usage: gary chat brief <chatId> --message <id> --harness <h> [--new] | start <chatId> --message <id> --harness <h> --session <id> [--link <url>] [--title <text>] | reply <chatId> --message <id> --file <file|-> | fail <chatId> --message <id> --reason <text> | show <chatId> [--json] | list [--json]";
+const USAGE = "Usage: gary chat brief <chatId> --message <id> --harness <h> [--new] [--reuse] | start <chatId> --message <id> --harness <h> --session <id> [--link <url>] [--title <text>] | reply <chatId> --message <id> --file <file|-> | closed <chatId> | fail <chatId> --message <id> --reason <text> | show <chatId> [--json] | list [--json]";
 const VALUES = ["--message", "--harness", "--session", "--link", "--title", "--file", "--reason"];
-const FLAGS = ["--new", "--json"];
+const FLAGS = ["--new", "--reuse", "--json"];
 
 class Refused extends Error {}
 
@@ -58,7 +61,7 @@ async function brief(chatId, out) {
 		session: chat.session,
 		core: ROOT,
 		model: modelsOf({}).models.master,
-		...(follow ? { note: chatNote({ chat, message }) } : { briefing: chatBriefing({ chat, message, core: ROOT, root: rootDir(), instances }) }),
+		...(follow ? { note: chatNote({ chat, message }) } : { briefing: chatBriefing({ chat, message, core: ROOT, root: rootDir(), instances, reused: out.reuse === true }), reuse: await reusableSession(out.harness) }),
 	};
 }
 
@@ -82,7 +85,7 @@ const refusing = async (fn) => {
 
 function listLine(c) {
 	const last = c.messages.findLast((m) => m.role === "user");
-	return `${c.id} ${c.updatedAt} ${last ? last.status : "empty"} ${c.session ? `${c.session.harness} ${c.session.id}` : "no session"} ${c.title}`;
+	return `${c.id} ${c.updatedAt} ${c.archivedAt ? "archived" : "active"} ${last ? last.status : "empty"} ${c.session ? `${c.session.harness} ${c.session.id}` : "no session"} ${c.title}`;
 }
 
 export async function main(argv) {
@@ -106,6 +109,9 @@ export async function main(argv) {
 		} else if (command === "fail") {
 			const r = await refusing(() => failMessage({ chatId: one(), messageId: out.message, reason: out.reason }));
 			outcome = { ok: true, chatId: r.chat.id, messageId: r.message.id, status: "failed" };
+		} else if (command === "closed") {
+			const r = await refusing(() => markSessionClosed(one()));
+			outcome = { ok: true, chatId: r.id, session: r.session ?? null };
 		} else if (command === "show") {
 			const chat = await readChat(one());
 			if (!chat) throw new Error(`There is no chat ${rest[0]}`);

@@ -1,4 +1,5 @@
 // Chat with Gary from the board. A chat is <root>/state/chat/<chatId>.json and belongs to the machine, not to an instance.
+// At most one chat is active. "New chat" on the board archives it, and the next message starts a new one.
 // The board server stores the maintainer's messages. `gary watch-queue --all` prints each queued one, and the master hands
 // it to the chat session in its harness. The chat session answers with `gary chat reply`. Nothing here runs an agent.
 import { randomBytes } from "node:crypto";
@@ -96,10 +97,69 @@ export async function readChats() {
 	return chats.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
-/** The queued messages of the maintainer in every chat, oldest first: `[{ chatId, messageId, at }]`. */
+/** The one active chat, or null. A chat is active until `archiveActive` archives it. */
+export async function activeChat() {
+	return (await readChats()).find((c) => !c.archivedAt) ?? null;
+}
+
+/**
+ * Archives every active chat and returns them. A message that still waits for its answer fails, because the maintainer
+ * moved on. The chat's session stays recorded until `markSessionClosed`.
+ */
+export async function archiveActive(now = Date.now()) {
+	const archived = [];
+	for (const { id } of (await readChats()).filter((c) => !c.archivedAt)) {
+		const chat = await withChatLock(id, async () => {
+			const chat = await readChat(id);
+			if (!chat || chat.archivedAt) return null;
+			chat.archivedAt = iso(now);
+			for (const m of chat.messages) {
+				if (!isPending(m)) continue;
+				m.status = "failed";
+				m.reason = "You started a new chat before the answer came.";
+				m.failedAt = iso(now);
+			}
+			await writeAtomic(chatFile(id), chat);
+			return chat;
+		});
+		if (chat) archived.push(chat);
+	}
+	return archived;
+}
+
+/** The archived chats whose session the master has not closed yet: `[{ chatId, harness, session }]`. */
+export async function archivedSessions() {
+	return (await readChats()).filter((c) => c.archivedAt && c.session?.id && !c.session.closedAt).map((c) => ({ chatId: c.id, harness: c.session.harness, session: c.session.id }));
+}
+
+/**
+ * The session of the newest archived chat that the master could not close, in the given harness: `{ chatId, session }`,
+ * or null. A new chat may take it over.
+ */
+export async function reusableSession(harness) {
+	const chat = (await readChats()).find((c) => c.archivedAt && c.session?.id && !c.session.closedAt && c.session.harness === harness);
+	return chat ? { chatId: chat.id, session: chat.session } : null;
+}
+
+/** Records that the master closed the session of an archived chat. */
+export async function markSessionClosed(chatId) {
+	checkChatId(chatId);
+	return withChatLock(chatId, async () => {
+		const chat = await readChat(chatId);
+		if (!chat) throw new Error(`There is no chat ${chatId}`);
+		if (!chat.archivedAt) throw Object.assign(new Error("The chat is still active. Its session stays open."), { refused: true });
+		if (chat.session && !chat.session.closedAt) {
+			chat.session.closedAt = iso();
+			await writeAtomic(chatFile(chatId), chat);
+		}
+		return chat;
+	});
+}
+
+/** The queued messages of the maintainer in the active chat, oldest first: `[{ chatId, messageId, at }]`. */
 export async function queuedMessages() {
 	const out = [];
-	for (const chat of await readChats()) {
+	for (const chat of (await readChats()).filter((c) => !c.archivedAt)) {
 		for (const m of chat.messages) if (m.role === "user" && m.status === "queued") out.push({ chatId: chat.id, messageId: m.id, at: m.at });
 	}
 	return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
@@ -121,16 +181,20 @@ async function pruneChats(keep) {
 }
 
 /**
- * Adds a message of the maintainer. Without `chatId` it starts a new chat. Throws with `refused: true` while an answer
- * is pending and not late yet. A late pending message fails with a reason, so the new one takes its place.
+ * Adds a message of the maintainer. Without `chatId` it goes to the active chat, or starts a new chat when none is
+ * active. Throws with `refused: true` while an answer is pending and not late yet. A late pending message fails with a
+ * reason, so the new one takes its place. An archived chat takes no message.
  */
 export async function addUserMessage({ chatId = null, text, now = Date.now() }) {
 	if (typeof text !== "string" || !text.trim()) throw Object.assign(new Error("Write a message first."), { refused: true });
 	if (text.length > MAX_MESSAGE) throw Object.assign(new Error(`A message may have at most ${MAX_MESSAGE} characters.`), { refused: true });
-	const id = chatId ?? newId("c");
+	const active = chatId ? null : await activeChat();
+	const started = !chatId && !active;
+	const id = chatId ?? active?.id ?? newId("c");
 	checkChatId(id);
 	const chat = await withChatLock(id, async () => {
 		const cur = await readJson(chatFile(id));
+		if (cur?.archivedAt) throw Object.assign(new Error("This chat is archived. Send your message again to start a new one."), { refused: true, gone: true });
 		if (chatId && !cur) throw Object.assign(new Error("This chat is gone. Start a new chat."), { refused: true, gone: true });
 		const chat = cur ?? { id, createdAt: iso(now), updatedAt: iso(now), title: text.trim().split("\n")[0].slice(0, 80), session: null, messages: [] };
 		const last = chat.messages.findLast((m) => m.role === "user");
@@ -146,7 +210,7 @@ export async function addUserMessage({ chatId = null, text, now = Date.now() }) 
 		await writeAtomic(chatFile(id), chat);
 		return chat;
 	});
-	if (!chatId) await pruneChats(id);
+	if (started) await pruneChats(id);
 	return { chat, message: chat.messages.at(-1) };
 }
 
@@ -172,7 +236,8 @@ async function changeMessage(chatId, messageId, fn) {
 export async function markSent({ chatId, messageId, harness, session }) {
 	if (!short(harness, 40)) throw new Error("--harness must name the harness, like t3code");
 	if (!short(session?.id)) throw new Error("--session must name the chat session's id");
-	return changeMessage(chatId, messageId, (chat, message) => {
+	const sent = await changeMessage(chatId, messageId, (chat, message) => {
+		if (chat.archivedAt) throw Object.assign(new Error("The chat is archived. Nothing to hand on."), { refused: true });
 		if (message.status !== "queued" && message.status !== "sent") throw Object.assign(new Error(`The message is ${message.status} already. Nothing changed.`), { refused: true });
 		const same = chat.session?.harness === harness && chat.session?.id === session.id;
 		const link = typeof session.link === "string" && LINK.test(session.link) ? session.link : same ? chat.session.link ?? null : null;
@@ -180,6 +245,17 @@ export async function markSent({ chatId, messageId, harness, session }) {
 		message.status = "sent";
 		message.sentAt = iso();
 	});
+	// An archived chat whose session now answers this chat has no session of its own left to close
+	for (const old of (await readChats()).filter((c) => c.archivedAt && c.id !== chatId && c.session?.id === sent.chat.session.id && c.session.harness === harness && !c.session.closedAt)) {
+		await withChatLock(old.id, async () => {
+			const chat = await readChat(old.id);
+			if (!chat?.session || chat.session.closedAt) return;
+			chat.session.closedAt = iso();
+			chat.session.reusedBy = chatId;
+			await writeAtomic(chatFile(old.id), chat);
+		});
+	}
+	return sent;
 }
 
 /** Stores Gary's answer to one message of the maintainer. A message that failed as late takes its answer too. */

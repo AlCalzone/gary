@@ -20,7 +20,8 @@
 // A reconcile pass the maintainer asked for prints { "instance", "id": "reconcile", "itemId": null, "action": "reconcile", "at" },
 // once per request.
 // With --all, a queued chat message of the maintainer prints { "instance": null, "id", "itemId": null, "action": "chat",
-// "chatId", "messageId" } once, also while instances are paused, because a chat writes nothing to GitHub. --all also
+// "chatId", "messageId" } once, also while instances are paused, because a chat writes nothing to GitHub. An archived chat
+// whose session the master has not closed yet prints the same line with "event": "archived", "harness" and "session". --all also
 // writes a heartbeat to <root>/state/watch-queue.json every minute and a last one marked stopped on exit. The board reads
 // it to tell whether a master follows the queue.
 import { mkdirSync, watch } from "node:fs";
@@ -30,7 +31,7 @@ import { pathToFileURL } from "node:url";
 import { readAutoReviews, watchEvents, watchedRecords } from "./lib/auto-review.mjs";
 import { ID_PATTERN, boardDir, readJson } from "./lib/board-store.mjs";
 import { autoReviewOf, instanceName, instanceNames, instancesDir, loadInstance, withInstance } from "./lib/config.mjs";
-import { chatDir, queuedMessages, writeHeartbeat } from "./lib/chat.mjs";
+import { archivedSessions, chatDir, queuedMessages, writeHeartbeat } from "./lib/chat.mjs";
 import { isInstancePaused } from "./lib/control.mjs";
 import { readDrives } from "./lib/fixes.mjs";
 import { checkDue, heldItemIds, isHeld, readFocuses } from "./lib/focus.mjs";
@@ -287,6 +288,19 @@ export async function main(argv) {
 			if (printed.has(key)) continue;
 			printed.add(key);
 			process.stdout.write(JSON.stringify({ instance: null, id: messageId, itemId: null, action: "chat", chatId, messageId }) + "\n");
+		}
+		// The session of an archived chat has nothing left to do, and the master closes it
+		let closing = [];
+		try {
+			closing = await archivedSessions();
+		} catch (e) {
+			console.error(`Reading the chats failed: ${e.message}`);
+		}
+		for (const { chatId, harness, session } of closing) {
+			const key = `chat/${chatId}/archived`;
+			if (printed.has(key)) continue;
+			printed.add(key);
+			process.stdout.write(JSON.stringify({ instance: null, id: chatId, itemId: null, action: "chat", event: "archived", chatId, harness, session }) + "\n");
 		}
 	}
 

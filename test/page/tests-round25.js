@@ -52,13 +52,13 @@
     ok("chat: Gary is thinking while the answer is pending, and Send waits", /Gary is thinking/.test(status.textContent) && send.disabled);
     let stored = null;
     try { stored = localStorage.getItem("gary:chat:id"); } catch {}
-    ok("chat: the page remembers the chat", stored === "c-test000001");
+    ok("chat: the page keeps no chat id of its own, the server knows the active chat", stored === null);
 
     // Gary's answer arrives as an event
     const answerText = "These match:\n\n- `widgets/pr-1` [acme/widgets#1](https://github.com/acme/widgets/pull/1)\n- see [this](https://evil.example/x) and https://github.com/acme/widgets/issues/2.\n\n<img src=x onerror=alert(1)> **Done.**\n\n```\n{ \"days\": 3 }\n```";
     chatDoc = { ...chatDoc, messages: [{ ...chatDoc.messages[0], status: "answered" }, { id: "m-aaaaaa2", role: "gary", text: answerText, at: iso(0), replyTo: "m-aaaaaa1" }] };
-    window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: { ...chatDoc, id: "c-other00001" }, master: { running: true } } })); await wait(5);
-    ok("chat: an event of another chat changes nothing", msgs().length === 1);
+    window.dispatchEvent(new CustomEvent("board:chat", { detail: { master: { running: true } } })); await wait(5);
+    ok("chat: an event without a chat changes nothing", msgs().length === 1);
     window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: chatDoc, master: { running: true } } })); await wait(5);
     const reply = msgs()[1];
     const links = reply ? [...reply.querySelectorAll("a")].map((a) => a.href) : [];
@@ -96,19 +96,24 @@
     ok("chat: closing puts the focus back on the logo", !dlg.open && document.activeElement === logo);
     calls.length = 0;
     logo.click(); await wait(20);
-    ok("chat: opening again loads the remembered chat", calls[0]?.op === "get" && calls[0].chatId === "c-test000001" && msgs().length === 3, calls);
+    ok("chat: opening again loads the active chat from the server", calls[0]?.op === "get" && calls[0].chatId === undefined && msgs().length === 3, calls);
     input.value = "unsent"; input.dispatchEvent(new Event("input"));
     await shut(); input.value = "";
     logo.click(); await wait(20);
     ok("chat: a typed draft survives closing", input.value === "unsent");
 
     // New chat
-    document.getElementById("chat-new").click(); await wait(5);
-    try { stored = localStorage.getItem("gary:chat:id"); } catch {}
-    ok("chat: New chat empties the log and shows the examples", msgs().length === 0 && dlg.querySelectorAll(".chat-example").length === 3 && stored === "new");
+    calls.length = 0;
+    answer = (b) => (b.op === "new" ? { ok: true, chat: null, archived: ["c-test000001"], master: { running: true } } : { ok: true, chat: null, master: { running: true } });
+    document.getElementById("chat-new").click(); await wait(20);
+    ok("chat: New chat archives the chat on the server, empties the log and shows the examples", calls[0]?.op === "new" && msgs().length === 0 && dlg.querySelectorAll(".chat-example").length === 3, calls);
     calls.length = 0;
     await shut(); logo.click(); await wait(20);
-    ok("chat: a new chat stays new after the dialog opens again", calls[0]?.op === "status" && msgs().length === 0, calls);
+    ok("chat: a new chat stays new after the dialog opens again", calls[0]?.op === "get" && msgs().length === 0, calls);
+    window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: { id: "c-other00001", messages: [queued("From another board")] }, master: { running: true } } })); await wait(5);
+    ok("chat: a chat started on another open board shows here too", msgs().length === 1 && msgs()[0].querySelector(".msg-body").textContent === "From another board");
+    window.dispatchEvent(new CustomEvent("board:chat", { detail: { chat: null, master: { running: true } } })); await wait(5);
+    ok("chat: New chat on another open board empties this one", msgs().length === 0);
     answer = (b) => (b.op === "send" ? { ok: true, chat: { id: "c-test000002", messages: [queued("unsent")] }, master: { running: true } } : { ok: true, master: { running: true } });
     enter(); await wait(20);
     ok("chat: the first message after New chat starts a new chat", calls.at(-1).op === "send" && calls.at(-1).chatId === null && msgs().length === 1);

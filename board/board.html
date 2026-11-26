@@ -6263,7 +6263,6 @@ function closeLearn() {
 // ---------- chat with Gary ----------
 
 // The server stores the messages. The master hands each one to a chat session, whose answer comes back as a chat event
-const CHAT_KEY = "gary:chat:id";
 const CHAT_DRAFT_KEY = "gary:chat:draft";
 // `CHAT_PICKUP_MS` and `CHAT_ANSWER_MS` match PICKUP_MS and ANSWER_MS in scripts/lib/chat.mjs
 const CHAT_PICKUP_MS = 2 * 60000;
@@ -6486,16 +6485,7 @@ async function loadChat() {
     return renderChat();
   }
   const load = ++chat.loads;
-  const stored = chatStored(CHAT_KEY);
-  if (stored === "new") {
-    chat.data = null;
-    chat.loaded = true;
-    const r = await boardApi.chat({ op: "status" });
-    if (load !== chat.loads) return;
-    if (r && r.ok) chat.master = r.master || null;
-    return renderChat();
-  }
-  const r = await boardApi.chat({ op: "get", ...(stored ? { chatId: stored } : {}) });
+  const r = await boardApi.chat({ op: "get" });
   if (load !== chat.loads) return;
   chat.loaded = true;
   if (!r || !r.ok) {
@@ -6504,7 +6494,6 @@ async function loadChat() {
   }
   chat.master = r.master || null;
   chat.data = r.chat || null;
-  if (chat.data) chatStore(CHAT_KEY, chat.data.id);
   chatProblem("");
   renderChat();
 }
@@ -6522,13 +6511,11 @@ async function sendChat() {
     if (r && r.ok) {
       chat.data = r.chat;
       chat.master = r.master || null;
-      chatStore(CHAT_KEY, chat.data.id);
       chat.input.value = "";
       saveChatDraft();
     } else if (r && r.gone) {
       chat.data = null;
-      chatStore(CHAT_KEY, "new");
-      chatProblem("That chat is gone. Send your message again to start a new one.");
+      chatProblem("That chat is archived. Send your message again to start a new one.");
     } else {
       chatProblem((r && r.result) || "The board server did not answer. Your message was not sent.");
     }
@@ -6540,14 +6527,23 @@ async function sendChat() {
   }
 }
 
-function newChat() {
-  chat.loads++;
-  chat.data = null;
-  chat.loaded = true;
-  chatStore(CHAT_KEY, "new");
+// The server archives the active chat, so every open board starts over with this one
+async function newChat() {
+  if (!boardApi || typeof boardApi.chat !== "function") return chatProblem("This page cannot reach Gary's chat.");
+  const load = ++chat.loads;
   chatProblem("");
-  renderChat();
   chat.input.focus();
+  try {
+    const r = await boardApi.chat({ op: "new" });
+    if (load !== chat.loads) return;
+    if (!r || !r.ok) return chatProblem((r && r.result) || "The board server did not answer. The chat stays as it is.");
+    chat.data = null;
+    chat.loaded = true;
+    chat.master = r.master || chat.master;
+  } catch {
+    chatProblem("The board server did not answer. The chat stays as it is.");
+  }
+  renderChat();
 }
 
 function openChat() {
@@ -6612,8 +6608,9 @@ function setupChat() {
   });
   window.addEventListener("board:chat", (e) => {
     const d = e.detail || {};
-    if (!d.chat || !chat.data || d.chat.id !== chat.data.id) return;
-    chat.data = d.chat;
+    // A send or a New chat click of this page is under way, and its answer brings the chat
+    if (!("chat" in d) || chat.busy) return;
+    chat.data = d.chat || null;
     chat.master = d.master || chat.master;
     if (chat.el.open) renderChat();
   });
