@@ -14,7 +14,7 @@
 
 **The board server** is plain Node.js without a model. It serves the board, stores your clicks and checks every rule in code. It is the one place that sends what you clicked to GitHub.
 
-**A triage worker** runs once per hour for each project. It snapshots the open PRs, issues and discussions, and sorts out what changed. Subagents do the reading:
+**A triage worker** runs once per hour for each project. It snapshots the open PRs, issues and discussions, and sorts out what changed. Draft PRs stay out, unless someone asked you something there that nobody answered yet. Such a draft gets a reply card and no review until it is marked ready. Subagents do the reading:
 
 - Classification, 25 items per subagent.
 - A full review per PR that needs one, up to `maxFullReviewsPerRun`.

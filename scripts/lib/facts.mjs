@@ -3,6 +3,7 @@
 import { basename } from "node:path";
 import { ciOf } from "./ci.mjs";
 import { AUTOMATED_TEXT_LIMIT, PROFILE_DEFAULTS } from "./config.mjs";
+import { endsInQuestion, mentions } from "./text.mjs";
 
 export const MAX_TIMELINE = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -74,6 +75,43 @@ export function speakerFacts(timeline, now = Date.now()) {
 		waitingOn: !last ? "nobody" : last.side === "them" ? "us" : "them",
 		waitingDays: last ? Math.max(0, Math.floor((now - Date.parse(last.at)) / DAY_MS)) : 0,
 	};
+}
+
+/**
+ * The comment on a draft PR that waits on our side, as `{ at, by, url, why }`, or null. The PR's body counts as the
+ * author's first comment. Only comments after our side's
+ * last comment or review count, by people outside our side. Bots and automated comments never count. `why` says how
+ * the comment waits: `mention` names one of `maintainers`, because a mention of a bot login is a command for that bot, `thread` replies in a review thread we commented in, `answer`
+ * is the PR author's reply to our last comment when it ended in a question mark, and `question` ends in a question
+ * mark with no later reply by someone else in the same conversation. The oldest such comment wins.
+ */
+export function draftWaiting(node, { us, maintainers = us, patterns = [] }) {
+	const low = (v) => String(v ?? "").toLowerCase();
+	const reviewBodies = new Map((node.reviews?.nodes ?? []).map((r) => [r.url, r.body]));
+	// The PR's body opens the conversation
+	const events = node.createdAt ? [{ createdAt: node.createdAt, author: node.author, body: node.body, url: node.url, where: "conversation" }] : [];
+	for (const c of node.timelineComments?.nodes ?? []) events.push({ ...c, where: "conversation" });
+	for (const t of node.reviewThreads?.nodes ?? []) for (const c of (t.allComments ?? t.comments)?.nodes ?? []) events.push({ ...c, where: `thread:${t.id}` });
+	for (const r of node.allReviews?.nodes ?? []) {
+		if (r.submittedAt && r.state !== "PENDING") events.push({ createdAt: r.submittedAt, author: r.author, body: reviewBodies.get(r.url) ?? "", url: r.url, where: "review" });
+	}
+	const side = (e) => sideOf(e.author, e.body, { us, patterns });
+	const sorted = events.filter((e) => e.createdAt).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+	const ours = sorted.filter((e) => side(e) === "us");
+	const lastOurs = ours.at(-1);
+	const since = lastOurs ? Date.parse(lastOurs.createdAt) : -Infinity;
+	const ourThreads = new Set(ours.map((e) => e.where).filter((w) => w.startsWith("thread:")));
+	const theirs = sorted.filter((e) => e.where !== "review" && Date.parse(e.createdAt) > since && side(e) === "them");
+	const answered = (c, i) => theirs.slice(i + 1).some((o) => o.where === c.where && low(o.author?.login) !== low(c.author?.login));
+	for (const [i, c] of theirs.entries()) {
+		let why = null;
+		if (maintainers.some((login) => mentions(c.body, login))) why = "mention";
+		else if (ourThreads.has(c.where)) why = "thread";
+		else if (lastOurs && low(c.author?.login) === low(node.author?.login) && endsInQuestion(lastOurs.body)) why = "answer";
+		else if (endsInQuestion(c.body) && !answered(c, i)) why = "question";
+		if (why) return { at: c.createdAt, by: c.author?.login ?? "ghost", url: c.url ?? null, why };
+	}
+	return null;
 }
 
 /**
