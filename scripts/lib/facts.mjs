@@ -1,6 +1,7 @@
 // Mechanical facts about an item, computed by code so no model has to read them out of a thread:
 // who spoke when, who we wait on, and for PRs whether it is clean and dependency-only.
 import { basename } from "node:path";
+import { ciOf } from "./ci.mjs";
 import { AUTOMATED_TEXT_LIMIT, PROFILE_DEFAULTS } from "./config.mjs";
 
 export const MAX_TIMELINE = 200;
@@ -230,6 +231,7 @@ export function prFacts(entry) {
 	const ciGreen = entry.ci === "passing";
 	return {
 		ciGreen,
+		...(entry.ciOptionalFailing?.length && { ciOptionalFailing: entry.ciOptionalFailing }),
 		// Only a complete file list can prove a PR changes dependencies only
 		dependencyOnly: files.length > 0 && files.length >= (entry.changedFileCount ?? files.length) && files.every(isDependencyFile),
 		touchesSensitive: touchesSensitive(entry),
@@ -337,7 +339,7 @@ export function dueFacts(node, fields = PROFILE_DEFAULTS.dueDateFields) {
 
 const prUnready = (n) =>
 	n.isDraft === true || n.mergeable === "CONFLICTING" || n.reviewDecision === "CHANGES_REQUESTED"
-	|| ["FAILURE", "ERROR"].includes(n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state);
+	|| ciOf(n) === "failing";
 
 /**
  * Finds series of related open items and returns a Map from item id to `{ id, title, position, size, unready? }`.

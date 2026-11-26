@@ -134,6 +134,9 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 	else if (!EFFORTS.includes(item.effortMinutes)) err("effortMinutes", `effortMinutes must be one of ${EFFORTS.join(", ")}, not ${JSON.stringify(item.effortMinutes)}`);
 	if (!DEPTHS.includes(item.reviewDepth)) err("reviewDepth", `reviewDepth must be one of ${DEPTHS.join(", ")}`);
 	if (item.kind === "pr" && item.ci !== undefined && !CI.includes(item.ci)) err("ci", `ci must be one of ${CI.join(", ")}`);
+	if (item.ciOptionalFailing !== undefined && !(item.kind === "pr" && Array.isArray(item.ciOptionalFailing) && item.ciOptionalFailing.every(isString))) {
+		err("ciOptionalFailing", "ciOptionalFailing lists the names of a PR's failing optional checks, from the snapshot");
+	}
 	if (item.mergeable !== undefined && !MERGEABLE.includes(item.mergeable)) err("mergeable", `mergeable must be one of ${MERGEABLE.join(", ")}`);
 	if (item.reviewDecision !== undefined && !DECISIONS.includes(item.reviewDecision)) {
 		err("reviewDecision", `reviewDecision must be one of ${DECISIONS.join(", ")}`);

@@ -1850,6 +1850,8 @@ export async function startBoardServer({
 			}
 			if (entry.mergeable !== undefined) next.mergeable = MERGEABLE_STATES[entry.mergeable] ?? "unknown";
 			if (entry.ci !== undefined) next.ci = entry.ci;
+			if (entry.ciOptionalFailing?.length) next.ciOptionalFailing = entry.ciOptionalFailing;
+			else delete next.ciOptionalFailing;
 			if (entry.facts?.lastEventUrl) next.lastEventUrl = entry.facts.lastEventUrl;
 			if (cur.kind === "discussion" && typeof entry.category === "string") next.discussionCategory = entry.category;
 			if (isObject(cur.handled)) next.handled = { ...cur.handled, verified: verify(cur, cur.handled, entry, state) };

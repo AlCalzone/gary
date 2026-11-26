@@ -16,6 +16,7 @@
 //                          A node's `projectItems` reach only a query that asks for them
 //   FAKE_GH_OVERRIDES      a JSON file { "issue-22": { …fields } } merged into the full nodes of `gary item`, read on every call.
 //                          "requests-<n>" is merged into the PR that a review request for the maintainer reads.
+//                          "checks-<n>" lists the check runs and statuses of PR <n> that a PrChecks read answers.
 //                          "escalation-<n>" is the closed discussion, "escalated-issue-<n>" the issue and "link-pr-<n>"
 //                          the PR that `gary link-escalated` reads
 //   FAKE_GH_CONTRIBUTIONS  a JSON file { searches: [{ match, nodes, total }], items: { "owner/name#n": node } } for a
@@ -146,6 +147,15 @@ if (query.includes("query PendingReviewTarget")) {
 if (query.includes("query ContributionsOwnPr")) {
 	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : {};
 	out({ data: { repository: { pullRequest: data.ownPrs?.[`${v.owner}/${v.name}#${v.number}`] ?? null } } });
+}
+// The check runs and statuses of a PR's head, with `isRequired`. Overrides name them as "checks-<number>", paged by 100
+if (query.includes("query PrChecks")) {
+	const all = overrides[`checks-${v.number}`] ?? [];
+	const from = v.after ? Number(v.after) : 0;
+	const nodes = all.slice(from, from + 100);
+	const end = from + nodes.length;
+	const contexts = { pageInfo: { hasNextPage: end < all.length, endCursor: String(end) }, nodes };
+	repository({ pullRequest: { commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE", contexts } } }] } } });
 }
 if (query.includes("query ContributionsSearch") || query.includes("query ContributionsItem")) {
 	const data = process.env.FAKE_GH_CONTRIBUTIONS ? JSON.parse(readFileSync(process.env.FAKE_GH_CONTRIBUTIONS, "utf8")) : { searches: [], items: {} };
