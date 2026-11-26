@@ -24,6 +24,8 @@ One board covers all the projects you maintain. It also follows your own PRs, is
 
 **An agent for the longer jobs.** One click starts a fix with a failing test as a draft PR, takes over a stalled PR, or addresses review comments.
 
+**Talk to Gary.** Click the logo and ask Gary in your own words: how a setting works, to change one, or to snooze everything from dependabot for 3 days. It acts through the board's own buttons and never posts on GitHub.
+
 **Rules in plain text.** Gary proposes a rule when you keep correcting it the same way. You accept, edit or dismiss it.
 
 **Every project you maintain.** Each project gets its own tab, rules and settings. The tab "All" merges them into one plan.

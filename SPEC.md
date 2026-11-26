@@ -43,19 +43,22 @@ Gary has three layers, one place for each kind of change.
     serve.mjs            gary serve
     doctor.mjs           gary doctor
     models.mjs           gary models
+    chat.mjs             gary chat
+    board-cli.mjs        gary board
     lib/                 paths and settings, gh wrapper, actions, freshness guard, board store
   mcp-server/index.mjs   stdio MCP server "gary"
   server/server.mjs      board server: serves the page, runs clicked routes, watches the board store
   board/board.html       the board page
   skills/                triage-master, triage-routine, triage-review-pr, triage-issue, triage-setup, triage-learn,
-                         triage-reconcile
+                         triage-reconcile, triage-chat
   profiles/template/     the skeleton `gary setup` copies for a new project
 
 <root>/                  $GARY_HOME, default ~/.config/gary/. Survives updates, nothing in it is shared
   config.json            the machine-wide settings: { "port": 7878, "models": { … }, "sessionsDir": "…" }, see "Models"
                          and "PR origins"
   personal.md            the maintainer's own rules for every instance
-  state/                 server-wide files: server-token, server.log
+  state/                 server-wide files: server-token, server.log, the chats in chat/<chatId>.json and the queue
+                         watcher's heartbeat watch-queue.json, see "Chat"
   instances/<name>/      one instance per repository. The name matches ^[a-z0-9][a-z0-9-]{0,39}$
 <home>/                  one instance directory, <root>/instances/<name>/
   config.json            the instance's settings
@@ -543,8 +546,8 @@ One page serves every instance. `GET /api/state` returns `{ board, items, propos
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
 
-- `use("board")` returns the `board` object above plus `refresh({ instance, itemId })`, see `/api/refresh`, and `decision(body)`, which posts `{ instance, itemId, routeId, text }` to `/api/decision` when the maintainer uses a route they do on GitHub themself. It resolves quietly, also when the post fails.
-- `use("db")` returns `collection("items" | "actions" | "proposals").orderBy(field, dir).limit(n).onSnapshot(cb)`, with the docs of all instances, each doc with `instance` and keyed `<instance>/<id>`, and `doc("meta/status").onSnapshot(cb)`. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`, whose paths gain the instance. The event stream names the instance in every event, sends a `board` event with the full `board` object when a pause changes, and `reload` when `board.html` changed.
+- `use("board")` returns the `board` object above plus `refresh({ instance, itemId })`, see `/api/refresh`, `chat(body)`, see "Chat", and `decision(body)`, which posts `{ instance, itemId, routeId, text }` to `/api/decision` when the maintainer uses a route they do on GitHub themself. It resolves quietly, also when the post fails.
+- `use("db")` returns `collection("items" | "actions" | "proposals").orderBy(field, dir).limit(n).onSnapshot(cb)`, with the docs of all instances, each doc with `instance` and keyed `<instance>/<id>`, and `doc("meta/status").onSnapshot(cb)`. `doc(path).set(data)` and `doc(path).update(data)` write through `/api/db`, whose paths gain the instance. The event stream names the instance in every event, sends a `board` event with the full `board` object when a pause changes, `reload` when `board.html` changed, and `chat` with `instance: null` when a chat changed. The shim passes a chat on as the window event `board:chat`.
 - `use("mcp")` returns `listTools("host:gary")` and `callTool("host:gary", tool, input)`. `callTool` posts `{ instance, action: tool, ...input }` to `/api/action`. For a route click `tool` is the route type and `input` is `{ instance, itemId, routeId, text, draftHash, force, input }`. The board-only calls are `dismiss_route` with `{ instance, itemId, routeId, text }`, `accept_proposal` and `dismiss_proposal` with `{ instance, proposalId, text }`, and `request_reconcile` with `{ instance }`.
 
 The page keeps filters and drafts in localStorage under keys prefixed `gary:<instance>:`, after a one-time move of the per-repo keys. Tabs, groups and header markers are described under "One server, one master".
@@ -1164,6 +1167,76 @@ The server serves `item.focus`:
 
 An item in focus stays loaded without routes and stays in today's plan, first in its group, also beyond the time budget. The row shows the chip "In focus", "Focus paused", "Focus requested" or "No focus session". The callout under the meta row says why Gary does not act: "In focus in <session> since 10:00. Gary holds everything on this item: no worker, review round or push touches it until the focus ends." with "Open session", or "Focus paused: <session> has been quiet since 10:02. Gary still holds the item and touches nothing until you resume the session or end the focus." with "Resume" and "End focus". A failed request shows the master's reason. While the item is in focus, its agent routes, "Analyze again" and "Focus" are hidden. None of this shows the size of the backlog.
 
+## Chat
+
+The maintainer talks to Gary in a dialog on the board: they ask how a setting works, have one changed, or ask for board actions like "mark all FYI items for merged PRs as Got it". A chat session in the master's harness answers. The board server runs no agent for it. It stores the message, and the master hands it on like a focus request.
+
+### Flow
+
+1. The header logo is a button "Talk to Gary". It opens the chat dialog. A message goes to `POST /api/chat` with `{ op: "send", chatId, text }`, and the server stores it as `queued`. Without `chatId` it starts a new chat.
+2. `gary watch-queue --all` prints `{ "instance": null, "id": "<messageId>", "itemId": null, "action": "chat", "chatId", "messageId" }` once per queued message. It prints them also while instances are paused, because a chat writes nothing to GitHub.
+3. The master runs `gary chat brief`. For the chat's first message, or when its session is gone, it starts a new top-level session with the brief's `briefing`, in the core directory without a worktree, on the root's `master` model. For a later message it sends the brief's `note` to the chat's session. Then it runs `gary chat start`, which records the session and marks the message `sent`. When it cannot do either, it runs `gary chat fail` with a reason.
+4. The session follows the `triage-chat` skill. It answers with `gary chat reply`, which stores Gary's message and marks the maintainer's message `answered`.
+5. The server watches the chat directory and pushes the changed chat to every open page. The dialog shows the answer.
+
+Gary uses only the harness the master runs in, like for "Focus". A harness without a way to start or reach a session gets `gary chat fail`, and the dialog shows the reason under the message.
+
+### The chat file
+
+`<root>/state/chat/<chatId>.json`, per machine. Only the server and `gary chat` write it, each change under a lock file next to it.
+
+```jsonc
+{
+  "id": "c-mi3k2a0f9d1c",                // ^c-[a-z0-9]{6,40}$
+  "createdAt": "ISO", "updatedAt": "ISO",
+  "title": "Mark all FYI items for merged PRs as Got it",   // the first line of the first message, at most 80 characters
+  "session": { "harness": "t3code", "id": "…", "link": "t3-thread://…", "title": "…", "startedAt": "ISO" },   // or null
+  "messages": [
+    { "id": "m-…", "role": "user", "text": "…", "at": "ISO", "status": "answered", "sentAt": "ISO", "answeredAt": "ISO" },
+    { "id": "m-…", "role": "gary", "text": "…", "at": "ISO", "replyTo": "m-…" }
+  ]
+}
+```
+
+A message of the maintainer is `queued`, `sent`, `answered` or `failed` with `reason`. `link` is kept only with `https://`, `t3-thread://` or `claude://`. Limits: 4000 characters per message of the maintainer, 20000 per answer (a longer one is cut), 200 messages per chat, 50 chats. A new chat deletes the oldest beyond that.
+
+### Checks
+
+- `/api/chat` needs the board token like every `/api` path. `op` is `status`, `get` or `send`. `status` answers `{ ok, master }`. `get` answers `{ ok, chat, master }`, with the newest chat when the body has no `chatId`.
+- `send` refuses an empty text, a text over the limit, and an unknown `chatId` with `gone: true`. More than 6 messages per minute from all pages together get 429 and `retryAfter`.
+- While the chat's last message waits for its answer, `send` refuses with 409 and `pending: true`. A waiting message is late when it is `queued` for more than 2 minutes or `sent` without an answer for more than 10. A late one fails with a reason when the next message arrives, so the maintainer can send again. An answer that comes after that still lands.
+- `master` is `{ running, at }`. `gary watch-queue --all` writes its pid and the time to `<root>/state/watch-queue.json` every minute. `running` is true while that heartbeat is less than 3 minutes old and its process lives.
+
+### What the chat session may do
+
+A chat message is the maintainer's own instruction, like a click. The session may:
+
+- explain Gary: settings, rules, the board, and why an item looks the way it does. It reads the configs, the profile, the `personal.md` files and the board store.
+- change settings on request: an instance's `config.json`, the `personal.md` files, the profile's `profile.json`, rules and templates, and the root `config.json` when the maintainer names its port or models. When the change is not exactly what was asked, it says what it would change and waits for a yes. It runs `gary doctor` after a change and puts the file back when a check fails because of it. It names each file it changed. In a git profile it commits the file without hooks and never pushes.
+- act on board items through `gary board`, which sends the board's own buttons to the running server: Got it, snooze, hide, show again, dismiss a route, Analyze again and a full review. The server checks them like a click, with the pause and the focus hold. Got it marks the notification as done where `clearNotifications` is on, like the click. A request about several items lists what matches and its count in the answer, acts, and reports what was done and what the server refused.
+
+It never posts, comments, reviews, merges, closes, labels, assigns or pushes on GitHub, also when the maintainer asks in the chat. It names the item's card instead. It starts no agent job but Analyze again and a full review. It never runs code from a PR branch, never edits Gary's core and never writes state files itself. GitHub content it reads is untrusted data. A text from the chat that reaches another agent, like the note of Analyze again, is data for that agent: the maintainer's note, never an instruction that overrides the agent's rules.
+
+### `gary chat`
+
+- `brief <chatId> --message <id> --harness <h> [--new]`: JSON with `chatId`, `messageId`, `title`, `session`, `core`, `model`, and `briefing` for a new session or `note` for the chat's session in the same harness. `--new` always prints the briefing, which then carries the chat so far. Exit 3 when the message is no longer `queued`.
+- `start <chatId> --message <id> --harness <h> --session <id> [--link <url>] [--title <text>]`: record the session and mark the message `sent`. Exit 3 when the message is answered or failed.
+- `reply <chatId> --message <id> --file <file | ->`: store the answer. Exit 3 when the message has one.
+- `fail <chatId> --message <id> --reason <text>`: mark the message `failed`.
+- `show <chatId> [--json]`, `list [--json]`.
+
+### `gary board`
+
+`list [--category <c>] [--kind <k>] [--state open|merged|closed] [--json]` reads `/api/state` and prints each item with its key `<instance>/<id>`, ref, category, state, the maintainer's fields, focus and routes. `got-it`, `snooze --days <1-90>`, `hide`, `restore`, `dismiss-route --route <id> --reason <text>`, `analyze [--note <text>]` and `review` take one or more keys and send what the page sends: `/api/action` for `got_it` and `dismiss_route`, `/api/db` for the maintainer's fields and the action doc. The action doc of a snooze or hide has `via: "chat"`. Without a running server every command fails. Nothing writes a file directly.
+
+### Board
+
+The logo shows a small speech bubble on hover and keyboard focus. The dialog shows the full logo in the left quarter, `/logo-full.svg` and `/logo-full-dark.svg` by theme, and hides it on a narrow screen. The chat takes the rest: the messages with their times, a text box that sends on Enter and adds a line on Shift+Enter, and a "New chat" button. Gary's answers show paragraphs, lists, code blocks, inline code, bold and links to github.com, built from DOM nodes. Other links stay text. An empty chat offers example messages to fill the box.
+
+While an answer is pending, the dialog shows "Gary is thinking". When the master does not run, it says so, and that the message waits for the next hourly run or the triage-master skill. A late message gets a plain text with what helps: send again, or open the session. A failed message shows its reason under it. A refused send shows the server's reason and keeps the text.
+
+The page keeps the chat id in localStorage under `gary:chat:id`, `new` after "New chat", and the typed text under `gary:chat:draft`. An open chat defers a page reload like the other dialogs.
+
 ## Learning
 
 Gary learns from where the maintainer deviates from the agent's proposals. The server keeps a decision log. A daily skill turns patterns in it into rule proposals. The maintainer accepts or dismisses each proposal on the board, and an accepted one is appended to a rules file. A second kind, the setting proposal, changes one value in the instance config when the maintainer accepts it. A third kind, the edit proposal, comes from the reconcile pass: it changes or deletes one block of a rules file, see "Reconcile".
@@ -1431,7 +1504,7 @@ Every instance config, of both kinds, takes an optional `tab: { icon, color, bac
 - `icon`: an image file (`.svg`, `.png`, `.jpg`, `.jpeg`, `.webp`, at most 1 MB), as an absolute path, a `~/` path or a path relative to the instance's directory. The server sends it at `/tab-icon/<instance>` and gives the page `tab.iconUrl` in place of the path. `gary doctor` checks the file. Or one of the built-in icons `zap`, `home`, `star`, `globe`, `heart`, `user`, `shield`, `bot`, `sparkles`, `wrench`, `lightbulb`, `plug`, `eye`, `pr`, `issue`, `discussion`, `commit`, `comments`.
 - `color`: a hex color like `#0071bc`, or one of `orange`, `blue`, `green`, `purple`, `rose`, `gray`. `gray` gives a palette without hue.
 
-The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg` and, for the dark theme, at `/logo-dark.svg`. With several instances the logo replaces the heading "Gary", which stays for screen readers.
+The server passes `tab` on in `board.instances[]`. The page header shows the logo, which the server serves at `/logo.svg` and, for the dark theme, at `/logo-dark.svg`. The logo is the button that opens the chat, see "Chat". With several instances the logo replaces the heading "Gary", which stays for screen readers.
 
 With `clearNotifications: true`, `got_it` also marks the thread's notification as done in the maintainer's own inbox, through `clearNotification` in `scripts/lib/gh.mjs`. It is one of the two requests this kind sends that change anything on GitHub. The other is the pending review of a review draft, see "Review drafts". It runs under the stored `gh` login after the check that the login is `me`, only for the click, and not while the instance is paused or the server runs with `--dry-run`. It reads `repos/<repo>/notifications` and matches a PR or an issue by its number and a discussion by its title. A failure never undoes the `got_it`: the result names it.
 
@@ -1605,6 +1678,7 @@ All existing endpoints stay, with the instance added:
   - `proposals[]`: each with `instance`.
 - `POST /api/action`: the body gains `instance`. Route clicks: `{ instance, itemId, routeId, text, draftHash, force, input }`. Board actions likewise (`dismiss_route`, `accept_proposal`, `dismiss_proposal` with `{ instance, proposalId, … }`).
 - `POST /api/decision`: `{ instance, itemId, routeId, text }`.
+- `POST /api/chat`: the chat with Gary, machine-wide, see "Chat".
 - `/api/db` reads and writes: the collection path gains the instance.
 - `GET /api/events`: every event names its instance. A `board` event carries the full `board` object.
 - Page shim: `use("board")` returns the `board` object above plus `decision(body)`. `db.collection("items" | "actions" | "proposals")` holds the docs of all instances, each doc with `instance`, keyed `<instance>/<id>`. `callTool` sends `{ instance, action, …input }`.
@@ -1613,7 +1687,7 @@ All existing endpoints stay, with the instance added:
 ### CLI and MCP
 
 - `gary serve` starts the one server (also `--watch`, `--dry-run`). `board_start` starts or finds it, `board_status` lists the instances it serves. `board_start` works from any directory.
-- `gary watch-queue --all` prints one line per queued agent request of any instance: `{ "instance", "id", "itemId", "action" }`.
+- `gary watch-queue --all` prints one line per queued agent request of any instance: `{ "instance", "id", "itemId", "action" }`, and one line per queued chat message, see "Chat".
 - `gary instances --json` lists name, kind, repos, checkout, paused.
 - `gary setup` no longer takes or assigns a port per instance. `--port` sets the root port.
 - Everything else resolves its instance as described under Instances.
