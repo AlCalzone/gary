@@ -1,13 +1,16 @@
-// Usage: gary push-check --pr <number> [--sha <head sha>] [--repo <owner/name>] [--focus-session <id>]
+// Usage: gary push-check --pr <number> [--sha <head sha>] [--head <new head sha>] [--repo <owner/name>] [--focus-session <id>]
 // Says from GitHub's state right now whether an agent may push to a PR from a checkout of its branch.
 // While a focus holds the PR, only its own session may push, and it names itself with --focus-session.
+// With --head, the commit about to be pushed, it also needs a finished local review of that head when the instance
+// has local reviewers. Without local reviewers --head changes nothing.
 // Prints one JSON object. The exit code is 0 when the push is allowed and 3 when it is refused.
-import { instanceName, loadInstance } from "./lib/config.mjs";
+import { instanceName, loadInstance, stateDir } from "./lib/config.mjs";
 import { focusHold, focusRefusal } from "./lib/focus.mjs";
+import { localReviewOf, pushAllowed, readRecord } from "./lib/local-review.mjs";
 import { fetchItem } from "./snapshot.mjs";
 
-const USAGE = "Usage: gary push-check --pr <number> [--sha <head sha>] [--repo <owner/name>] [--focus-session <id>]";
-const OPTIONS = ["--pr", "--sha", "--repo", "--focus-session"];
+const USAGE = "Usage: gary push-check --pr <number> [--sha <head sha>] [--head <new head sha>] [--repo <owner/name>] [--focus-session <id>]";
+const OPTIONS = ["--pr", "--sha", "--head", "--repo", "--focus-session"];
 
 function options(argv) {
 	const out = {};
@@ -37,7 +40,11 @@ export async function main(argv) {
 	const number = Number(opts.pr);
 	if (!Number.isSafeInteger(number) || number <= 0) throw new Error(USAGE);
 	if (opts.sha !== undefined && !/^[0-9a-f]{40}$/.test(opts.sha)) throw new Error("--sha must be a full 40-character SHA");
-	const repo = opts.repo ?? loadInstance(instanceName()).repos[0];
+	if (opts.head !== undefined && !/^[0-9a-f]{40}$/.test(opts.head)) throw new Error("--head must be a full 40-character SHA");
+	const instance = loadInstance(instanceName());
+	const repo = opts.repo ?? instance.repos[0];
+	const plan = localReviewOf(instance.config, instance.profile);
+	const gate = opts.head !== undefined && plan.reviewers.length > 0;
 	const focus = focusHold(`pr-${number}`);
 	if (focus && focus.session?.id !== opts.focusSession) {
 		console.log(JSON.stringify({ ok: false, pr: number, repo, focus: { status: focus.status, session: focus.session }, refused: focusRefusal(`pr-${number}`, focus) }));
@@ -45,7 +52,8 @@ export async function main(argv) {
 		return;
 	}
 	const entry = await fetchItem("pr", number, repo, { allFiles: true });
-	const refusal = pushCheckRefusal(entry, opts.sha);
+	const local = gate ? pushAllowed(plan, await readRecord(stateDir(), `pr-${number}`), { head: opts.head, base: opts.sha }) : null;
+	const refusal = pushCheckRefusal(entry, opts.sha) ?? (local && !local.ok ? local.reason : null);
 	console.log(JSON.stringify({
 		ok: !refusal,
 		pr: number,
@@ -53,6 +61,7 @@ export async function main(argv) {
 		headSha: entry.headSha,
 		sensitiveFiles: entry.sensitiveFiles ?? [],
 		sensitiveOurs: entry.facts?.sensitiveOurs === true,
+		...(local && { localReview: { head: opts.head, ok: local.ok, ...(local.pass && { pass: local.pass }) } }),
 		...(refusal && { refused: refusal }),
 	}));
 	process.exitCode = refusal ? 3 : 0;
