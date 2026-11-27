@@ -21,9 +21,38 @@ export function withoutFixReviewer(config) {
 	return { ...config, fixReview: reviewer === "off" ? { ...rest, maxRounds: 0 } : rest };
 }
 
+/**
+ * The config text without the line that holds `"reviewer"` alone, or null when there is no such line.
+ * "off" turns the line into `"maxRounds": 0` and drops another `maxRounds` line. Everything else stays, comments too.
+ */
+export function editReviewerLine(text) {
+	const line = /^([ \t]*)"reviewer"[ \t]*:[ \t]*"(copilot|off)"[ \t]*(,?)[ \t]*\r?\n/m.exec(text);
+	if (!line) return null;
+	const [whole, indent, value, comma] = line;
+	let before = text.slice(0, line.index);
+	let after = text.slice(line.index + whole.length);
+	if (value === "off") {
+		const rounds = /^[ \t]*"maxRounds"[ \t]*:[ \t]*\d+[ \t]*,?[ \t]*\r?\n/m;
+		// The object closes at the first "}" after the line, and an older maxRounds line sits before that
+		const end = after.indexOf("}");
+		const start = before.lastIndexOf("{");
+		before = before.slice(0, start) + before.slice(start).replace(rounds, "");
+		after = after.slice(0, end).replace(rounds, "") + after.slice(end);
+		return `${before}${indent}"maxRounds": 0${/^\s*}/.test(after) ? "" : ","}\n${after}`;
+	}
+	// A dropped last line leaves a comma on the line before
+	if (!comma && /^\s*}/.test(after)) before = before.replace(/,([ \t]*\r?\n)$/, "$1");
+	return before + after;
+}
+
 /** Writes `config` to `file`. The comments stay when only the one-line `fixReview` changed. */
 async function writeFixReview(file, config) {
 	const text = readFileSync(file, "utf8");
+	const edited = editReviewerLine(text);
+	if (edited && JSON.stringify(parseJsonc(edited)) === JSON.stringify(config)) {
+		await writeAtomic(file, edited, { raw: true });
+		return;
+	}
 	try {
 		const next = setJsoncValue(text, "fixReview", config.fixReview);
 		if (JSON.stringify(parseJsonc(next)) === JSON.stringify(config)) {

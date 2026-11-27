@@ -210,6 +210,20 @@ t.check("a pass with only CLI reviewers closes itself", r.status === 0 && r.json
 writeFileSync(join(repo, "a.js"), "for (let i = 0; i < n; i++) send(i);\n");
 git(repo, "commit", "-qam", "fix again");
 const head4 = git(repo, "rev-parse", "HEAD");
+writeFileSync(verdicts, JSON.stringify({ verdicts: [{ id: "f1", verdict: "valid" }], fixedIn: base }));
+r = gary(["local-review", "judge", "pr-25", "--file", verdicts]);
+t.check("judge refuses a fixedIn that does not build on the reviewed head", r.status === 1 && r.json.problems.some((x) => /does not build on/.test(x)), r.json);
+// A pass that died while its CLI reviewer ran leaves that reviewer as running
+const recFile = join(STATE, "local-review", "pr-25.json");
+const whole = readFileSync(recFile, "utf8");
+const cut = JSON.parse(whole);
+const open = cut.reviews.at(-1).passes.at(-1);
+Object.assign(open.reviewers[0], { status: "running", findings: [] });
+delete open.findingsFile;
+writeFileSync(recFile, JSON.stringify(cut));
+r = gary(["local-review", "collect", "pr-25"]);
+t.check("collect marks an interrupted CLI reviewer as failed, so the pass can end", r.status === 0 && r.json.reviewers[0].status === "failed" && /interrupted/.test(JSON.parse(readFileSync(recFile, "utf8")).reviews.at(-1).passes.at(-1).reviewers[0].reason), r.json);
+writeFileSync(recFile, whole);
 writeFileSync(verdicts, JSON.stringify({ verdicts: [{ id: "f1", verdict: "valid" }], fixedIn: head4 }));
 r = gary(["local-review", "judge", "pr-25", "--file", verdicts]);
 t.check("at the maximum judge says push", r.status === 0 && r.json.next === "push" && r.json.head === head4, r.json);

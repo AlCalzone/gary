@@ -105,7 +105,7 @@ export const reviewBotsOf = (config, profile) => activeReviewBots(config, profil
  * The review rounds a fix PR of Gary gets on its own: `{ on, bots, requestAs, maxRounds, markReady, reason, noReviewBot }`.
  * `on` is false when the config turns them off or when the rounds cannot run, and `reason` then says why.
  * `noReviewBot` is true when only the missing review bot stops the rounds. The fix PR then goes straight to ready.
- * With `reviewer: "off"`, `maxRounds` keeps the config's value, because that field caps no other rounds.
+ * `maxRounds: 0` and the older `reviewer: "off"` turn only these rounds off. The rounds after a later push stay.
  */
 export function fixReviewOf(config, profile) {
 	const given = config.fixReview ?? {};
@@ -630,7 +630,7 @@ export function checkProfile(data) {
 	for (const key of ["maintainers", "botLogins"]) {
 		check(errors, data[key] === undefined || isStringList(data[key], LOGIN), `"${key}" must be a list of GitHub logins`);
 	}
-	checkReviewBots(data.reviewBots, errors, unknown);
+	checkReviewBots(data.reviewBots, errors, unknown, data.botCommands);
 	check(errors, data.relatedRepos === undefined || isStringList(data.relatedRepos, REPO_NAME), `"relatedRepos" must be a list of repository names of the same owner`);
 	for (const key of ["sensitivePaths", "autoLabels", "requiredTools", "aiAuthors"]) {
 		check(errors, data[key] === undefined || isStringList(data[key]), `"${key}" must be a list of strings`);

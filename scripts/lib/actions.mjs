@@ -1,7 +1,7 @@
 import { allowedRepo, instanceName, isContributions, loadConfig, loadProfile, repoParts, withInstance } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { GRAPHQL_ARGS, READ_ONLY_MESSAGE, accountMode, assertWriteAllowed, gh, graphql, requestBotReview, requestCopilotReview, verifyOwnLogin, writeLogin } from "./gh.mjs";
-import { COPILOT, botCommandTexts, profileReviewBots } from "./review-bots.mjs";
+import { COPILOT, botCommandHit, botCommandTexts, profileReviewBots } from "./review-bots.mjs";
 
 export const KINDS = ["pr", "issue", "discussion"];
 const BOARD_ACTIONS = ["dismiss", "snooze"];
@@ -559,7 +559,7 @@ function forbidBotCommands(ctx) {
 	const comments = Array.isArray(ctx.params.comments) ? ctx.params.comments : [];
 	const texts = [ctx.text, ctx.params.title, ...comments.map((c) => c?.text)].filter((t) => typeof t === "string");
 	for (const text of texts) {
-		const hit = commands.find((c) => text.toLowerCase().includes(c));
+		const hit = botCommandHit(text, commands);
 		if (hit) throw new Error(`The text contains the bot command "${hit}". Post bot commands on GitHub yourself.`);
 	}
 }

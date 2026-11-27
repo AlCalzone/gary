@@ -66,7 +66,11 @@ Three things can run under your own login next to a bot:
 - A review bot's trigger comment, like `@octobot2 review`, for a bot the profile lists with `"trigger": { "comment" }`. Gary posts exactly the profile's text and nothing else. It does so only where it asks the review bots after a push: the first round of a fix PR, the next round after a push, and the round after an API edit. An agent never writes it, and no `gary action` or MCP tool posts it.
 - The escalate command that turns a discussion into an issue, with `"escalateAs": "me"`. It is posted only after your click and a confirm. No agent can post it.
 
-The trigger comments and the profile's `botCommands` are bot commands. Gary checks every other text it posts for them and refuses it when it holds one: replies, reviews, commit messages, API edits, answers to findings and review drafts.
+The trigger comments and the profile's `botCommands` are bot commands. A mention of a bot with a trigger comment, like `@octobot2`, counts as one too. Gary's code checks the text it posts through its own tools and refuses it when it holds one: comments, replies and reviews through `gary action`, the commit message and the comment of an API edit, answers to findings and review drafts. Case and the amount of whitespace do not matter.
+
+An agent job also writes text that no such check sees, because it goes out through `gh` or `git` directly: replies in review threads, the title and description of a PR, and commit messages. For those the rule is in the skills only: the text never holds a bot command and never mentions a bot with a trigger comment.
+
+A bot with a trigger comment is asked only when `review.github` in your `config.json` names it. The profile may be shared, and a change to it alone never makes Gary post a text.
 
 ## Your GitHub inbox
 

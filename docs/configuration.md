@@ -168,7 +168,7 @@ After every push to a PR Gary controls, Gary asks each bot once for the new head
 { "review": { "github": "profile" } }
 ```
 
-- `"profile"`, the default: all of them.
+- `"profile"`, the default: every bot that is asked by a review request. A bot with a trigger comment is left out. Gary posts that comment without a click, so the bot must be named here in the list. A shared profile alone never makes Gary post a text. `gary doctor` tells you when the profile has such a bot.
 - `[]`: none. Pushes get no review bot rounds.
 - A list of keys, like `["copilot"]`: only those. `gary doctor` warns about a key the profile does not list.
 
@@ -206,7 +206,7 @@ The findings and the agent's verdicts show in the item's dialog. Nothing of them
 { "fixReview": { "requestAs": "me", "maxRounds": 3, "markReady": true } }
 ```
 
-On its own fix PRs Gary asks the review bots, pushes fixes for their comments, and marks the PR ready. `requestAs` is `me` or `bot`: the account that asks. `"maxRounds": 0` turns the rounds off, and the fix PR stays a draft until you look at it. A drive you click on another PR still asks the bots. Without a review bot, a fix PR skips the rounds: Gary marks it ready and puts it on your board right after it opens.
+On its own fix PRs Gary asks the review bots, pushes fixes for their comments, and marks the PR ready. `requestAs` is `me` or `bot`: the account that asks. `"maxRounds": 0` turns the rounds off, and the fix PR stays a draft until you look at it. After a later push to that PR, for example after your feedback, Gary still asks the bots, up to 3 rounds. A drive you click on another PR still asks the bots. Without a review bot, a fix PR skips the rounds: Gary marks it ready and puts it on your board right after it opens.
 
 An older config may still say `"reviewer": "copilot"` or `"reviewer": "off"`. Gary reads both as before. `gary migrate` drops `"copilot"` and turns `"off"` into `"maxRounds": 0`.
 

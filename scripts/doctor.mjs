@@ -206,10 +206,12 @@ async function checkInstance() {
 		});
 		add("fix limit", "ok", config.maxPendingAutoFixes === 0 ? "maxPendingAutoFixes is 0, the routine starts no fix on its own" : `at most ${config.maxPendingAutoFixes} automatic fix PRs pending at a time, ${config.maxAutoFixesPerRun} new per run`);
 		await attempt("review bots", async () => {
-			const { bots, missing, source } = activeReviewBots(config, loadProfile());
+			const { bots, missing: notInProfile, unconfirmed, source } = activeReviewBots(config, loadProfile());
+			const missing = [...notInProfile, ...unconfirmed];
 			const all = profileReviewBots(loadProfile());
 			const how = (b) => (b.trigger === "comment" ? `${b.key} by the comment "${b.comment}"` : b.trigger === "request" ? `${b.key} by a review request` : "copilot by a review request");
-			const notListed = missing.length ? `. review.github names ${missing.join(", ")}, which the profile's reviewBots does not list` : "";
+			const notListed = (notInProfile.length ? `. review.github names ${notInProfile.join(", ")}, which the profile's reviewBots does not list` : "")
+				+ (unconfirmed.length ? `. The profile lists ${unconfirmed.join(", ")} with a trigger comment. Gary posts that comment only when review.github in config.json names the bot, like "github": ${JSON.stringify(["copilot", ...unconfirmed].filter((k) => k !== "copilot" || bots.some((b) => b.key === "copilot")))}` : "");
 			if (!bots.length) return [missing.length ? "warn" : "ok", `${all.length ? "review.github in config.json skips the profile's review bots" : "the profile lists no review bot"}. A push to a watched PR gets no review bot round${notListed}`];
 			return [missing.length ? "warn" : "ok", `after a push to a watched PR Gary asks ${bots.map(how).join(", ")}${source === "config" ? ", as review.github picks" : ""}${notListed}`];
 		});

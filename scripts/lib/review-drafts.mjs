@@ -1,6 +1,7 @@
 // Review drafts of a contributions instance: the first draft of the maintainer's own review on a PR that requests it.
 // Code decides which draft starts without a click, records every start in <state>/review-drafts.json, checks the
 // draft's pending review route and the lines its comments name. See "Review drafts" in SPEC.md.
+import { botCommandHit } from "./review-bots.mjs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { readJson } from "./board-store.mjs";
@@ -177,14 +178,13 @@ const BOT_COMMAND = /^\s*\/[a-z][\w-]*|@[\w-]*bot\b|@[\w-]+\[bot\]|\bbors\s+(?:r
 
 /**
  * The bot command a text holds, or null. Review text written by the agent must hold none. `commands` adds texts that
- * count as commands too, like the trigger comments of review bots, trimmed and in lower case.
+ * count as commands too, like the trigger comments of review bots, as `botCommandTexts` returns them.
  */
 export function botCommandIn(text, commands = []) {
 	if (typeof text !== "string") return null;
 	const hit = BOT_COMMAND.exec(text)?.[0].trim();
 	if (hit) return hit;
-	const lower = text.toLowerCase();
-	return commands.find((c) => c && lower.includes(c)) ?? null;
+	return botCommandHit(text, commands);
 }
 
 const MAX_BODY = 65536;

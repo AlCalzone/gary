@@ -299,7 +299,7 @@ export async function watchContext(number, { takingOver = false } = {}) {
 	}
 	if (!pr) throw new Error(`PR #${number} is no PR by the bot, no fix PR Gary recorded in fixes.json and no PR it took over. Only those are watched.`);
 	const settings = fixReviewOf(instance.config, instance.profile);
-	return { ...pr, settings, bots: reviewBotsOf(instance.config, instance.profile), cap: pr.why === "fix" ? Math.min(settings.maxRounds ?? REVIEW_ROUND_CAP, REVIEW_ROUND_CAP) : REVIEW_ROUND_CAP };
+	return { ...pr, settings, bots: reviewBotsOf(instance.config, instance.profile), cap: pr.why === "fix" && settings.maxRounds ? Math.min(settings.maxRounds, REVIEW_ROUND_CAP) : REVIEW_ROUND_CAP };
 }
 
 /** The drive file a watched PR starts from when it has none yet. */
@@ -354,8 +354,9 @@ export async function askReviewBots({ repo, number, bots, sha, drive = null, as 
 	if (twice.length) throw new Refused(`${botNames(twice)} ${twice.length === 1 ? "was" : "were"} already asked to review ${sha.slice(0, 7)} on PR #${number}. A bot is asked once per head.`);
 	const out = { asked: [], invocations: [] };
 	let failure = null;
+	// The pause is checked once. A pause that starts between two bots must not hide the bots already asked
+	if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 	for (const bot of bots) {
-		if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 		if (bot.trigger === "comment") {
 			try {
 				const posted = await postReviewTrigger({ repo, number, key: bot.key, as, dryRun });
@@ -366,7 +367,7 @@ export async function askReviewBots({ repo, number, bots, sha, drive = null, as 
 			}
 		} else {
 			const r = await runAction({ action: "request_review", kind: "pr", number, repo, params: { reviewer: bot.trigger === COPILOT ? COPILOT : bot.login, as }, dryRun });
-			if (r.paused) return { ok: false, paused: true, result: PAUSED_MESSAGE };
+			if (r.paused && !out.asked.length) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 			if (!r.ok) {
 				failure = bots.length === 1 ? r.result : `${botName(bot)}: ${r.result}`;
 				break;
@@ -396,7 +397,6 @@ export async function requestReviewRound({ number, sha, actionId, after, apiEdit
 	const job = after !== undefined ? await pushJob(after, itemId) : null;
 	const c = await watchContext(number, { takingOver: job?.action === "take_over" });
 	if (!c.bots.length) return { ok: true, requested: false, skipped: `${c.settings.noReviewBot ? capital(c.settings.reason) : "The instance asks no review bot"}, so no review bot round is requested. Go on as if the rounds were done.`, itemId: c.itemId };
-	if (c.cap === 0) return { ok: true, requested: false, skipped: "fixReview.maxRounds is 0, so a fix PR gets no review bot rounds. Go on as if the rounds were done.", itemId: c.itemId };
 	if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 	if (!writeLogin()) throw new Refused("No account may push: the instance has no bot and allowOwnTokenPushes is off.");
 	if (c.entry && touchesSensitive(c.entry) && !sensitiveOurs(c.entry)) throw new Refused(`PR #${c.number} changes sensitive files and is not ours alone, so it gets no review bot rounds.`);

@@ -79,6 +79,10 @@ const multi = `{\n\t"kind": "maintainer",\n\t"profile": ${JSON.stringify(PROFILE
 writeFileSync(join(b, "config.json"), multi);
 gary("migrate");
 t.check("a fixReview over several lines is migrated too", JSON.stringify(json(join(b, "config.json")).fixReview) === '{"maxRounds":0}', readFileSync(join(b, "config.json"), "utf8"));
+const multiNote = `{\n\t// keep this note\n\t"kind": "maintainer",\n\t"profile": ${JSON.stringify(PROFILE)},\n\t"me": "octocat",\n\t"fixReview": {\n\t\t"reviewer": "copilot",\n\t\t"requestAs": "me", // who asks\n\t\t"maxRounds": 3\n\t}\n}\n`;
+writeFileSync(join(b, "config.json"), multiNote);
+gary("migrate");
+t.check("a fixReview over several lines keeps the file's comments", readFileSync(join(b, "config.json"), "utf8") === multiNote.replace('\t\t"reviewer": "copilot",\n', ""), readFileSync(join(b, "config.json"), "utf8"));
 
 // The layout from before instances is setup's job
 const flat = join(T, "flat");

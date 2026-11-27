@@ -24,7 +24,7 @@ import { boardDir, readJson, tokenFile } from "./lib/board-store.mjs";
 import { homePath, instanceName, isContributions, loadConfig, loadProfile, personalFiles, profileDir, rootStateDir, stateDir } from "./lib/config.mjs";
 import { readSnapshotItems } from "./lib/fixes.mjs";
 import {
-	ITEM_ID, JOB_ID, SHA, VERDICTS, addReadonlyWorktree, cliEnv, currentReview, diffOf, findingsOfJson, hasCommit, localReviewOf, nextStep,
+	ITEM_ID, JOB_ID, SHA, VERDICTS, addReadonlyWorktree, buildsOn, cliEnv, currentReview, diffOf, findingsOfJson, hasCommit, localReviewOf, nextStep,
 	passComplete, passDir, passHasValid, pushAllowed, readRecord, readonlyDir, removeReadonlyWorktree, reviewerPrompt, runCli, servedLocalReview, writeRecord,
 } from "./lib/local-review.mjs";
 
@@ -163,10 +163,18 @@ async function passCmd(itemId, out) {
 	const readonly = readonlyDir(stateDir(), itemId, n);
 	await addReadonlyWorktree(out.worktree, head, readonly);
 	const diffFile = join(dir, "diff.patch");
-	await writeFile(diffFile, await diffOf(out.worktree, base, head));
-	const context = await contextText(itemId, out.job);
-	const contextFile = context ? join(dir, "context.md") : null;
-	if (context) await writeFile(contextFile, context);
+	let contextFile = null;
+	try {
+		await writeFile(diffFile, await diffOf(out.worktree, base, head));
+		const context = await contextText(itemId, out.job);
+		if (context) {
+			contextFile = join(dir, "context.md");
+			await writeFile(contextFile, context);
+		}
+	} catch (e) {
+		await removeReadonlyWorktree(out.worktree, readonly).catch(() => {});
+		throw e;
+	}
 	const pass = { n, head, worktree: out.worktree, readonly, startedAt: new Date().toISOString(), reviewers: [] };
 	review.passes.push(pass);
 	const agents = [];
@@ -179,11 +187,14 @@ async function passCmd(itemId, out) {
 		pass.reviewers.push({ key: r.key, kind: r.kind, name: r.name, status: "running", out: file, brief, findings: [] });
 		agents.push({ key: r.key, kind: r.kind, name: r.name, ...(r.kind === "agent" && { provider: r.provider, model: r.model }), brief, out: file });
 	}
+	// Record the CLI reviewers before they run, so a pass that was interrupted still names them
+	for (const r of p.reviewers.filter((x) => x.kind === "cli")) pass.reviewers.push({ key: r.key, kind: "cli", name: r.name, status: "running", findings: [] });
 	await writeRecord(stateDir(), record);
 	const env = cliEnv(process.env, secrets());
 	for (const r of p.reviewers.filter((x) => x.kind === "cli")) {
 		const result = await runCli(r, { cwd: readonly, vars: { base, head, worktree: readonly }, env });
-		pass.reviewers.push({ key: r.key, kind: "cli", name: r.name, status: result.status, exitCode: result.exitCode, ...(result.reason && { reason: result.reason }), findings: result.findings });
+		Object.assign(pass.reviewers.find((x) => x.key === r.key), { status: result.status, exitCode: result.exitCode, ...(result.reason && { reason: result.reason }), findings: result.findings });
+		await writeRecord(stateDir(), record);
 	}
 	// Keep the plan's order on the board
 	pass.reviewers.sort((a, b) => p.reviewers.findIndex((r) => r.key === a.key) - p.reviewers.findIndex((r) => r.key === b.key));
@@ -225,6 +236,11 @@ async function collectCmd(itemId) {
 	const { record, review, pass } = await openPass(itemId);
 	if (pass.findingsFile && passComplete(pass)) return { ok: true, itemId, pass: pass.n, findingsFile: pass.findingsFile, findings: pass.reviewers.reduce((n, r) => n + r.findings.length, 0), reviewers: reviewerResults(pass) };
 	for (const r of pass.reviewers.filter((x) => x.status === "running")) {
+		// A CLI reviewer that still counts as running here was interrupted, because `pass` waits for it
+		if (r.kind === "cli") {
+			Object.assign(r, { status: "failed", reason: "was interrupted before it finished", findings: [] });
+			continue;
+		}
 		let text = null;
 		try {
 			text = await readFile(r.out, "utf8");
@@ -277,6 +293,7 @@ async function judgeCmd(itemId, out) {
 	else if (fixedIn && fixedIn === pass.head) problems.push("fixedIn is the head the pass reviewed. Commit the fixes first");
 	else if (fixedIn && !anyValid) problems.push("fixedIn needs at least one valid finding");
 	if (fixedIn && SHA.test(fixedIn) && !(await hasCommit(pass.worktree, fixedIn))) problems.push(`fixedIn ${fixedIn} is no commit in ${pass.worktree}`);
+	else if (fixedIn && SHA.test(fixedIn) && fixedIn !== pass.head && !(await buildsOn(pass.worktree, fixedIn, pass.head))) problems.push(`fixedIn ${fixedIn} does not build on ${pass.head}, the head the pass reviewed`);
 	if (problems.length) {
 		const e = new Error(`The verdicts were not recorded: ${problems.join("; ")}.`);
 		e.problems = problems;

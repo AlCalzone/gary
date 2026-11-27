@@ -60,6 +60,8 @@ const json = (r) => {
 const read = (file) => JSON.parse(readFileSync(file, "utf8"));
 const writes = () => (existsSync(WRITES) ? readFileSync(WRITES, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 const editConfig = (fn) => writeFileSync(join(home, "config.json"), JSON.stringify(fn(read(join(home, "config.json")))));
+// A bot with a trigger comment is asked only when config.json names it
+editConfig((cfg) => ({ ...cfg, review: { github: ["copilot", "octobot", "octobot2"] } }));
 const reset = () => {
 	rmSync(join(state, "drive"), { recursive: true, force: true });
 	rmSync(actionsDir, { recursive: true, force: true });
@@ -114,7 +116,11 @@ t.check("a contributions instance takes review but no review.github", c.checkCon
 t.check("fixReview.maxRounds takes 0", configErrors({ fixReview: { maxRounds: 0 } }).errors.length === 0 && configErrors({ fixReview: { maxRounds: -1 } }).errors.length === 1);
 const profile3 = { reviewBots: BOTS };
 const keys = (config) => rb.activeReviewBots(config, profile3).bots.map((b) => b.key).join(",");
-t.check("review.github profile takes all of the profile's bots", keys({}) === "copilot,octobot,octobot2" && keys({ review: { github: "profile" } }) === "copilot,octobot,octobot2");
+t.check("review.github profile takes the profile's bots that are asked by a request", keys({}) === "copilot,octobot" && keys({ review: { github: "profile" } }) === "copilot,octobot");
+t.check("a bot with a trigger comment needs its key in review.github", rb.activeReviewBots({}, profile3).unconfirmed.join() === "octobot2" && rb.activeReviewBots({ review: { github: ["octobot2"] } }, profile3).unconfirmed.length === 0);
+t.check("a trigger comment must not hold another bot command", (() => { const errors = []; rb.checkReviewBots([{ login: "octobot2", trigger: { comment: "please  /Merge now" } }], errors, [], { merge: "/merge" }); return errors.some((e) => /holds one of the profile's botCommands/.test(e)); })());
+const cmds = rb.botCommandTexts({ reviewBots: BOTS });
+t.check("a trigger comment is found with other case and spacing, and a mention of its bot counts too", ["@OctoBot2  Review", "@octobot2\nreview", "@octobot2 please review", "thanks @OCTOBOT2"].every((x) => rb.botCommandHit(`Fixed. ${x}`, cmds)) && rb.botCommandHit("Fixed in the last commit.", cmds) === null && rb.botCommandHit("see octobot2's note", cmds) === null, cmds);
 t.check("an empty review.github skips the GitHub bots", keys({ review: { github: [] } }) === "");
 t.check("a list picks a subset in the profile's order and names the keys it does not know", keys({ review: { github: ["OctoBot2", "copilot", "octocat"] } }) === "copilot,octobot2" && JSON.stringify(rb.activeReviewBots({ review: { github: ["octocat"] } }, profile3).missing) === '["octocat"]');
 const withBot = { ...base, bot: { login: "widgets-bot", tokenFile: "t" } };
@@ -173,7 +179,7 @@ t.check("an empty review.github skips the rounds of a fix PR", r.status === 0 &&
 editConfig((cfg) => ({ ...cfg, review: { github: ["octobot", "octocat"] } }));
 r = gary("doctor");
 t.check("doctor warns about a key the profile does not list", /warn\s+review bots\s+.*review.github names octocat, which the profile's reviewBots does not list/.test(r.stdout), r.stdout.slice(0, 3000));
-editConfig((cfg) => ({ ...cfg, review: undefined }));
+editConfig((cfg) => ({ ...cfg, review: { github: ["copilot", "octobot", "octobot2"] } }));
 
 // fixReview.maxRounds 0: no rounds for fix PRs, while other PRs still ask the bots
 reset();
@@ -182,7 +188,9 @@ r = gary("fix-review", "start", "--pr", "19", "--sha", SHA, "--run", "run-5");
 t.check("maxRounds 0 starts no rounds and keeps the PR a draft", r.status === 0 && json(r).started === false && /maxRounds is 0/.test(json(r).reason) && writes().length === 0 && !existsSync(driveFile), r.stdout);
 writeFileSync(join(actionsDir, "pr-19-revise.json"), JSON.stringify({ itemId: "pr-19", action: "revise", params: {}, text: "Rename it.", status: "queued", via: "queue", createdAt: new Date().toISOString(), finishedAt: null, result: "claimed by run req-1" }));
 r = gary("pr-watch", "review", "--pr", "19", "--sha", NEXT, "--after", "pr-19-revise", "--run", "req-1");
-t.check("maxRounds 0 gives a pushed fix PR no review bot round", r.status === 0 && json(r).requested === false && /maxRounds is 0/.test(json(r).skipped) && writes().length === 0, r.stdout);
+t.check("maxRounds 0 keeps the rounds after a later push to the fix PR, up to 3", r.status === 0 && json(r).requested === true && json(r).cap === 3 && writes().length === 3, r.stdout);
+reset();
+writeFileSync(join(actionsDir, "pr-19-revise.json"), JSON.stringify({ itemId: "pr-19", action: "revise", params: {}, text: "Rename it.", status: "queued", via: "queue", createdAt: new Date().toISOString(), finishedAt: null, result: "claimed by run req-1" }));
 writeFileSync(join(state, "fixes.json"), "{}");
 writeFileSync(join(state, "snapshot.json"), JSON.stringify({ items: { "pr-19": { author: "widgets-bot", headSha: SHA, feedback: {} } } }));
 r = gary("pr-watch", "review", "--pr", "19", "--sha", NEXT, "--after", "pr-19-revise", "--run", "req-1");
@@ -265,7 +273,7 @@ t.check("pr-watch bots: the review on the head with its threads resolved is a cl
 writeFileSync(OVERRIDES, JSON.stringify(pr19("8".repeat(40), true)));
 o = json(gary("pr-watch", "bots", "--pr", "19"));
 t.check("pr-watch bots: a review of an older head is no clean round", o.clean === false && o.bots[0].onHead === false, o);
-editConfig((cfg) => ({ ...cfg, review: undefined }));
+editConfig((cfg) => ({ ...cfg, review: { github: ["copilot", "octobot", "octobot2"] } }));
 
 // ---------- the snapshot counts the rounds per bot ----------
 const timeline = [

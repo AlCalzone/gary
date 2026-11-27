@@ -25,16 +25,18 @@ export function profileReviewBots(profile) {
 }
 
 /**
- * The review bots Gary asks on this instance: `{ bots, missing, source }`. `review.github` in config.json is "profile" by
- * default, which takes all of the profile's bots. A list of keys takes those of the profile's bots, in the profile's
- * order, and `missing` names the keys the profile does not list.
+ * The review bots Gary asks on this instance: `{ bots, missing, unconfirmed, source }`. `review.github` in config.json
+ * is "profile" by default, which takes the profile's bots that are asked by a request. A list of keys takes those of
+ * the profile's bots, in the profile's order, and `missing` names the keys the profile does not list.
+ * A bot with a trigger comment must be named in that list, because Gary posts its comment without a click.
+ * A shared profile alone must never make Gary post a text. `unconfirmed` names the bots left out for that reason.
  */
 export function activeReviewBots(config, profile) {
 	const all = profileReviewBots(profile);
 	const pick = config?.review?.github ?? "profile";
-	if (!Array.isArray(pick)) return { bots: all, missing: [], source: "profile" };
+	if (!Array.isArray(pick)) return { bots: all.filter((b) => b.trigger !== "comment"), missing: [], unconfirmed: all.filter((b) => b.trigger === "comment").map((b) => b.key), source: "profile" };
 	const keys = pick.map((k) => String(k).toLowerCase());
-	return { bots: all.filter((b) => keys.includes(b.key)), missing: keys.filter((k) => !all.some((b) => b.key === k)), source: "config" };
+	return { bots: all.filter((b) => keys.includes(b.key)), missing: keys.filter((k) => !all.some((b) => b.key === k)), unconfirmed: [], source: "config" };
 }
 
 /** The bot as a drive file stores it: no trigger text, which only the profile holds. */
@@ -77,17 +79,30 @@ export function reviewTriggerComments(profile) {
 	return profileReviewBots(profile).filter((b) => b.trigger === "comment").map((b) => b.comment);
 }
 
+/** Text in the form the bot-command checks compare: lower case, with every run of whitespace as one space. */
+const commandForm = (text) => String(text ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
 /**
- * Every text that counts as a bot command in the profile, trimmed and in lower case: the values of `botCommands` and
- * the trigger comments of `reviewBots`. No text an agent writes may contain one.
+ * Every text that counts as a bot command in the profile, in the form `botCommandHit` compares: the values of
+ * `botCommands`, the trigger comments of `reviewBots`, and a mention of each bot that has a trigger comment.
+ * No text an agent writes may contain one.
  */
 export function botCommandTexts(profile) {
 	const commands = Object.values(profile?.botCommands ?? {}).filter((c) => typeof c === "string");
-	return [...commands, ...reviewTriggerComments(profile)].map((c) => c.trim().toLowerCase()).filter(Boolean);
+	const mentions = profileReviewBots(profile).filter((b) => b.trigger === "comment").map((b) => `@${b.key}`);
+	return [...new Set([...commands, ...reviewTriggerComments(profile), ...mentions].map(commandForm).filter(Boolean))];
 }
 
-/** Adds the problems of a profile's `reviewBots` to `errors` and `unknown`. */
-export function checkReviewBots(list, errors, unknown) {
+/** The entry of `commands` from `botCommandTexts` that `text` contains, or null. Case and the amount of whitespace do not matter. */
+export function botCommandHit(text, commands) {
+	if (typeof text !== "string" || !commands?.length) return null;
+	const form = commandForm(text);
+	return commands.find((c) => c && form.includes(c)) ?? null;
+}
+
+/** Adds the problems of a profile's `reviewBots` to `errors` and `unknown`. `botCommands` is the profile's field of that name. */
+export function checkReviewBots(list, errors, unknown, botCommands = {}) {
+	const others = Object.values(botCommands ?? {}).filter((c) => typeof c === "string").map(commandForm).filter(Boolean);
 	if (list === undefined) return;
 	if (!Array.isArray(list)) {
 		errors.push(`"reviewBots" must be a list of "copilot", { "login", "trigger": "request" } and { "login", "trigger": { "comment" } }`);
@@ -114,6 +129,7 @@ export function checkReviewBots(list, errors, unknown) {
 				if (typeof comment !== "string" || !comment.trim()) errors.push(`"${where}.trigger.comment" must be the comment that asks the bot for a review`);
 				else if (/[\r\n]/.test(comment)) errors.push(`"${where}.trigger.comment" must be one line`);
 				else if (comment.length > MAX_TRIGGER_COMMENT) errors.push(`"${where}.trigger.comment" is longer than ${MAX_TRIGGER_COMMENT} characters`);
+				else if (others.some((c) => commandForm(comment).includes(c))) errors.push(`"${where}.trigger.comment" holds one of the profile's botCommands. A review trigger must not be another bot command`);
 			} else if (trigger !== "request") errors.push(`"${where}.trigger" must be "request" or { "comment": "<the comment that asks for a review>" }`);
 		}
 		const bot = normalizeBot(entry);

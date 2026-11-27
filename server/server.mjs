@@ -32,7 +32,7 @@ import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { CHAT_ID, activeChat, addUserMessage, archiveActive, chatDir, masterState, readChat } from "../scripts/lib/chat.mjs";
 import { ownPrRefusal } from "../scripts/lib/own-pr.mjs";
 import { localReviewDir, servedLocalReview } from "../scripts/lib/local-review.mjs";
-import { activeReviewBots, botCommandTexts } from "../scripts/lib/review-bots.mjs";
+import { activeReviewBots, botCommandHit, botCommandTexts } from "../scripts/lib/review-bots.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
 import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, commentProse, driveRefusal, editedCommentBody, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
@@ -2123,7 +2123,7 @@ export async function startBoardServer({
 			const text = typeof a.text === "string" ? a.text.trim() : "";
 			if (!text) throw new Refusal("An answer is empty.");
 			if (text.length > MAX_ANSWER) throw new Refusal(`An answer is longer than ${MAX_ANSWER} characters.`);
-			const hit = commands.find((c) => text.toLowerCase().includes(c));
+			const hit = botCommandHit(text, commands);
 			if (hit) throw new Refusal(`An answer contains the bot command "${hit}". Post bot commands on GitHub yourself.`);
 			const f = findings.get(a.finding);
 			return { finding: a.finding, findingText: typeof f.text === "string" ? f.text : "", severity: typeof f.severity === "string" ? f.severity : null, text };

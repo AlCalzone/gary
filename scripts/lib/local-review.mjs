@@ -138,6 +138,9 @@ export function localReviewOf(config, profile) {
 
 // ---------- the CLI reviewer ----------
 
+// `KILL_GRACE_MS` is how long a killed CLI reviewer gets to close its output
+const KILL_GRACE_MS = 5000;
+
 /** The argv of a CLI reviewer with the placeholders replaced inside each argument. No shell sees it. */
 export function cliArgs(argv, vars) {
 	return argv.map((a) => a.split("{base}").join(vars.base).split("{head}").join(vars.head).split("{worktree}").join(vars.worktree));
@@ -226,9 +229,21 @@ export function runCli(reviewer, { cwd, vars, env }) {
 				child.kill("SIGKILL");
 			}
 		};
+		let done = false;
+		const finish = (result) => {
+			if (done) return;
+			done = true;
+			resolveRun(result);
+		};
 		const timer = setTimeout(() => {
 			timedOut = true;
 			kill();
+			// A process that left the group may hold the pipes open, so `close` never comes. Stop waiting for it
+			setTimeout(() => {
+				child.stdout.destroy();
+				child.stderr.destroy();
+				finish({ status: "failed", findings: [], exitCode: null, reason: `timed out after ${reviewer.timeoutSec} s` });
+			}, KILL_GRACE_MS).unref();
 		}, timeoutMs);
 		child.stdout.on("data", (d) => {
 			size += d.length;
@@ -246,18 +261,18 @@ export function runCli(reviewer, { cwd, vars, env }) {
 		});
 		child.on("error", (e) => {
 			clearTimeout(timer);
-			resolveRun({ status: "failed", findings: [], exitCode: null, reason: `could not start ${args[0]}: ${e.message}` });
+			finish({ status: "failed", findings: [], exitCode: null, reason: `could not start ${args[0]}: ${e.message}` });
 		});
 		child.on("close", (code) => {
 			clearTimeout(timer);
-			if (timedOut) return resolveRun({ status: "failed", findings: [], exitCode: null, reason: `timed out after ${reviewer.timeoutSec} s` });
+			if (timedOut) return finish({ status: "failed", findings: [], exitCode: null, reason: `timed out after ${reviewer.timeoutSec} s` });
 			const findings = parseCliOutput(stdout);
 			if (tooLong) findings.push({ path: null, line: null, body: `The output was cut after ${MAX_STDOUT} bytes.` });
 			if (code !== 0 && !findings.length) {
 				const tail = stderr.trim().slice(-500);
-				return resolveRun({ status: "failed", findings: [], exitCode: code, reason: `exited with ${code}${tail ? `: ${tail}` : ""}` });
+				return finish({ status: "failed", findings: [], exitCode: code, reason: `exited with ${code}${tail ? `: ${tail}` : ""}` });
 			}
-			resolveRun({ status: "done", findings, exitCode: code, reason: null });
+			finish({ status: "done", findings, exitCode: code, reason: null });
 		});
 	});
 }
@@ -370,6 +385,16 @@ export function nextStep(review, pass) {
 
 const NO_HOOKS = ["-c", "core.hooksPath=/dev/null"];
 const git = async (args) => (await execFileAsync("git", args, { maxBuffer: 64 * 1024 * 1024, timeout: 10 * 60000 })).stdout;
+
+/** Whether commit `ancestor` is `sha` or one of its ancestors in the repository of `worktree`. */
+export async function buildsOn(worktree, sha, ancestor) {
+	try {
+		await git(["-C", worktree, "merge-base", "--is-ancestor", ancestor, sha]);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 /** Whether `sha` is a commit in the repository of `worktree`. */
 export async function hasCommit(worktree, sha) {

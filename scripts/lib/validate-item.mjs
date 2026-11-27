@@ -5,7 +5,7 @@ import { apiEditProblems } from "./api-edit.mjs";
 import { FINDING_ID } from "./findings.mjs";
 import { pendingRouteProblems, walkthroughProblems } from "./review-drafts.mjs";
 import { ownPrRefusal } from "./own-pr.mjs";
-import { botCommandTexts } from "./review-bots.mjs";
+import { botCommandHit, botCommandTexts } from "./review-bots.mjs";
 import { CATEGORIES, FYI, categoriesFor, normalizeCategory } from "./categories.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
@@ -376,7 +376,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 		if (((bot && POSTING_TYPES.has(route.type)) || isApiEdit(route)) && commands.length) {
 			const texts = [route.text, params.title, ...(Array.isArray(params.comments) ? params.comments.map((c) => c?.text) : [])];
 			for (const text of texts.filter((t) => typeof t === "string")) {
-				const hit = commands.find((c) => text.toLowerCase().includes(c));
+				const hit = botCommandHit(text, commands);
 				if (hit) err("bot-command", `${where}: the bot would post the command "${hit}"`);
 			}
 		}
