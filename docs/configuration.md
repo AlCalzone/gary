@@ -102,7 +102,7 @@ With an empty `autofixCommands`, the default, there is no format check, no badge
 | `maxAutoFixesPerRun` | `2` | Fixes Gary starts on its own per run. `0` turns them off |
 | `maxPendingAutoFixes` | `10` | Open automatic fixes at a time |
 | `fixReview` | | Review rounds on Gary's own fix PRs, see below |
-| `review` | | Which of the profile's review bots this instance asks, see below |
+| `review` | | Which of the profile's review bots this instance asks, and the local reviewers before a push, see below |
 | `autoReview` | off | The one review without a click, see [safety.md](safety.md#the-automatic-first-review) |
 | `escalateAs` | `prefill` | `me` posts the escalate command under your login after your click |
 | `fastTier` | `off` | A faster model for obvious items, see below |
@@ -172,6 +172,34 @@ After every push to a PR Gary controls, Gary asks each bot once for the new head
 - `[]`: none. Pushes get no review bot rounds.
 - A list of keys, like `["copilot"]`: only those. `gary doctor` warns about a key the profile does not list.
 
+### Local review before a push
+
+Local reviewers read an agent's commits before it pushes. The agent judges what they found, fixes the valid findings and commits. Then the reviewers read the new commit, up to `maxLocalPasses` times. After that the agent pushes, and the GitHub review bots review the push as usual.
+
+```json
+{
+  "review": {
+    "local": [
+      { "kind": "self" },
+      { "kind": "agent", "provider": "codex", "model": "gpt-5.1-codex" },
+      { "kind": "cli", "argv": ["octo-review", "--base", "{base}", "--head", "{head}"], "timeoutSec": 600 }
+    ],
+    "maxLocalPasses": 2
+  }
+}
+```
+
+- `self`: a fresh agent on your `review` model. It sees the diff, the issue or PR text and your rules, never the reasoning of the agent that wrote the change, and looks for what is wrong.
+- `agent`: the same prompt for another model or provider, started through the harness Gary runs in. A headless `claude -p` worker reaches only Claude models. `gary doctor` warns when the workers cannot reach the provider.
+- `cli`: a program on your machine, run with exactly this argv. `{base}`, `{head}` and `{worktree}` become the base commit, the new commit and a read-only checkout of it. No shell runs it, and its environment holds no GitHub token, see [safety.md](safety.md#local-reviewers). It prints JSON findings, `[{ "path", "line", "body" }]`, or plain text, which becomes one finding. `timeoutSec` is 10 to 3600, default 600. The checkout can hold a contributor's files, so name a program that loads no configuration or plugins from it.
+- `maxLocalPasses` is 1 to 5, default 2.
+
+Without `local`, or with `[]`, there is no local review when the instance asks a GitHub review bot. When it asks none, the default is `[{ "kind": "self" }]`. `"local": "off"` turns it off. A contributions instance takes `local` and `maxLocalPasses` too, and its default is the self review.
+
+The reviewers can only be set in the instance's `config.json`. A profile with a `review` key is invalid, because a CLI reviewer runs a command on your machine.
+
+The findings and the agent's verdicts show in the item's dialog. Nothing of them goes to GitHub. `gary local-review plan` prints the reviewers that apply.
+
 ### Review rounds on fix PRs
 
 ```json
@@ -221,4 +249,5 @@ Its `config.json`:
 | `maxPendingAutoReviewDrafts` | `5` | Automatic review drafts that may wait for you at once. A draft waits until you prepared its pending review, used another card, snoozed or dismissed it, or the PR closed or stopped requesting your review |
 | `reviewDraftMaxLines` | `800` | A PR with more changed lines never gets a review draft without your click |
 | `checkoutRoots` | `[]` | Directories whose direct children Drive and Focus search for a clone of your PR's repo, like `["~/repositories"]`. At most 20, each absolute or starting with `~/` |
+| `review` | | `local` and `maxLocalPasses`, the local reviewers before a Drive's push, see [Local review before a push](#local-review-before-a-push). The default is the self review |
 | `models`, `tab` | | As above |

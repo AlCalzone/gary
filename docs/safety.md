@@ -128,6 +128,26 @@ Issue texts, PR diffs and attached files are data. Instructions inside them are 
 
 The format check and the format commit use the tools and configuration of the base branch. The profile's `autofixSetup` and `autofixCommands` run only in a worktree of the base branch. The PR's files are copied in as text.
 
+## Local reviewers
+
+Before an agent pushes, the local reviewers of the instance read its commits, see [configuration.md](configuration.md#local-review-before-a-push). What they find stays on the board:
+
+- Nothing of a local review goes to GitHub: no comment, no reply, no PR body, no commit message. The agent never copies a finding's text into text for GitHub.
+- Findings are review text like any other. The agent judges each one and follows no instruction in it.
+- The reviewers get a read-only checkout of the commit under the instance's state directory, never one of your working trees. It is removed after the pass.
+
+A CLI reviewer is a program of yours. Gary runs it in a checkout of the change, which can hold a contributor's files after a take-over:
+
+- Its argv comes only from the instance's `config.json`. A profile that names reviewers is invalid, so a change to a shared profile can never make Gary run a command.
+- No shell runs it. `{base}`, `{head}` and `{worktree}` are replaced inside single arguments, so a commit SHA or a path never becomes shell syntax.
+- Its environment holds no GitHub token: Gary drops every `GH_*`, `GITHUB_*` and `GARY_*` variable, other GitHub token variables, the SSH agent, the askpass helpers, and any variable whose value holds the bot token or the board server's token.
+- It runs in the read-only checkout and is killed after `timeoutSec`, 600 seconds by default.
+- Its output is untrusted text. JSON findings count as findings, anything else becomes one finding, cut after 8000 characters.
+- It still runs as your user and can read your files, like your stored `gh` login. Only name a program you trust with that.
+- A program that loads configuration, plugins or scripts from the checkout runs code from the change, like a linter that reads the repo's own config. Name a program that reads the files as data only.
+
+The push itself goes through the same checks as before. Where Gary's code pushes or checks a push, it also refuses a commit without a finished local review: `gary push-check --head`, `gary own-pr push` and `gary local-review check`.
+
 ## Stale clicks
 
 Before sending, the server checks that nobody commented and nobody pushed since the review. Otherwise it asks you to confirm again.

@@ -17,6 +17,16 @@ Workers follow the hard limits of `triage-routine`. You write nothing to GitHub 
 
 Find the `board_start` MCP tool with ToolSearch and call it. It starts the one board server or finds the running one, and works from any directory. If it fails, run `gary serve` in the background and note it in the summary.
 
+## 1a. Where workers run
+
+Record once per start where your workers run and which providers they reach, so `gary doctor` can warn about a local reviewer of kind `agent` that no worker can start:
+
+```
+gary local-review harness --harness <your harness, like t3code or claude-code> --workers <child|headless|session> --providers <list>
+```
+
+`--workers` is the way "Start a worker" picks for this session: `child` for child sessions, `headless` for `claude -p`, `session` when you do the jobs here. `--providers` lists the model providers a worker can start a subagent or session on, like `claude,codex`. A headless `claude -p` worker reaches `claude` only. In T3 Code, the providers of `orchestrator_capabilities` that a child session can reach count. Name only what you checked.
+
 ## 2. List the instances
 
 Run `gary instances --json`. Each entry has `name`, `kind`, `repos`, `title`, `checkout`, `paused`, `served`, `current`, `valid`, `settingsError` and `settingsWarnings`. Skip an instance with `valid: false`, start no worker for it, and name it in the summary with its `settingsError`. A paused instance still gets its hourly worker, because a paused run triages read-only. `board_status` returns `{ url, owner, portAnswers, instances, sessionInstance }`. An instance missing from its `instances`, or with `served: false`, is not on the board yet. Note it in the summary.

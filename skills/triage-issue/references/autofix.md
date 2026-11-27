@@ -50,7 +50,11 @@ If the fix does not work within reason, keep the worktree for the maintainer. Do
 
 ## 4. Commit and push
 
-Commit under the writing identity from `accounts.md`, with a message in the project's format. Push the branch with the push command from `accounts.md` and `HEAD:refs/heads/triage/issue-<n>`.
+Commit under the writing identity from `accounts.md`, with a message in the project's format.
+
+With `Local review: on.` in your brief, the local reviewers read the commit before the push. Follow "Local review" in `<core>/skills/triage-review-pr/references/push-to-pr.md`, with these values: `itemId` is the item you fix, like `issue-<n>`, `base` is the commit of `origin/<default branch>` your branch started from, and `job` is the `start_fix` action id, or your run id for an autonomous fix. Fixes of valid findings follow the rules of step 3: run the profile's checks again after them. Right before the push, run `gary local-review check <itemId> --head <the commit you push> --base <base>`. Exit code 3 means no push: keep the worktree, remove the `follow_up` route and say why in `state`, as step 3 does for a fix that does not work.
+
+Push the branch with the push command from `accounts.md` and `HEAD:refs/heads/triage/issue-<n>`. The PR body says nothing of the local review.
 
 ## 5. Draft PR
 

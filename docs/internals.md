@@ -161,7 +161,13 @@ It also prints lines for things it polls:
 
 ### gary push-check
 
-`gary push-check --pr <n> --sha <head>` answers one question from GitHub's state right now: may an agent work in a checkout of this PR and push to it. It fetches the PR like `gary item`, reads every changed file and runs `oursAlone` from `scripts/lib/facts.mjs` on the live commit list. It prints one JSON object. It exits 3 in four cases: the PR is not open, its head is not `--sha`, it changes sensitive files and is not ours alone, or a focus holds it and the caller is not the focus session that `--focus-session` names. `refused` then holds the reason, like "commit 3 of 3 was authored by hubot". The push skills call it before they create a worktree and again right before `git push`, because the snapshot's `sensitiveOurs` can be an hour old. The command only reads.
+`gary push-check --pr <n> --sha <head>` answers one question from GitHub's state right now: may an agent work in a checkout of this PR and push to it. It fetches the PR like `gary item`, reads every changed file and runs `oursAlone` from `scripts/lib/facts.mjs` on the live commit list. It prints one JSON object. It exits 3 in four cases: the PR is not open, its head is not `--sha`, it changes sensitive files and is not ours alone, or a focus holds it and the caller is not the focus session that `--focus-session` names. With `--head <the commit to push>` and local reviewers on the instance, it also exits 3 when that head has no finished local review, see "gary local-review". Without local reviewers `--head` changes nothing. `refused` then holds the reason, like "commit 3 of 3 was authored by hubot". The push skills call it before they create a worktree and again right before `git push`, because the snapshot's `sensitiveOurs` can be an hour old. The command only reads.
+
+### gary local-review
+
+`gary local-review` runs the local review stage, see "Local review" in SPEC.md. `scripts/lib/local-review.mjs` holds the parts without a CLI: `checkReviewConfig` validates config.json's `review` for both kinds, and `checkProfile` in `scripts/lib/config.mjs` refuses a `review` key in a profile. `localReviewOf` resolves the plan from `review.local` and the GitHub bots that `activeReviewBots` picks. `runCli` spawns a CLI reviewer without a shell in its own process group, with the placeholders from `cliArgs` and the environment from `cliEnv`, and kills the group at the timeout. `parseCliOutput` and `findingsOfJson` turn its stdout and the self and agent reviewers' files into findings with the size limits. `reviewerPrompt` writes the one prompt every self and agent reviewer gets. `addReadonlyWorktree` and `removeReadonlyWorktree` make and remove the read-only worktree under `<state>/local-review/worktrees`. `pushAllowed` is the push gate, and `servedLocalReview` the record as the board serves it.
+
+`scripts/local-review.mjs` is the command: `pass` starts a pass and runs the CLI reviewers, `skip` and `collect` record the self and agent reviewers, `judge` the job's verdicts, `check` asks the gate, `show` prints the served record, and `harness` writes or reads the master's record of where workers run, `<root>/state/harness.json`. `gary push-check --head` and `gary own-pr push` call `pushAllowed` with the same record. `gary doctor` reads `localReviewOf` and the harness record for its "local review" check. The server serves the record as `localReview` and watches `<state>/local-review/`. `renderLocalReview` in `board/board.html` draws it with text nodes only. `test/local-review.test.mjs` covers the config, the plan, the CLI run, the gate, `push-check`, the doctor and the served record, and `test/page/tests-round26.js` the dialog.
 
 ### gary focus
 
@@ -362,7 +368,7 @@ A bot PR outside `fixes.json` can come from an interactive Claude Code session. 
 
 ## State layout
 
-The root's `state/` holds `server-token`, `server.log`, the chats in `chat/<chatId>.json` and the queue watcher's heartbeat `watch-queue.json`.
+The root's `state/` holds `server-token`, `server.log`, the chats in `chat/<chatId>.json`, the queue watcher's heartbeat `watch-queue.json` and `harness.json`, the master's record of where workers run.
 
 Everything under the instance's `state/` (`<home>/state/`):
 
@@ -381,6 +387,9 @@ opened.json                 the prefill buttons the maintainer used, per item an
 failures.json               failed analyses per item
 drive/<itemId>.json         waiting drives and watched PRs
 origins.json                the local session that opened each bot PR outside fixes.json
+local-review/<itemId>.json  the local review passes of an item, with findings and verdicts
+local-review/passes/        each pass's diff, context, briefs and findings files
+local-review/worktrees/     the read-only worktrees of the passes that wait for a reviewer
 runs/<run>/would-have.json  what a paused run would have done
 snapshot.json, snapshot.pending.json, logs
 ```

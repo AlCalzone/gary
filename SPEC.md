@@ -12,7 +12,7 @@ The examples below use the project `acme/widgets`, the maintainer `octocat` and 
 - **Author tags**: `maintainer` (the profile's `maintainers` and `me`), `bot` (the profile's `botLogins`, the configured bot and every GitHub App), `copilot` (GitHub's Copilot coding agent), `contributor` (everyone else). All are included and filterable.
 - **Review depth**: tiered. Every changed item gets a quick classification. Contributor PRs and active issues get a full review. The profile's `rules/review.md` names the project's own review skills and tools.
 - **Budget per run**: at most `maxFullReviewsPerRun` full reviews and `maxAutoFixesPerRun` auto-fix attempts. Remaining changed items get `reviewDepth: "pending"`. At most `maxPendingAutoFixes` fixes the routine started on its own are pending at a time, see "Fix limit".
-- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. On Gary's own fix PRs, the ones recorded in `fixes.json`, and only there, three more things happen without a click when `fixReview` is on: asking the review bots for their review when the instance has any, pushing the commits of the review rounds to the fix branch with the replies in its review threads, and marking the PR ready for review. See "Fix review rounds". When a discussion became an issue, code adds one `fixes #<issue>` line to the body of each of its open fix PRs, also without a click. See "Fix PRs of an escalated discussion". On every PR we watch, the bot's open PRs and the taken-over PRs, a round for the maintainer's review or comment starts without a click, and on the hourly run a round for other people's review comments: it pushes its fixes and replies in the threads. See "Watched PRs". Merging, approving and closing stay the maintainer's, on these PRs too. With `autoReview` on, one more thing happens without a click: a contributor's PR of a configured kind gets one review, see "Automatic first review". It is off by default. Everything else needs a click. The routine passes `--autonomous` to `gary action` for every label and assign change nobody clicked, and the code then refuses labels outside `autoLabels` and every other action.
+- **Autonomy without a click**: add and remove the labels in the profile's `autoLabels`, assign, and open draft fix PRs with a reproducing test where the project's `rules/issues.md` allows it. On Gary's own fix PRs, the ones recorded in `fixes.json`, and only there, three more things happen without a click when `fixReview` is on: asking the review bots for their review when the instance has any, pushing the commits of the review rounds to the fix branch with the replies in its review threads, and marking the PR ready for review. See "Fix review rounds". When a discussion became an issue, code adds one `fixes #<issue>` line to the body of each of its open fix PRs, also without a click. See "Fix PRs of an escalated discussion". Before every push of an agent job, the instance's local reviewers read its commits, the job fixes what they found, and nothing of it goes to GitHub, see "Local review". On every PR we watch, the bot's open PRs and the taken-over PRs, a round for the maintainer's review or comment starts without a click, and on the hourly run a round for other people's review comments: it pushes its fixes and replies in the threads. See "Watched PRs". Merging, approving and closing stay the maintainer's, on these PRs too. With `autoReview` on, one more thing happens without a click: a contributor's PR of a configured kind gets one review, see "Automatic first review". It is off by default. Everything else needs a click. The routine passes `--autonomous` to `gary action` for every label and assign change nobody clicked, and the code then refuses labels outside `autoLabels` and every other action.
 - **Board server**: one `server/server.mjs` per machine serves every instance on `127.0.0.1` at the `port` from the root `config.json`. It runs inside the `gary` MCP server of the master session, which starts it with `board_start`, or standalone with `gary serve`. Other sessions leave it alone. It watches every instance's board store, picks up new instances without a restart and pushes changes to the open page.
 - **Buttons**: a click on a bot route makes the server run it live through `scripts/lib/actions.mjs`. When GitHub cannot be reached, the action fails, the board shows the error, and the maintainer can click again. Agent requests are always queued.
 - **Confirmation**: merge, close and any posting of public text need a second confirm click on the board.
@@ -37,6 +37,7 @@ Gary has three layers, one place for each kind of change.
     auto-review.mjs      gary auto-review
     api-edit.mjs         gary api-edit
     push-check.mjs       gary push-check
+    local-review.mjs     gary local-review
     pr-origin.mjs        gary pr-origin
     setup.mjs            gary setup
     migrate.mjs          gary migrate
@@ -80,6 +81,8 @@ Gary has three layers, one place for each kind of change.
                          worker's result, would-have.json the writes a paused run intended
     drive/<itemId>.json  a drive: its round state plus repo and number, which the queue watcher polls. On a watched PR it
                          stays after the review bot rounds, see "Watched PRs"
+    local-review/        <itemId>.json, the record of the local review passes, and the passes' files and read-only worktrees,
+                         see "Local review"
 
 <profile>/               one directory per project, named by `profile` in config.json. A team can share it
   profile.json           facts the code needs
@@ -106,7 +109,7 @@ The core contains no repo name, no account name and no absolute path. It works a
   "maxAutoFixesPerRun": 2,
   "maxPendingAutoFixes": 10,       // how many fixes the routine started on its own may be pending at a time. 0 turns automatic fixes off
   "fixReview": { "requestAs": "me", "maxRounds": 3, "markReady": true },   // the review rounds a fix PR of Gary gets on its own, see "Fix review rounds"
-  "review": { "github": "profile" },   // which of the profile's reviewBots Gary asks, see "Review bots"
+  "review": { "github": "profile", "local": [{ "kind": "self" }], "maxLocalPasses": 2 },   // which of the profile's reviewBots Gary asks, see "Review bots", and the local reviewers, see "Local review"
   "fastTier": "off",               // off | shadow | on: whether simple items get a smaller model. shadow runs both and records them for `gary shadow report`
   "models": { "worker": "sonnet", "review": "opus", "standard": "sonnet", "fast": "haiku" },   // optional: the model per role for this instance, see "Models"
   "escalateAs": "prefill",         // prefill | me: who posts the profile's escalate command on a discussion, see "Escalate"
@@ -114,7 +117,7 @@ The core contains no repo name, no account name and no absolute path. It works a
 }
 ```
 
-`profile` and `me` are required. A config with `kind: "contributions"` has its own fields, see "Contributions". The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `requestAs` is `me` or `bot`, `maxRounds` is 0 to 3, and fields left out take their default. A value outside these lists is an error. `maxRounds: 0` turns the rounds off: a fix PR gets none and stays a draft, while a clicked drive on another PR still asks the bots. It is also off when `requestAs` is `bot` without a bot. Without a review bot the rounds are skipped, see "Fix review rounds". `gary doctor` says which case holds. The old field `reviewer` is still read with its meaning. `copilot` asks the instance's review bots like the default. `off` turns the rounds off like `maxRounds: 0`. With `off`, `maxRounds` stays the cap of the rounds after other pushes to the fix PR. `gary migrate` drops `reviewer: "copilot"` and turns `reviewer: "off"` into `maxRounds: 0`. `review.github` is `"profile"`, the default, for all of the profile's `reviewBots`, `[]` for none, or a list of bot keys for those of the profile's bots, in the profile's order. A key the profile does not list is left out, and `gary doctor` warns. Other fields of `review` are unknown fields. A later version adds the local reviewers there. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. `escalateAs` is `prefill` or `me`, another value is an error, and `gary doctor` shows it and warns when it is `me` and the profile has no `botCommands.escalate`. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
+`profile` and `me` are required. A config with `kind: "contributions"` has its own fields, see "Contributions". The other fields have the defaults shown. `fixReview` has the default shown when the instance can push, with a bot or with `allowOwnTokenPushes`. Otherwise it is off. `requestAs` is `me` or `bot`, `maxRounds` is 0 to 3, and fields left out take their default. A value outside these lists is an error. `maxRounds: 0` turns the rounds off: a fix PR gets none and stays a draft, while a clicked drive on another PR still asks the bots. It is also off when `requestAs` is `bot` without a bot. Without a review bot the rounds are skipped, see "Fix review rounds". `gary doctor` says which case holds. The old field `reviewer` is still read with its meaning. `copilot` asks the instance's review bots like the default. `off` turns the rounds off like `maxRounds: 0`. With `off`, `maxRounds` stays the cap of the rounds after other pushes to the fix PR. `gary migrate` drops `reviewer: "copilot"` and turns `reviewer: "off"` into `maxRounds: 0`. `review.github` is `"profile"`, the default, for all of the profile's `reviewBots`, `[]` for none, or a list of bot keys for those of the profile's bots, in the profile's order. A key the profile does not list is left out, and `gary doctor` warns. `review.local` and `review.maxLocalPasses` name the local reviewers, see "Local review". Other fields of `review` are unknown fields. `autoReview` is off when the field is missing. `enabled` is true or false, `kinds` is a list that may only hold `config`, `maxPerRun` is 0 to 50, and fields left out take the default shown. It is also off without an account that may post, with a bot or with `allowOwnTokenPushes`, with `maxPerRun: 0`, and when the profile's `autoReviewPaths` names no paths for any of the `kinds`. `gary doctor` shows the setting and warns when it is on and cannot run. `escalateAs` is `prefill` or `me`, another value is an error, and `gary doctor` shows it and warns when it is `me` and the profile has no `botCommands.escalate`. Unknown fields are errors in `gary setup` and `gary doctor`, so typos get caught. Everywhere else they are only warnings, so settings written for a newer Gary do not stop an older one. A `port` in an instance config is an error that asks for `gary migrate`: the port lives in the root config.
 
 Code looks up an instance through `loadInstance(name)`. Its allowed repos are the profile's one `repo`, and `allowedRepo(instance, repo)`, `checkoutFor(instance, repo)` and `rulesFor(instance, repo, topic)` answer per repo. For `maintainer` they return the configured checkout and the profile's `rules/<topic>.md`. The skills read that file directly. For `contributions` the allowed repos come from its snapshot, and the other two return null.
 
@@ -230,7 +233,8 @@ Two older layouts are moved by commands, never silently:
 - `gary api-edit --pr <n> [--route <id>]` and `gary api-edit --pr <n> --sha <head sha> --file <route.json>`: check the API edit of a `take_over` or `revise` route against GitHub and print what the click would commit, see "API edit". The first form reads the route from the stored item, the second a draft route `{ params, text }` before it is stored. It prints `{ ok, dryRun, message, files, diff, invocations }` or the refusal as `{ ok: false, result }`, and exits 1 on a refusal and 4 while paused. It has no mode that commits: only the click on the board does.
 - `gary pr-origin [--json] [--refresh]`: find the local Claude Code session that opened each open bot PR outside `fixes.json` and cache it in `<state>/origins.json`, see "PR origins". It prints one line per PR, or `{ ok, sessions, origins }` with `--json`. `--refresh` searches every PR again.
 - `gary own-pr check | locate | workdir | push | cleanup <itemId> …`: the maintainer's own PR in a contributions instance, see "Your own PRs". Exit 3 when refused, 4 while paused.
-- `gary push-check --pr <n> [--sha <head sha>] [--repo <owner/name>]`: say from GitHub's state right now whether an agent may work in a checkout of the PR and push to it, see "PRs that are ours alone". It prints `{ ok, pr, repo, headSha, sensitiveFiles, sensitiveOurs, refused }`. The exit code is 0 when the push is allowed and 3 when it is refused. Three things are refused: a PR that is not open, a head other than `--sha`, and a PR with sensitive files that is not ours alone. It reads every changed file of the PR, also beyond the snapshot's first 50. It writes nothing.
+- `gary push-check --pr <n> [--sha <head sha>] [--head <new head sha>] [--repo <owner/name>]`: say from GitHub's state right now whether an agent may work in a checkout of the PR and push to it, see "PRs that are ours alone". It prints `{ ok, pr, repo, headSha, sensitiveFiles, sensitiveOurs, refused }`. The exit code is 0 when the push is allowed and 3 when it is refused. Three things are refused: a PR that is not open, a head other than `--sha`, and a PR with sensitive files that is not ours alone. With `--head` and local reviewers on the instance, a fourth: a head without a finished local review, and the output gains `localReview`, see "Local review". Without local reviewers `--head` changes nothing. It reads every changed file of the PR, also beyond the snapshot's first 50. It writes nothing.
+- `gary local-review plan | pass | skip | collect | judge | check | show | harness`: the local reviewers before a push, see "Local review". Exit 3 when refused.
 - `gary fixes [--json]`: the fix state of every issue and discussion on the board, in the records or with fix PRs in the snapshot, as `{ <itemId>: fix }`, see `fix` under the item doc.
 - `gary handled [--json]`: list the items with `handled`, each with `id`, `repo`, `kind`, `number`, `handled`, `live` and `changedSince`: true when the staged snapshot entry, or the baseline when nothing is staged, has an `updatedAt` or a newest timeline event later than `handled.at`, false when not, null without an entry.
 - `gary proposals [--json]`: list every proposal with its status and dismissal reason.
@@ -239,7 +243,7 @@ Two older layouts are moved by commands, never silently:
 - `gary paths`: print JSON with the keys `instance`, `root`, `home` (the instance directory), `config`, `personal` (a list, the shared file first), `profile`, `state`, `checkout` and `core`. Without a resolvable instance it still prints `core` and `root`, adds `error` and exits with 2. `gary paths --root` prints only `core` and `root` and works from any directory.
 - `gary setup --kind contributions [--instance <name>] [--me <login>] [--title <text>] [--include <list>] [--exclude <list>] [--max-items <n>]`: create a contributions instance, default name `contributions`, see "Contributions". It takes none of the profile, checkout or bot flags, and refuses a second one for the same `me`.
 - `gary setup`: create an instance with `config.json` and `state/`, and the shared `personal.md` when it is missing. It asks in a terminal and takes flags in a script: `--instance` (default the repository name in lower case), `--repo`, `--me`, `--checkout`, `--profile`, `--name`, `--bot-login`, `--bot-token-file`, `--no-bot`, `--port`, `--force`, `--no-links`, `--register-mcp`. It runs `gary migrate` first. `--port` sets the one server's port in the root config. It refuses a second instance for the same repository or checkout. A new project gets a profile copied from `profiles/template/` into `<root>/profiles/`. It never replaces an existing `config.json` without `--force` and never touches an existing `personal.md`.
-- `gary doctor [--all]`: for a contributions instance it checks the kind, unknown fields, the stored `gh` login and its scopes, the repos it leaves out, the caps, the `checkoutRoots` (a warning for a directory that does not exist), the models, the pause, the port, the skill links and the launcher, see "Contributions". Otherwise, read-only checks of the resolved instance, or of every instance: Node.js, `gh`, `git`, `claude` (a warning only, because a headless worker needs it), whether `@modelcontextprotocol/sdk` loads, the stored `gh` login against `me`, the bot token against `bot.login`, whether the account that writes may push (one read of `repos/<repo>` as the bot, or under `me` with `allowOwnTokenPushes`, and a warning when it may not or the read fails), the profile, whether a format check is configured, the names in `requiredTools` (status `skip`, because doctor cannot see MCP tools), the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the fix review rounds, the automatic review, the link of escalated fix PRs (a warning when the profile has `escalateResult` and no bot is configured), the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check. `bin/gary` refuses to run on Node.js below 24 with one line on stderr and exit code 1.
+- `gary doctor [--all]`: for a contributions instance it checks the kind, unknown fields, the stored `gh` login and its scopes, the repos it leaves out, the caps, the `checkoutRoots` (a warning for a directory that does not exist), the local review, the models, the pause, the port, the skill links and the launcher, see "Contributions". Otherwise, read-only checks of the resolved instance, or of every instance: Node.js, `gh`, `git`, `claude` (a warning only, because a headless worker needs it), whether `@modelcontextprotocol/sdk` loads, the stored `gh` login against `me`, the bot token against `bot.login`, whether the account that writes may push (one read of `repos/<repo>` as the bot, or under `me` with `allowOwnTokenPushes`, and a warning when it may not or the read fails), the profile, whether a format check is configured, the names in `requiredTools` (status `skip`, because doctor cannot see MCP tools), the checkout, the pause, the root port and whether the board server there lists this instance, the due dates (a warning when the token cannot read GitHub Projects, so only milestones count), the fast tier, the models per role (it prints `master` without checking it), the local review (a warning for an `agent` reviewer whose provider the master's harness record does not list, or without a record, and for a `cli` reviewer whose program is not on PATH), the fix review rounds, the automatic review, the link of escalated fix PRs (a warning when the profile has `escalateResult` and no bot is configured), the skill links and the launcher. Unknown fields in config.json or profile.json fail the profile check. `bin/gary` refuses to run on Node.js below 24 with one line on stderr and exit code 1.
 
 Environment: `GARY_HOME` moves the root, and `GARY_INSTANCE` picks the instance. `GARY_DRY_RUN=1` makes the board server and the MCP server run without GitHub writes. `GARY_GUARD_STUB` replaces the freshness read in tests.
 
@@ -531,7 +535,7 @@ What stays as on every PR with sensitive files:
 - The dialog shows the banner with the files.
 - The maintainer reads the changes themself before they merge.
 
-The conditions are checked again each time. The next snapshot after a commit by someone else drops `sensitiveOurs`. From then on the validator and the server refuse the pushing routes again. The snapshot can be an hour old. So the worker asks GitHub right before it acts, with `gary push-check --pr <n> --sha <head>`. The command fetches the PR and runs the same `oursAlone` on the live commit list and the complete file list. It exits 3 when the PR is not ours alone or its head is not `--sha`. The skills run it before they create a worktree of the head and again right before `git push`. A commit that lands after the second check moves the branch. Git then rejects the push. The push is never forced.
+The conditions are checked again each time. The next snapshot after a commit by someone else drops `sensitiveOurs`. From then on the validator and the server refuse the pushing routes again. The snapshot can be an hour old. So the worker asks GitHub right before it acts, with `gary push-check --pr <n> --sha <head>`. The command fetches the PR and runs the same `oursAlone` on the live commit list and the complete file list. It exits 3 when the PR is not ours alone or its head is not `--sha`. The skills run it before they create a worktree of the head and again right before `git push`. Before the push they add `--head <the commit to push>`: with local reviewers the command then also refuses a head without a finished local review, see "Local review". A commit that lands after the second check moves the branch. Git then rejects the push. The push is never forced.
 
 Why this is acceptable: the danger of a sensitive PR is an agent that loads instructions or runs code an outside account wrote. Here no outside account wrote anything on the branch. An agent in that checkout reads what our own agent or the maintainer wrote. It reads the same kind of content in the base checkout.
 
@@ -545,7 +549,7 @@ The risks that remain:
 One page serves every instance. `GET /api/state` returns `{ board, items, proposals }`:
 
 - `board`: `{ me: { login, avatarUrl }, dryRun, instances: [ { name, title, kind, repos, repoUrl, bot, accountMode, paused, relatedRepos, botCommands, escalateAs, reviewBots } ] }`. `title` is the profile's `name`, `bot` is `{ login, avatarUrl }` or `null`. `reviewBots` holds the keys of the review bots the instance asks, like `["copilot", "octobot"]`, and the drive card names them. The page takes links, avatars, bot names, bot commands and new-issue URLs from the item's own instance entry, never from one global repo.
-- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working`, `fix` and `origin` when there are any. A PR whose snapshot entry has `sensitiveFiles` carries `sensitive: { files, total }`, with the first 5 paths and their full count, plus `ours: true` when the entry has `sensitiveOurs`. A discussion without a stored `category` gets the one from the snapshot. Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
+- `items[]`: each with `instance`, `id`, `ref` (`owner/name#number`), `repo` and the stored fields, plus `working`, `fix` and `origin` when there are any. A PR whose snapshot entry has `sensitiveFiles` carries `sensitive: { files, total }`, with the first 5 paths and their full count, plus `ours: true` when the entry has `sensitiveOurs`. A discussion without a stored `category` gets the one from the snapshot. An item with a local review record carries `localReview`, see "Local review". Routes carry `actor`, `draftHash`, `done` and `refused`, and `labelDone` or `answerDone` when a second button ran.
 - `proposals[]`: the open proposals, each with `instance`.
 
 The page talks to the server only through `window.claude`, which the server injects into the page:
@@ -830,7 +834,7 @@ The instance asks the bots that `review.github` in config.json picks, by default
 
 - **Asking.** After a push, Gary asks every bot once for the pushed head: Copilot through `requestCopilotCodeReview`, a request bot through `request_review` with its login, a comment bot through `postReviewTrigger`, see "Accounts". The fix PR's `requestAs` picks the account on a fix PR, and the maintainer's login asks everywhere else. A failed ask stops the asks after it. The round then waits for the bots that were asked, and the output carries `warning`. When no bot was asked, the command fails.
 - **One ask per head.** The drive file records the head each bot was last asked on. A second ask of a bot on the same head is refused with exit 3, before anything is sent.
-- **Rounds.** A round is one push plus one ask of every bot. No PR gets more than 3 rounds over its whole life. The rounds used are the larger of the drive file's rounds and the reviews on GitHub of the bot with the most reviews, the snapshot's `feedback.reviewBotReviews`.
+- **Rounds.** A round is one push plus one ask of every bot. No PR gets more than 3 rounds over its whole life. The passes of the local review before a push never count, see "Local review". The rounds used are the larger of the drive file's rounds and the reviews on GitHub of the bot with the most reviews, the snapshot's `feedback.reviewBotReviews`.
 - **Arrival.** A round has arrived when every bot of the round has a review on the head it was asked on, submitted after the request. A review of an older head does not count. With several bots, the watcher waits for all of them or for the timeout.
 - **Clean.** A round is clean when each bot's newest review is on the PR's current head and none of its threads is unresolved. `gary pr-watch bots --pr <n>` reads the PR and answers `{ clean, head, bots: [{ key, trigger, login, name, reviewedAt, commit, onHead, openThreads }] }` for the bots of the drive's round, or the instance's bots when no round was asked.
 
@@ -1112,6 +1116,135 @@ Agent requests. The server writes them as queued action docs when their route is
 A worker that pushed writes `result`, the URL of its last commit, and `resultParts: { commits: [url], threads: [{ url, resolved }] }` into the action doc. The page shows a finished agent job by name, "Take-over done", "Change done", "Review addressed", "Drive done" or "Formatted", and its result as short text with links, like "Pushed 1 commit · replied in 1 thread, resolved". A doc without `resultParts` shows its `result` string, with GraphQL node ids removed. No text for the maintainer carries a node id.
 
 Every action returns `{ ok, result }` and never throws past the entry point. `--dry-run` applies the account rules and the read-only lookups and returns the writes it would send instead.
+
+## Local review
+
+Local reviewers read an agent job's commits before the push. Example: a `revise` job on `acme/widgets#412` commits its change and does not push. A self review and `octo-review` read the commit, and the self review finds that a loop stops one entry early. The job fixes it and commits again. The second pass finds nothing. The job pushes, and the instance's GitHub review bots review the push as before.
+
+### Settings
+
+`review` in the instance's config.json:
+
+```jsonc
+"review": {
+  "local": [
+    { "kind": "self" },                                                  // a fresh subagent on the instance's review model
+    { "kind": "agent", "provider": "codex", "model": "gpt-5.1-codex" },  // another model or provider, through the harness
+    { "kind": "cli", "argv": ["octo-review", "--base", "{base}", "--head", "{head}"], "timeoutSec": 600 }   // a program on this machine
+  ],
+  "maxLocalPasses": 2,
+  "github": "profile"
+}
+```
+
+- `local` missing or `[]`: no local reviewer when the instance asks at least one GitHub review bot. When it asks none, the default is `[{ "kind": "self" }]`. `"off"` turns the local review off.
+- `maxLocalPasses` is 1 to 5, default 2. `timeoutSec` is 10 to 3600 seconds, default 600.
+- An unknown kind is an error. So are an `agent` without `provider` or `model`, an empty `argv`, an `argv` entry that is no string or holds a line break, the same reviewer twice and a value outside its range. Other fields of a reviewer are unknown fields.
+- A contributions instance takes `local` and `maxLocalPasses` too. `review.github` is an error there. It asks no GitHub review bot, so its default is the self review.
+- profile.json has no `review`. Validation refuses the key there with an error, because a local reviewer can run a command. Only the instance's config.json names reviewers, and it stays on this machine.
+
+Each reviewer has a key: `self`, `agent:<provider>/<model>` or `cli:<program>`. The program is the basename of `argv[0]`, or of the script when `argv[0]` is an interpreter like `node` or `python3`. A second CLI with the same program gets `cli:<program>-2`. `gary local-review plan` prints `{ reviewers, maxPasses, source, reason }`. `source` is `config` for a list, `default` for the self review, `github` when a GitHub review bot replaces the default, and `off`.
+
+Without a local reviewer nothing below runs: no step, no subagent, no gate. An instance with a GitHub review bot and without `review.local` works exactly as before.
+
+### Which jobs
+
+The local review runs before the push of a fix job, before its draft PR opens, of every drive round and round for feedback, of `revise`, of `take_over` in both modes, of `address_review` when it pushes, and of the drive on the maintainer's own PR in a contributions instance. `format` pushes only the formatter's output and gets none. A job that pushes nothing gets none.
+
+### A round with a local stage
+
+1. The job commits its change and does not push.
+2. Every local reviewer gets the base, the head and a read-only worktree of the head, and returns findings `{ path, line, body }`. The base is the commit the job started from: the PR's head for a PR job, the default branch for a fix job.
+3. The job judges each finding with the verdicts of a review: `valid`, `optional` or `wrong`. It fixes the valid ones and commits. While passes remain, the reviewers then run again on the new commit. A pass without a valid finding ends the stage.
+4. The job pushes. The GitHub review bots then review the push as before, also after a clean local review. Local passes never count toward the 3 review bot rounds of a PR.
+5. The findings and the verdicts go into the record and onto the board. Nothing of them goes to GitHub: no comment, no reply, no PR body, no commit message. The job never copies a finding's text into text for GitHub.
+
+### Who runs the reviewers
+
+The worker runs them, because the job usually runs as the worker's subagent, and a subagent cannot start another one. The worker passes file paths and takes back short JSON:
+
+1. The worker runs `gary local-review plan` once per run. With reviewers, it tells each pushing job "Local review: on".
+2. The job commits and returns `{ status: "local_review", worktree, base, head }`. It keeps its worktree and its claims.
+3. The worker runs `gary local-review pass <itemId> --base <base> --head <head> --worktree <worktree> --job <action id or run>`. The command runs the CLI reviewers itself and prints `agents`, one entry per self or agent reviewer with its `brief` and its `out` file.
+4. The worker starts one subagent per entry, in parallel: a `self` one with the Agent tool on the instance's `review` model, an `agent` one through the harness's tool for another provider, like `delegate_task` in T3 Code. The prompt is `Read <brief> and follow it exactly.` A reviewer that cannot start is recorded with `gary local-review skip <itemId> --reviewer <key> --reason <why>`.
+5. Once they returned, the worker runs `gary local-review collect <itemId>`. It prints `findingsFile`.
+6. The worker hands `findingsFile` back to the job. Where the harness can continue a finished subagent, it continues the same one. Otherwise it starts the job's mode again with `localReview: { worktree, base, head, findingsFile }`, and that job goes on in the same worktree.
+7. The job judges, fixes, commits and runs `gary local-review judge <itemId> --file <verdicts>`. `next: "pass"` returns to step 2 with the new head. `next: "push"` lets it push.
+
+A worker that cannot start subagents does the job itself. The CLI reviewers still run. A `self` review then has no fresh context, so the worker records it as skipped with that reason. An `agent` reviewer that the worker cannot reach is skipped with the reason too, and the round goes on.
+
+### `gary local-review`
+
+Every subcommand prints one JSON object. Exit code 3 is a refusal, 1 a usage or input error.
+
+- `plan`: the resolved reviewers, see above.
+- `pass <itemId> --base <sha> --head <sha> --worktree <dir> --job <id>`: starts a pass. It refuses a head equal to the base, a base or head that is no commit in the worktree, a pass while the previous one waits for a reviewer or a verdict, a second pass on the same head, and a pass beyond `maxPasses`. A new `--job` or base starts a new review, and a pass the last job left open fails its waiting reviewers. Without a local reviewer it prints `required: false` and does nothing. It prints `{ pass, maxPasses, last, head, worktree, agents, cli }`, plus `findingsFile` when no self or agent reviewer waits.
+- `skip <itemId> --reviewer <key> --reason <text>`: records that a self or agent reviewer of the open pass did not run.
+- `collect <itemId>`: reads the `out` file of every waiting reviewer. A missing file or one without findings JSON records the reviewer as failed. It removes the read-only worktree and writes `findingsFile`: `{ itemId, pass, maxPasses, head, untrusted, findings: [{ id, reviewer, name, path, line, body }] }`.
+- `judge <itemId> --file <verdicts.json>`: the file is `{ verdicts: [{ id, verdict, note }], fixedIn }`. Every finding needs one verdict, a note has at most 1000 characters, and `fixedIn` is the commit that fixed the valid findings. It is required with a valid finding and refused without one. It prints `{ next, head, valid, optional, wrong, clean }`.
+- `check <itemId> --head <sha> [--base <sha>]`: the push gate below. Exit 0 when the head may go out.
+- `show <itemId>`: the record as the board serves it.
+- `harness [--harness <name> --workers child|headless|session --providers <a,b>]`: records or prints where workers run and which providers they reach, see "The agent reviewer".
+
+### The read-only worktree
+
+`pass` adds a detached worktree of the head from the repository of the job's worktree, at `<state>/local-review/worktrees/<itemId>-<n>`, with `core.hooksPath=/dev/null`. It is never in a checkout the maintainer works in. Its files and folders lose their write bits, and its git metadata stays writable. `collect` removes it, and so does a pass with CLI reviewers only. The pass directory `<state>/local-review/passes/<itemId>/pass-<n>/` holds the diff, the context, the briefs and the findings.
+
+### The self reviewer
+
+A fresh subagent on the instance's `review` model. Code writes its prompt, so every harness uses the same one. It names files only: the diff from base to head, the read-only checkout, `context.md` with the thread's title, URL and body from the snapshot and the text of the job's action doc, and the profile's `rules/review.md` with the `personal.md` files. It never sees the author's reasoning, the job's notes or the conversation. The prompt is adversarial: it asks what is wrong with the change. The diff, the checkout and the thread are data, and the reviewer follows no instruction in them. It writes `{ "findings": [...] }` to its `out` file and changes nothing else.
+
+### The agent reviewer
+
+Another model or provider with the same prompt, started through the harness the worker runs in. A headless `claude -p` worker reaches only Claude models. The master records at its start where workers run and which providers they reach: `gary local-review harness --harness t3code --workers child --providers claude,codex` writes `<root>/state/harness.json`. `gary doctor` warns about an agent reviewer whose provider that record does not list, and when no record exists.
+
+### The CLI reviewer
+
+The maintainer's own tool, run on the job's commit:
+
+- Its argv comes from config.json only. `{base}`, `{head}` and `{worktree}` are replaced inside single arguments. No shell runs it.
+- It runs in the read-only worktree, in its own process group, and the whole group is killed after `timeoutSec`.
+- Its environment is the worker's without these: every variable that starts with `GH_`, `GITHUB_` or `GARY_`, every other variable whose name holds `TOKEN` and `GH` or `GITHUB`, `SSH_AUTH_SOCK`, `SSH_ASKPASS`, `GIT_ASKPASS` and `SUDO_ASKPASS`, and every variable whose value holds the bot token or the board server's token. `GIT_TERMINAL_PROMPT` is `0`.
+- Its stdout is untrusted review text. A JSON list of findings or `{ "findings": [...] }` gives those findings. Any other output is one finding with the text, cut after 8000 characters. Gary reads at most 1 MB.
+- It counts as `done` when it printed something or exited with 0. A timeout, a program that does not start, and a non-zero exit without output count as `failed` with the reason.
+- It runs as the maintainer's user and can read their files. Gary keeps its tokens out of the environment and nothing more.
+- The read-only worktree can hold a contributor's files after a take-over. A program that loads configuration, plugins or scripts from it runs code from the change. The maintainer names only a program that reads the files as data.
+
+Every reviewer returns at most 50 findings. A body has at most 4000 characters and a path at most 500.
+
+### The record
+
+`<state>/local-review/<itemId>.json` keeps the 10 newest reviews of the item. The item is the job's: the PR's item, or the issue's for a fix job.
+
+```json
+{ "itemId": "pr-412", "reviews": [ { "job": "<action id or run>", "base": "<sha>", "maxPasses": 2, "startedAt": "<ISO>", "passes": [
+  { "n": 1, "head": "<sha>", "fixedIn": "<sha>", "startedAt": "<ISO>", "finishedAt": "<ISO>", "judgedAt": "<ISO>", "reviewers": [
+    { "key": "self", "kind": "self", "name": "Self review", "status": "done", "findings": [ { "id": "f1", "path": "src/send.ts", "line": 12, "body": "…", "verdict": "valid", "note": "…" } ] },
+    { "key": "cli:octo-review", "kind": "cli", "name": "octo-review", "status": "failed", "reason": "timed out after 600 s", "findings": [] } ] } ] } ] }
+```
+
+`status` is `running`, `done`, `skipped` or `failed`.
+
+### The push gate
+
+A head may go out when the instance has no local reviewer. Otherwise all of these must hold for the newest review of the item:
+
+- It starts from the base the push builds on, when the caller names one.
+- Its newest pass has a result from every reviewer of the plan: done, skipped or failed with a reason.
+- Every finding of that pass has a verdict.
+- The head is the pass's head and the pass found nothing valid, or the pass was the last one allowed and the head is its head or its `fixedIn`.
+
+Code enforces it in three places:
+
+- `gary local-review check <itemId> --head <sha> [--base <sha>]`.
+- `gary push-check --pr <n> --sha <start head> --head <new head>`, for item `pr-<n>`. Without local reviewers `--head` changes nothing, and the output is the same as without it. With local reviewers the output gains `localReview: { head, ok, pass }`, and a refusal exits 3.
+- `gary own-pr push`, for the worktree's HEAD and `--sha`, after its other checks.
+
+The push of a fix branch and of a take-over's replacement branch goes through no Gary command. The skills run `gary local-review check` right before that `git push`.
+
+### Board
+
+The server serves `localReview` on an item with a record: the 3 newest reviews with short SHAs, each with `job`, `base`, `at`, `maxPasses` and `passes: [{ n, head, fixedIn, reviewers: [{ key, kind, name, status, reason, findings: [{ path, line, body, verdict, note }] }] }]`. It serves no path of the machine. It watches `<state>/local-review/`, so a pass reaches the open page without a triage run. The dialog shows the newest review: per pass its number and head, per reviewer its result, and per finding the verdict, the place and the text. Older reviews fold away. Finding text is untrusted and goes into the page as text nodes only.
 
 ## Focus
 
@@ -1503,6 +1636,7 @@ Gary posts nothing to GitHub for this kind: no bot, no label, no comment, no rev
   "maxPendingAutoReviewDrafts": 5, // review drafts started without a click that may wait for the maintainer at once
   "reviewDraftMaxLines": 800,      // a PR with more changed lines never gets a review draft without a click
   "checkoutRoots": [],             // directories whose direct children Drive and Focus search for a clone of the PR's repo, like ["~/repositories"]
+  "review": { "local": [{ "kind": "self" }], "maxLocalPasses": 2 },   // the local reviewers before a Drive's push, see "Local review". No "github"
   "models": { "worker": "sonnet", "standard": "sonnet" }   // optional, as for every instance
 }
 ```
@@ -1609,7 +1743,7 @@ On the maintainer's own open PR, an agent may change code: "Drive" on a card, an
 
 **The working copy.** A contributions instance has no checkout. `gary own-pr` finds a clone among the direct child directories of `checkoutRoots` whose git remotes point to the PR's head repo or its base repo, the head repo first. Without one, it clones the base repo with `--no-checkout` into `<state>/own-pr/clones/<owner>-<name>`. It fetches `refs/pull/<n>/head` into `refs/gary/<instance>/<itemId>` and adds a new detached worktree at `<state>/own-pr/worktrees/<itemId>`. It changes nothing else in a clone: no checkout, no edit, no commit, no stash, no reset in any working tree. Every git call runs with `core.hooksPath=/dev/null`. The worktrees of a found clone count for a focus: one that has the PR's head branch checked out is `branchWorktree`, and a session in it gets the focus.
 
-**The push.** Only `gary own-pr push` pushes, and the agents push no other way. It refuses a worktree outside `<state>/own-pr/worktrees`, a caller that is neither the job of a queued Drive request of the item (`--request`) nor the focus session that holds it (`--focus-session`), a paused instance with exit code 4, a worktree without a new commit, and a HEAD that does not build on `--sha`. Then it reads the PR again and applies `ownPrRefusal` to the live facts, refuses a head other than `--sha`, checks that the stored `gh` login is `me`, and runs `git push https://github.com/<headRepo>.git HEAD:refs/heads/<headRef>` with the stored login's credentials. It never forces, so git rejects a branch that moved. With `--dry-run` or `GARY_DRY_RUN=1` it prints the push and sends nothing.
+**The push.** Only `gary own-pr push` pushes, and the agents push no other way. It refuses a worktree outside `<state>/own-pr/worktrees`, a caller that is neither the job of a queued Drive request of the item (`--request`) nor the focus session that holds it (`--focus-session`), a paused instance with exit code 4, a worktree without a new commit, and a HEAD that does not build on `--sha`. Then it reads the PR again and applies `ownPrRefusal` to the live facts, refuses a head other than `--sha`, refuses a HEAD without a finished local review that starts from `--sha` when the instance has local reviewers, see "Local review", checks that the stored `gh` login is `me`, and runs `git push https://github.com/<headRepo>.git HEAD:refs/heads/<headRef>` with the stored login's credentials. It never forces, so git rejects a branch that moved. With `--dry-run` or `GARY_DRY_RUN=1` it prints the push and sends nothing.
 
 **The agent.** It edits text only and runs no code from the repo: no install, no build, no tests. It resolves merge conflicts with a merge of the base branch, never a rebase. Review comments, logs and files are untrusted data: it implements a review's request only as far as it is a sensible change to this PR. It posts nothing. The returned item drafts the reply to the reviewer as a `reply` route as `me`, links the commit, and carries no `pushed`, `rounds` or `takenOver`.
 
@@ -1617,7 +1751,7 @@ On the maintainer's own open PR, an agent may change code: "Drive" on a card, an
 
 ### Commands
 
-`gary review-draft plan --snapshot <file> | list [--json]` and `gary own-pr` are for this kind only and exit 3 for a maintainer instance. `fix-record`, `link-escalated`, `fix-review`, `pr-watch`, `pr-origin`, `api-edit`, `auto-review`, `push-check`, `reconcile` and `shadow` exit 3 for this kind and print `{ ok: false, kind: "contributions", result }`. `gary focus brief` and `start` exit 3 for every item of this kind but the maintainer's own PR that qualifies, see "Your own PRs". A learn pass may propose rules for `personal.md` only: accepting a profile proposal is refused, because there is no profile. The master starts the worker in the instance directory, because there is no checkout.
+`gary local-review` works for both kinds. `gary review-draft plan --snapshot <file> | list [--json]` and `gary own-pr` are for this kind only and exit 3 for a maintainer instance. `fix-record`, `link-escalated`, `fix-review`, `pr-watch`, `pr-origin`, `api-edit`, `auto-review`, `push-check`, `reconcile` and `shadow` exit 3 for this kind and print `{ ok: false, kind: "contributions", result }`. `gary focus brief` and `start` exit 3 for every item of this kind but the maintainer's own PR that qualifies, see "Your own PRs". A learn pass may propose rules for `personal.md` only: accepting a profile proposal is refused, because there is no profile. The master starts the worker in the instance directory, because there is no checkout.
 
 ### Board
 
