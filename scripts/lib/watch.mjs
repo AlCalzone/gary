@@ -7,10 +7,11 @@ import { join } from "node:path";
 import { runAction } from "./actions.mjs";
 import { ID_PATTERN, boardDir, readJson, writeAtomic } from "./board-store.mjs";
 import { ACTION_KINDS, listClaims } from "./claims.mjs";
-import { fixReviewOf, instanceName, loadInstance, reviewBotOf } from "./config.mjs";
+import { fixReviewOf, instanceName, loadInstance, reviewBotsOf } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { sensitiveOurs, touchesSensitive } from "./facts.mjs";
-import { accountMode, writeLogin } from "./gh.mjs";
+import { accountMode, postReviewTrigger, writeLogin } from "./gh.mjs";
+import { COPILOT, botName, botNames, driveBot, isBotAuthor, roundBots } from "./review-bots.mjs";
 import { focusHold, focusRefusal } from "./focus.mjs";
 import { driveDir, fixRecordOf, prItemId, readDrives, readFixRecords, readSnapshotItems } from "./fixes.mjs";
 
@@ -56,12 +57,58 @@ export function pendingHold(sources) {
 	return unhandledFeedback("me", { ...sources, feedback: { lastMeAt: held.feedbackAt } }) ? held : null;
 }
 
-/** How many review bot rounds the PR had: the requests a drive recorded, or the bot's reviews on GitHub when more. */
+/**
+ * The rounds per bot a drive file recorded: `{ <key>: { rounds, sha, at } }`. `rounds` is the number of review bot rounds
+ * the PR had when the bot was last asked, `sha` the head it was asked on. A drive file from before several bots has
+ * `copilotRounds` and `reviewBot` in place of it, and no head.
+ */
+export function botRoundsOf(drive) {
+	if (drive?.botRounds && typeof drive.botRounds === "object" && !Array.isArray(drive.botRounds)) return drive.botRounds;
+	if (!Number.isInteger(drive?.copilotRounds)) return {};
+	const bots = roundBots(drive);
+	return Object.fromEntries((bots.length ? bots : [{ key: COPILOT }]).map((b) => [b.key, { rounds: drive.copilotRounds }]));
+}
+
+/** How many review bot rounds the PR had: the requests a drive recorded, or the bots' reviews on GitHub when more. */
 export function reviewRoundsUsed(drive, feedback) {
 	let recorded = 0;
-	if (Number.isInteger(drive?.copilotRounds)) recorded = drive.copilotRounds;
+	const counts = Object.values(botRoundsOf(drive)).map((r) => r?.rounds).filter(Number.isInteger);
+	if (counts.length) recorded = Math.max(...counts);
 	else if (drive && stageOf(drive) === "review") recorded = (Array.isArray(drive.rounds) ? drive.rounds.length : 0) + 1;
 	return Math.max(recorded, Number.isInteger(feedback?.reviewBotReviews) ? feedback.reviewBotReviews : 0);
+}
+
+const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+const sameSha = (a, b) => typeof a === "string" && typeof b === "string" && a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a));
+
+/**
+ * The state of each bot on a PR, from its fresh snapshot entry: `[{ key, name, reviewedAt, commit, onHead, openThreads }]`.
+ * `onHead` says that the bot's newest review is on the PR's head. `openThreads` counts its unresolved threads.
+ */
+export function botStates(bots, entry) {
+	return bots.map((bot) => {
+		const last = (entry?.lastReviews ?? []).filter((r) => isBotAuthor(bot, r.author)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).at(-1);
+		const openThreads = (entry?.reviewSummary ?? []).filter((r) => isBotAuthor(bot, r.author)).reduce((n, r) => n + (Number.isInteger(r.openThreadCount) ? r.openThreadCount : 0), 0);
+		return { key: bot.key, name: botName(bot), reviewedAt: last?.at ?? null, commit: last?.commit ?? null, onHead: sameSha(last?.commit, entry?.headSha), openThreads };
+	});
+}
+
+/** A round is clean when every bot's newest review is on the PR's head and none of its threads is unresolved. */
+export const roundClean = (states) => states.length > 0 && states.every((s) => s.onHead && s.openThreads === 0);
+
+/**
+ * Whether every bot of the drive's round reviewed the head it was asked on, after the request. A bot without a recorded
+ * head counts on `lastPushedSha`. `entry` is the PR's fresh snapshot entry.
+ */
+export function roundArrived(drive, entry) {
+	const since = Date.parse(drive.reviewRequestedAt ?? "");
+	const bots = roundBots(drive);
+	if (!bots.length || !Number.isFinite(since)) return false;
+	const asked = botRoundsOf(drive);
+	return bots.every((bot) => {
+		const head = asked[bot.key]?.sha ?? drive.lastPushedSha;
+		return (entry?.lastReviews ?? []).some((r) => isBotAuthor(bot, r.author) && Date.parse(r.at) > since && sameSha(r.commit, head));
+	});
 }
 
 /** The cap on review bot rounds of a watched PR: the drive's `maxRounds`, at most REVIEW_ROUND_CAP. */
@@ -170,16 +217,22 @@ export function enterWatch(drive, { sha, seen = {}, now = new Date().toISOString
 	};
 }
 
-/** The drive file of a watched PR after a review bot round was requested. */
-export function enterReview(drive, { sha, actionId, seen = {}, now = new Date().toISOString(), used }) {
+/**
+ * The drive file of a watched PR after a review bot round was requested. `bots` are the bots it asked on `sha`.
+ * The fields of a drive file from before several bots, `copilotRounds` and `reviewBot`, give way to `botRounds` and `reviewBots`.
+ */
+export function enterReview(drive, { sha, actionId, seen = {}, now = new Date().toISOString(), used, bots }) {
 	const pushed = typeof sha === "string" && sha !== drive.lastPushedSha;
-	const { held, ...rest } = drive;
+	const { held, copilotRounds, reviewBot, ...rest } = drive;
+	const botRounds = { ...botRoundsOf(drive) };
+	for (const bot of bots) botRounds[bot.key] = { rounds: used + 1, ...(typeof sha === "string" && { sha }), at: now };
 	return {
 		...rest,
 		watch: true,
 		stage: "review",
 		actionId,
-		copilotRounds: used + 1,
+		reviewBots: bots.map(driveBot),
+		botRounds,
 		reviewRequestedAt: now,
 		...(typeof sha === "string" && { lastPushedSha: sha }),
 		...(pushed && { lastPushedAt: now }),
@@ -246,7 +299,7 @@ export async function watchContext(number, { takingOver = false } = {}) {
 	}
 	if (!pr) throw new Error(`PR #${number} is no PR by the bot, no fix PR Gary recorded in fixes.json and no PR it took over. Only those are watched.`);
 	const settings = fixReviewOf(instance.config, instance.profile);
-	return { ...pr, settings, reviewBot: reviewBotOf(instance.profile), cap: pr.why === "fix" ? Math.min(settings.maxRounds ?? REVIEW_ROUND_CAP, REVIEW_ROUND_CAP) : REVIEW_ROUND_CAP };
+	return { ...pr, settings, bots: reviewBotsOf(instance.config, instance.profile), cap: pr.why === "fix" ? Math.min(settings.maxRounds ?? REVIEW_ROUND_CAP, REVIEW_ROUND_CAP) : REVIEW_ROUND_CAP };
 }
 
 /** The drive file a watched PR starts from when it has none yet. */
@@ -259,7 +312,7 @@ export function baseDrive(c) {
 		watch: true,
 		stage: "watch",
 		maxRounds: c.cap,
-		reviewBot: c.why === "fix" && c.settings.reviewer !== "off" ? c.settings.reviewer : c.reviewBot,
+		reviewBots: c.bots.map(driveBot),
 		...(c.why === "fix" && { markReady: c.settings.markReady }),
 		rounds: [],
 		lastPushedSha: c.entry?.headSha ?? c.item?.reviewedSha ?? null,
@@ -289,12 +342,50 @@ async function pushJob(id, itemId) {
 }
 
 /**
+ * Asks each bot in `bots` for its review of head `sha` on a PR, under your login or with `as: "bot"` the bot's token:
+ * Copilot and a bot with `trigger: "request"` through `request_review`, a bot with a trigger comment through
+ * `postReviewTrigger`. Throws `Refused` before it sends anything when `drive` records that a bot was asked on `sha` already.
+ * Stops at the first failure. Returns `{ ok: true, asked, invocations, warning }` when at least one bot was asked,
+ * with `warning` naming the failure, `{ ok: false, result }` when none was, and `{ ok: false, paused: true }` while paused.
+ */
+export async function askReviewBots({ repo, number, bots, sha, drive = null, as = "me", dryRun = false }) {
+	const asked = botRoundsOf(drive);
+	const twice = bots.filter((b) => sameSha(asked[b.key]?.sha, sha));
+	if (twice.length) throw new Refused(`${botNames(twice)} ${twice.length === 1 ? "was" : "were"} already asked to review ${sha.slice(0, 7)} on PR #${number}. A bot is asked once per head.`);
+	const out = { asked: [], invocations: [] };
+	let failure = null;
+	for (const bot of bots) {
+		if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
+		if (bot.trigger === "comment") {
+			try {
+				const posted = await postReviewTrigger({ repo, number, key: bot.key, as, dryRun });
+				if (dryRun) out.invocations.push(posted.invocation);
+			} catch (e) {
+				failure = bots.length === 1 ? e.message : `${botName(bot)}: ${e.message}`;
+				break;
+			}
+		} else {
+			const r = await runAction({ action: "request_review", kind: "pr", number, repo, params: { reviewer: bot.trigger === COPILOT ? COPILOT : bot.login, as }, dryRun });
+			if (r.paused) return { ok: false, paused: true, result: PAUSED_MESSAGE };
+			if (!r.ok) {
+				failure = bots.length === 1 ? r.result : `${botName(bot)}: ${r.result}`;
+				break;
+			}
+			if (dryRun) out.invocations.push(...r.result.invocations);
+		}
+		out.asked.push(bot);
+	}
+	if (!out.asked.length) return { ok: false, result: `The review was not requested: ${failure}` };
+	return { ok: true, ...out, ...(failure && { warning: `Not every review bot was asked. ${failure}` }) };
+}
+
+/**
  * Requests the next review bot round on a watched PR and puts its drive file into the stage "review".
  * A drive round names its action doc with `actionId`, or the drive file has one. A job that pushed outside a drive
  * passes `after`, the id of its own action doc, or `apiEdit` for an API edit of the server. Then a new `drive` action
  * doc is written, claimed by `run`, and `sha` must be a new head. Throws `Refused` when a rule says no.
  * Returns `{ ok: false, paused: true }` while the instance is paused, and `{ ok: true, requested: false, skipped }`
- * when the profile lists no review bot.
+ * when the instance asks no review bot or `fixReview.maxRounds` is 0 on a fix PR.
  */
 export async function requestReviewRound({ number, sha, actionId, after, apiEdit = false, run, seen = {}, dryRun = false }) {
 	if (typeof sha !== "string" || !/^[0-9a-f]{7,64}$/.test(sha)) throw new Error("--sha must be the PR's head commit");
@@ -304,7 +395,8 @@ export async function requestReviewRound({ number, sha, actionId, after, apiEdit
 	const itemId = prItemId(number);
 	const job = after !== undefined ? await pushJob(after, itemId) : null;
 	const c = await watchContext(number, { takingOver: job?.action === "take_over" });
-	if (!c.reviewBot) return { ok: true, requested: false, skipped: "The profile lists no review bot, so no review bot round is requested. Go on as if the rounds were done.", itemId: c.itemId };
+	if (!c.bots.length) return { ok: true, requested: false, skipped: `${c.settings.noReviewBot ? capital(c.settings.reason) : "The instance asks no review bot"}, so no review bot round is requested. Go on as if the rounds were done.`, itemId: c.itemId };
+	if (c.cap === 0) return { ok: true, requested: false, skipped: "fixReview.maxRounds is 0, so a fix PR gets no review bot rounds. Go on as if the rounds were done.", itemId: c.itemId };
 	if (isPaused()) return { ok: false, paused: true, result: PAUSED_MESSAGE };
 	if (!writeLogin()) throw new Refused("No account may push: the instance has no bot and allowOwnTokenPushes is off.");
 	if (c.entry && touchesSensitive(c.entry) && !sensitiveOurs(c.entry)) throw new Refused(`PR #${c.number} changes sensitive files and is not ours alone, so it gets no review bot rounds.`);
@@ -321,10 +413,9 @@ export async function requestReviewRound({ number, sha, actionId, after, apiEdit
 	const used = reviewRoundsUsed(drive, feedbackOf(c));
 	const cap = c.why === "fix" ? Math.min(reviewRoundCap(drive), c.cap) : REVIEW_ROUND_CAP;
 	if (used >= cap) throw new Refused(`PR #${c.number} had ${used} of ${cap} review bot rounds. No more are requested.`);
-	const reviewer = drive.reviewBot ?? c.reviewBot;
-	const request = await runAction({ action: "request_review", kind: "pr", number: c.number, repo: c.repo, params: { reviewer, as: c.why === "fix" ? c.settings.requestAs : "me" }, dryRun });
+	const request = await askReviewBots({ repo: c.repo, number: c.number, bots: c.bots, sha, drive, as: c.why === "fix" ? c.settings.requestAs : "me", dryRun });
 	if (request.paused) return { ok: false, paused: true, result: PAUSED_MESSAGE };
-	if (!request.ok) return { ok: false, result: `The review was not requested: ${request.result}` };
+	if (!request.ok) return { ok: false, result: request.result };
 	const now = new Date().toISOString();
 	const doc = fromJob && {
 		itemId: c.itemId,
@@ -337,13 +428,13 @@ export async function requestReviewRound({ number, sha, actionId, after, apiEdit
 		finishedAt: null,
 		result: `claimed by run ${run}`,
 	};
-	const next = enterReview(drive, { sha, actionId: id, seen: marksFor(seen), used, now });
-	if (dryRun) return { ok: true, dryRun: true, invocations: request.result.invocations, wouldWrite: { ...(doc && { action: doc }), drive: next } };
+	const next = enterReview(drive, { sha, actionId: id, seen: marksFor(seen), used, now, bots: request.asked });
+	if (dryRun) return { ok: true, dryRun: true, invocations: request.invocations, wouldWrite: { ...(doc && { action: doc }), drive: next } };
 	if (doc) {
 		await mkdir(join(boardDir(), "actions"), { recursive: true });
 		await writeAtomic(join(boardDir(), "actions", id + ".json"), doc);
 	}
 	await mkdir(driveDir(), { recursive: true });
 	await writeDrive(c.itemId, next);
-	return { ok: true, requested: true, round: next.copilotRounds, cap, actionId: id, itemId: c.itemId };
+	return { ok: true, requested: true, round: used + 1, cap, bots: request.asked.map((b) => b.key), ...(request.warning && { warning: request.warning }), actionId: id, itemId: c.itemId };
 }

@@ -1,6 +1,7 @@
 import { allowedRepo, instanceName, isContributions, loadConfig, loadProfile, repoParts, withInstance } from "./config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
-import { GRAPHQL_ARGS, READ_ONLY_MESSAGE, accountMode, assertWriteAllowed, gh, graphql, requestCopilotReview, verifyOwnLogin, writeLogin } from "./gh.mjs";
+import { GRAPHQL_ARGS, READ_ONLY_MESSAGE, accountMode, assertWriteAllowed, gh, graphql, requestBotReview, requestCopilotReview, verifyOwnLogin, writeLogin } from "./gh.mjs";
+import { COPILOT, botCommandTexts, profileReviewBots } from "./review-bots.mjs";
 
 export const KINDS = ["pr", "issue", "discussion"];
 const BOARD_ACTIONS = ["dismiss", "snooze"];
@@ -207,16 +208,24 @@ export const ACTIONS = {
 	},
 	request_review: {
 		description:
-			"Request a review on the PR. With `params.reviewer: \"copilot\"` it requests a Copilot review under your own gh login, or as the bot with `params.as: \"bot\"`, and copilot must be listed in the profile's reviewBots. With `params.reviewer: \"maintainer\"` the writing identity requests your review, added to the reviewers already requested. It sends nothing when you wrote the PR, when the PR is closed, merged or a draft, or when your review is already requested.",
+			"Request a review on the PR. With `params.reviewer: \"copilot\"` it requests a Copilot review under your own gh login, or as the bot with `params.as: \"bot\"`, and copilot must be listed in the profile's reviewBots. With `params.reviewer` set to the login of a review bot that the profile's reviewBots lists with `trigger: \"request\"`, it requests that bot's review the same way. With `params.reviewer: \"maintainer\"` the writing identity requests your review, added to the reviewers already requested. It sends nothing when you wrote the PR, when the PR is closed, merged or a draft, or when your review is already requested.",
 		kinds: ["pr"],
 		params: ["reviewer", "as"],
 		run: async (ctx) => {
 			if (ctx.params.reviewer === "maintainer") return requestMaintainerReview(ctx);
-			if (ctx.params.reviewer !== "copilot") throw new Error("params.reviewer must be copilot or maintainer");
-			if (!loadProfile().reviewBots.includes("copilot")) throw new Error("The profile does not list copilot in reviewBots");
+			if (typeof ctx.params.reviewer !== "string") throw new Error("params.reviewer must be copilot, maintainer or the login of a review bot from the profile");
+			const bots = profileReviewBots(loadProfile());
+			const bot = bots.find((b) => b.key === ctx.params.reviewer.toLowerCase());
+			if (ctx.params.reviewer === COPILOT && !bot) throw new Error("The profile does not list copilot in reviewBots");
+			if (!bot || (bot.trigger !== COPILOT && bot.trigger !== "request")) throw new Error("params.reviewer must be copilot, maintainer or the login of a review bot that the profile's reviewBots lists with trigger \"request\"");
 			forbidText(ctx);
 			const target = await resolveTarget(ctx);
 			requireOpen(target);
+			if (bot.trigger === "request") {
+				const outcome = await requestBotReview({ repo: ctx.repo, number: ctx.number, botLogin: bot.login, dryRun: ctx.dryRun, as: ctx.params.as ?? "me" });
+				if (ctx.dryRun) ctx.invocations.push(outcome.invocation);
+				return target.url;
+			}
 			// requestCopilotCodeReview also starts a new request after a finished Copilot review, per its schema description
 			const outcome = await requestCopilotReview(target.id, { dryRun: ctx.dryRun, as: ctx.params.as ?? "me" });
 			if (ctx.dryRun) {
@@ -543,9 +552,9 @@ function checkAutonomous(ctx) {
 	}
 }
 
-/** Rejects text that contains a bot command from the profile. Only the maintainer posts those, on GitHub. */
+/** Rejects text that contains a bot command from the profile or a review bot's trigger comment. Only the maintainer and the review bot helpers post those. */
 function forbidBotCommands(ctx) {
-	const commands = Object.values(loadProfile().botCommands).map((c) => c.trim().toLowerCase()).filter(Boolean);
+	const commands = botCommandTexts(loadProfile());
 	if (!commands.length) return;
 	const comments = Array.isArray(ctx.params.comments) ? ctx.params.comments : [];
 	const texts = [ctx.text, ctx.params.title, ...comments.map((c) => c?.text)].filter((t) => typeof t === "string");
@@ -622,7 +631,7 @@ const sameLogin = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").to
  * PR is not open or is a draft, and when the maintainer's review is already requested.
  */
 async function requestMaintainerReview(ctx) {
-	if (ctx.params.as !== undefined) throw new Error("params.as is only for a Copilot review. The writing identity requests the maintainer's review");
+	if (ctx.params.as !== undefined) throw new Error("params.as is only for a review bot's review. The writing identity requests the maintainer's review");
 	forbidText(ctx);
 	assertWriteAllowed();
 	const { me } = loadConfig();

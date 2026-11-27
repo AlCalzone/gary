@@ -52,7 +52,7 @@ const PARAMS = {
 	review: "`event`: approve, request_changes or comment. `comments`: inline comments as [{ path, line, startLine, text }], `startLine` only for a range. `sha`: commit the review applies to.",
 	create_issue: "`title`: title of the new issue. `text` is its body.",
 	transfer: "`repo`: name of a repository of the same owner, listed in the profile's relatedRepos.",
-	request_review: "`reviewer`: copilot or maintainer. `as`: me (default) or bot, only for copilot.",
+	request_review: "`reviewer`: copilot, maintainer, or the login of a review bot that the profile lists with trigger \"request\". `as`: me (default) or bot, only for a review bot.",
 	update_branch: "`sha`: expected head SHA, the update fails when the PR head moved.",
 	label: "`add`, `remove`: arrays of existing label names.",
 	assign: "`assignees`: array of GitHub logins.",

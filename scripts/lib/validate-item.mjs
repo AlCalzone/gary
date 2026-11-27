@@ -5,6 +5,7 @@ import { apiEditProblems } from "./api-edit.mjs";
 import { FINDING_ID } from "./findings.mjs";
 import { pendingRouteProblems, walkthroughProblems } from "./review-drafts.mjs";
 import { ownPrRefusal } from "./own-pr.mjs";
+import { botCommandTexts } from "./review-bots.mjs";
 import { CATEGORIES, FYI, categoriesFor, normalizeCategory } from "./categories.mjs";
 import { MOVE_MODES, CHORE_ACTIONS, ISSUE_KINDS, ROUTE_TYPES, driveRefusal, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, takeOverRefusal } from "./routes.mjs";
 
@@ -232,7 +233,7 @@ export function validateItem(id, doc, { mode, profile, repos: repoList, fix = nu
 
 	const dismissed = Array.isArray(item.dismissedRoutes) ? item.dismissedRoutes.filter(isObject) : [];
 	const seen = new Set();
-	const commands = Object.values(profile.botCommands ?? {}).map((c) => c.trim().toLowerCase()).filter(Boolean);
+	const commands = botCommandTexts(profile);
 	const hasValidThread = threadList.some((t) => t?.verdict === "valid");
 
 	routes.forEach((route, i) => {

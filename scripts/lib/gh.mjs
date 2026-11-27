@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homePath, loadConfig, loadProfile, repoParts } from "./config.mjs";
+import { profileReviewBots } from "./review-bots.mjs";
 
 const GH_TIMEOUT_MS = 60000;
 const STDERR_TAIL = 500;
@@ -153,40 +154,21 @@ export async function gh(args, { input } = {}) {
 }
 
 /**
- * Requests a Copilot review on a PR. By default it runs under your own stored `gh` login. With a bot configured
- * only this helper and `postEscalateCommand` reach that login. It runs only this fixed mutation, after checking that the login is `me`.
- * With `as: "bot"` the bot's token sends the same mutation.
- * With `dryRun` it runs only the login check and returns the invocation it would send.
+ * The account a review bot is asked under: your stored `gh` login after the check that it is `me`, or the bot's token
+ * with `as: "bot"`. Returns `{ login, env }`.
  */
-export async function requestCopilotReview(pullRequestId, { dryRun = false, as = "me" } = {}) {
-	if (typeof pullRequestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(pullRequestId)) {
-		throw new Error("pullRequestId must be a node id");
-	}
+async function askingAccount(as) {
 	if (as !== "me" && as !== "bot") throw new Error('as must be "me" or "bot"');
-	if (as === "bot" && !loadConfig().bot) throw new Error("No bot account is configured, so the bot cannot request the review");
-	const login = as === "bot" ? loadConfig().bot.login : await verifyOwnLogin();
-	const env = as === "bot" ? { ...process.env, ...GH_ENV, GH_TOKEN: botToken() } : storedLoginEnv();
-	const query = `mutation($id: ID!) { requestCopilotCodeReview(input: { pullRequestId: $id }) { success failureReason } }`;
-	const body = { query, variables: { id: pullRequestId } };
-	if (dryRun) return { dryRun: true, login, invocation: { command: ["gh", ...GRAPHQL_ARGS], as: login, stdin: body } };
+	if (as === "bot" && !loadConfig().bot) throw new Error("No bot account is configured, so the bot cannot ask for the review");
+	if (as === "bot") return { login: loadConfig().bot.login, env: { ...process.env, ...GH_ENV, GH_TOKEN: botToken() } };
+	return { login: await verifyOwnLogin(), env: storedLoginEnv() };
+}
 
+/** Runs one GraphQL request with `env` and returns `data`. Throws on GraphQL errors. */
+async function graphqlWith(body, env) {
 	let stdout;
 	try {
 		stdout = await run(GRAPHQL_ARGS, JSON.stringify(body), env);
-	} catch (e) {
-		stdout = e.stdout;
-		if (!stdout || e.timedOut) throw new Error(e.message);
-	}
-	const response = JSON.parse(stdout);
-	if (response.errors?.length) throw new Error(response.errors.map((e) => e.message).join("; "));
-	return { login, ...response.data.requestCopilotCodeReview };
-}
-
-/** Runs one GraphQL request under the stored gh login and returns `data`. */
-async function ownGraphql(body) {
-	let stdout;
-	try {
-		stdout = await run(GRAPHQL_ARGS, JSON.stringify(body), storedLoginEnv());
 	} catch (e) {
 		stdout = e.stdout;
 		if (!stdout || e.timedOut) throw new Error(e.message);
@@ -201,11 +183,87 @@ async function ownGraphql(body) {
 	return response.data;
 }
 
+/**
+ * Requests a Copilot review on a PR. By default it runs under your own stored `gh` login. With a bot configured
+ * only the review bot helpers and `postEscalateCommand` reach that login. It runs only this fixed mutation, after checking that the login is `me`.
+ * With `as: "bot"` the bot's token sends the same mutation.
+ * With `dryRun` it runs only the login check and returns the invocation it would send.
+ */
+export async function requestCopilotReview(pullRequestId, { dryRun = false, as = "me" } = {}) {
+	if (typeof pullRequestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(pullRequestId)) {
+		throw new Error("pullRequestId must be a node id");
+	}
+	const { login, env } = await askingAccount(as);
+	const query = `mutation($id: ID!) { requestCopilotCodeReview(input: { pullRequestId: $id }) { success failureReason } }`;
+	const body = { query, variables: { id: pullRequestId } };
+	if (dryRun) return { dryRun: true, login, invocation: { command: ["gh", ...GRAPHQL_ARGS], as: login, stdin: body } };
+	return { login, ...(await graphqlWith(body, env)).requestCopilotCodeReview };
+}
+
+/**
+ * Requests the review of the review bot `botLogin` on a PR through REST `requested_reviewers`, under the account of
+ * `as` like `requestCopilotReview`. The login must be one of the profile's review bots with `trigger: "request"`.
+ * With `dryRun` it runs only the checks and returns the invocation it would send.
+ */
+export async function requestBotReview({ repo, number, botLogin, dryRun = false, as = "me" }) {
+	const bot = profileReviewBots(loadProfile()).find((b) => b.trigger === "request" && b.key === String(botLogin ?? "").toLowerCase());
+	if (!bot) throw new Error(`${botLogin} is no review bot of the profile that takes a review request`);
+	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
+	const { owner, name } = repoParts(repo);
+	const { login, env } = await askingAccount(as);
+	const args = ["api", `repos/${owner}/${name}/pulls/${number}/requested_reviewers`, "--method", "POST", "-f", `reviewers[]=${bot.login}`];
+	if (dryRun) return { dryRun: true, login, invocation: { command: ["gh", ...args], as: login } };
+	try {
+		await run(args, "", env);
+	} catch (e) {
+		throw new Error(`GitHub did not request the review of ${bot.login}: ${e.message}`);
+	}
+	return { login, bot: bot.login };
+}
+
+/**
+ * Posts the trigger comment of one review bot on a PR, exactly as the profile's `reviewBots` writes it.
+ * Besides `postEscalateCommand` this is the only code that posts a bot command. `key` picks the bot. Nothing else goes
+ * into the text. Call it only where Gary asks its review bots after a push: `gary fix-review start`, `gary pr-watch review`
+ * and the server's request after an API edit.
+ * It runs under your own stored `gh` login after the check that it is `me`, or with `as: "bot"` under the bot's token.
+ * Throws when the profile has no such bot, when the PR is not open and when GitHub refuses the comment.
+ * With `dryRun` it runs the checks and the read, and returns the invocation it would send.
+ */
+export async function postReviewTrigger({ repo, number, key, dryRun = false, as = "me" }) {
+	if (readOnlyInstance()) throw new Error(READ_ONLY_MESSAGE);
+	const bot = profileReviewBots(loadProfile()).find((b) => b.trigger === "comment" && b.key === key);
+	if (!bot) throw new Error(`${key} is no review bot of the profile with a trigger comment`);
+	if (!Number.isSafeInteger(number) || number <= 0) throw new Error("number must be a positive integer");
+	const { owner, name } = repoParts(repo);
+	const { login, env } = await askingAccount(as);
+	const found = await graphqlWith(
+		{
+			query: `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issueOrPullRequest(number: $number) { __typename ... on PullRequest { id url state } } } }`,
+			variables: { owner, name, number },
+		},
+		env,
+	);
+	const pr = found?.repository?.issueOrPullRequest;
+	if (pr?.__typename !== "PullRequest") throw new Error(`PR #${number} not found`);
+	if (pr.state !== "OPEN") throw new Error(`${pr.url} is not open`);
+	const body = {
+		query: `mutation($id: ID!, $body: String!) { addComment(input: { subjectId: $id, body: $body }) { commentEdge { node { url } } } }`,
+		variables: { id: pr.id, body: bot.comment },
+	};
+	if (dryRun) return { dryRun: true, login, comment: bot.comment, invocation: { command: ["gh", ...GRAPHQL_ARGS], as: login, stdin: body } };
+	const data = await graphqlWith(body, env);
+	return { login, comment: bot.comment, url: data?.addComment?.commentEdge?.node?.url ?? pr.url };
+}
+
+/** Runs one GraphQL request under the stored gh login and returns `data`. */
+const ownGraphql = (body) => graphqlWith(body, storedLoginEnv());
+
 const MISSING_PERMISSION = /required scopes|not been granted|not accessible by|must have .*access|insufficient/i;
 
 /**
  * Posts the profile's `botCommands.escalate` as a comment on a discussion, under your own stored `gh` login.
- * This is the only code that posts a bot command. The text comes from the profile and from nowhere else.
+ * Besides `postReviewTrigger` this is the only code that posts a bot command. The text comes from the profile and from nowhere else.
  * Call it only for a click on the board's escalate button.
  * Throws when the instance has no `escalateAs: "me"`, when the profile has no escalate command, when the stored
  * login is not `me`, when the discussion is closed, and when GitHub refuses the comment.

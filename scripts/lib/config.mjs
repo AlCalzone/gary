@@ -5,6 +5,7 @@
 //   profile:  the project directory named by `profile` in config.json, holds profile.json, rules/ and templates/
 // The instance comes from --instance, then GARY_INSTANCE, then the working directory, then the only instance.
 import { readJsoncFile } from "./jsonc.mjs";
+import { activeReviewBots, checkReviewBots, checkReviewConfig, profileReviewBots, reviewTriggerComments } from "./review-bots.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
@@ -90,27 +91,33 @@ export const CONFIG_DEFAULTS = {
 // Who posts the profile's escalate command on a discussion: the server under the maintainer's login, or the maintainer themself after a copy
 export const ESCALATE_AS = ["me", "prefill"];
 
+// `fixReview.reviewer` is still read: "copilot" asks the default bots, "off" turns the fix rounds off like `maxRounds: 0`
 export const FIX_REVIEWERS = ["copilot", "off"];
 export const FIX_REVIEW_REQUESTERS = ["me", "bot"];
-export const FIX_REVIEW_DEFAULTS = { reviewer: "copilot", requestAs: "me", maxRounds: 3, markReady: true };
+export const FIX_REVIEW_DEFAULTS = { requestAs: "me", maxRounds: 3, markReady: true };
+const FIX_REVIEW_FIELDS = ["reviewer", ...Object.keys(FIX_REVIEW_DEFAULTS)];
 
-/** The review bot Gary requests after a push, or null when the profile lists none. */
-export const reviewBotOf = (profile) => (profile?.reviewBots ?? [])[0] ?? null;
+/** The GitHub review bots Gary asks after a push on this instance, normalized. */
+export const reviewBotsOf = (config, profile) => activeReviewBots(config, profile).bots;
 
 /**
- * The review rounds a fix PR of Gary gets on its own: `{ reviewer, requestAs, maxRounds, markReady, reason, noReviewBot }`.
- * `reviewer` is "off" when the config says so or when the rounds cannot run, and `reason` then says why.
+ * The review rounds a fix PR of Gary gets on its own: `{ on, bots, requestAs, maxRounds, markReady, reason, noReviewBot }`.
+ * `on` is false when the config turns them off or when the rounds cannot run, and `reason` then says why.
  * `noReviewBot` is true when only the missing review bot stops the rounds. The fix PR then goes straight to ready.
+ * With `reviewer: "off"`, `maxRounds` keeps the config's value, because that field caps no other rounds.
  */
 export function fixReviewOf(config, profile) {
-	const set = { ...FIX_REVIEW_DEFAULTS, ...(config.fixReview ?? {}) };
-	const off = (reason, extra = {}) => ({ ...set, reviewer: "off", reason, noReviewBot: false, ...extra });
-	if (set.reviewer === "off") return off(config.fixReview ? "fixReview.reviewer is off in config.json" : null);
+	const given = config.fixReview ?? {};
+	const set = { ...FIX_REVIEW_DEFAULTS, ...given };
+	delete set.reviewer;
+	const bots = reviewBotsOf(config, profile);
+	const off = (reason, extra = {}) => ({ ...set, on: false, bots, reason, noReviewBot: false, ...extra });
+	if (given.reviewer === "off") return off("fixReview.reviewer is off in config.json");
+	if (set.maxRounds === 0) return off("fixReview.maxRounds is 0 in config.json");
 	if (!config.bot && config.allowOwnTokenPushes !== true) return off("no account may push: there is no bot and allowOwnTokenPushes is false");
-	if (!reviewBotOf(profile)) return off("the profile lists no review bot", { noReviewBot: true });
-	if (!(profile.reviewBots ?? []).includes(set.reviewer)) return off(`the profile does not list ${set.reviewer} in reviewBots`);
+	if (!bots.length) return off(profileReviewBots(profile).length ? "no review bot is picked: review.github in config.json names none of the profile's" : "the profile lists no review bot", { noReviewBot: true });
 	if (set.requestAs === "bot" && !config.bot) return off('fixReview.requestAs is "bot", but no bot is configured');
-	return { ...set, reason: null, noReviewBot: false };
+	return { ...set, on: true, bots, reason: null, noReviewBot: false };
 }
 
 export const FAST_TIERS = ["off", "shadow", "on"];
@@ -431,7 +438,7 @@ export function checkConfig(data) {
 	if (isContributions(data)) return checkContributionsConfig(data);
 	const errors = [];
 	const unknown = [];
-	const known = ["profile", "me", "checkout", "fixReview", "autoReview", "models", "tab", ...Object.keys(CONFIG_DEFAULTS)];
+	const known = ["profile", "me", "checkout", "fixReview", "review", "autoReview", "models", "tab", ...Object.keys(CONFIG_DEFAULTS)];
 	for (const key of Object.keys(data)) {
 		if (key === "port") errors.push('"port" belongs in the root config.json now. Run `gary migrate`');
 		else check(unknown, known.includes(key), `unknown field "${key}"`);
@@ -459,12 +466,12 @@ export function checkConfig(data) {
 	const fr = data.fixReview;
 	if (fr !== undefined) {
 		if (!fr || typeof fr !== "object" || Array.isArray(fr)) {
-			errors.push(`"fixReview" must be { "reviewer", "requestAs", "maxRounds", "markReady" }`);
+			errors.push(`"fixReview" must be { "requestAs", "maxRounds", "markReady" }`);
 		} else {
-			for (const key of Object.keys(fr)) check(unknown, Object.keys(FIX_REVIEW_DEFAULTS).includes(key), `unknown field "fixReview.${key}"`);
+			for (const key of Object.keys(fr)) check(unknown, FIX_REVIEW_FIELDS.includes(key), `unknown field "fixReview.${key}"`);
 			check(errors, fr.reviewer === undefined || FIX_REVIEWERS.includes(fr.reviewer), `"fixReview.reviewer" must be one of ${FIX_REVIEWERS.join(", ")}`);
 			check(errors, fr.requestAs === undefined || FIX_REVIEW_REQUESTERS.includes(fr.requestAs), `"fixReview.requestAs" must be one of ${FIX_REVIEW_REQUESTERS.join(", ")}`);
-			check(errors, fr.maxRounds === undefined || isInt(fr.maxRounds, 1, 3), `"fixReview.maxRounds" must be 1, 2 or 3`);
+			check(errors, fr.maxRounds === undefined || isInt(fr.maxRounds, 0, 3), `"fixReview.maxRounds" must be 0, 1, 2 or 3`);
 			check(errors, fr.markReady === undefined || typeof fr.markReady === "boolean", `"fixReview.markReady" must be true or false`);
 		}
 	}
@@ -479,12 +486,13 @@ export function checkConfig(data) {
 			check(errors, ar.maxPerRun === undefined || isInt(ar.maxPerRun, 0, 50), `"autoReview.maxPerRun" must be a whole number from 0 to 50`);
 		}
 	}
+	checkReviewConfig(data.review, errors, unknown);
 	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };
 }
 
 // Fields of a maintainer instance that mean nothing without a profile, a bot or a checkout
-const MAINTAINER_ONLY = ["profile", "checkout", "bot", "allowOwnTokenPushes", "maxFullReviewsPerRun", "maxAutoFixesPerRun", "maxPendingAutoFixes", "fixReview", "fastTier", "escalateAs", "autoReview"];
+const MAINTAINER_ONLY = ["profile", "checkout", "bot", "allowOwnTokenPushes", "maxFullReviewsPerRun", "maxAutoFixesPerRun", "maxPendingAutoFixes", "fixReview", "review", "fastTier", "escalateAs", "autoReview"];
 
 /** The problems in the config.json of a contributions instance, split like checkConfig. */
 function checkContributionsConfig(data) {
@@ -616,7 +624,7 @@ export function checkProfile(data) {
 	for (const key of ["maintainers", "botLogins"]) {
 		check(errors, data[key] === undefined || isStringList(data[key], LOGIN), `"${key}" must be a list of GitHub logins`);
 	}
-	check(errors, data.reviewBots === undefined || isStringList(data.reviewBots, /^copilot$/), `"reviewBots" may only contain "copilot"`);
+	checkReviewBots(data.reviewBots, errors, unknown);
 	check(errors, data.relatedRepos === undefined || isStringList(data.relatedRepos, REPO_NAME), `"relatedRepos" must be a list of repository names of the same owner`);
 	for (const key of ["sensitivePaths", "autoLabels", "requiredTools", "aiAuthors"]) {
 		check(errors, data[key] === undefined || isStringList(data[key]), `"${key}" must be a list of strings`);
@@ -783,6 +791,23 @@ export function settingsWarningsFor(name) {
 	}
 	for (const file of files) for (const w of unknownFields.get(file) ?? []) out.push(`${file}: ${w}`);
 	return out;
+}
+
+/**
+ * The trigger comments of the review bots of every maintainer instance, trimmed and in lower case. A contributions
+ * instance has no profile, so its checks use these. An instance whose settings do not load adds none.
+ */
+export function allReviewTriggers() {
+	const out = new Set();
+	for (const name of instanceNames()) {
+		try {
+			if (isContributions(loadConfigFor(name))) continue;
+			for (const c of reviewTriggerComments(loadProfileFor(name))) if (c.trim()) out.add(c.trim().toLowerCase());
+		} catch {
+			continue;
+		}
+	}
+	return [...out];
 }
 
 /** The resolved instance's config. */

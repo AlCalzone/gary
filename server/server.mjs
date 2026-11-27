@@ -31,6 +31,7 @@ import { commentLineProblem, pendingRoute, pendingRouteProblems, readReviewDraft
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { CHAT_ID, activeChat, addUserMessage, archiveActive, chatDir, masterState, readChat } from "../scripts/lib/chat.mjs";
 import { ownPrRefusal } from "../scripts/lib/own-pr.mjs";
+import { activeReviewBots, botCommandTexts } from "../scripts/lib/review-bots.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
 import { CHORE_ACTIONS, MOVE_MODES, actorOf, commentBody, commentProse, driveRefusal, editedCommentBody, effectiveActor, formatRefusal, isApiEdit, isObject, pushRefusal, reviseRefusal, sensitiveRefusal, servedRoute, takeOverRefusal } from "../scripts/lib/routes.mjs";
@@ -533,7 +534,8 @@ export function instanceInfo(name) {
 		relatedRepos: i.profile.relatedRepos,
 		botCommands: i.profile.botCommands,
 		escalateAs: i.config.escalateAs,
-		reviewBots: i.profile.reviewBots,
+		// The keys of the review bots Gary asks, like ["copilot", "octobot"]
+		reviewBots: activeReviewBots(i.config, i.profile).bots.map((b) => b.key),
 		...(error && { settingsError: error }),
 		...(warnings?.length && { settingsWarnings: warnings }),
 	};
@@ -2084,7 +2086,7 @@ export async function startBoardServer({
 		const answers = input.answers;
 		if (!Array.isArray(answers) || !answers.length) throw new Refusal("input.answers must list at least one answer.");
 		const findings = findingsByKey(item);
-		const commands = Object.values(settingsOf(name).instance?.profile?.botCommands ?? {}).map((c) => String(c).trim().toLowerCase()).filter(Boolean);
+		const commands = botCommandTexts(settingsOf(name).instance?.profile);
 		const seen = new Set();
 		return answers.map((a) => {
 			if (!isObject(a)) throw new Refusal("Each answer must be an object.");

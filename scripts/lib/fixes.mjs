@@ -4,6 +4,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { ID_PATTERN, boardDir, readJson, writeAtomic } from "./board-store.mjs";
 import { FIX_REVIEW_DEFAULTS, instanceDir, instanceName, loadInstance, stateDir } from "./config.mjs";
+import { COPILOT, botName, roundBots } from "./review-bots.mjs";
 import { listClaims } from "./claims.mjs";
 
 export const FIX_BY = ["routine", "maintainer"];
@@ -207,16 +208,19 @@ export function fixStateOf(itemId, { claims, actions, records, snapshot, repo, d
 }
 
 /**
- * The stage of the review rounds on a fix PR, from its drive file: `{ reviewer, round, maxRounds }`, or null
- * when no review bot round runs. `round` counts the review requested last over the PR's whole life.
+ * The stage of the review rounds on a fix PR, from its drive file: `{ reviewers, round, maxRounds }`, or null
+ * when no review bot round runs. `reviewers` names the bots of the round, like ["Copilot", "octobot"]. `round` counts
+ * the review requested last over the PR's whole life.
  * A drive file in the stage "watch" only waits for the maintainer's feedback, so it has no stage.
  */
 export function reviewStage(drive) {
 	if (!drive || drive.by !== "fix") return null;
 	if (drive.stage === "watch" || (drive.stage === undefined && typeof drive.reviewRequestedAt !== "string")) return null;
 	const maxRounds = Number.isInteger(drive.maxRounds) ? drive.maxRounds : FIX_REVIEW_DEFAULTS.maxRounds;
-	const requested = Number.isInteger(drive.copilotRounds) ? drive.copilotRounds : (Array.isArray(drive.rounds) ? drive.rounds.length : 0) + 1;
-	return { reviewer: drive.reviewBot ?? "copilot", round: Math.min(requested, maxRounds), maxRounds };
+	const counts = Object.values(drive.botRounds ?? {}).map((r) => r?.rounds).filter(Number.isInteger);
+	const requested = counts.length ? Math.max(...counts) : Number.isInteger(drive.copilotRounds) ? drive.copilotRounds : (Array.isArray(drive.rounds) ? drive.rounds.length : 0) + 1;
+	const bots = roundBots(drive);
+	return { reviewers: (bots.length ? bots : [{ key: COPILOT, trigger: COPILOT }]).map(botName), round: Math.min(requested, maxRounds), maxRounds };
 }
 
 /**

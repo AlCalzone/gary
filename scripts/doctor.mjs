@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { ROOT, TAB_ICON_MAX_BYTES, tabIconFile, autoReviewOf, escalationOf, expandHome, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
+import { activeReviewBots, profileReviewBots, reviewTriggerComments } from "./lib/review-bots.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { canReadProjects, readLogin, readRepoPermissions, storedScopes } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
@@ -166,13 +167,23 @@ async function checkInstance() {
 			return ["ok", `worker ${models.worker}, review ${models.review}, standard ${models.standard}, fast ${models.fast}, ${retry}. master ${models.master}, not checked: the host sets the master session's model`];
 		});
 		add("fix limit", "ok", config.maxPendingAutoFixes === 0 ? "maxPendingAutoFixes is 0, the routine starts no fix on its own" : `at most ${config.maxPendingAutoFixes} automatic fix PRs pending at a time, ${config.maxAutoFixesPerRun} new per run`);
+		await attempt("review bots", async () => {
+			const { bots, missing, source } = activeReviewBots(config, loadProfile());
+			const all = profileReviewBots(loadProfile());
+			const how = (b) => (b.trigger === "comment" ? `${b.key} by the comment "${b.comment}"` : b.trigger === "request" ? `${b.key} by a review request` : "copilot by a review request");
+			const notListed = missing.length ? `. review.github names ${missing.join(", ")}, which the profile's reviewBots does not list` : "";
+			if (!bots.length) return [missing.length ? "warn" : "ok", `${all.length ? "review.github in config.json skips the profile's review bots" : "the profile lists no review bot"}. A push to a watched PR gets no review bot round${notListed}`];
+			return [missing.length ? "warn" : "ok", `after a push to a watched PR Gary asks ${bots.map(how).join(", ")}${source === "config" ? ", as review.github picks" : ""}${notListed}`];
+		});
 		await attempt("fix review", async () => {
 			const fr = fixReviewOf(config, loadProfile());
 			// A warning only when config.json asks for the rounds and they cannot run
-			const asked = config.fixReview !== undefined && config.fixReview.reviewer !== "off";
+			const asked = config.fixReview !== undefined && config.fixReview.reviewer !== "off" && config.fixReview.maxRounds !== 0;
 			if (fr.noReviewBot) return ["ok", `no rounds: ${fr.reason}. A fix PR ${fr.markReady ? "is marked ready and " : ""}goes to your board right after it opens`];
-			if (fr.reviewer === "off") return [asked ? "warn" : "ok", `off${fr.reason ? `: ${fr.reason}` : ""}. A fix PR stays a draft until you look at it`];
-			return ["ok", `a fix PR gets up to ${fr.maxRounds} ${fr.reviewer} review round${fr.maxRounds === 1 ? "" : "s"}, requested as ${fr.requestAs === "bot" ? "the bot" : "you"}${fr.markReady ? ", then it is marked ready" : ", and stays a draft"}`];
+			if (!fr.on) return [asked ? "warn" : "ok", `off${fr.reason ? `: ${fr.reason}` : ""}. A fix PR stays a draft until you look at it`];
+			const names = fr.bots.map((b) => b.key);
+			const who = names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+			return ["ok", `a fix PR gets up to ${fr.maxRounds} ${who} review round${fr.maxRounds === 1 ? "" : "s"}, requested as ${fr.requestAs === "bot" ? "the bot" : "you"}${fr.markReady ? ", then it is marked ready" : ", and stays a draft"}`];
 		});
 		await attempt("auto review", async () => {
 			const ar = autoReviewOf(config, loadProfile());
@@ -190,7 +201,8 @@ async function checkInstance() {
 			if (config.escalateAs !== "me") return ["ok", command ? "prefill: the board copies the escalate command and you post it on GitHub" : "the profile has no escalate command"];
 			// A warning only when config.json asks for the post and it cannot run
 			if (!command) return ["warn", 'escalateAs is "me", but the profile has no botCommands.escalate, so the board has nothing to post'];
-			return ["ok", `me: a click on the escalate button posts "${command}" on the discussion under your own gh login. Nothing else posts a bot command`];
+			const triggers = reviewTriggerComments(loadProfile()).length;
+			return ["ok", `me: a click on the escalate button posts "${command}" on the discussion under your own gh login. ${triggers ? "Besides the trigger comments of the review bots, nothing" : "Nothing"} else posts a bot command`];
 		});
 		await attempt("escalate link", async () => {
 			const link = escalationOf(config, loadProfile());

@@ -4,6 +4,7 @@ import { basename } from "node:path";
 import { ciOf } from "./ci.mjs";
 import { AUTOMATED_TEXT_LIMIT, PROFILE_DEFAULTS } from "./config.mjs";
 import { endsInQuestion, mentions } from "./text.mjs";
+import { isBotAuthor, normalizeBot } from "./review-bots.mjs";
 
 export const MAX_TIMELINE = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -141,7 +142,8 @@ const FEEDBACK_KINDS = new Set(["comment", "reply", "review", "thread_comment"])
  * review by `me`. `lastMeKind` is "review" for a review and "comment" for the others.
  * `lastOthersAt` is the newest one by a person who is neither `me` nor `bot`, co-maintainers included.
  * `ourLastCommitAt` is the commit time of the newest commit in `commits` that `writeLogin` authored or committed.
- * `reviewBotReviews` counts the reviews by an account whose login starts with one of `reviewBots`.
+ * `reviewBotReviews` counts the reviews of the review bot in `reviewBots` with the most reviews, so it counts the rounds
+ * of a PR where every round asks every bot. `reviewBots` holds normalized bots or profile entries.
  */
 export function feedbackFacts(timeline, commits, { me, bot, writeLogin, reviewBots = [] }) {
 	const low = (v) => String(v ?? "").toLowerCase();
@@ -155,8 +157,8 @@ export function feedbackFacts(timeline, commits, { me, bot, writeLogin, reviewBo
 		.filter((c) => c?.committedDate && writeLogin && [c.author?.user?.login, c.committer?.user?.login].some((l) => low(l) === low(writeLogin)))
 		.map((c) => c.committedDate)
 		.sort((a, b) => Date.parse(a) - Date.parse(b));
-	const bots = reviewBots.map(low).filter(Boolean);
-	const reviewBotReviews = timeline.filter((e) => e.kind === "review" && bots.some((b) => low(e.author).startsWith(b))).length;
+	const bots = reviewBots.map((b) => (typeof b === "string" ? normalizeBot(b) : b)).filter(Boolean);
+	const reviewBotReviews = Math.max(0, ...bots.map((b) => timeline.filter((e) => e.kind === "review" && isBotAuthor(b, e.author)).length));
 	return {
 		...(lastMeAt && { lastMeAt, lastMeKind: lastMe.kind === "review" ? "review" : "comment" }),
 		...(lastOthersAt && { lastOthersAt }),

@@ -8,6 +8,7 @@ import { allowedRepo, instanceName, loadInstance, repoParts, withInstance } from
 import { PAUSED_MESSAGE, isPaused } from "./control.mjs";
 import { GRAPHQL_ARGS, assertWriteAllowed, graphql, writeLogin } from "./gh.mjs";
 import { API_EDIT_VIA, isObject } from "./routes.mjs";
+import { botCommandTexts } from "./review-bots.mjs";
 
 /** The caps of one API edit. `lines` counts, per edit, the larger of the replaced and the new line count. */
 export const API_EDIT_LIMITS = { edits: 5, files: 3, lines: 40, chars: 4000, path: 300, message: 72, note: 2000 };
@@ -24,7 +25,6 @@ const SYMLINK_MODE = 0o120000;
 const SHA = /^[0-9a-f]{40}$/;
 
 const lineCount = (text) => text.split("\n").length;
-const botCommandsOf = (profile) => Object.values(profile?.botCommands ?? {}).map((c) => String(c).trim().toLowerCase()).filter(Boolean);
 
 /** Why the API edit may not touch `path`, or null. `.github/` is refused whatever the profile lists. */
 export function editPathProblem(path, sensitivePaths = []) {
@@ -70,7 +70,7 @@ export function apiEditProblems(params, profile) {
 	const problems = [];
 	for (const key of Object.keys(params)) if (!PARAM_KEYS.includes(key)) problems.push(`unknown param "${key}"`);
 	if (params.mode !== undefined && params.mode !== "push") problems.push('an API edit commits to the PR branch, so params.mode is "push" or absent');
-	const commands = botCommandsOf(profile);
+	const commands = botCommandTexts(profile);
 	const messageProblem = commitMessageProblem(params.message, commands, profile?.commitFormat ?? null);
 	if (messageProblem) problems.push(messageProblem);
 	const edits = params.edits;
@@ -264,7 +264,7 @@ export async function runApiEdit({ instance, ...request } = {}) {
 		const paths = [...new Set(params.edits.map((e) => e.path))];
 		const template = await commentTemplate(settings.profileDir);
 		const comment = (commitUrl) => commentText(template, { commitUrl, paths, note: text });
-		const command = botCommandsOf(settings.profile).find((c) => comment("").toLowerCase().includes(c));
+		const command = botCommandTexts(settings.profile).find((c) => comment("").toLowerCase().includes(c));
 		if (command) throw new ApiEditRefusal(`The comment would contain the bot command "${command}". Post bot commands on GitHub yourself.`);
 		assertWriteAllowed();
 
