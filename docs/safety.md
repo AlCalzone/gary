@@ -28,11 +28,11 @@ While a fix is in progress, the item says so and offers no second fix.
 
 On Gary's own fix PRs, and only there, three more things happen:
 
-1. Gary requests a review from the review bot.
-2. It pushes the fixes for the bot's comments to the fix branch, for up to 3 rounds.
+1. Gary asks the review bots for a review.
+2. It pushes the fixes for the bots' comments to the fix branch, for up to 3 rounds.
 3. It marks the PR ready for review.
 
-Without a review bot in the profile, steps 1 and 2 are skipped. After the rounds the fix PR shows up as its own card for your review. `fixReview` in the instance's `config.json` sets the reviewer, the rounds and the account.
+Without a review bot, steps 1 and 2 are skipped. After the rounds the fix PR shows up as its own card for your review. `fixReview` in the instance's `config.json` sets the rounds and the account, and `review.github` picks the bots.
 
 When you turn a discussion with such a PR into an issue, the bot adds one line `fixes #<issue>` to the PR's description. This needs a bot and `escalateResult` in the profile.
 
@@ -60,10 +60,13 @@ The PR waits in the line "Reviewed automatically, waiting". It returns to your p
 
 With a bot, everything Gary writes goes out as the bot. Without one, you post yourself, or Gary uses your own login when you allowed it.
 
-Two things can run under your own login next to a bot:
+Three things can run under your own login next to a bot:
 
-- Requesting a Copilot review, unless `fixReview.requestAs` is `bot`.
+- Asking a review bot for its review, unless `fixReview.requestAs` is `bot` on a fix PR.
+- A review bot's trigger comment, like `@octobot2 review`, for a bot the profile lists with `"trigger": { "comment" }`. Gary posts exactly the profile's text and nothing else. It does so only where it asks the review bots after a push: the first round of a fix PR, the next round after a push, and the round after an API edit. An agent never writes it, and no `gary action` or MCP tool posts it.
 - The escalate command that turns a discussion into an issue, with `"escalateAs": "me"`. It is posted only after your click and a confirm. No agent can post it.
+
+The trigger comments and the profile's `botCommands` are bot commands. Gary checks every other text it posts for them and refuses it when it holds one: replies, reviews, commit messages, API edits, answers to findings and review drafts.
 
 ## Your GitHub inbox
 

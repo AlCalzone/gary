@@ -49,11 +49,11 @@ Fields of `profile.json`:
 | `name`, `repo` | The project's name and its `owner/name` |
 | `maintainers` | Logins that count as "us" |
 | `botLogins` | Bots whose posts count as automated |
-| `reviewBots` | Review bots Gary may request, today only `copilot`. Empty means no review bot rounds |
+| `reviewBots` | GitHub review bots Gary asks after a push, see below. Empty means no review bot rounds |
 | `relatedRepos` | Repos an item can be moved to |
 | `sensitivePaths` | Globs no agent may touch in someone else's PR, like `.github/**` |
 | `autoLabels` | Labels Gary may set without a click |
-| `botCommands` | Commands your bot understands, like `escalate` |
+| `botCommands` | Commands your bot understands, like `escalate`. No text Gary's agents write may contain one, or a review bot's trigger comment |
 | `escalateResult` | Pattern of the comment your bot posts after it turned a discussion into an issue |
 | `automatedComments` | Patterns of bot comments that are noise |
 | `aiAuthors` | Logins whose PRs count as AI-written |
@@ -102,6 +102,7 @@ With an empty `autofixCommands`, the default, there is no format check, no badge
 | `maxAutoFixesPerRun` | `2` | Fixes Gary starts on its own per run. `0` turns them off |
 | `maxPendingAutoFixes` | `10` | Open automatic fixes at a time |
 | `fixReview` | | Review rounds on Gary's own fix PRs, see below |
+| `review` | | Which of the profile's review bots this instance asks, see below |
 | `autoReview` | off | The one review without a click, see [safety.md](safety.md#the-automatic-first-review) |
 | `escalateAs` | `prefill` | `me` posts the escalate command under your login after your click |
 | `fastTier` | `off` | A faster model for obvious items, see below |
@@ -145,13 +146,41 @@ Gary suggests switching to `on` once both agree on at least 95 percent of 40 or 
 
 Both suggestions are cards on the board. Your click changes the setting. `gary shadow report --week` shows the numbers.
 
+### Review bots
+
+The profile's `reviewBots` lists the GitHub review bots, in three forms:
+
+```json
+{ "reviewBots": ["copilot", { "login": "octobot", "trigger": "request" }, { "login": "octobot2", "trigger": { "comment": "@octobot2 review" } }] }
+```
+
+- `"copilot"`: Gary requests a Copilot review.
+- `{ "login", "trigger": "request" }`: Gary requests the review of that account, like the "Reviewers" box on GitHub does.
+- `{ "login", "trigger": { "comment" } }`: Gary posts exactly that comment on the PR. The comment is one line of at most 200 characters. It counts as a bot command, so no text an agent writes may contain it.
+
+A bot's key is `copilot`, or its login in lower case. Each key may appear once. The login is written without `[bot]`. A review by `octobot` or `octobot[bot]` counts as that bot's.
+
+After every push to a PR Gary controls, Gary asks each bot once for the new head. A round is one push plus one ask of every bot, and a PR gets at most 3 rounds. Gary waits up to 30 minutes until every bot reviewed that head.
+
+`review.github` in the instance's `config.json` picks among the profile's bots:
+
+```json
+{ "review": { "github": "profile" } }
+```
+
+- `"profile"`, the default: all of them.
+- `[]`: none. Pushes get no review bot rounds.
+- A list of keys, like `["copilot"]`: only those. `gary doctor` warns about a key the profile does not list.
+
 ### Review rounds on fix PRs
 
 ```json
-{ "fixReview": { "reviewer": "copilot", "requestAs": "me", "maxRounds": 3, "markReady": true } }
+{ "fixReview": { "requestAs": "me", "maxRounds": 3, "markReady": true } }
 ```
 
-On its own fix PRs Gary requests a review from the review bot, pushes fixes for its comments, and marks the PR ready. `"reviewer": "off"` turns that off. Without a review bot in the profile's `reviewBots`, a fix PR skips the rounds: Gary marks it ready and puts it on your board right after it opens.
+On its own fix PRs Gary asks the review bots, pushes fixes for their comments, and marks the PR ready. `requestAs` is `me` or `bot`: the account that asks. `"maxRounds": 0` turns the rounds off, and the fix PR stays a draft until you look at it. A drive you click on another PR still asks the bots. Without a review bot, a fix PR skips the rounds: Gary marks it ready and puts it on your board right after it opens.
+
+An older config may still say `"reviewer": "copilot"` or `"reviewer": "off"`. Gary reads both as before. `gary migrate` drops `"copilot"` and turns `"off"` into `"maxRounds": 0`.
 
 ## Your contributions elsewhere
 
