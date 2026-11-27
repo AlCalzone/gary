@@ -23,7 +23,7 @@ export const SHA = /^[0-9a-f]{40}$/;
 export const ITEM_ID = /^[a-z0-9][a-z0-9._-]{0,99}$/;
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 
-// Limits on untrusted review text, so one reviewer cannot fill the record or the page
+// These limits keep one reviewer from filling the record or the page with untrusted text
 export const MAX_FINDINGS = 50;
 export const MAX_BODY = 4000;
 export const MAX_PLAIN = 8000;
@@ -90,7 +90,7 @@ function checkLocalReviewers(local, errors, unknown) {
 
 // ---------- the plan ----------
 
-// Programs that run a script. A CLI reviewer started through one is named after its script
+// `INTERPRETERS` lists programs that run a script. A CLI reviewer started through one is named after its script
 const INTERPRETERS = new Set(["node", "python", "python3", "sh", "bash", "zsh", "deno", "bun", "npx", "uvx", "ruby", "perl"]);
 
 /** The program a CLI reviewer is named after: `octo-review`, or `review.py` for `python3 review.py`. */

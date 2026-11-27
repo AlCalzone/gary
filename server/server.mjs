@@ -1079,7 +1079,7 @@ export async function startBoardServer({
 		holdTimers.set(name, t);
 	}
 
-	// The local review records of the items, as the dialog shows them
+	// Read the local review record of each item, in the form the dialog shows
 	async function readLocalReviews(name, items) {
 		const dir = localReviewDir(join(instanceDir(name), "state"));
 		let files;

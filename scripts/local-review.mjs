@@ -70,7 +70,7 @@ function secrets() {
 		try {
 			if (file && existsSync(file)) out.push(readFileSync(file, "utf8").trim());
 		} catch {
-			// A token Gary cannot read is no token a reviewer could see through Gary
+			// Skip a token file Gary cannot read
 		}
 	}
 	return out;
@@ -171,7 +171,7 @@ async function passCmd(itemId, out) {
 	review.passes.push(pass);
 	const agents = [];
 	const repo = (await readJson(join(boardDir(), "items", itemId + ".json")))?.repo ?? loadProfile().repo;
-	// One brief per reviewer, so each names its own findings file
+	// Write one brief per reviewer, so each names its own findings file
 	for (const r of p.reviewers.filter((x) => x.kind !== "cli")) {
 		const file = outFile(dir, r.key);
 		const brief = join(dir, `brief-${r.key.replace(/[^\w.-]/g, "_")}.md`);
@@ -236,7 +236,7 @@ async function collectCmd(itemId) {
 		try {
 			found = findingsOfJson(JSON.parse(text));
 		} catch {
-			// Not JSON at all
+			// The file holds no JSON
 		}
 		if (found) Object.assign(r, { status: "done", findings: found });
 		else Object.assign(r, { status: "failed", reason: "wrote no findings JSON", findings: [] });
