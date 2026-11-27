@@ -123,15 +123,8 @@ export function checkReviewBots(list, errors, unknown) {
 	});
 }
 
-/** Adds the problems of config.json's `review` to `errors` and `unknown`. The profile is checked against it elsewhere. */
-export function checkReviewConfig(review, errors, unknown) {
-	if (review === undefined) return;
-	if (!review || typeof review !== "object" || Array.isArray(review)) {
-		errors.push(`"review" must be { "github": "profile" | [<review bot>, …] }`);
-		return;
-	}
-	for (const key of Object.keys(review)) if (key !== "github") unknown.push(`unknown field "review.${key}"`);
-	const github = review.github;
+/** Adds the problems of config.json's `review.github` to `errors`. The profile is checked against it elsewhere. */
+export function checkGithubPick(github, errors) {
 	if (github === undefined || github === "profile") return;
 	const keys = Array.isArray(github) ? github : null;
 	const ok = keys && keys.every((k) => typeof k === "string" && (k === COPILOT || BOT_LOGIN.test(k)));

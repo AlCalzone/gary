@@ -5,7 +5,8 @@
 //   profile:  the project directory named by `profile` in config.json, holds profile.json, rules/ and templates/
 // The instance comes from --instance, then GARY_INSTANCE, then the working directory, then the only instance.
 import { readJsoncFile } from "./jsonc.mjs";
-import { activeReviewBots, checkReviewBots, checkReviewConfig, profileReviewBots, reviewTriggerComments } from "./review-bots.mjs";
+import { activeReviewBots, checkReviewBots, profileReviewBots, reviewTriggerComments } from "./review-bots.mjs";
+import { checkReviewConfig } from "./local-review.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
@@ -30,7 +31,7 @@ export const CONTRIBUTIONS_DEFAULTS = { title: "Contributions", include: [], exc
 export const REVIEW_DRAFT_DEFAULTS = { maxAutoReviewDraftsPerRun: 0, maxPendingAutoReviewDrafts: 5, reviewDraftMaxLines: 800 };
 export const REVIEW_DRAFT_COUNT_MAX = 50;
 export const REVIEW_DRAFT_MAX_LINES_MAX = 100000;
-export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", ...Object.keys(CONTRIBUTIONS_DEFAULTS), ...Object.keys(REVIEW_DRAFT_DEFAULTS)];
+export const CONTRIBUTIONS_FIELDS = ["kind", "me", "models", "tab", "review", ...Object.keys(CONTRIBUTIONS_DEFAULTS), ...Object.keys(REVIEW_DRAFT_DEFAULTS)];
 // How the instance's tab looks on the board: `{ icon, color, background, favorite }`. `background` also tints the page in that color, and a favorite comes before the other tabs
 export const TAB_ICONS = ["zap", "home", "star", "globe", "heart", "user", "shield", "bot", "sparkles", "wrench", "lightbulb", "plug", "eye", "pr", "issue", "discussion", "commit", "comments"];
 export const TAB_COLORS = ["orange", "blue", "green", "purple", "rose", "gray"];
@@ -486,13 +487,13 @@ export function checkConfig(data) {
 			check(errors, ar.maxPerRun === undefined || isInt(ar.maxPerRun, 0, 50), `"autoReview.maxPerRun" must be a whole number from 0 to 50`);
 		}
 	}
-	checkReviewConfig(data.review, errors, unknown);
+	checkReviewConfig(data.review, "maintainer", errors, unknown);
 	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };
 }
 
 // Fields of a maintainer instance that mean nothing without a profile, a bot or a checkout
-const MAINTAINER_ONLY = ["profile", "checkout", "bot", "allowOwnTokenPushes", "maxFullReviewsPerRun", "maxAutoFixesPerRun", "maxPendingAutoFixes", "fixReview", "review", "fastTier", "escalateAs", "autoReview"];
+const MAINTAINER_ONLY = ["profile", "checkout", "bot", "allowOwnTokenPushes", "maxFullReviewsPerRun", "maxAutoFixesPerRun", "maxPendingAutoFixes", "fixReview", "fastTier", "escalateAs", "autoReview"];
 
 /** The problems in the config.json of a contributions instance, split like checkConfig. */
 function checkContributionsConfig(data) {
@@ -528,6 +529,7 @@ function checkContributionsConfig(data) {
 		`"checkoutRoots" must be a list of at most ${MAX_CHECKOUT_ROOTS} directories, each an absolute path or a path that starts with ~/`,
 	);
 	checkReviewDrafts(data, errors);
+	checkReviewConfig(data.review, "contributions", errors, unknown);
 	checkModels(data.models, "instance", errors, unknown);
 	return { errors, unknown };
 }
@@ -618,7 +620,11 @@ export function checkProfile(data) {
 	const errors = [];
 	const unknown = [];
 	const known = ["name", "repo", ...Object.keys(PROFILE_DEFAULTS)];
-	for (const key of Object.keys(data)) check(unknown, known.includes(key), `unknown field "${key}"`);
+	for (const key of Object.keys(data)) {
+		// The local reviewers run commands, so only the instance's own config.json may name them
+		if (key === "review") errors.push(`"review" belongs in the instance's config.json. A profile cannot name reviewers, because a local reviewer can run a command on your machine`);
+		else check(unknown, known.includes(key), `unknown field "${key}"`);
+	}
 	check(errors, typeof data.name === "string" && data.name.trim().length > 0 && data.name.length <= 60, `"name" must be the board title, at most 60 characters`);
 	check(errors, typeof data.repo === "string" && REPO.test(data.repo), `"repo" must look like "owner/name"`);
 	for (const key of ["maintainers", "botLogins"]) {
