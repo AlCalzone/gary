@@ -82,14 +82,14 @@ const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 const sameSha = (a, b) => typeof a === "string" && typeof b === "string" && a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a));
 
 /**
- * The state of each bot on a PR, from its fresh snapshot entry: `[{ key, name, reviewedAt, commit, onHead, openThreads }]`.
+ * The state of each bot on a PR, from its fresh snapshot entry: `[{ key, trigger, login, name, reviewedAt, commit, onHead, openThreads }]`.
  * `onHead` says that the bot's newest review is on the PR's head. `openThreads` counts its unresolved threads.
  */
 export function botStates(bots, entry) {
 	return bots.map((bot) => {
 		const last = (entry?.lastReviews ?? []).filter((r) => isBotAuthor(bot, r.author)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).at(-1);
 		const openThreads = (entry?.reviewSummary ?? []).filter((r) => isBotAuthor(bot, r.author)).reduce((n, r) => n + (Number.isInteger(r.openThreadCount) ? r.openThreadCount : 0), 0);
-		return { key: bot.key, name: botName(bot), reviewedAt: last?.at ?? null, commit: last?.commit ?? null, onHead: sameSha(last?.commit, entry?.headSha), openThreads };
+		return { ...driveBot(bot), name: botName(bot), reviewedAt: last?.at ?? null, commit: last?.commit ?? null, onHead: sameSha(last?.commit, entry?.headSha), openThreads };
 	});
 }
 
