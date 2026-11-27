@@ -1455,7 +1455,8 @@ export async function startBoardServer({
 		if (body.action === "prepare_review") return handlePrepareReview(name, body);
 		if (body.action === "pending_review") return handlePendingReview(name, body);
 		if (settings?.kind === "contributions" && body.action === "drive") return handleOwnDrive(name, body);
-		if (settings?.kind === "contributions" && body.action === "focus") return handleOwnFocus(name, body);
+		// Every thread of a contributions instance takes a focus. `gary focus brief` decides whether its session may push
+		if (settings?.kind === "contributions" && body.action === "focus") return handleFocus(name, body);
 		if (settings?.kind === "contributions" && !CONTRIBUTION_ACTIONS.has(body.action)) return READ_ONLY;
 		if (body.action === "got_it") return handleGotIt(name, body);
 		if (body.action === "focus") return handleFocus(name, body);
@@ -2274,13 +2275,6 @@ export async function startBoardServer({
 		const refusal = ownPrRefusal(item, entry, instance.config.me);
 		if (refusal) return { refused: [200, { ok: false, result: refusal, readOnly: true }] };
 		return { item, entry, instance };
-	}
-
-	// "Focus" on a contributions item: only the maintainer's own PR, because the session works on its branch
-	async function handleOwnFocus(name, body) {
-		const target = await ownPrTarget(name, body.itemId);
-		if (target.refused) return target.refused;
-		return handleFocus(name, body);
 	}
 
 	/**

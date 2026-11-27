@@ -93,7 +93,7 @@ You can open an item on GitHub and handle it there. When you return to the board
 
 ## Focus
 
-Focus works on one item 1 on 1 with an agent. The button sits in the footer of every item. On the contributions tab, only your own PRs have it.
+Focus works on one item 1 on 1 with an agent. The button sits in the footer of every item. On the contributions tab, the session of your own PR may push to it. On every other thread there, the session reads and discusses with you, and pushes nothing.
 
 1. The master session looks for a session that already works on the item, like the one with its PR branch checked out. Otherwise it starts a new one in a new worktree.
 2. The session reads Gary's analysis, posts a short summary and waits for you.

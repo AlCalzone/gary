@@ -180,9 +180,11 @@ Do not wait for the thread, and do not read it after the start.
 
 `gary focus start` exits 3 when another session holds the item.
 
-### Focus on your own PR in a contributions instance
+### Focus in a contributions instance
 
-A contributions instance (`kind: "contributions"`) takes a focus only on the maintainer's own PR that Gary may push to. `gary focus brief` exits 3 for every other item: run `gary focus fail` with its `result` as the reason. The brief of such a PR also has `headRepo`, `fresh`, `branchWorktree` and `worktree`. `checkout` is the clone the work uses. It may be a clone of the maintainer's own, and nobody may check out, edit, commit or stash in its working tree. The steps above change like this:
+The brief of a contributions instance (`kind: "contributions"`) carries `mode`. `own_pr` is the maintainer's own PR that Gary may push to. `discuss` is every other thread: an issue, a discussion or a PR of someone else. Its session reads and discusses, and pushes nothing.
+
+**`mode: "own_pr"`.** The brief also has `headRepo`, `fresh`, `branchWorktree` and `worktree`. `checkout` is the clone the work uses. It may be a clone of the maintainer's own, and nobody may check out, edit, commit or stash in its working tree. The steps above change like this:
 
 - **Match.** Next to the kinds above, a thread counts as `worktree` when its `worktreePath` is the brief's `branchWorktree`: a worktree of the maintainer's that has the PR's branch checked out. Attach with `--match worktree`. The `focus`, `pr`, `branch` and `origin` matches hold as above. Never start a session in `branchWorktree` or in `checkout` yourself.
 - **New thread.** Without a match:
@@ -190,7 +192,12 @@ A contributions instance (`kind: "contributions"`) takes a focus only on the mai
   2. Run `gary focus brief <itemId> --harness t3code --master <your thread id> --worktree <worktree>` again. Its `briefing` names that worktree and the push command.
   3. Find the T3 project whose path is the brief's `checkout`. When none holds it, create one with `t3_project_create`, `workspaceRoot` the `checkout` and `title` the repo. Never create a project for another path.
   4. Call `t3_thread_launch` as in step 4 above, with `workspaceStrategy` `{ "type": "existing_worktree", "worktreePath": "<worktree>" }` in place of a new worktree.
-  5. Run `gary focus start` as in step 4.3. Then run `gary focus fail` with its message as the reason.
+  5. Run `gary focus start` as in step 4.3. When a step fails, run `gary focus fail` with its message as the reason.
+
+**`mode: "discuss"`.** The brief also has `fresh` and `worktree`. `checkout` is the clone the session reads from, with the same rule: nobody may check out, edit, commit or stash in its working tree.
+
+- **Match.** Only `focus` counts: the session of the item's last focus record. Attach as in step 3.
+- **New thread.** Without a match, follow the "New thread" steps of `own_pr` with one change: step 1 runs `gary focus workdir <itemId> --request <id>`. It adds a new detached worktree under the instance's state directory, with the PR's head or the repo's default branch, and prints its path as `worktree`.
 
 ### The focus session reports done
 

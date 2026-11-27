@@ -190,6 +190,28 @@ export async function prepareWorktree({ instance, itemId, stateDir, roots, baseR
 	return { clone: clone.path, fresh: clone.fresh, worktree, ref, headSha: fetched };
 }
 
+/**
+ * Creates a new detached worktree for reading a thread of someone else and returns `{ clone, fresh, worktree, ref, headSha }`.
+ * It holds the head of PR `number`, or the default branch of `repo` for an issue or a discussion. It clones the repo
+ * fresh when `roots` hold no clone, and it never touches a working tree of the clone.
+ */
+export async function prepareReadWorktree({ instance, itemId, stateDir, roots, repo, kind, number }) {
+	const { clone } = await locate({ stateDir, roots, baseRepo: repo, headRepo: null, headRef: null });
+	const url = `https://github.com/${repo}.git`;
+	if (clone.fresh && !existsSync(join(clone.path, ".git"))) {
+		mkdirSync(freshClonesDir(stateDir), { recursive: true });
+		await git([...NO_HOOKS, ...GH_CREDENTIALS, "clone", "--no-checkout", url, clone.path]);
+	}
+	const ref = headRefFor(instance, itemId);
+	await git(["-C", clone.path, ...NO_HOOKS, ...GH_CREDENTIALS, "fetch", "--no-tags", url, `+${kind === "pr" ? `refs/pull/${number}/head` : "HEAD"}:${ref}`]);
+	const headSha = (await git(["-C", clone.path, "rev-parse", ref])).trim();
+	const worktree = join(worktreesDir(stateDir), safeName(itemId));
+	if (existsSync(worktree)) await removeWorktree({ clone: clone.path, worktree, stateDir });
+	mkdirSync(worktreesDir(stateDir), { recursive: true });
+	await git(["-C", clone.path, ...NO_HOOKS, "worktree", "add", "--detach", worktree, ref]);
+	return { clone: clone.path, fresh: clone.fresh, worktree, ref, headSha };
+}
+
 /** Removes one of Gary's worktrees. It refuses every path outside the state directory's worktree folder. */
 export async function removeWorktree({ clone, worktree, stateDir, ref = null }) {
 	if (!isInside(worktree, worktreesDir(stateDir))) throw new Error(`${worktree} is not one of Gary's worktrees. Gary removes nothing else.`);

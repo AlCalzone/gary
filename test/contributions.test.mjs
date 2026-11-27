@@ -249,7 +249,10 @@ for (const args of [["pr-watch", "list", "--json"], ["link-escalated"], ["pr-ori
 }
 check("gary focus list still answers", cli(["focus", "list", "--json"]).status === 0);
 r = cli(["focus", "brief", "other.lib.issue-4", "--harness", "t3code"]);
-check("gary focus brief refuses an item that is not your own PR", r.status === 3 && /only for your own PR/.test(JSON.parse(r.stdout).result), r.stdout + r.stderr);
+const discuss = JSON.parse(r.stdout);
+check("gary focus brief gives a thread of someone else a session that only reads and discusses", r.status === 0 && discuss.mode === "discuss" && /reads and discusses\. Commit nothing, push nothing and open no PR/.test(discuss.briefing) && /Gary posts nothing on GitHub/.test(discuss.briefing) && !/own-pr push|push-check/.test(discuss.briefing), r.stdout + r.stderr);
+r = cli(["focus", "workdir", "other.lib.issue-4", "--request", "no-such-request"]);
+check("gary focus workdir needs a queued focus request of the item", r.status === 3 && /no queued focus request/.test(JSON.parse(r.stdout).result), r.stdout + r.stderr);
 const gh = await import("../scripts/lib/gh.mjs");
 const config = await import("../scripts/lib/config.mjs");
 process.env.GARY_HOME = root;
@@ -321,7 +324,7 @@ try {
 	const clickR = (id, route) => api("/api/action", { instance: "mine", itemId: id, routeId: route, draftHash: hash(id, route) });
 	const readOnly = (res) => res.status === 200 && res.data.ok === false && res.data.readOnly === true;
 	for (const route of ["r1", "r2", "r3"]) check(`route ${route} is refused, nothing goes to GitHub`, readOnly(await clickR("other.lib.pr-5", route)));
-	check("Focus is refused on a PR that is not yours", readOnly(await api("/api/action", { instance: "mine", action: "focus", itemId: "other.lib.pr-5" })));
+	check("Focus on a thread is no route click and queues its request", (await api("/api/action", { instance: "mine", action: "focus", itemId: "other.lib.issue-4" })).data.queued === true);
 	check("a reconcile request is refused", readOnly(await api("/api/action", { instance: "mine", action: "request_reconcile" })));
 	check("a label button is refused", readOnly(await api("/api/action", { instance: "mine", itemId: "other.lib.pr-5", routeId: "r1", input: { part: "label" } })));
 	const db = await api("/api/db", { instance: "mine", op: "set", path: "actions/other.lib.pr-5-1", data: { itemId: "other.lib.pr-5", action: "start_fix", status: "queued", createdAt: new Date().toISOString() } });

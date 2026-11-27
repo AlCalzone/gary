@@ -5547,7 +5547,12 @@ function updateFooter(d, locked) {
   // While the item is in focus, the session has it: no Analyze again, and no second focus
   const f = focusOf(d);
   // A contributions item gets a focus only on the maintainer's own PR that Gary may push to, because the session works on its branch
-  zc.focus.hidden = (!!f && f.status !== "failed") || (isContributionsItem(d) && !(d.ownPr && d.ownPr.eligible === true));
+  zc.focus.hidden = !!f && f.status !== "failed";
+  const focusTip = isContributionsItem(d) && !(d.ownPr && d.ownPr.eligible === true)
+    ? "Discuss this thread 1 on 1 in its own agent session. The session reads and drafts, and pushes nothing. Gary holds the item until you are done."
+    : "Work on this item 1 on 1 in its own agent session. Gary holds the item until you are done.";
+  zc.focus.title = focusTip;
+  zc.focus.setAttribute("data-tip", focusTip);
   zc.analyze.hidden = focusHeld(d);
   if (zc.analyze.hidden) detail.analyze.hidden = true;
   // A sent instruction clears its draft, so the note empties as well

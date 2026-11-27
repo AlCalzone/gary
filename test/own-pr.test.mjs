@@ -219,7 +219,17 @@ check("focus brief on the own PR names the clone and the worktree with its branc
 r = cli(["focus", "brief", "other.lib.pr-5", "--harness", "t3code", "--master", "m1", "--worktree", "/tmp/w"]);
 check("the briefing names Gary's worktree and the push command", /own-pr push other\.lib\.pr-5 --worktree \/tmp\/w/.test(json(r).briefing) && /Never check out, edit, commit or stash in any other checkout/.test(json(r).briefing) && !/push-check/.test(json(r).briefing), json(r).briefing);
 r = cli(["focus", "brief", "other.lib.pr-6", "--harness", "t3code"]);
-check("focus brief refuses a PR of someone else", r.status === 3, json(r));
+check("focus brief gives a PR of someone else a session that only reads", r.status === 0 && json(r).mode === "discuss" && json(r).checkout === CLONE && /Commit nothing, push nothing and open no PR/.test(json(r).briefing) && !/own-pr push/.test(json(r).briefing), json(r));
+check("the own PR's brief names its mode", brief.mode === "own_pr");
+check("focus workdir refuses the own PR", cli(["focus", "workdir", "other.lib.pr-5", "--request", "drive-1"]).status === 3);
+git(seed, "push", "-q", "https://github.com/other/lib.git", `${B}:refs/pull/6/head`);
+action("focus-6", { itemId: "other.lib.pr-6", action: "focus", params: {} });
+const beforeRead = JSON.stringify(cloneState());
+r = cli(["focus", "workdir", "other.lib.pr-6", "--request", "focus-6"]);
+check("focus workdir adds a detached worktree of the PR's head for reading", r.status === 0 && json(r).worktree === join(STATE, "own-pr", "worktrees", "other.lib.pr-6") && git(json(r).worktree, "rev-parse", "HEAD") === B && JSON.stringify(cloneState()) === beforeRead, json(r));
+r = cli(["focus", "brief", "other.lib.pr-6", "--harness", "t3code", "--worktree", json(r).worktree]);
+check("the discuss briefing names Gary's worktree", json(r).briefing.includes(join(STATE, "own-pr", "worktrees", "other.lib.pr-6")) && /Do not run code from it/.test(json(r).briefing), json(r).briefing);
+action("focus-6", { itemId: "other.lib.pr-6", action: "focus", params: {}, status: "done" });
 
 // ---------- the server ----------
 
@@ -249,7 +259,7 @@ try {
 	res = await click("other.lib.pr-5");
 	check("the same Drive does not queue twice", res.status === 409 && res.data.duplicate === true, res.data);
 	res = await api("/api/action", { instance: "mine", action: "focus", itemId: "other.lib.pr-6" });
-	check("Focus on someone else's PR is refused", res.data.ok === false && res.data.readOnly === true, res.data);
+	check("Focus on someone else's PR queues a focus request too", res.data.ok === true && queued().some((a) => a.action === "focus" && a.itemId === "other.lib.pr-6"), res.data);
 	res = await api("/api/action", { instance: "mine", action: "focus", itemId: "other.lib.pr-5" });
 	check("Focus on the own PR queues a focus request", res.data.ok === true && queued().some((a) => a.action === "focus" && a.itemId === "other.lib.pr-5"), res.data);
 } finally {

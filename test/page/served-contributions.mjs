@@ -91,7 +91,7 @@ try {
 	await ev(`window.open = () => null; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => {} } }); openDetail("mine/other.lib.pr-5");`);
 	await until(`document.getElementById("detail").open`);
 	ok("the dialog's top bar shows the full ref", await until(`document.querySelector("#d-ref .ref")?.textContent === "other/lib#5"`));
-	ok("no Focus button on a PR that is not yours", await ev(`return document.querySelector('#d-foot [aria-label="Focus"]').hidden === true;`));
+	ok("a PR that is not yours has Focus, and its tip says the session pushes nothing", await ev(`const b = document.querySelector('#d-foot [aria-label="Focus"]'); return b.hidden === false && /pushes nothing/.test(b.title);`));
 	ok("the review card copies the text and opens GitHub, nothing posts as a bot", await ev(`const b = [...document.querySelectorAll("#d-routes .card.open .card-actions button")].map((x) => x.textContent); return b.some((t) => /open GitHub/.test(t)) && !b.some((t) => /^Confirm|Request changes$|^Approve$|Start fix|Take over|Merge/.test(t));`));
 	ok("no label, merge or agent control in the dialog", await ev(`return !document.querySelector("#d-routes .intent-agent, #d-routes .label-btn, #d-routes [data-focus-key*='label']") && !document.querySelector(".fyi-ack");`));
 	ok("Analyze again stays", await ev(`return document.querySelector('#d-foot [aria-label="Analyze again"]').hidden === false;`));
@@ -110,7 +110,7 @@ try {
 	await ev(`openDetail("mine/other.lib.issue-4");`);
 	ok("your own item says You, never Maintainer", await until(`/You/.test(document.getElementById("d-meta").textContent) && !/Maintainer/.test(document.getElementById("d-meta").textContent)`));
 	await until(`document.getElementById("detail").open`);
-	ok("an FYI dialog has one Got it button and no Focus", await until(`document.querySelectorAll(".fyi-ack button").length === 1 && document.querySelector(".fyi-ack button").textContent === "Got it" && document.querySelector('#d-foot [aria-label="Focus"]').hidden`));
+	ok("an FYI dialog has one Got it button and Focus", await until(`document.querySelectorAll(".fyi-ack button").length === 1 && document.querySelector(".fyi-ack button").textContent === "Got it" && !document.querySelector('#d-foot [aria-label="Focus"]').hidden`));
 	await ev(`document.querySelector(".fyi-ack button").click();`);
 	ok("Got it closes the dialog and hides the row", await until(`!document.getElementById("detail").open && !${rowOf("other.lib.issue-4")}`));
 	const stored = () => JSON.parse(readFileSync(join(MINE, "state", "board", "items", "other.lib.issue-4.json"), "utf8"));
