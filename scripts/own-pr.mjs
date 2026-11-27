@@ -8,7 +8,7 @@
 //     The request is a Drive or a Focus request. Adds a new detached worktree of the PR's head under the state directory. Exit 3 when refused.
 //   gary own-pr push <itemId> --worktree <dir> --sha <head it started from> (--request <action id> | --focus-session <id>) [--dry-run]
 //     Pushes the new commits of the worktree to the PR's head branch, never with force. Exit 3 when refused, 4 while paused.
-//     With local reviewers on the instance, HEAD needs a finished local review that starts from --sha.
+//     With local reviewers on the instance, the HEAD of a Drive job needs a finished local review that starts from --sha.
 //   gary own-pr cleanup <itemId> --worktree <dir>
 //     Removes one of Gary's worktrees and its ref.
 import { join } from "node:path";
@@ -124,8 +124,11 @@ async function push(itemId, out) {
 	if (head === out.sha) throw new Refused("The worktree has no new commit. Nothing was pushed.");
 	if (!(await descendsFrom(out.worktree, out.sha))) throw new Refused(`The worktree's HEAD ${head} does not build on ${out.sha}. Gary never force-pushes.`);
 	const live = await liveCheck(item, me, out.sha);
-	const local = pushAllowed(localReviewOf(instance.config, instance.profile), await readRecord(stateDir(), itemId), { head, base: out.sha });
-	if (!local.ok) throw new Refused(local.reason);
+	// A focus session pushes what the maintainer told it to push, so the maintainer is its reviewer
+	if (out.focusSession === undefined) {
+		const local = pushAllowed(localReviewOf(instance.config, instance.profile), await readRecord(stateDir(), itemId), { head, base: out.sha });
+		if (!local.ok) throw new Refused(local.reason);
+	}
 	const args = pushArgs(out.worktree, live.headRepo, live.headRef);
 	const url = `https://github.com/${item.repo}/pull/${item.number}/commits/${head}`;
 	if (out.dryRun || process.env.GARY_DRY_RUN === "1") return { ok: true, dryRun: true, itemId, invocation: { command: ["git", ...args] }, sha: head, url };

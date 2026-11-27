@@ -44,7 +44,9 @@ export async function main(argv) {
 	const instance = loadInstance(instanceName());
 	const repo = opts.repo ?? instance.repos[0];
 	const plan = localReviewOf(instance.config, instance.profile);
-	const gate = opts.head !== undefined && plan.reviewers.length > 0;
+	// A focus session pushes what the maintainer told it to push, so the maintainer is its reviewer
+	const inFocus = opts.focusSession !== undefined && focusHold(`pr-${number}`)?.session?.id === opts.focusSession;
+	const gate = opts.head !== undefined && plan.reviewers.length > 0 && !inFocus;
 	const focus = focusHold(`pr-${number}`);
 	if (focus && focus.session?.id !== opts.focusSession) {
 		console.log(JSON.stringify({ ok: false, pr: number, repo, focus: { status: focus.status, session: focus.session }, refused: focusRefusal(`pr-${number}`, focus) }));

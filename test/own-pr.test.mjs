@@ -197,6 +197,10 @@ check("another stored gh login pushes nothing", r.status !== 0 && git(fork, "rev
 writeConfig({ review: undefined });
 r = pushCmd();
 check("with the default self review a push without a local review is refused", r.status === 3 && /has no local review/.test(json(r).refused) && git(fork, "rev-parse", "fix-sha") === B, json(r));
+cli(["focus", "start", "other.lib.pr-5", "--harness", "t3code", "--session", "s-focus"]);
+r = cli(["own-pr", "push", "other.lib.pr-5", "--worktree", wd.worktree, "--sha", B, "--focus-session", "s-focus", "--dry-run"]);
+check("the focus session that holds the PR pushes without a local review", r.status === 0 && json(r).dryRun === true, json(r));
+cli(["focus", "end", "other.lib.pr-5"]);
 const quiet = join(T, "quiet-review.mjs");
 writeFileSync(quiet, 'console.log(JSON.stringify({ findings: [] }));\n');
 writeConfig({ review: { local: [{ kind: "cli", argv: [process.execPath, quiet] }] } });
