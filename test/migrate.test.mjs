@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GARY, PROFILE, removeDir, runner, tempDir, testEnv } from "./lib.mjs";
+import { parseJsonc } from "../scripts/lib/jsonc.mjs";
 
 const t = runner("migrate");
 const T = tempDir();
@@ -51,6 +52,37 @@ writeFileSync(join(root, "config.json"), JSON.stringify({ port: 7999 }));
 writeFileSync(join(b, "config.json"), JSON.stringify({ ...cb, port: 7900 }));
 gary("migrate");
 t.check("an existing root port is kept", json(join(root, "config.json")).port === 7999 && !("port" in json(join(b, "config.json"))));
+
+// fixReview.reviewer goes: "copilot" is the default, "off" becomes maxRounds 0. Comments in a one-line fixReview stay
+const fixCopilot = `{
+	// the maintainer's note
+	"kind": "maintainer",
+	"profile": ${JSON.stringify(PROFILE)},
+	"me": "octocat",
+	"fixReview": { "reviewer": "copilot", "requestAs": "bot", "maxRounds": 2 },   // rounds of Gary's fix PRs
+	"escalateAs": "prefill"
+}
+`;
+writeFileSync(join(b, "config.json"), fixCopilot);
+writeFileSync(join(a, "config.json"), JSON.stringify({ ...ca, fixReview: { reviewer: "off", markReady: false } }, null, "\t"));
+r = gary("migrate");
+const fa = json(join(a, "config.json"));
+const fb = readFileSync(join(b, "config.json"), "utf8");
+t.check("migrate replaces reviewer off with maxRounds 0", r.status === 0 && JSON.stringify(fa.fixReview) === '{"markReady":false,"maxRounds":0}' && /gadgets: replaced fixReview.reviewer off with fixReview.maxRounds 0/.test(r.stdout), [fa, r.stdout]);
+t.check("migrate drops reviewer copilot and keeps the other fields", JSON.stringify(parseJsonc(fb).fixReview) === '{"requestAs":"bot","maxRounds":2}' && /widgets: removed fixReview.reviewer "copilot"/.test(r.stdout), [fb, r.stdout]);
+t.check("the comments of the config stay", fb.includes("// the maintainer's note") && fb.includes("// rounds of Gary's fix PRs") && fb.split("\n").length === fixCopilot.split("\n").length, fb);
+r = gary("migrate");
+t.check("a second migrate leaves fixReview alone", r.status === 0 && r.stdout.trim() === "Nothing to migrate." && readFileSync(join(b, "config.json"), "utf8") === fb && JSON.stringify(json(join(a, "config.json"))) === JSON.stringify(fa), r.stdout);
+r = gary("--instance", "widgets", "doctor");
+t.check("the migrated config has no unknown fixReview field", !/unknown field "fixReview/.test(r.stdout), r.stdout.slice(0, 2000));
+const multi = `{\n\t"kind": "maintainer",\n\t"profile": ${JSON.stringify(PROFILE)},\n\t"me": "octocat",\n\t"fixReview": {\n\t\t"reviewer": "off"\n\t}\n}\n`;
+writeFileSync(join(b, "config.json"), multi);
+gary("migrate");
+t.check("a fixReview over several lines is migrated too", JSON.stringify(json(join(b, "config.json")).fixReview) === '{"maxRounds":0}', readFileSync(join(b, "config.json"), "utf8"));
+const multiNote = `{\n\t// keep this note\n\t"kind": "maintainer",\n\t"profile": ${JSON.stringify(PROFILE)},\n\t"me": "octocat",\n\t"fixReview": {\n\t\t"reviewer": "copilot",\n\t\t"requestAs": "me", // who asks\n\t\t"maxRounds": 3\n\t}\n}\n`;
+writeFileSync(join(b, "config.json"), multiNote);
+gary("migrate");
+t.check("a fixReview over several lines keeps the file's comments", readFileSync(join(b, "config.json"), "utf8") === multiNote.replace('\t\t"reviewer": "copilot",\n', ""), readFileSync(join(b, "config.json"), "utf8"));
 
 // The layout from before instances is setup's job
 const flat = join(T, "flat");

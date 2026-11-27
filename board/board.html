@@ -787,6 +787,16 @@ button.card-head:hover .chev { color: var(--fg); }
 .rounds-list { margin-top: 8px !important; gap: 10px !important; }
 .round-n { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
 .rounds-list li li { line-height: 1.5; }
+/* The local review: what the reviewers found before the push and the agent's verdicts */
+.local-review { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; }
+.local-review ul, .local-review ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.lr-pass + .lr-pass { margin-top: 6px; }
+.lr-reviewer { margin-top: 4px; }
+.lr-who { font-weight: 600; }
+.lr-status { color: var(--muted); }
+.lr-finding { line-height: 1.5; overflow-wrap: anywhere; }
+.lr-body { white-space: pre-wrap; }
+.lr-older summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
 /* Action buttons take the color of their intent. The actor shows as an avatar or icon inside the button. */
 .intent-finish { --int: var(--act-finish); }
 .intent-close { --int: var(--act-close); }
@@ -1204,6 +1214,7 @@ textarea {
       <div class="reviews" id="d-reviews" hidden></div>
       <div class="d-sec" id="d-threads" hidden></div>
       <div class="d-sec rounds" id="d-rounds" hidden></div>
+      <div class="d-sec local-review" id="d-local" hidden></div>
     </div>
     <section class="ways" aria-label="Ways forward">
       <div class="callout strong sensitive-banner" id="d-sensitive" role="note" hidden></div>
@@ -2592,11 +2603,23 @@ function ciDot(ci) {
   return ["passing", "failing", "pending"].includes(ci) ? h("span", { class: "ci-dot ci-" + ci, role: "img", "aria-label": "CI " + ci, title: "CI " + ci }) : null;
 }
 
-// The review rounds a fix PR gets on its own, like "Copilot round 2 of 3"
+// "Copilot", "Copilot and octobot", "Copilot, octobot and octobot2"
+function andList(names) {
+  return names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+}
+
+// The review bots an instance asks after a push, from their keys, like "Copilot and octobot"
+function reviewBotNames(inst) {
+  const keys = Array.isArray(inst && inst.reviewBots) ? inst.reviewBots : [];
+  return andList(keys.map(str).filter(Boolean).map((k) => (k.toLowerCase() === "copilot" ? "Copilot" : k)));
+}
+
+// The review rounds a fix PR gets on its own, like "Copilot round 2 of 3" or "Copilot and octobot round 2 of 3"
 function fixStage(f) {
   const v = f && f.review && typeof f.review === "object" ? f.review : null;
   if (!v || !Number.isInteger(v.round) || !Number.isInteger(v.maxRounds)) return "";
-  const who = str(v.reviewer) || "review";
+  const names = Array.isArray(v.reviewers) ? v.reviewers.map(str).filter(Boolean) : str(v.reviewer) ? [str(v.reviewer)] : [];
+  const who = andList(names) || "review";
   return who.charAt(0).toUpperCase() + who.slice(1) + " round " + v.round + " of " + v.maxRounds;
 }
 
@@ -3227,6 +3250,7 @@ const detail = {
   // The review event the maintainer picked per route, when it differs from the agent's proposal
   events: new Map(),
   rounds: document.getElementById("d-rounds"),
+  localReview: document.getElementById("d-local"),
   analyze: document.getElementById("d-analyze"),
   foot: document.getElementById("d-foot"),
   threadsOpen: false,
@@ -3357,6 +3381,7 @@ function renderDetailInfo(d) {
   renderHold(d);
   renderFocus(detail.id, d);
   renderRounds(d);
+  renderLocalReview(d);
 
   const badges = reviewBadges(d);
   detail.reviews.replaceChildren(...badges);
@@ -4836,7 +4861,11 @@ function buildCardInputs(id, d, r, rec) {
     const max = Number.isInteger(p.maxRounds) && p.maxRounds >= 1 && p.maxRounds <= 3 ? p.maxRounds : 3;
     if (!rec.rounds) rec.rounds = max;
     const line = h("p", { class: "card-text" });
-    const say = () => line.replaceChildren("Address comments, push, request a Copilot review, up to " + rec.rounds + (rec.rounds === 1 ? " round." : " rounds."));
+    const inst = instOf(d);
+    const bots = reviewBotNames(inst);
+    const several = Array.isArray(inst.reviewBots) && inst.reviewBots.length > 1;
+    const ask = !bots ? "request a review" : several ? "request reviews from " + bots : "request a " + bots + " review";
+    const say = () => line.replaceChildren("Address comments, push, " + ask + ", up to " + rec.rounds + (rec.rounds === 1 ? " round." : " rounds."));
     say();
     out.push(line, h("span", { class: "seg-row" }, h("span", { class: "card-label" }, "Rounds"),
       segControl("Rounds", [[1, "1"], [2, "2"], [3, "3"]], rec.rounds, (v) => { rec.rounds = v; say(); })));
@@ -5423,6 +5452,50 @@ function renderRounds(d) {
     open.length ? h("div", { class: "rounds-open" }, h("span", { class: "card-label", text: "Still open after the agent's last round" }),
       h("ul", null, open.map((t) => h("li", null, richText(t))))) : null,
     details].filter(Boolean));
+}
+
+// What the local reviewers found before the agent pushed, and the agent's verdict on each finding.
+// Finding text is untrusted review output, so every string goes in as a text node.
+const LOCAL_VERDICT = { valid: ["v-valid", "valid, fixed"], optional: ["v-optional", "optional"], wrong: ["v-wrong", "wrong"] };
+function localReviewNode(r) {
+  const list = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : []);
+  const passes = list(r.passes);
+  const max = Number.isInteger(r.maxPasses) ? r.maxPasses : null;
+  return h("ol", { class: "lr-passes" }, passes.map((p) => h("li", { class: "lr-pass" },
+    h("span", { class: "round-n", text: "Pass " + (Number.isInteger(p.n) ? p.n : "?") + (max ? " of " + max : "") + (p.head ? " on " + str(p.head) : "") + (p.fixedIn ? ", fixed in " + str(p.fixedIn) : "") }),
+    h("ul", null, list(p.reviewers).map((x) => {
+      const findings = list(x.findings);
+      const status = x.status === "skipped" ? "skipped" : x.status === "failed" ? "failed" : x.status === "running" ? "running" : findings.length ? findings.length + (findings.length === 1 ? " finding" : " findings") : "no findings";
+      return h("li", { class: "lr-reviewer" },
+        h("span", { class: "lr-who", text: str(x.name) || str(x.key) }),
+        h("span", { class: "lr-status", text: " · " + status + (x.reason ? ": " + str(x.reason) : "") }),
+        findings.length ? h("ul", { class: "lr-findings" }, findings.map((f) => {
+          const [cls, words] = LOCAL_VERDICT[f.verdict] || ["v-unjudged", "not judged"];
+          const where = str(f.path) ? str(f.path) + (Number.isInteger(f.line) ? ":" + f.line : "") : "";
+          return h("li", { class: "lr-finding" },
+            h("span", { class: "vlabel " + cls, text: words }), " ",
+            where ? h("code", { class: "ic", text: where }) : null, where ? " " : null,
+            h("span", { class: "lr-body", text: str(f.body) }),
+            str(f.note) ? h("span", { class: "t-note", text: " · " + str(f.note) }) : null);
+        })) : null);
+    })))));
+}
+
+function renderLocalReview(d) {
+  const lr = d.localReview && typeof d.localReview === "object" ? d.localReview : null;
+  const reviews = lr && Array.isArray(lr.reviews) ? lr.reviews.filter((r) => r && typeof r === "object") : [];
+  detail.localReview.hidden = reviews.length === 0;
+  if (!reviews.length) {
+    detail.localReview.replaceChildren();
+    return;
+  }
+  const newest = reviews[reviews.length - 1];
+  const older = reviews.slice(0, -1).reverse();
+  detail.localReview.replaceChildren(...[
+    h("span", { class: "card-label", text: "Local review before the push. Nothing of it went to GitHub." }),
+    localReviewNode(newest),
+    older.length ? h("details", { class: "lr-older" }, h("summary", { text: older.length === 1 ? "1 earlier local review" : older.length + " earlier local reviews" }),
+      older.map((r) => localReviewNode(r))) : null].filter(Boolean));
 }
 
 function renderVisit(id, d) {

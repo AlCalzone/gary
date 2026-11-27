@@ -19,7 +19,8 @@ const STATE = join(HOME, "state");
 const BOARD = join(STATE, "board");
 for (const c of ["items", "actions"]) mkdirSync(join(BOARD, c), { recursive: true });
 const ROOTS = join(T, "repos");
-const writeConfig = (extra = {}) => writeFileSync(join(HOME, "config.json"), JSON.stringify({ kind: "contributions", me: ME, checkoutRoots: [ROOTS], ...extra }, null, "\t"));
+// The local review has its own suite. Here it is off, so the push runs as it did before it existed
+const writeConfig = (extra = {}) => writeFileSync(join(HOME, "config.json"), JSON.stringify({ kind: "contributions", me: ME, checkoutRoots: [ROOTS], review: { local: "off" }, ...extra }, null, "\t"));
 writeConfig();
 
 // ---------- git: two bare repos for GitHub, a clone of the maintainer's with a worktree on the PR's branch ----------
@@ -192,6 +193,20 @@ r = cli(["own-pr", "push", "other.lib.pr-5", "--worktree", USER_WT, "--sha", B, 
 check("a push from the maintainer's own worktree is refused", r.status === 3 && /not one of Gary's worktrees/.test(json(r).refused), json(r));
 r = pushCmd([], { FAKE_GH_LOGIN: "someone" });
 check("another stored gh login pushes nothing", r.status !== 0 && git(fork, "rev-parse", "fix-sha") === B, json(r));
+// The default local review of a contributions instance is the self review, and the push waits for it
+writeConfig({ review: undefined });
+r = pushCmd();
+check("with the default self review a push without a local review is refused", r.status === 3 && /has no local review/.test(json(r).refused) && git(fork, "rev-parse", "fix-sha") === B, json(r));
+cli(["focus", "start", "other.lib.pr-5", "--harness", "t3code", "--session", "s-focus"]);
+r = cli(["own-pr", "push", "other.lib.pr-5", "--worktree", wd.worktree, "--sha", B, "--focus-session", "s-focus", "--dry-run"]);
+check("the focus session that holds the PR pushes without a local review", r.status === 0 && json(r).dryRun === true, json(r));
+cli(["focus", "end", "other.lib.pr-5"]);
+const quiet = join(T, "quiet-review.mjs");
+writeFileSync(quiet, 'console.log(JSON.stringify({ findings: [] }));\n');
+writeConfig({ review: { local: [{ kind: "cli", argv: [process.execPath, quiet] }] } });
+r = cli(["local-review", "pass", "other.lib.pr-5", "--base", B, "--head", C, "--worktree", wd.worktree, "--job", "drive-1"]);
+check("a CLI reviewer runs on the own PR's commit and finds nothing", r.status === 0 && json(r).findings === 0 && json(r).cli[0].status === "done", json(r));
+check("gary own-pr push asks for the local review of its HEAD", cli(["local-review", "check", "other.lib.pr-5", "--head", C, "--base", B]).status === 0);
 r = pushCmd();
 check("the push puts the new commit on the PR's head branch", r.status === 0 && json(r).pushed === C && git(fork, "rev-parse", "fix-sha") === C && json(r).url === `https://github.com/other/lib/pull/5/commits/${C}`, json(r));
 check("the maintainer's clone and worktree are still untouched", JSON.stringify(cloneState()) === JSON.stringify(before), [before, cloneState()]);

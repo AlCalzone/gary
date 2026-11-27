@@ -6,9 +6,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { ROOT, TAB_ICON_MAX_BYTES, tabIconFile, autoReviewOf, escalationOf, expandHome, fixReviewOf, homePath, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerRepos, modelsOf, paths, profileDir, resolveInstance, rootConfig, rootDir, setInstance, settingsWarningsFor } from "./lib/config.mjs";
+import { activeReviewBots, profileReviewBots, reviewTriggerComments } from "./lib/review-bots.mjs";
 import { isPaused } from "./lib/control.mjs";
 import { canReadProjects, readLogin, readRepoPermissions, storedScopes } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
+import { localReviewOf } from "./lib/local-review.mjs";
+import { readHarness } from "./local-review.mjs";
 
 const run = promisify(execFile);
 const RULES = ["classification.md", "voice.md", "review.md", "issues.md"];
@@ -72,6 +75,42 @@ async function checkInstall(attempt) {
 		}
 	});
 
+}
+
+/** Whether a program name resolves on PATH, or as a path. */
+async function onPath(program) {
+	if (program.includes("/")) return existsSync(program);
+	try {
+		await run("sh", ["-c", 'command -v "$1"', "sh", program]);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * The check of the local review: who reads a job's commits before the push. A warning names an agent reviewer whose
+ * provider the workers cannot reach, by the master's record of its harness, and a CLI reviewer whose program is not on PATH.
+ */
+async function localReviewCheck(config, profile) {
+	const plan = localReviewOf(config, profile);
+	if (!plan.reviewers.length) {
+		const why = plan.source === "off" ? 'off: review.local is "off" in config.json. Pushes get no local review' : "none: the instance asks a GitHub review bot, so pushes get no local review. review.local in config.json adds local reviewers";
+		return ["ok", why];
+	}
+	const problems = [];
+	const harness = readHarness();
+	for (const r of plan.reviewers) {
+		if (r.kind === "agent") {
+			if (!harness) problems.push(`${r.name}: not known whether workers reach ${r.provider}. The master records its harness at its start`);
+			else if (!harness.providers.includes(r.provider)) problems.push(`${r.name}: workers run ${harness.workers === "headless" ? "as headless claude -p sessions" : harness.workers === "child" ? "as child sessions" : "in the master's session"} in ${harness.harness} and reach ${harness.providers.join(", ")}, not ${r.provider}. The reviewer is skipped with that reason`);
+		}
+		if (r.kind === "cli" && !(await onPath(r.argv[0]))) problems.push(`${r.name}: ${r.argv[0]} is not on PATH. The reviewer fails until it is`);
+	}
+	const names = plan.reviewers.map((r) => (r.kind === "cli" ? `${r.name} (${r.timeoutSec} s)` : r.name)).join(", ");
+	const from = plan.source === "default" ? ", the default without a GitHub review bot" : "";
+	const text = `before every push: ${names}${from}, up to ${plan.maxPasses} pass${plan.maxPasses === 1 ? "" : "es"}`;
+	return problems.length ? ["warn", `${text}. ${problems.join(". ")}`] : ["ok", text];
 }
 
 // A tab icon that names a file: the file must exist and stay under the size the server sends
@@ -166,13 +205,26 @@ async function checkInstance() {
 			return ["ok", `worker ${models.worker}, review ${models.review}, standard ${models.standard}, fast ${models.fast}, ${retry}. master ${models.master}, not checked: the host sets the master session's model`];
 		});
 		add("fix limit", "ok", config.maxPendingAutoFixes === 0 ? "maxPendingAutoFixes is 0, the routine starts no fix on its own" : `at most ${config.maxPendingAutoFixes} automatic fix PRs pending at a time, ${config.maxAutoFixesPerRun} new per run`);
+		await attempt("review bots", async () => {
+			const { bots, missing: notInProfile, unconfirmed, source } = activeReviewBots(config, loadProfile());
+			const missing = [...notInProfile, ...unconfirmed];
+			const all = profileReviewBots(loadProfile());
+			const how = (b) => (b.trigger === "comment" ? `${b.key} by the comment "${b.comment}"` : b.trigger === "request" ? `${b.key} by a review request` : "copilot by a review request");
+			const notListed = (notInProfile.length ? `. review.github names ${notInProfile.join(", ")}, which the profile's reviewBots does not list` : "")
+				+ (unconfirmed.length ? `. The profile lists ${unconfirmed.join(", ")} with a trigger comment. Gary posts that comment only when review.github in config.json names the bot, like "github": ${JSON.stringify(["copilot", ...unconfirmed].filter((k) => k !== "copilot" || bots.some((b) => b.key === "copilot")))}` : "");
+			if (!bots.length) return [missing.length ? "warn" : "ok", `${all.length ? "review.github in config.json skips the profile's review bots" : "the profile lists no review bot"}. A push to a watched PR gets no review bot round${notListed}`];
+			return [missing.length ? "warn" : "ok", `after a push to a watched PR Gary asks ${bots.map(how).join(", ")}${source === "config" ? ", as review.github picks" : ""}${notListed}`];
+		});
+		await attempt("local review", () => localReviewCheck(config, loadProfile()));
 		await attempt("fix review", async () => {
 			const fr = fixReviewOf(config, loadProfile());
 			// A warning only when config.json asks for the rounds and they cannot run
-			const asked = config.fixReview !== undefined && config.fixReview.reviewer !== "off";
+			const asked = config.fixReview !== undefined && config.fixReview.reviewer !== "off" && config.fixReview.maxRounds !== 0;
 			if (fr.noReviewBot) return ["ok", `no rounds: ${fr.reason}. A fix PR ${fr.markReady ? "is marked ready and " : ""}goes to your board right after it opens`];
-			if (fr.reviewer === "off") return [asked ? "warn" : "ok", `off${fr.reason ? `: ${fr.reason}` : ""}. A fix PR stays a draft until you look at it`];
-			return ["ok", `a fix PR gets up to ${fr.maxRounds} ${fr.reviewer} review round${fr.maxRounds === 1 ? "" : "s"}, requested as ${fr.requestAs === "bot" ? "the bot" : "you"}${fr.markReady ? ", then it is marked ready" : ", and stays a draft"}`];
+			if (!fr.on) return [asked ? "warn" : "ok", `off${fr.reason ? `: ${fr.reason}` : ""}. A fix PR stays a draft until you look at it`];
+			const names = fr.bots.map((b) => b.key);
+			const who = names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+			return ["ok", `a fix PR gets up to ${fr.maxRounds} ${who} review round${fr.maxRounds === 1 ? "" : "s"}, requested as ${fr.requestAs === "bot" ? "the bot" : "you"}${fr.markReady ? ", then it is marked ready" : ", and stays a draft"}`];
 		});
 		await attempt("auto review", async () => {
 			const ar = autoReviewOf(config, loadProfile());
@@ -190,7 +242,8 @@ async function checkInstance() {
 			if (config.escalateAs !== "me") return ["ok", command ? "prefill: the board copies the escalate command and you post it on GitHub" : "the profile has no escalate command"];
 			// A warning only when config.json asks for the post and it cannot run
 			if (!command) return ["warn", 'escalateAs is "me", but the profile has no botCommands.escalate, so the board has nothing to post'];
-			return ["ok", `me: a click on the escalate button posts "${command}" on the discussion under your own gh login. Nothing else posts a bot command`];
+			const triggers = reviewTriggerComments(loadProfile()).length;
+			return ["ok", `me: a click on the escalate button posts "${command}" on the discussion under your own gh login. ${triggers ? "Besides the trigger comments of the review bots, nothing" : "Nothing"} else posts a bot command`];
 		});
 		await attempt("escalate link", async () => {
 			const link = escalationOf(config, loadProfile());
@@ -263,6 +316,7 @@ async function checkContributions(config, attempt, add) {
 	});
 	add("caps", "ok", `at most ${config.maxItems} threads per snapshot, with activity in the last ${config.activeWindowDays} days. Your own open PRs and review requests count at any age. The snapshot says when the cap cuts`);
 	add("checkouts", ...checkoutRootsCheck(config.checkoutRoots ?? []));
+	await attempt("local review", () => localReviewCheck(config, null));
 	add("notifications", "ok", config.clearNotifications ? "Got it also marks the thread's notification as done in your GitHub inbox" : "off. Got it leaves your GitHub inbox alone. \"clearNotifications\": true in config.json turns it on");
 	await attempt("models", async () => {
 		const { models } = modelsOf(config);

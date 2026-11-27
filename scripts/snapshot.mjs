@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join, matchesGlob, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ID_PATTERN, boardDir, readJson as readDoc } from "./lib/board-store.mjs";
-import { allowedRepo, botLogins, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerLogins, maintainerRepos, repoParts, stateDir } from "./lib/config.mjs";
+import { allowedRepo, botLogins, reviewBotsOf, instanceName, instanceNames, isContributions, loadConfig, loadProfile, maintainerLogins, maintainerRepos, repoParts, stateDir } from "./lib/config.mjs";
 import { NODE_FIELDS, SEARCH_QUERY, contributionFacts, contributionId, contributionSearches, kindOfNode, mergeReminderDaysOf, repoCovered, scopeQualifiers } from "./lib/contributions.mjs";
 import { lastReview, maintainerJoinedAt, offerAnswer, reRequestedAt, readAutoReviews } from "./lib/auto-review.mjs";
 import { aiFacts, buildTimeline, draftWaiting, dueFacts, feedbackFacts, issueFacts, lastEventBy, oursAlone, prFacts, reviewRequestsFor, seriesOf, sizeFacts, speakerFacts } from "./lib/facts.mjs";
@@ -54,7 +54,7 @@ const TIMELINE_COMMENTS = `timelineComments: comments(last: ${TIMELINE_PAGE}) { 
 
 const REVIEW_STATE_FIELDS = `
 	pageInfo { hasNextPage endCursor }
-	nodes { author { login __typename } state submittedAt url }
+	nodes { author { login __typename } state submittedAt url commit { oid } }
 `;
 
 // The "Re-request review" button of a PR creates one of these
@@ -89,7 +89,7 @@ const PR_FIELDS = `
 				comments(last: 5) { ${COMMENT_FIELDS} }
 				${TIMELINE_COMMENTS}
 				${statusEvents(Object.keys(EVENT_TYPES))}
-				reviews(last: 10) { nodes { author { login __typename } state submittedAt url body } }
+				reviews(last: 10) { nodes { author { login __typename } state submittedAt url body commit { oid } } }
 				allReviews: reviews(first: 100) { ${REVIEW_STATE_FIELDS} }
 				reviewRequests(first: 20) {
 					nodes {
@@ -773,7 +773,7 @@ function factsContext() {
 		writeLogin: writeLogin(),
 		me: loadConfig().me,
 		bot: bot ?? null,
-		reviewBots: profile.reviewBots ?? [],
+		reviewBots: reviewBotsOf(loadConfig(), profile),
 		patterns: profile.automatedComments ?? [],
 		ai: { logins: [...profile.botLogins, ...(bot ? [bot] : [])], names: profile.aiAuthors ?? [], own: bot ?? null },
 	};
@@ -1038,6 +1038,18 @@ function summarizeReviews(reviews, openThreads) {
 	return [...byAuthor.values()];
 }
 
+// The newest review per reviewer with the commit it was made on. A review bot round counts only a review on the head it asked for
+function lastReviewsOf(reviews) {
+	const byAuthor = new Map();
+	for (const r of reviews) {
+		if (!r.submittedAt || r.state === "PENDING") continue;
+		const author = r.author?.login ?? "ghost";
+		const prev = byAuthor.get(author);
+		if (!prev || Date.parse(r.submittedAt) >= Date.parse(prev.at)) byAuthor.set(author, { author, at: r.submittedAt, ...(r.commit?.oid && { commit: r.commit.oid }) });
+	}
+	return [...byAuthor.values()];
+}
+
 function toRequestedReviewer({ requestedReviewer: r }) {
 	if (!r) return undefined;
 	if (r.__typename === "Team") return { login: r.slug, isBot: false, isTeam: true };
@@ -1085,6 +1097,7 @@ function toPr(n, classify, sensitivePaths) {
 	// An outdated thread that nobody resolved is still open on GitHub
 	const open = n.reviewThreads.nodes.filter((t) => !t.isResolved);
 	const summary = summarizeReviews(n.allReviews.nodes, open);
+	const lastReviews = lastReviewsOf(n.allReviews.nodes);
 	const requested = n.reviewRequests.nodes.map(toRequestedReviewer).filter(Boolean);
 	return {
 		...common("pr", `pr-${n.number}`, n, classify),
@@ -1104,6 +1117,7 @@ function toPr(n, classify, sensitivePaths) {
 		...sensitiveFiles(n.files.nodes, sensitivePaths),
 		...(reviews.length && { reviews }),
 		...(summary.length && { reviewSummary: summary }),
+		...(lastReviews.length && { lastReviews }),
 		...(requested.length && { requestedReviewers: requested }),
 		...(open.length && {
 			openThreadCount: open.length,

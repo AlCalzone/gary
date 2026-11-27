@@ -63,9 +63,9 @@ expect "doctor without config" 1 "There is no Gary instance" env GARY_HOME=$H/no
 expect "doctor --json" 0 '"name": "gh login"' env GARY_HOME=$H/bot node $B doctor --json
 
 # profile and config validation
-mkdir -p $H/badprofile-p; print '{"name":"x","repo":"not a repo","maintainers":["a b"],"reviewBots":["coderabbit"],"relatedRepos":["a/b"],"botCommands":{"x":""},"extra":1}' > $H/badprofile-p/profile.json
+mkdir -p $H/badprofile-p; print '{"name":"x","repo":"not a repo","maintainers":["a b"],"reviewBots":["octobot"],"relatedRepos":["a/b"],"botCommands":{"x":""},"extra":1}' > $H/badprofile-p/profile.json
 cp -r $H/nobot $H/badprofile; sed -i "s|\"profile\": \"[^\"]*\"|\"profile\": \"$H/badprofile-p\"|" $H/badprofile/instances/widgets/config.json
-for pat in '"repo" must look like' '"maintainers" must be' '"reviewBots" may only contain' '"relatedRepos" must be' '"botCommands" must map'; do
+for pat in '"repo" must look like' '"maintainers" must be' '"reviewBots[0]" must be "copilot"' '"relatedRepos" must be' '"botCommands" must map'; do
 	expect "profile validation: $pat" 2 "$pat" env GARY_HOME=$H/badprofile node $B snapshot
 done
 mkdir -p $H/badconfig/instances/widgets; print '{"profile":"x","me":"octocat","bot":{"login":"octocat"},"port":0,"typo":1,"escalateAs":"bot"}' > $H/badconfig/instances/widgets/config.json

@@ -161,7 +161,7 @@ o = action(maintainer(12));
 t.check("a pending request of someone else or of a team does not count", o.status === 0 && o.skipped === undefined && o.result?.invocations?.length === 1, o);
 writeFileSync(OVERRIDES, "{}");
 o = action(maintainer(12, { as: "bot" }));
-t.check("params.as is refused for the maintainer's review", o.status === 1 && /only for a Copilot review/.test(o.result), o);
+t.check("params.as is refused for the maintainer's review", o.status === 1 && /only for a review bot.s review/.test(o.result), o);
 o = action(JSON.stringify({ action: "request_review", kind: "pr", number: 12, params: { reviewer: "maintainer" }, text: "@octocat please look" }));
 t.check("the maintainer's review request posts no text", o.status === 1 && /does not post text/.test(o.result), o);
 o = action(maintainer(21));

@@ -2,7 +2,7 @@
 // A stand-in for the gh binary in tests. It answers the reads Gary makes from test/fixtures/github.mjs
 // and refuses every write, so no test can reach GitHub.
 //   FAKE_GH_WRITES         a file. With it the fake accepts the mutations of the fix review rounds, a Copilot
-//                          review request, marking a PR ready and a review request for the maintainer, a PR review, a
+//                          review request, a REST review request for a review bot, marking a PR ready and a review request for the maintainer, a PR review, a
 //                          discussion comment, the commit and the comment of an API edit, and the edit of a PR's body, and
 //                          appends one line per accepted write. A `writeError` in
 //                          FAKE_GH_OVERRIDES makes such a write fail with that message, and a `branchHead` there is the
@@ -71,6 +71,13 @@ if (args[1] !== "graphql") {
 	if (done && args[args.indexOf("--method") + 1] === "DELETE" && process.env.FAKE_GH_WRITES) {
 		appendFileSync(process.env.FAKE_GH_WRITES, JSON.stringify({ notificationDone: done[1] }) + "\n");
 		process.exit(0);
+	}
+	// A review request for a review bot through REST, like the profile's { login, trigger: "request" } bots get
+	const reviewers = /^repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/requested_reviewers$/.exec(args[1]);
+	if (reviewers && args[args.indexOf("--method") + 1] === "POST" && process.env.FAKE_GH_WRITES) {
+		const requested = args.filter((a, i) => args[i - 1] === "-f" && a.startsWith("reviewers[]=")).map((a) => a.slice("reviewers[]=".length));
+		appendFileSync(process.env.FAKE_GH_WRITES, JSON.stringify({ rest: "requested_reviewers", repo: reviewers[1], number: Number(reviewers[2]), reviewers: requested, as: process.env.GH_TOKEN ? (process.env.GH_TOKEN === gh.BOT_TOKEN ? gh.BOT : "someone-else") : (process.env.FAKE_GH_LOGIN ?? gh.ME) }) + "\n");
+		out({ number: Number(reviewers[2]) });
 	}
 	if (args.includes("-X") || args.includes("--method")) fail("fake gh refuses every write", undefined);
 	const inbox = /^repos\/([^/]+\/[^/]+)\/notifications\?/.exec(args[1]);

@@ -10,21 +10,27 @@
 //   gary pr-watch done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]
 //     Ends a round without a next review bot round. The PR goes back to waiting for the maintainer's feedback.
 //     With --request-maintainer the writing identity then requests the maintainer's review.
+//   gary pr-watch bots --pr <n>
+//     Reads the PR from GitHub and says per review bot whether its newest review is on the head and how many of its
+//     threads are open. `clean` is true when every bot's review is on the head and none of its threads is open.
+//     It checks the bots of the drive's round, or the instance's review bots when no round was asked. Any PR works.
 // Exit code 3 means a rule refused, 4 that the instance is paused.
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { boardDir, writeAtomic } from "./lib/board-store.mjs";
-import { instanceName, loadInstance } from "./lib/config.mjs";
+import { boardDir, readJson, writeAtomic } from "./lib/board-store.mjs";
+import { instanceName, loadInstance, reviewBotsOf } from "./lib/config.mjs";
 import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
-import { driveDir } from "./lib/fixes.mjs";
+import { driveDir, prItemId } from "./lib/fixes.mjs";
 import { focusHold, focusRefusal } from "./lib/focus.mjs";
 import { busyOrigin, readOrigins, shortDir } from "./lib/origins.mjs";
 import { writeLogin } from "./lib/gh.mjs";
-import { REVIEW_ROUND_CAP, Refused, WATCH_TRIGGERS, baseDrive, enterWatch, feedbackOf, marksFor, pushWork, requestMaintainerReview, requestReviewRound, reviewRoundCap, reviewRoundsUsed, seenMarks, stageOf, unhandledFeedback, watchContext, watchedPrs, writeDrive } from "./lib/watch.mjs";
+import { roundBots } from "./lib/review-bots.mjs";
+import { REVIEW_ROUND_CAP, Refused, WATCH_TRIGGERS, baseDrive, botStates, driveFile, enterWatch, feedbackOf, marksFor, pushWork, requestMaintainerReview, requestReviewRound, reviewRoundCap, reviewRoundsUsed, roundClean, seenMarks, stageOf, unhandledFeedback, watchContext, watchedPrs, writeDrive } from "./lib/watch.mjs";
+import { fetchItem } from "./snapshot.mjs";
 
-const USAGE = "Usage: gary pr-watch list [--json] | round --pr <n> --by me|others --at <ISO> [--run <run>] [--dry-run] | review --pr <n> --sha <head> [--action <id> | --after <id> --run <run>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run] | done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer]";
+const USAGE = "Usage: gary pr-watch list [--json] | round --pr <n> --by me|others --at <ISO> [--run <run>] [--dry-run] | review --pr <n> --sha <head> [--action <id> | --after <id> --run <run>] [--seen-me <ISO>] [--seen-others <ISO>] [--dry-run] | done --pr <n> --sha <head> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer] | bots --pr <n>";
 
 function options(argv, names) {
 	const out = {};
@@ -143,6 +149,20 @@ async function done(argv) {
 	return result;
 }
 
+async function bots(argv) {
+	const { out, rest } = options(argv, ["--pr"]);
+	if (rest.length || !out.pr) throw new Error(USAGE);
+	const number = prNumber(out.pr);
+	const instance = loadInstance(instanceName());
+	const drive = await readJson(driveFile(prItemId(number)));
+	const round = roundBots(drive);
+	const list = round.length ? round : reviewBotsOf(instance.config, instance.profile);
+	if (!list.length) return { ok: true, clean: true, head: null, bots: [], note: "The instance asks no review bot." };
+	const entry = await fetchItem("pr", number, instance.repos[0]);
+	const states = botStates(list, entry);
+	return { ok: true, clean: roundClean(states), head: entry.headSha, bots: states };
+}
+
 export async function main(argv) {
 	const [command, ...rest] = argv;
 	let outcome;
@@ -151,6 +171,7 @@ export async function main(argv) {
 		else if (command === "round") outcome = await round(rest);
 		else if (command === "review") outcome = await review(rest);
 		else if (command === "done") outcome = await done(rest);
+		else if (command === "bots") outcome = await bots(rest);
 		else throw new Error(USAGE);
 	} catch (e) {
 		outcome = { ok: false, ...(e instanceof Refused && { refused: true }), result: e.message };

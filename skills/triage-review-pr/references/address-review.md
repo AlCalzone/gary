@@ -14,7 +14,7 @@ This mode builds on the `address-review-comments` skill when it is installed. Re
 
 1. Check the preconditions in `push-to-pr.md`. When no decision is `fix`, the push checks are not needed, but the PR must be open.
 2. Fetch the threads with the `reviewThreads` query from the review skill, adding `comments(first:1){nodes{databaseId}}`. Map each `threadId` to its first comment's `databaseId`, which the reply endpoint needs. A thread that is already resolved or gone needs no reply.
-3. Fix every `fix` thread in the worktree, with its `note` as extra guidance. One commit for all of them, with a message like `fix: address review feedback` in the project's format. Push it.
+3. Fix every `fix` thread in the worktree, with its `note` as extra guidance. One commit for all of them, with a message like `fix: address review feedback` in the project's format. When your brief says `Local review: on.`, run the local review stage of `push-to-pr.md` first. Then push it.
 3a. When the item's `autofix.changes` is true, run `format-check.md` against the current head and apply its patch in the same commit as the fixes.
 4. Reply in every handled thread under the writing identity (`accounts.md`): `gh api repos/<owner>/<repo>/pulls/<n>/comments/<databaseId>/replies -f body='…'`. Keep replies to one or two sentences, in the style of `voice.md`, without "I":
    - fixed: `Fixed in <short sha>: <what changed>.`
@@ -23,7 +23,7 @@ This mode builds on the `address-review-comments` skill when it is installed. Re
 
 The board starts every thread on dismiss except the `valid` ones. A dismissed thread is the maintainer's decision, also when they only kept the default.
 5. Resolve each replied thread under the writing identity: `gh api graphql -f query='mutation($id: ID!){ resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' -f id=<threadId>`.
-5a. When you pushed and the profile lists a review bot, request its next review on a watched PR with `gary pr-watch review --after <your action id>`, as `push-to-pr.md`, "Review bot round after a push", describes. Without a push, request none.
+5a. When you pushed and the instance has review bots, request their next review on a watched PR with `gary pr-watch review --after <your action id>`, as `push-to-pr.md`, "Review bot round after a push", describes. Without a push, request none.
 6. Remove the worktree and return as described in `push-to-pr.md`. Handled threads leave `threads`. `result` is the commit URL, or the number of threads handled when nothing was pushed.
 
 A failure after the push still returns `status: "done"` with what happened in `state`, like `Pushed the fix. Replying to 1 of 3 threads failed: API error 502.` The push cannot be undone, so the item has to show the real state.

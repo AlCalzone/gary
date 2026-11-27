@@ -223,7 +223,7 @@ Per type:
     Never offer it on a discussion that is closed or already escalated, and never on a vague wish that names no concrete change.
     With `botCommands.escalate` the card copies the command for the maintainer to post. With `escalateAs: "me"` in the instance config it has a button that posts exactly the command under the maintainer's own login, after their click and a confirm. No agent and no `gary action` call can post it. Without the command the card copies nothing and opens the discussion.
   Reports for projects outside the org get a `close` with a redirect reply.
-- **`drive`**: the agent drives the PR on its own for up to `params.maxRounds` rounds (1 to 3, default 3): it judges and addresses the open review comments, pushes, requests a review from the profile's review bot and repeats. Leave `text` out.
+- **`drive`**: the agent drives the PR on its own for up to `params.maxRounds` rounds (1 to 3, default 3): it judges and addresses the open review comments, pushes, asks the instance's review bots for a review and repeats. Leave `text` out.
 
 **API edit** (the only push to a PR with `facts.touchesSensitive` and without `facts.sensitiveOurs`): on such a PR no agent may work in a checkout, so `address_review`, `drive`, `format` and the normal `take_over` and `revise` are never written, and the validator refuses them. A PR with `facts.sensitiveOurs: true` is ours alone and is the opposite case. It gets the normal routes of a PR we control. The validator refuses the API form there (the classification file, "Sensitive paths"). When everything we would fix ourselves is a text replacement, write the API form. The server commits it through the GitHub API after the maintainer's click, without a checkout and without an agent:
 

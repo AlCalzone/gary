@@ -1,7 +1,7 @@
 // The review rounds a fix PR of Gary gets without a click. They run as a drive with `by: "fix"`.
 //   gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run]
 //     Requests the first review and writes the waiting drive. The fix worker calls it right after `gary fix-record`.
-//     When the profile lists no review bot, it skips the rounds: it marks the PR ready, queues its full review and
+//     When the instance asks no review bot, it skips the rounds: it marks the PR ready, queues its full review and
 //     requests the maintainer's review, like a finish with `done`.
 //   gary fix-review finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer] [--dry-run]
 //     Ends a round: marks the PR ready after the first `done`, and queues the full review of the PR item.
@@ -19,10 +19,11 @@ import { PAUSED_MESSAGE, isPaused } from "./lib/control.mjs";
 import { focusHold, focusRefusal } from "./lib/focus.mjs";
 import { driveDir, fixRecordOf, prItemId, readFixRecords, recordFixReady } from "./lib/fixes.mjs";
 import { accountMode } from "./lib/gh.mjs";
-import { enterWatch, requestMaintainerReview, seenMarks } from "./lib/watch.mjs";
+import { askReviewBots, enterReview, enterWatch, requestMaintainerReview, seenMarks } from "./lib/watch.mjs";
 
 const USAGE = "Usage: gary fix-review start --pr <number> --sha <head sha> --run <run> [--dry-run] | finish --pr <number> --outcome done|stopped --reason <text> [--seen-me <ISO>] [--seen-others <ISO>] [--request-maintainer] [--dry-run]";
 const OUTCOMES = ["done", "stopped"];
+const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 const MAX_REASON = 500;
 
 function options(argv, names) {
@@ -59,7 +60,7 @@ async function start(argv) {
 	if (rest.filter((a) => a !== "--dry-run").length || !out.pr || !out.run) throw new Error(USAGE);
 	if (typeof out.sha !== "string" || !/^[0-9a-f]{7,64}$/.test(out.sha)) throw new Error("--sha must be the head commit of the fix PR");
 	const c = await context(out.pr);
-	if (c.settings.reviewer === "off" && !c.settings.noReviewBot) return { ok: true, started: false, reason: c.settings.reason ?? "fixReview is off" };
+	if (!c.settings.on && !c.settings.noReviewBot) return { ok: true, started: false, reason: c.settings.reason ?? "fixReview is off" };
 	const focus = focusHold(c.itemId);
 	if (focus) return { ok: false, started: false, refused: true, result: focusRefusal(c.itemId, focus) };
 	if (isPaused()) return { ok: false, started: false, paused: true, result: PAUSED_MESSAGE };
@@ -67,29 +68,28 @@ async function start(argv) {
 	if (await readJson(stateFile)) return { ok: true, started: false, reason: `The review rounds of PR #${c.number} already run` };
 	if (c.settings.noReviewBot) return skipRounds(c, out.sha, dryRun);
 
-	const request = await runAction({ action: "request_review", kind: "pr", number: c.number, repo: c.repo, params: { reviewer: c.settings.reviewer, as: c.settings.requestAs }, dryRun });
-	if (!request.ok) return { ok: false, started: false, result: `The review was not requested: ${request.result}` };
+	const request = await askReviewBots({ repo: c.repo, number: c.number, bots: c.settings.bots, sha: out.sha, as: c.settings.requestAs, dryRun });
+	if (request.paused) return { ok: false, started: false, paused: true, result: PAUSED_MESSAGE };
+	if (!request.ok) return { ok: false, started: false, result: request.result };
 	const now = new Date().toISOString();
 	const params = { maxRounds: c.settings.maxRounds, by: "fix", fixFor: c.fixFor };
-	const drive = {
-		repo: c.repo, number: c.number, ...params, markReady: c.settings.markReady, reviewBot: c.settings.reviewer, rounds: [], lastPushedSha: out.sha, lastPushedAt: now,
-		watch: true, stage: "review", copilotRounds: 1, seenAt: { me: now, others: now }, reviewRequestedAt: now, startedAt: now,
-	};
+	const base = { repo: c.repo, number: c.number, ...params, markReady: c.settings.markReady, rounds: [], lastPushedSha: out.sha, lastPushedAt: now, watch: true, seenAt: { me: now, others: now }, startedAt: now };
+	const { actionId: _, ...drive } = enterReview(base, { sha: out.sha, actionId: null, used: 0, now, bots: request.asked });
 	// The doc carries a claim from the start, so the queue watcher prints the drive only when its review arrived
 	const action = { action: "drive", params, text: "", status: "queued", via: "queue", createdAt: now, finishedAt: null, result: `claimed by run ${out.run}` };
-	if (dryRun) return { ok: true, started: false, dryRun: true, invocations: request.result.invocations, wouldWrite: { action: { itemId: c.itemId, ...action }, drive } };
+	if (dryRun) return { ok: true, started: false, dryRun: true, invocations: request.invocations, wouldWrite: { action: { itemId: c.itemId, ...action }, drive } };
 	const actionId = await writeAction(c.itemId, action);
 	await mkdir(driveDir(), { recursive: true });
 	await writeAtomic(stateFile, { actionId, ...drive });
-	return { ok: true, started: true, actionId, itemId: c.itemId, statePath: stateFile, maxRounds: c.settings.maxRounds };
+	return { ok: true, started: true, actionId, itemId: c.itemId, statePath: stateFile, maxRounds: c.settings.maxRounds, bots: request.asked.map((b) => b.key), ...(request.warning && { warning: request.warning }) };
 }
 
 /**
- * Ends the rounds of a fix PR before they start, because the profile lists no review bot: marks the PR ready when
+ * Ends the rounds of a fix PR before they start, because the instance asks no review bot: marks the PR ready when
  * `fixReview.markReady` is on, queues its full review and requests the maintainer's review.
  */
 async function skipRounds(c, sha, dryRun) {
-	const skipped = "The profile lists no review bot, so the fix PR gets no review rounds.";
+	const skipped = `${capital(c.settings.reason)}, so the fix PR gets no review rounds.`;
 	const invocations = [];
 	let ready = false;
 	let readyNote = null;

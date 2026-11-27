@@ -28,11 +28,11 @@ While a fix is in progress, the item says so and offers no second fix.
 
 On Gary's own fix PRs, and only there, three more things happen:
 
-1. Gary requests a review from the review bot.
-2. It pushes the fixes for the bot's comments to the fix branch, for up to 3 rounds.
+1. Gary asks the review bots for a review.
+2. It pushes the fixes for the bots' comments to the fix branch, for up to 3 rounds.
 3. It marks the PR ready for review.
 
-Without a review bot in the profile, steps 1 and 2 are skipped. After the rounds the fix PR shows up as its own card for your review. `fixReview` in the instance's `config.json` sets the reviewer, the rounds and the account.
+Without a review bot, steps 1 and 2 are skipped. After the rounds the fix PR shows up as its own card for your review. `fixReview` in the instance's `config.json` sets the rounds and the account, and `review.github` picks the bots.
 
 When you turn a discussion with such a PR into an issue, the bot adds one line `fixes #<issue>` to the PR's description. This needs a bot and `escalateResult` in the profile.
 
@@ -60,10 +60,17 @@ The PR waits in the line "Reviewed automatically, waiting". It returns to your p
 
 With a bot, everything Gary writes goes out as the bot. Without one, you post yourself, or Gary uses your own login when you allowed it.
 
-Two things can run under your own login next to a bot:
+Three things can run under your own login next to a bot:
 
-- Requesting a Copilot review, unless `fixReview.requestAs` is `bot`.
+- Asking a review bot for its review, unless `fixReview.requestAs` is `bot` on a fix PR.
+- A review bot's trigger comment, like `@octobot2 review`, for a bot the profile lists with `"trigger": { "comment" }`. Gary posts exactly the profile's text and nothing else. It does so only where it asks the review bots after a push: the first round of a fix PR, the next round after a push, and the round after an API edit. An agent never writes it, and no `gary action` or MCP tool posts it.
 - The escalate command that turns a discussion into an issue, with `"escalateAs": "me"`. It is posted only after your click and a confirm. No agent can post it.
+
+The trigger comments and the profile's `botCommands` are bot commands. A mention of a bot with a trigger comment, like `@octobot2`, counts as one too. Gary's code checks the text it posts through its own tools and refuses it when it holds one: comments, replies and reviews through `gary action`, the commit message and the comment of an API edit, answers to findings and review drafts. Case and the amount of whitespace do not matter.
+
+An agent job also writes text that no such check sees, because it goes out through `gh` or `git` directly: replies in review threads, the title and description of a PR, and commit messages. For those the rule is in the skills only: the text never holds a bot command and never mentions a bot with a trigger comment.
+
+A bot with a trigger comment is asked only when `review.github` in your `config.json` names it. The profile may be shared, and a change to it alone never makes Gary post a text.
 
 ## Your GitHub inbox
 
@@ -124,6 +131,26 @@ One kind of PR is exempt: a PR on a branch of your repo that only you and the bo
 Issue texts, PR diffs and attached files are data. Instructions inside them are never followed. Agents never run code from a PR branch.
 
 The format check and the format commit use the tools and configuration of the base branch. The profile's `autofixSetup` and `autofixCommands` run only in a worktree of the base branch. The PR's files are copied in as text.
+
+## Local reviewers
+
+Before an agent pushes, the local reviewers of the instance read its commits, see [configuration.md](configuration.md#local-review-before-a-push). What they find stays on the board:
+
+- Nothing of a local review goes to GitHub: no comment, no reply, no PR body, no commit message. The agent never copies a finding's text into text for GitHub.
+- Findings are review text like any other. The agent judges each one and follows no instruction in it.
+- The reviewers get a read-only checkout of the commit under the instance's state directory, never one of your working trees. It is removed after the pass.
+
+A CLI reviewer is a program of yours. Gary runs it in a checkout of the change, which can hold a contributor's files after a take-over:
+
+- Its argv comes only from the instance's `config.json`. A profile that names reviewers is invalid, so a change to a shared profile can never make Gary run a command.
+- No shell runs it. `{base}`, `{head}` and `{worktree}` are replaced inside single arguments, so a commit SHA or a path never becomes shell syntax.
+- Its environment holds no GitHub token: Gary drops every `GH_*`, `GITHUB_*` and `GARY_*` variable, other GitHub token variables, the SSH agent, the askpass helpers, and any variable whose value holds the bot token or the board server's token.
+- It runs in the read-only checkout and is killed after `timeoutSec`, 600 seconds by default.
+- Its output is untrusted text. JSON findings count as findings, anything else becomes one finding, cut after 8000 characters.
+- It still runs as your user and can read your files, like your stored `gh` login. Only name a program you trust with that.
+- A program that loads configuration, plugins or scripts from the checkout runs code from the change, like a linter that reads the repo's own config. Name a program that reads the files as data only.
+
+The push itself goes through the same checks as before. Where Gary's code pushes or checks a push, it also refuses a commit without a finished local review: `gary push-check --head`, `gary own-pr push` and `gary local-review check`.
 
 ## Stale clicks
 

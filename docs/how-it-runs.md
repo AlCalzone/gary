@@ -26,6 +26,8 @@
 
 **Drive rounds** run on Gary's own fix PRs. Gary requests a bot review, pushes fixes for its comments and marks the PR ready.
 
+**Local reviewers** read an agent's commits before it pushes: a fresh agent that looks for what is wrong, another model, or a review program of yours. The worker starts them, because a job agent cannot start agents itself. The job judges their findings, fixes the valid ones and commits again, up to `maxLocalPasses` times. Then it pushes. Nothing of it goes to GitHub. With a GitHub review bot and no `review.local` none run, see [configuration.md](configuration.md#local-review-before-a-push).
+
 **A focus session** is you and one agent on one item. Gary holds the item meanwhile.
 
 **A chat session** answers your messages from the board's chat. It explains and changes settings and uses the board's own buttons. It never writes to GitHub.

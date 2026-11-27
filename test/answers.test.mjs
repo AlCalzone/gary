@@ -1,6 +1,6 @@
 // Answers to findings: the reanalyze action with input.answers, findingAnswers on the item, the decision log and the finding id.
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { GARY, PROFILE, ROOT, freePort, makeHome, removeDir, runner, tempDir } from "./lib.mjs";
@@ -11,9 +11,13 @@ import { sinceAnchor } from "../scripts/lib/since.mjs";
 const t = runner("answers");
 const T = tempDir();
 const port = await freePort();
-const { home, root, env } = makeHome(T, { port });
+// A review bot with a trigger comment, which counts as a bot command like botCommands
+const profileDir = join(T, "profile");
+cpSync(PROFILE, profileDir, { recursive: true });
+const profile = { ...JSON.parse(readFileSync(join(PROFILE, "profile.json"), "utf8")), reviewBots: ["copilot", { login: "octobot", trigger: { comment: "@octobot review" } }] };
+writeFileSync(join(profileDir, "profile.json"), JSON.stringify(profile));
+const { home, root, env } = makeHome(T, { port, profile: profileDir });
 const BOARD = join(home, "state", "board");
-const profile = JSON.parse(readFileSync(join(PROFILE, "profile.json"), "utf8"));
 
 const findings = [
 	{ id: "f1", severity: "question", text: "Does the device accept 0x00 here?" },
@@ -69,6 +73,7 @@ try {
 		["an empty answer", [{ finding: "f1", text: "   " }], /empty/],
 		["an answer over 4000 characters", [{ finding: "f1", text: "x".repeat(4001) }], /longer than 4000/],
 		["a bot command", [{ finding: "f1", text: "Yes. @widgets-bot automerge" }], /bot command "@widgets-bot automerge"/],
+		["a review bot's trigger comment", [{ finding: "f1", text: "Yes. @OctoBot review" }], /bot command "@octobot review"/],
 		["two answers to one finding", [{ finding: "f1", text: "Yes" }, { finding: "f1", text: "No" }], /two answers/],
 		["no answers", [], /at least one/],
 		["an unknown field", [{ finding: "f1", text: "Yes", why: "x" }], /unknown field/],

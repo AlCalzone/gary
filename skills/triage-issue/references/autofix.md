@@ -9,7 +9,7 @@ Opening the draft PR is one of the few things the routine may do without a click
 - Work only in a new worktree on a new branch from `origin/<default branch>`.
 - Push only that branch. Never push to the default branch or to any existing branch, and never to a contributor's fork.
 - Open the PR as a draft. Never comment on the issue, never merge, approve or close.
-- Requesting the review bot's review, marking the PR ready and requesting the maintainer's review happen only through `gary fix-review` (step 5a), which does them only for a fix PR recorded in `fixes.json` and only when the instance's `fixReview` setting is on. Without a review bot in the profile it skips the review and goes straight to the ready mark. Never do any of them by hand.
+- Asking the review bots for their review, marking the PR ready and requesting the maintainer's review happen only through `gary fix-review` (step 5a), which does them only for a fix PR recorded in `fixes.json` and only when the instance's `fixReview` setting is on. Without a review bot it skips the review and goes straight to the ready mark. Never do any of them by hand.
 
 ## 0. Claim
 
@@ -50,7 +50,11 @@ If the fix does not work within reason, keep the worktree for the maintainer. Do
 
 ## 4. Commit and push
 
-Commit under the writing identity from `accounts.md`, with a message in the project's format. Push the branch with the push command from `accounts.md` and `HEAD:refs/heads/triage/issue-<n>`.
+Commit under the writing identity from `accounts.md`, with a message in the project's format.
+
+With `Local review: on.` in your brief, the local reviewers read the commit before the push. Follow "Local review" in `<core>/skills/triage-review-pr/references/push-to-pr.md`, with these values: `itemId` is the item you fix, like `issue-<n>`, `base` is the commit of `origin/<default branch>` your branch started from, and `job` is the `start_fix` action id, or your run id for an autonomous fix. Fixes of valid findings follow the rules of step 3: run the profile's checks again after them. Right before the push, run `gary local-review check <itemId> --head <the commit you push> --base <base>`. Exit code 3 means no push: keep the worktree, remove the `follow_up` route and say why in `state`, as step 3 does for a fix that does not work.
+
+Push the branch with the push command from `accounts.md` and `HEAD:refs/heads/triage/issue-<n>`. The PR body says nothing of the local review.
 
 ## 5. Draft PR
 
@@ -90,9 +94,9 @@ gary fix-review start --pr <number> --sha <head sha you pushed> --run <run>
 
 It answers one JSON object.
 
-- `started: true`: the review is requested and the rounds run as a drive on the PR. The master starts each round when the review arrived, within about a minute. You are done with the PR. Name it in the summary line, like `issue-398: draft fix #431 opened, Copilot round 1 of 3 requested.`
-- `started: false` with `skipped`: the profile lists no review bot. The command did what the end of the rounds does: it marked the PR ready when `fixReview.markReady` is on, queued its full review for the board and requested the maintainer's review. You are done with the PR.
-- `started: false` with a `reason`: the rounds are off for this instance. The PR stays a draft, and the hourly run puts it on the board once its CI finished.
+- `started: true`: the review bots in `bots` are asked and the rounds run as a drive on the PR. The master starts each round when every review arrived, within about a minute. You are done with the PR. Name it in the summary line, like `issue-398: draft fix #431 opened, Copilot round 1 of 3 requested.`
+- `started: false` with `skipped`: the instance asks no review bot. The command did what the end of the rounds does: it marked the PR ready when `fixReview.markReady` is on, queued its full review for the board and requested the maintainer's review. You are done with the PR.
+- `started: false` with a `reason`: the rounds are off for this instance, for example with `fixReview.maxRounds: 0`. The PR stays a draft, and the hourly run puts it on the board once its CI finished.
 - Exit code 4, `paused: true`: nothing was sent. Record `{ itemId, action: "fix_review", params: { pr: <number> }, reason }` in `<run>/would-have.json`.
 - Any other failure: the PR stays a draft. Say so in the returned `state`.
 

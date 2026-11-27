@@ -1,11 +1,12 @@
 // Review drafts of a contributions instance: the first draft of the maintainer's own review on a PR that requests it.
 // Code decides which draft starts without a click, records every start in <state>/review-drafts.json, checks the
 // draft's pending review route and the lines its comments name. See "Review drafts" in SPEC.md.
+import { botCommandHit } from "./review-bots.mjs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { readJson } from "./board-store.mjs";
 import { updateJson } from "./auto-review.mjs";
-import { REVIEW_DRAFT_DEFAULTS, instanceDir, instanceName } from "./config.mjs";
+import { REVIEW_DRAFT_DEFAULTS, allReviewTriggers, instanceDir, instanceName } from "./config.mjs";
 import { isObject } from "./routes.mjs";
 
 export const reviewDraftsFile = (instance = instanceName()) => join(instanceDir(instance), "state", "review-drafts.json");
@@ -175,10 +176,15 @@ export function reviewDraftState(item, record, snap, now = Date.now()) {
 // Lines that a bot in someone else's repo would take as a command: a slash command, a bot mention, bors
 const BOT_COMMAND = /^\s*\/[a-z][\w-]*|@[\w-]*bot\b|@[\w-]+\[bot\]|\bbors\s+(?:r[+-=]|try|merge|retry|delegate)/im;
 
-/** The bot command a text holds, or null. Review text written by the agent must hold none. */
-export function botCommandIn(text) {
+/**
+ * The bot command a text holds, or null. Review text written by the agent must hold none. `commands` adds texts that
+ * count as commands too, like the trigger comments of review bots, as `botCommandTexts` returns them.
+ */
+export function botCommandIn(text, commands = []) {
 	if (typeof text !== "string") return null;
-	return BOT_COMMAND.exec(text)?.[0].trim() ?? null;
+	const hit = BOT_COMMAND.exec(text)?.[0].trim();
+	if (hit) return hit;
+	return botCommandHit(text, commands);
 }
 
 const MAX_BODY = 65536;
@@ -189,8 +195,10 @@ const SHA = /^[0-9a-f]{40}$/;
 /**
  * The problems of a pending review route on a contributions item, as `[code, message]`. The route holds the draft of
  * the maintainer's own review: the body per verdict in `params.bodies`, the inline comments, and the verdict Gary suggests.
+ * `commands` are the texts that count as bot commands besides the pattern. They default to the trigger comments of the
+ * review bots of every maintainer instance.
  */
-export function pendingRouteProblems(item, route, where) {
+export function pendingRouteProblems(item, route, where, commands = allReviewTriggers()) {
 	const out = [];
 	const add = (code, message) => out.push([code, `${where}: ${message}`]);
 	const p = isObject(route.params) ? route.params : {};
@@ -215,7 +223,7 @@ export function pendingRouteProblems(item, route, where) {
 	if (!(typeof route.text === "string" && route.text.trim()) && !comments.length && p.event !== "approve") add("pending-text", "a review that does not approve needs a body or an inline comment");
 	const texts = [["text", route.text], ...Object.entries(isObject(p.bodies) ? p.bodies : {}).map(([k, v]) => [`bodies.${k}`, v]), ...comments.map((c, i) => [`comments[${i}].text`, c?.text])];
 	for (const [name, text] of texts) {
-		const hit = botCommandIn(text);
+		const hit = botCommandIn(text, commands);
 		if (hit) add("pending-bot-command", `${name} holds "${hit}", which a bot in the repo could take as a command`);
 	}
 	return out;

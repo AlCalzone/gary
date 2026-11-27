@@ -27,6 +27,8 @@ const SUITES = [
 	["node", "fixes.test.mjs"],
 	["node", "fix-review.test.mjs"],
 	["node", "pr-watch.test.mjs"],
+	["node", "review-bots.test.mjs"],
+	["node", "local-review.test.mjs"],
 	["node", "auto-review.test.mjs"],
 	["node", "escalate.test.mjs"],
 	["node", "link-escalated.test.mjs"],

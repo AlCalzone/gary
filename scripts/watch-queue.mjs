@@ -3,8 +3,8 @@
 //   gary watch-queue --all          the same for every instance, also ones added later
 //   gary watch-queue [--all] --once print the current queue and exit
 // Each line is { "instance", "id", "itemId", "action" }.
-// A drive that waits for its review bot gets one more line with "event": "review-arrived" when the review is
-// there, or "review-timeout" after 30 minutes. The watcher reads the PR once a minute per waiting drive.
+// A drive that waits for its review bots gets one more line with "event": "review-arrived" when every bot of the
+// round reviewed the head it was asked on, or "review-timeout" after 30 minutes. The watcher reads the PR once a minute per waiting drive.
 // A watched PR, a PR by the bot or a taken-over PR, gets a line with "action": "drive", "event": "maintainer-feedback",
 // "pr" and "at" when the maintainer reviewed or commented after our last push and no round handled it yet. The
 // watcher reads at most 20 such PRs every 3 minutes, the first time right at its start. A bot PR whose origin session
@@ -38,7 +38,7 @@ import { checkDue, heldItemIds, isHeld, readFocuses } from "./lib/focus.mjs";
 import { sensitiveOurs, touchesSensitive } from "./lib/facts.mjs";
 import { busyOrigin, readOrigins } from "./lib/origins.mjs";
 import { readReconcile, reconcileDue } from "./lib/reconcile.mjs";
-import { dropWatch, pendingHold, pushWork, stageOf, unhandledFeedback, watchedPrs } from "./lib/watch.mjs";
+import { dropWatch, pendingHold, pushWork, roundArrived, stageOf, unhandledFeedback, watchedPrs } from "./lib/watch.mjs";
 import { fetchItem, fetchOfferFacts } from "./snapshot.mjs";
 
 const RESCAN_MS = 5000;
@@ -56,15 +56,14 @@ const FOCUS_POLL_MS = Number(process.env.GARY_FOCUS_POLL_MS) || 60000;
 const HEARTBEAT_MS = 60000;
 
 /**
- * What a waiting drive waits for: "review-arrived" when its review bot reviewed or commented after the request,
- * "review-timeout" when the wait is over, null while it still waits. `entry` is the PR's fresh snapshot entry.
+ * What a waiting drive waits for: "review-arrived" when every review bot of its round reviewed the head it was asked
+ * on after the request, "review-timeout" when the wait is over, null while it still waits. `entry` is the PR's fresh
+ * snapshot entry.
  */
 export function driveEvent(drive, entry, now = Date.now()) {
 	const since = Date.parse(drive.reviewRequestedAt ?? "");
 	if (!Number.isFinite(since)) return null;
-	const bot = String(drive.reviewBot ?? "").toLowerCase();
-	const arrived = (entry?.facts?.timeline ?? []).some((e) => (e.kind === "review" || e.kind === "thread_comment") && bot && String(e.author).toLowerCase().startsWith(bot) && Date.parse(e.at) > since);
-	if (arrived) return "review-arrived";
+	if (roundArrived(drive, entry)) return "review-arrived";
 	return now - since > DRIVE_WAIT_MS ? "review-timeout" : null;
 }
 

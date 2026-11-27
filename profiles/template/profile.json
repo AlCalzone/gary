@@ -9,7 +9,10 @@
 	"maintainers": [],
 	// Bot accounts whose posts count as automated, like "renovate[bot]"
 	"botLogins": [],
-	// Review bots Gary may request a review from. Only "copilot" is supported. Empty: no review bot rounds
+	// GitHub review bots Gary asks after a push. Empty: no review bot rounds. Each entry is one of:
+	//   "copilot"                                                a Copilot review request
+	//   { "login": "octobot", "trigger": "request" }               a review request for that account
+	//   { "login": "octobot", "trigger": { "comment": "@octobot review" } }   exactly this one-line comment on the PR
 	"reviewBots": [],
 	// Repos of the same owner an item can be moved to, by name
 	"relatedRepos": [],
