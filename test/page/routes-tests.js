@@ -241,6 +241,13 @@ const avatarOf = (btn, login) => new RegExp(login).test(btn?.querySelector("img"
     && /2 rounds by the agent · 3 fixed · 1 dismissed/.test(document.querySelector("#d-rounds summary").textContent) && /always set here/.test(document.querySelector("#d-rounds details").textContent));
   ok("rounds summary sits above the cards", !!(document.getElementById("d-rounds").compareDocumentPosition(document.getElementById("d-routes")) & Node.DOCUMENT_POSITION_FOLLOWING));
   ok("drive: explains itself and offers 1 to 3 rounds", /request a Copilot review, up to 3 rounds/.test(openCard().querySelector(".card-text").textContent) && [...openCard().querySelectorAll(".seg")].map((b) => b.textContent).join() === "1,2,3");
+  const widgets = window.__board.instances.findIndex((i) => i.name === "widgets");
+  const W0 = window.__board.instances[widgets];
+  window.__board.instances[widgets] = { ...W0, reviewBots: ["copilot", "octobot"] }; window.dispatchEvent(new Event("board:info")); await wait(10);
+  await openItem("pr-9475");
+  ok("drive: names every review bot the instance asks", /request reviews from Copilot and octobot, up to 3 rounds/.test(openCard()?.querySelector(".card-text")?.textContent ?? ""));
+  window.__board.instances[widgets] = W0; window.dispatchEvent(new Event("board:info")); await wait(10);
+  await openItem("pr-9475");
   [...openCard().querySelectorAll(".seg")][1].click(); await wait(5);
   ok("drive: the line follows the selector", /up to 2 rounds/.test(openCard().querySelector(".card-text").textContent));
   calls = __calls.length;

@@ -47,7 +47,7 @@ const reset = () => {
 
 const user = (login) => ({ login, __typename: "User" });
 const bot = (login) => ({ login, __typename: "Bot" });
-const review = (author, submittedAt, state = "COMMENTED") => ({ author, state, submittedAt, url: `https://github.com/acme/widgets/pull/19#pullrequestreview-${Date.parse(submittedAt)}` });
+const review = (author, submittedAt, state = "COMMENTED", oid) => ({ author, state, submittedAt, url: `https://github.com/acme/widgets/pull/19#pullrequestreview-${Date.parse(submittedAt)}`, ...(oid && { commit: { oid } }) });
 const comment = (author, createdAt) => ({ author, createdAt, body: "A note.", url: `https://github.com/acme/widgets/pull/19#issuecomment-${Date.parse(createdAt)}` });
 const ourCommit = (committedDate) => ({ commit: { committedDate, author: { user: { login: "widgets-bot" } }, committer: { user: { login: "widgets-bot" } } } });
 // PR 19 as GitHub shows it: our last commit, Copilot's first review and whatever the test adds
@@ -143,20 +143,20 @@ writeFileSync(driveFile, JSON.stringify({ actionId: "pr-19-1", repo: "acme/widge
 setOverrides(pr19({ reviews: [review(user("octocat"), soon, "CHANGES_REQUESTED")] }));
 r = gary("watch-queue", "--once");
 t.check("the maintainer's review during the rounds prints no event and keeps the drive waiting", r.stdout.trim() === "" && read(driveFile).stage === "review" && actions()[0].status === "queued", r.stdout);
-t.check("the chip shows the round over the PR's life", JSON.stringify(json(gary("fixes", "--json"))["issue-23"].review) === '{"reviewer":"copilot","round":2,"maxRounds":3}');
-setOverrides(pr19({ reviews: [review(user("octocat"), soon, "CHANGES_REQUESTED"), review(bot("copilot-pull-request-reviewer"), soon)] }));
+t.check("the chip shows the round over the PR's life", JSON.stringify(json(gary("fixes", "--json"))["issue-23"].review) === '{"reviewers":["Copilot"],"round":2,"maxRounds":3}');
+setOverrides(pr19({ reviews: [review(user("octocat"), soon, "CHANGES_REQUESTED"), review(bot("copilot-pull-request-reviewer"), soon, "COMMENTED", SHA)] }));
 r = gary("watch-queue", "--once");
 t.check("the review bot's review still prints the next round", JSON.stringify(lines(r)) === JSON.stringify([{ instance: "widgets", id: "pr-19-1", itemId: "pr-19", action: "drive", event: "review-arrived" }]), r.stdout);
 
 // The review bot cap of 3 counts over the PR's life
 r = gary("pr-watch", "review", "--pr", "19", "--sha", "a".repeat(40));
-t.check("the third review bot round is requested", r.status === 0 && json(r).round === 3 && writes().at(-1)?.mutation === "requestCopilotCodeReview" && read(driveFile).copilotRounds === 3 && read(driveFile).stage === "review" && read(driveFile).lastPushedSha === "a".repeat(40), [r.stdout, writes()]);
+t.check("the third review bot round is requested", r.status === 0 && json(r).round === 3 && writes().at(-1)?.mutation === "requestCopilotCodeReview" && read(driveFile).botRounds?.copilot?.rounds === 3 && read(driveFile).botRounds.copilot.sha === "a".repeat(40) && read(driveFile).copilotRounds === undefined && read(driveFile).stage === "review" && read(driveFile).lastPushedSha === "a".repeat(40), [r.stdout, writes()]);
 r = gary("pr-watch", "done", "--pr", "19", "--sha", "a".repeat(40), "--seen-me", soon);
-t.check("done puts the PR back to watching", r.status === 0 && read(driveFile).stage === "watch" && read(driveFile).reviewRequestedAt === undefined && read(driveFile).copilotRounds === 3, read(driveFile));
+t.check("done puts the PR back to watching", r.status === 0 && read(driveFile).stage === "watch" && read(driveFile).reviewRequestedAt === undefined && read(driveFile).botRounds?.copilot?.rounds === 3, read(driveFile));
 const before = writes().length;
 r = gary("pr-watch", "review", "--pr", "19", "--sha", "a".repeat(40), "--action", "pr-19-1");
 t.check("a fourth review bot round is refused", r.status === 3 && /3 of 3/.test(json(r).result) && writes().length === before, r.stdout);
-writeFileSync(driveFile, JSON.stringify({ ...read(driveFile), copilotRounds: 1 }));
+writeFileSync(driveFile, JSON.stringify({ ...read(driveFile), botRounds: { copilot: { rounds: 1 } } }));
 setSnapshot({ "pr-19": { author: "widgets-bot", headSha: SHA, feedback: { reviewBotReviews: 3 } } });
 r = gary("pr-watch", "review", "--pr", "19", "--sha", "a".repeat(40), "--action", "pr-19-1");
 t.check("the review bot's reviews on GitHub count toward the cap", r.status === 3 && /3 of 3/.test(json(r).result) && writes().length === before, r.stdout);
@@ -231,7 +231,7 @@ o = json(r);
 drive = existsSync(driveFile) ? read(driveFile) : null;
 doc = actions().find((a) => a.id === o.actionId);
 t.check("a revise push on a bot PR without review bot rounds requests the first one", r.status === 0 && o.requested === true && o.round === 1 && writes().length === 1 && writes()[0].mutation === "requestCopilotCodeReview" && writes()[0].as === "octocat" && writes()[0].variables.id === "PR_19", [o, writes()]);
-t.check("the PR enters the stage review with a new drive doc claimed by the job's run", drive?.stage === "review" && drive.by === "watch" && drive.copilotRounds === 1 && drive.lastPushedSha === NEW && drive.actionId === o.actionId && doc?.action === "drive" && doc.status === "queued" && doc.result === "claimed by run req-1" && doc.params.after === "revise" && doc.params.maxRounds === 3 && actions().find((a) => a.id === "pr-19-revise").status === "queued", [drive, doc]);
+t.check("the PR enters the stage review with a new drive doc claimed by the job's run", drive?.stage === "review" && drive.by === "watch" && drive.botRounds?.copilot?.rounds === 1 && drive.botRounds.copilot.sha === NEW && drive.lastPushedSha === NEW && drive.actionId === o.actionId && doc?.action === "drive" && doc.status === "queued" && doc.result === "claimed by run req-1" && doc.params.after === "revise" && doc.params.maxRounds === 3 && actions().find((a) => a.id === "pr-19-revise").status === "queued", [drive, doc]);
 r = gary("watch-queue", "--once");
 t.check("the claimed drive doc prints no new request", r.stdout.trim() === "", r.stdout);
 r = gary("pr-watch", "review", "--pr", "19", "--sha", "c".repeat(40), "--after", "pr-19-revise", "--run", "req-1");

@@ -105,21 +105,28 @@ const withBot = { ...base, bot: { login: "b", tokenFile: "t" } };
 t.check("maxPendingAutoFixes defaults to 10", c.loadInstance("widgets").config.maxPendingAutoFixes === 10 && c.CONFIG_DEFAULTS.maxPendingAutoFixes === 10);
 t.check("maxPendingAutoFixes takes 0 and whole numbers only", c.validateConfig({ ...base, maxPendingAutoFixes: 0 }).length === 0 && c.validateConfig({ ...base, maxPendingAutoFixes: 25 }).length === 0
 	&& c.validateConfig({ ...base, maxPendingAutoFixes: -1 }).some((e) => /"maxPendingAutoFixes" must be a whole number/.test(e)) && c.validateConfig({ ...base, maxPendingAutoFixes: "10" }).length === 1 && c.validateConfig({ ...base, maxPendingAutoFixes: 1.5 }).length === 1);
-t.check("fixReview defaults to three Copilot rounds requested as me, then ready, when the instance can push", JSON.stringify(c.fixReviewOf(withBot, reviewBots)) === '{"reviewer":"copilot","requestAs":"me","maxRounds":3,"markReady":true,"reason":null,"noReviewBot":false}');
-t.check("fixReview defaults to on with allowOwnTokenPushes too", c.fixReviewOf({ ...base, allowOwnTokenPushes: true }, reviewBots).reviewer === "copilot");
-t.check("fixReview is off without an account that may push", c.fixReviewOf({ ...base, bot: null }, reviewBots).reviewer === "off" && /no account may push/.test(c.fixReviewOf({ ...base, bot: null }, reviewBots).reason));
+const COPILOT_BOTS = '[{"key":"copilot","trigger":"copilot"}]';
+t.check("fixReview defaults to three Copilot rounds requested as me, then ready, when the instance can push", JSON.stringify(c.fixReviewOf(withBot, reviewBots)) === `{"requestAs":"me","maxRounds":3,"markReady":true,"on":true,"bots":${COPILOT_BOTS},"reason":null,"noReviewBot":false}`);
+t.check("fixReview defaults to on with allowOwnTokenPushes too", c.fixReviewOf({ ...base, allowOwnTokenPushes: true }, reviewBots).on === true);
+t.check("fixReview is off without an account that may push", c.fixReviewOf({ ...base, bot: null }, reviewBots).on === false && /no account may push/.test(c.fixReviewOf({ ...base, bot: null }, reviewBots).reason));
 t.check("fixReview skips the rounds when the profile lists no review bot", (() => {
 	const fr = c.fixReviewOf(withBot, { reviewBots: [] });
-	return fr.reviewer === "off" && fr.noReviewBot === true && /lists no review bot/.test(fr.reason);
+	return fr.on === false && fr.noReviewBot === true && /lists no review bot/.test(fr.reason);
 })());
 t.check("without an account that may push the missing review bot does not matter", c.fixReviewOf({ ...base, bot: null }, { reviewBots: [] }).noReviewBot === false);
-t.check("the review bot is the first of reviewBots, or null", c.reviewBotOf({ reviewBots: ["copilot"] }) === "copilot" && c.reviewBotOf({ reviewBots: [] }) === null && c.reviewBotOf({}) === null);
-t.check("fixReview off in config.json stays off", c.fixReviewOf({ ...withBot, fixReview: { reviewer: "off" } }, reviewBots).reviewer === "off");
-t.check("fixReview fills the fields config.json leaves out", JSON.stringify(c.fixReviewOf({ ...withBot, fixReview: { maxRounds: 1, requestAs: "bot" } }, reviewBots)) === '{"reviewer":"copilot","requestAs":"bot","maxRounds":1,"markReady":true,"reason":null,"noReviewBot":false}');
+t.check("the review bots are the profile's, or none", JSON.stringify(c.reviewBotsOf({}, { reviewBots: ["copilot"] })) === COPILOT_BOTS && c.reviewBotsOf({}, { reviewBots: [] }).length === 0 && c.reviewBotsOf({}, {}).length === 0);
+t.check("fixReview off in config.json stays off", c.fixReviewOf({ ...withBot, fixReview: { reviewer: "off" } }, reviewBots).on === false);
+t.check("the old reviewer off keeps maxRounds, so other rounds keep their cap", c.fixReviewOf({ ...withBot, fixReview: { reviewer: "off" } }, reviewBots).maxRounds === 3);
+t.check("maxRounds 0 turns the fix rounds off and the PR stays a draft", (() => {
+	const fr = c.fixReviewOf({ ...withBot, fixReview: { maxRounds: 0 } }, reviewBots);
+	return fr.on === false && fr.noReviewBot === false && fr.maxRounds === 0 && /maxRounds is 0/.test(fr.reason);
+})());
+t.check("the old reviewer copilot means the default", JSON.stringify(c.fixReviewOf({ ...withBot, fixReview: { reviewer: "copilot" } }, reviewBots)) === JSON.stringify(c.fixReviewOf(withBot, reviewBots)));
+t.check("fixReview fills the fields config.json leaves out", JSON.stringify(c.fixReviewOf({ ...withBot, fixReview: { maxRounds: 1, requestAs: "bot" } }, reviewBots)) === `{"requestAs":"bot","maxRounds":1,"markReady":true,"on":true,"bots":${COPILOT_BOTS},"reason":null,"noReviewBot":false}`);
 t.check("requestAs bot needs a bot", /no bot is configured/.test(c.fixReviewOf({ ...base, allowOwnTokenPushes: true, fixReview: { requestAs: "bot" } }, reviewBots).reason));
 t.check("a full fixReview is valid", c.validateConfig({ ...base, fixReview: { reviewer: "copilot", requestAs: "me", maxRounds: 2, markReady: false } }).length === 0);
 const frErrors = c.validateConfig({ ...base, fixReview: { reviewer: "gemini", requestAs: "them", maxRounds: 4, markReady: "yes" } });
-t.check("fixReview refuses values outside its lists", frErrors.length === 4 && frErrors.some((e) => /"fixReview.reviewer" must be one of copilot, off/.test(e)) && frErrors.some((e) => /"fixReview.requestAs" must be one of me, bot/.test(e)) && frErrors.some((e) => /"fixReview.maxRounds" must be 1, 2 or 3/.test(e)) && frErrors.some((e) => /"fixReview.markReady" must be true or false/.test(e)), frErrors);
+t.check("fixReview refuses values outside its lists", frErrors.length === 4 && frErrors.some((e) => /"fixReview.reviewer" must be one of copilot, off/.test(e)) && frErrors.some((e) => /"fixReview.requestAs" must be one of me, bot/.test(e)) && frErrors.some((e) => /"fixReview.maxRounds" must be 0, 1, 2 or 3/.test(e)) && frErrors.some((e) => /"fixReview.markReady" must be true or false/.test(e)), frErrors);
 t.check("fixReview must be an object", c.validateConfig({ ...base, fixReview: "copilot" }).some((e) => /"fixReview" must be/.test(e)));
 const frCheck = c.checkConfig({ ...base, fixReview: { reviewer: "copilot", waitMinutes: 10 } });
 t.check("an unknown fixReview field is only a warning at run time", frCheck.errors.length === 0 && frCheck.unknown.includes('unknown field "fixReview.waitMinutes"'), frCheck);

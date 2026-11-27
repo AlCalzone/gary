@@ -383,7 +383,7 @@ try {
 	const drive = JSON.parse(readFileSync(join(round.home, "state", "drive", "pr-26.json"), "utf8"));
 	const docs = actionsOf(round.home);
 	const driveDoc = docs.find((a) => a.action === "drive");
-	t.check("the PR waits in the stage review with a claimed drive doc", drive.stage === "review" && drive.copilotRounds === 1 && drive.lastPushedSha === NEW_HEAD && drive.actionId && driveDoc?.status === "queued" && driveDoc.result === "claimed by run server" && driveDoc.params.after === "api_edit" && driveDoc.params.by === "watch", [drive, driveDoc]);
+	t.check("the PR waits in the stage review with a claimed drive doc", drive.stage === "review" && drive.botRounds?.copilot?.rounds === 1 && drive.botRounds.copilot.sha === NEW_HEAD && drive.lastPushedSha === NEW_HEAD && drive.actionId && driveDoc?.status === "queued" && driveDoc.result === "claimed by run server" && driveDoc.params.after === "api_edit" && driveDoc.params.by === "watch", [drive, driveDoc]);
 	t.check("the queued full review names the round", docs.find((a) => a.action === "full_review")?.params.reviewBotRound === 1, docs);
 } finally {
 	roundServer.child.kill();

@@ -292,6 +292,8 @@
       await openItem("issue-9495");
       ok("fix rounds: the banner names the stage", /^Draft fix #9496 is open: fix: stop retrying on a 413\. CI running\. Copilot round 2 of 3\./.test(document.getElementById("d-fix").textContent));
       document.getElementById("d-close").click(); await wait(5);
+      items(F.map(([k, d]) => [k, k === "issue-9495" ? { ...d, fix: { ...d.fix, startedBy: "routine", parked: true, review: { reviewers: ["Copilot", "octobot"], round: 2, maxRounds: 3 } } } : d])); await wait(10);
+      ok("fix rounds: the chip names every bot of the round", parkedRow("issue-9495")?.querySelector(".agent-chip")?.textContent === "Fix: #9496 draft, Copilot and octobot round 2 of 3");
       items(F); await wait(10);
       for (let i = 0; i < 4; i++) for (const b of document.querySelectorAll(".show-all")) if (!b.hidden && !/less/i.test(b.textContent)) b.click();
       await wait(5);

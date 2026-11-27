@@ -51,7 +51,7 @@ r = gary("fix-review", "start", "--pr", "19", "--sha", SHA, "--run", "run-1");
 o = json(r);
 t.check("start requests the Copilot review under the maintainer's login", r.status === 0 && o.started === true && writes().length === 1 && writes()[0].mutation === "requestCopilotCodeReview" && writes()[0].as === "octocat" && writes()[0].variables.id === "PR_19", [o, writes()]);
 let drive = read(driveFile);
-t.check("start writes the waiting drive with by fix", drive.by === "fix" && drive.fixFor === "issue-23" && drive.repo === "acme/widgets" && drive.number === 19 && drive.maxRounds === 3 && drive.markReady === true && drive.reviewBot === "copilot" && drive.lastPushedSha === SHA && drive.rounds.length === 0 && Date.parse(drive.reviewRequestedAt) > Date.now() - 10000 && drive.actionId === o.actionId, drive);
+t.check("start writes the waiting drive with by fix", drive.by === "fix" && drive.fixFor === "issue-23" && drive.repo === "acme/widgets" && drive.number === 19 && drive.maxRounds === 3 && drive.markReady === true && JSON.stringify(drive.reviewBots) === '[{"key":"copilot","trigger":"copilot"}]' && drive.lastPushedSha === SHA && drive.rounds.length === 0 && Date.parse(drive.reviewRequestedAt) > Date.now() - 10000 && drive.actionId === o.actionId, drive);
 let doc = actions().find((a) => a.id === o.actionId);
 t.check("the drive's action doc is a claimed push request for the PR item", doc?.itemId === "pr-19" && doc.action === "drive" && doc.status === "queued" && doc.via === "queue" && doc.result === "claimed by run run-1" && doc.params.by === "fix" && doc.params.maxRounds === 3, doc);
 r = gary("watch-queue", "--once");
@@ -61,18 +61,20 @@ t.check("a second start changes nothing", json(r).started === false && /already 
 
 // The stage on the issue's fix state
 let fx = json(gary("fixes", "--json"))["issue-23"];
-t.check("the fix state names the review round", fx.state === "draft" && JSON.stringify(fx.review) === '{"reviewer":"copilot","round":1,"maxRounds":3}', fx);
-t.check("start writes the watch fields", drive.watch === true && drive.stage === "review" && drive.copilotRounds === 1 && typeof drive.seenAt.me === "string", drive);
-writeFileSync(driveFile, JSON.stringify({ ...drive, copilotRounds: 2, rounds: [{ n: 1, fixed: ["Guard the empty list."], dismissed: [], open: [] }] }));
+t.check("the fix state names the review round", fx.state === "draft" && JSON.stringify(fx.review) === '{"reviewers":["Copilot"],"round":1,"maxRounds":3}', fx);
+t.check("start writes the watch fields and the head Copilot was asked on", drive.watch === true && drive.stage === "review" && drive.botRounds?.copilot?.rounds === 1 && drive.botRounds.copilot.sha === SHA && drive.copilotRounds === undefined && typeof drive.seenAt.me === "string", drive);
+writeFileSync(driveFile, JSON.stringify({ ...drive, botRounds: { copilot: { ...drive.botRounds.copilot, rounds: 2 } }, rounds: [{ n: 1, fixed: ["Guard the empty list."], dismissed: [], open: [] }] }));
 t.check("the next requested review moves the stage", json(gary("fixes", "--json"))["issue-23"].review.round === 2);
 
 // The watcher notices the review within its poll
 r = gary("watch-queue", "--once");
 t.check("no drive event while the review is missing", r.stdout.trim() === "", r.stdout + r.stderr);
 const later = new Date(Date.now() + 60000).toISOString();
-const reviewBy = (login, typename) => ({ "pr-19": { allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ author: { login, __typename: typename }, state: "COMMENTED", submittedAt: later, url: "https://github.com/acme/widgets/pull/19#pullrequestreview-9" }] } } });
+const reviewBy = (login, typename, oid = SHA) => ({ "pr-19": { allReviews: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ author: { login, __typename: typename }, state: "COMMENTED", submittedAt: later, url: "https://github.com/acme/widgets/pull/19#pullrequestreview-9", commit: { oid } }] } } });
 writeFileSync(OVERRIDES, JSON.stringify(reviewBy("hubot", "User")));
 t.check("another reviewer is no drive event", gary("watch-queue", "--once").stdout.trim() === "");
+writeFileSync(OVERRIDES, JSON.stringify(reviewBy("copilot-pull-request-reviewer", "Bot", "8".repeat(40))));
+t.check("the review bot's review of an older head is no drive event", gary("watch-queue", "--once").stdout.trim() === "");
 writeFileSync(OVERRIDES, JSON.stringify(reviewBy("copilot-pull-request-reviewer", "Bot")));
 r = gary("watch-queue", "--once");
 t.check("the review bot's review prints one drive event", r.stdout.trim() === JSON.stringify({ instance: "widgets", id: drive.actionId, itemId: "pr-19", action: "drive", event: "review-arrived" }), r.stdout + r.stderr);
