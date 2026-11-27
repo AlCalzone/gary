@@ -10,6 +10,8 @@ import { activeReviewBots, profileReviewBots, reviewTriggerComments } from "./li
 import { isPaused } from "./lib/control.mjs";
 import { canReadProjects, readLogin, readRepoPermissions, storedScopes } from "./lib/gh.mjs";
 import { isPluginInstall } from "./setup.mjs";
+import { localReviewOf } from "./lib/local-review.mjs";
+import { readHarness } from "./local-review.mjs";
 
 const run = promisify(execFile);
 const RULES = ["classification.md", "voice.md", "review.md", "issues.md"];
@@ -73,6 +75,42 @@ async function checkInstall(attempt) {
 		}
 	});
 
+}
+
+/** Whether a program name resolves on PATH, or as a path. */
+async function onPath(program) {
+	if (program.includes("/")) return existsSync(program);
+	try {
+		await run("sh", ["-c", 'command -v "$1"', "sh", program]);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * The check of the local review: who reads a job's commits before the push. A warning names an agent reviewer whose
+ * provider the workers cannot reach, by the master's record of its harness, and a CLI reviewer whose program is not on PATH.
+ */
+async function localReviewCheck(config, profile) {
+	const plan = localReviewOf(config, profile);
+	if (!plan.reviewers.length) {
+		const why = plan.source === "off" ? 'off: review.local is "off" in config.json. Pushes get no local review' : "none: the instance asks a GitHub review bot, so pushes get no local review. review.local in config.json adds local reviewers";
+		return ["ok", why];
+	}
+	const problems = [];
+	const harness = readHarness();
+	for (const r of plan.reviewers) {
+		if (r.kind === "agent") {
+			if (!harness) problems.push(`${r.name}: not known whether workers reach ${r.provider}. The master records its harness at its start`);
+			else if (!harness.providers.includes(r.provider)) problems.push(`${r.name}: workers run ${harness.workers === "headless" ? "as headless claude -p sessions" : harness.workers === "child" ? "as child sessions" : "in the master's session"} in ${harness.harness} and reach ${harness.providers.join(", ")}, not ${r.provider}. The reviewer is skipped with that reason`);
+		}
+		if (r.kind === "cli" && !(await onPath(r.argv[0]))) problems.push(`${r.name}: ${r.argv[0]} is not on PATH. The reviewer fails until it is`);
+	}
+	const names = plan.reviewers.map((r) => (r.kind === "cli" ? `${r.name} (${r.timeoutSec} s)` : r.name)).join(", ");
+	const from = plan.source === "default" ? ", the default without a GitHub review bot" : "";
+	const text = `before every push: ${names}${from}, up to ${plan.maxPasses} pass${plan.maxPasses === 1 ? "" : "es"}`;
+	return problems.length ? ["warn", `${text}. ${problems.join(". ")}`] : ["ok", text];
 }
 
 // A tab icon that names a file: the file must exist and stay under the size the server sends
@@ -175,6 +213,7 @@ async function checkInstance() {
 			if (!bots.length) return [missing.length ? "warn" : "ok", `${all.length ? "review.github in config.json skips the profile's review bots" : "the profile lists no review bot"}. A push to a watched PR gets no review bot round${notListed}`];
 			return [missing.length ? "warn" : "ok", `after a push to a watched PR Gary asks ${bots.map(how).join(", ")}${source === "config" ? ", as review.github picks" : ""}${notListed}`];
 		});
+		await attempt("local review", () => localReviewCheck(config, loadProfile()));
 		await attempt("fix review", async () => {
 			const fr = fixReviewOf(config, loadProfile());
 			// A warning only when config.json asks for the rounds and they cannot run
@@ -275,6 +314,7 @@ async function checkContributions(config, attempt, add) {
 	});
 	add("caps", "ok", `at most ${config.maxItems} threads per snapshot, with activity in the last ${config.activeWindowDays} days. Your own open PRs and review requests count at any age. The snapshot says when the cap cuts`);
 	add("checkouts", ...checkoutRootsCheck(config.checkoutRoots ?? []));
+	await attempt("local review", () => localReviewCheck(config, null));
 	add("notifications", "ok", config.clearNotifications ? "Got it also marks the thread's notification as done in your GitHub inbox" : "off. Got it leaves your GitHub inbox alone. \"clearNotifications\": true in config.json turns it on");
 	await attempt("models", async () => {
 		const { models } = modelsOf(config);

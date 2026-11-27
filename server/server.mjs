@@ -31,6 +31,7 @@ import { commentLineProblem, pendingRoute, pendingRouteProblems, readReviewDraft
 import { PAUSED_MESSAGE, isPaused } from "../scripts/lib/control.mjs";
 import { CHAT_ID, activeChat, addUserMessage, archiveActive, chatDir, masterState, readChat } from "../scripts/lib/chat.mjs";
 import { ownPrRefusal } from "../scripts/lib/own-pr.mjs";
+import { localReviewDir, servedLocalReview } from "../scripts/lib/local-review.mjs";
 import { activeReviewBots, botCommandTexts } from "../scripts/lib/review-bots.mjs";
 import { checkFresh } from "../scripts/lib/guard.mjs";
 import { fetchItem } from "../scripts/snapshot.mjs";
@@ -1078,6 +1079,24 @@ export async function startBoardServer({
 		holdTimers.set(name, t);
 	}
 
+	// The local review records of the items, as the dialog shows them
+	async function readLocalReviews(name, items) {
+		const dir = localReviewDir(join(instanceDir(name), "state"));
+		let files;
+		try {
+			files = new Set(await readdir(dir));
+		} catch {
+			return new Map();
+		}
+		const out = new Map();
+		for (const { id } of items) {
+			if (!files.has(`${id}.json`)) continue;
+			const served = servedLocalReview(await readJson(join(dir, `${id}.json`)));
+			if (served) out.set(id, served);
+		}
+		return out;
+	}
+
 	// Serve each route with its draft hash and whether it already ran, so the page can bind clicks to drafts
 	async function readItems(name) {
 		const { instance, mode: current } = settingsOf(name);
@@ -1103,6 +1122,7 @@ export async function startBoardServer({
 			return forItem ? { fixFor: fixForOf(forItem, data.repo) } : {};
 		};
 		const autoReviews = await readAutoReviews(name);
+		const localReviews = await readLocalReviews(name, items);
 		const reviewDrafts = instance.kind === "contributions" ? await readReviewDrafts(name) : {};
 		const reviewDraftOf = (id, data) => (instance.kind === "contributions" ? reviewDraftState(data, reviewDrafts[id], fixSources.snapshot[id]) : null);
 		// The maintainer's own PR in a contributions instance: whether Drive and Focus may work on its branch, and why not
@@ -1158,6 +1178,7 @@ export async function startBoardServer({
 			...(typeof categoryOf(id, data) === "string" && { discussionCategory: categoryOf(id, data) }),
 			liveState: liveStates.get(`${name}/${id}`) ?? snapshotState(fixSources.snapshot[id]),
 			...(autoReviewOf(id, data) && { autoReview: autoReviewOf(id, data) }),
+			...(localReviews.has(id) && { localReview: localReviews.get(id) }),
 			...(reviewDraftOf(id, data) && { reviewDraft: reviewDraftOf(id, data) }),
 			...(ownPrOf(id, data) && { ownPr: ownPrOf(id, data) }),
 			...(servedWalkthrough(data) && { walkthrough: servedWalkthrough(data) }),
@@ -1284,6 +1305,11 @@ export async function startBoardServer({
 		// A round of a drive changes item.working and the stage of item.fix
 		mkdirSync(driveDir(name), { recursive: true });
 		addWatch(w, driveDir(name), () => schedulePush(name, "items"));
+		// A pass of the local review changes item.localReview
+		mkdirSync(localReviewDir(i.state), { recursive: true });
+		addWatch(w, localReviewDir(i.state), (_type, file) => {
+			if (String(file ?? "").endsWith(".json")) schedulePush(name, "items");
+		});
 		// A claim taken or released changes item.working
 		mkdirSync(claimsDir(name), { recursive: true });
 		addWatch(w, claimsDir(name), () => schedulePush(name, "items"));
